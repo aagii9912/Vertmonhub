@@ -1407,7 +1407,7 @@ export async function createLead(shopId: string, args: any, confirm: boolean, ac
         Нэр: displayName, Утас: identity.customer_phone || '-', ...(identity.customer_email ? { Имэйл: identity.customer_email } : {}), Статус: status, 'Эх сурвалж': source,
         Төсөв: args.budget_max ? formatMNT(args.budget_max) : '-',
         Ангилал: resolved.category_name ?? UNCATEGORIZED_LABEL,
-        Менежер: managerName || 'Хариуцагчгүй — идэвхтэй менежерт онооно',
+        Менежер: managerName || 'Хариуцагчгүй — менежер «Хариуцагчгүй» жагсаалтаас хариуцаж авна',
     };
     if (!confirm) return confirmNeeded('create_lead', { ...args, status, source }, `Шинэ лийд: ${displayName}`, preview);
 
@@ -1425,8 +1425,7 @@ export async function createLead(shopId: string, args: any, confirm: boolean, ac
         preferred_rooms: args.preferred_rooms ?? null,
     }, { select: 'id, customer_name' });
     if (!result.ok) return { error: 'Лид үүсгэхэд алдаа гарлаа' };
-    const owner = managerName ? `менежер: ${managerName}`
-        : result.autoAssigned ? `менежер: ${result.autoAssigned} (автоматаар)` : 'хариуцагчгүй — идэвхтэй менежерт онооно';
+    const owner = managerName ? `менежер: ${managerName}` : 'хариуцагчгүй — менежер «Хариуцагчгүй» жагсаалтаас хариуцаж авна';
     return { success: true, message: `"${displayName}" лийд амжилттай үүсгэлээ (${owner}).`, leadId: result.lead.id };
 }
 

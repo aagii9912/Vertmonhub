@@ -185,7 +185,7 @@ describe('current manager onboarding route integration', () => {
         expect(state.rows.leads.map(lead => lead.sales_manager_name)).toEqual(['Бат', 'Өөр менежер', 'Бат']);
         expect(state.rows.lead_activities).toEqual([]);
     });
-    it('provisioning activates the manager and explicit project setup enables attribution while unassigned claims remain denied', async () => {
+    it('provisioning activates the manager and explicit project setup enables attribution and unassigned claims', async () => {
         await provisionManager();
         expect(state.rows.sales_managers).toContainEqual(expect.objectContaining({ user_id: managerId, name: 'Бат', is_active: true, shop_id: shopId }));
         const identity = await resolveManagerIdentity(db as never, shopId, managerId);
@@ -196,9 +196,10 @@ describe('current manager onboarding route integration', () => {
         const { lead } = await response.json();
         expect(lead).toMatchObject({ shop_id: shopId, sales_manager_name: 'Бат' });
         state.rows.leads[0].sales_manager_name = null;
-        expect((await claim(lead.id)).status).toBe(404);
-        expect(state.rows.leads[0].sales_manager_name).toBeNull();
-        expect(state.rows.lead_activities).toEqual([]);
+        // Эзэмшигч 2026-10-15: лид автоматаар хуваарилагдахгүй — менежер төслийнхөө хариуцагчгүй лидийг өөрөө авна.
+        expect((await claim(lead.id)).status).toBe(200);
+        expect(state.rows.leads[0].sales_manager_name).toBe('Бат');
+        expect(state.rows.lead_activities).toEqual([expect.objectContaining({ lead_id: lead.id, meta: expect.objectContaining({ action: 'claim', to: 'Бат' }) })]);
     });
 
     it('provisioning links and activates the unlinked canonical roster without creating a duplicate identity', async () => {
@@ -222,11 +223,11 @@ describe('current manager onboarding route integration', () => {
         expect(response.status).toBe(200);
         expect((await response.json()).lead.sales_manager_name).toBe('Бат');
         const claimed = await claim(unassigned.id);
-        expect(claimed.status).toBe(404);
+        expect(claimed.status).toBe(200);
         expect(state.rows.leads.find(row => row.id === unassigned.id)).toMatchObject({
-            sales_manager_name: null,
+            sales_manager_name: 'Бат',
         });
-        expect(state.rows.lead_activities).toEqual([]);
+        expect(state.rows.lead_activities).toEqual([expect.objectContaining({ lead_id: unassigned.id, meta: expect.objectContaining({ action: 'claim' }) })]);
     });
 
     it('an ordinary provisioned manager cannot create a project', async () => {

@@ -11,7 +11,11 @@ import type { LeadWorkQueue } from '@/lib/leads/work-queue';
 import type { ViewingInterest } from '@/lib/viewings/interests';
 import type { LandingPageOption } from '@/lib/leads/landing-attribution';
 
-export type LeadRow = Lead & { lost_reason?: string | null; project_id?: string | null };
+export type LeadRow = Lead & {
+    lost_reason?: string | null; project_id?: string | null;
+    /** Менежерийн «Хариуцагчгүй» сангийн лид: зөвхөн хариуцаж авна, бусад засвар claim-ийн дараа. */
+    claimOnly?: boolean;
+};
 
 export interface LeadsListParams {
     view: LeadView;
@@ -108,6 +112,8 @@ export function useLeadLandingPages(project: string) {
 export interface LeadDetail {
     partial?: string[];
     lead: LeadRow;
+    /** Менежер хариуцагчгүй лидийг хариуцаж авахаас өмнө харж байна. */
+    claimOnly?: boolean;
     viewings: {
         id: string;
         scheduled_at: string;

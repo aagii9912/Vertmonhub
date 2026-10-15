@@ -5,7 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { ACTIVE_STATUSES } from '@/lib/leads/labels';
 import { LEAD_WORK_QUEUES, workQueueFilter } from '@/lib/leads/work-queue';
-import { applyLeadScope, canAccessProject, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { applyClaimPoolScope, applyLeadScope, canAccessProject, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { withRoute } from '@/lib/api/route';
 
 /**
@@ -24,11 +24,14 @@ export const GET = withRoute({ module: 'leads', error: 'Лидийн тооло�
     const identity = uid ? await resolveManagerIdentity(db, shopId, uid) : null;
     const mineName = identity?.managerName ?? null;
 
-    const base = () => {
-        let q = applyLeadScope(db.from('leads').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).is('deleted_at', null), scope);
+    const base = (pool = false) => {
+        let q = (pool ? applyClaimPoolScope : applyLeadScope)(db.from('leads').select('id', { count: 'exact', head: true })
+            .eq('shop_id', shopId).is('deleted_at', null), scope);
         if (projectId) q = q.eq('project_id', projectId);
         return q;
     };
+    // «Хариуцагчгүй»-н тоо = менежерийн хариуцаж авч болох лид (жагсаалтын claim pool-той ижил).
+    const pool = scope.projectIds !== null;
     const count = async (q: ReturnType<typeof base>) => {
         const { count: c, error } = await q;
         if (error) throw error; // 0 гэж нуухгүй — бодит алдааг 500-аар мэдэгдэнэ
@@ -41,12 +44,12 @@ export const GET = withRoute({ module: 'leads', error: 'Лидийн тооло�
         count(base().eq('status', 'new')),
         count(base().eq('status', 'viewing_scheduled')),
         count(base().in('status', ACTIVE_STATUSES)),
-        Promise.all(LEAD_WORK_QUEUES.map(q => count(base().or(workQueueFilter(q.key))))),
+        Promise.all(LEAD_WORK_QUEUES.map(q => count(base(pool && q.key === 'unassigned').or(workQueueFilter(q.key))))),
     ]);
 
     return NextResponse.json(
         { all, mine, new: fresh, meetings, active, mineName,
-            canClaim: !!identity?.isManager && scope.projectIds === null,
+            canClaim: !!identity?.isManager && (scope.projectIds === null || !!scope.managerName),
             queues: Object.fromEntries(LEAD_WORK_QUEUES.map((q, i) => [q.key, queueCounts[i]])),
         },
         { headers: { 'Cache-Control': 'private, no-store' } },

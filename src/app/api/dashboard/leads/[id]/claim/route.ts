@@ -7,11 +7,14 @@ import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { ACTIVE_STATUSES } from '@/lib/leads/labels';
 import { logLeadActivity } from '@/lib/leads/activities';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
-import { applyLeadScope, assertProjectManager, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { applyProjectScope, assertProjectManager, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 const ClaimSchema = z.object({ next_followup_at: z.string().datetime({ offset: true }) });
 
-/** Хариуцагчгүй лидийг өөртөө авах + эхний холбоог нэг UPDATE-аар товлох. */
+/**
+ * Хариуцагчгүй лидийг өөртөө авах + эхний холбоог нэг UPDATE-аар товлох. Лидийг автоматаар
+ * хуваарилахгүй тул (эзэмшигч 2026-10-15) менежер өөрийн бүртгэлтэй төслийн лидийг энд хариуцаж авна.
+ */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const denied = await requireModuleWrite('leads');
@@ -29,12 +32,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: 'Лид хариуцаж авахын тулд идэвхтэй борлуулалтын менежерийн бүртгэлтэй байна' }, { status: 403 });
         }
         const scope = await resolveSalesProjectScope(db, shop.id);
-        const { data: lead, error: readError } = await applyLeadScope(db.from('leads').select('id, project_id')
+        const { data: lead, error: readError } = await applyProjectScope(db.from('leads').select('id, project_id, sales_manager_name')
             .eq('id', id).eq('shop_id', shop.id).is('deleted_at', null), scope).maybeSingle();
         if (readError) throw readError;
-        if (!lead) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
+        // Хамт олны лидийг нууна (404); өөрийнх эсвэл хаагдсан бол доорх UPDATE 409 буцаана.
+        const owner = String(lead?.sales_manager_name ?? '').trim();
+        if (!lead || (scope.projectIds !== null && owner && owner !== scope.managerName)) {
+            return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
+        }
         await assertProjectManager(db, shop.id, lead.project_id, identity.managerName);
-        const { data, error } = await applyLeadScope(db.from('leads').update({
+        const { data, error } = await applyProjectScope(db.from('leads').update({
             sales_manager_name: identity.managerName,
             next_followup_at: input.data.next_followup_at,
             updated_at: new Date().toISOString(),

@@ -102,16 +102,14 @@ describe('project-bound public and staff lead intake', () => {
         const response = await POST(request({ project_id: foreign, sales_manager_name: 'Өөр менежер' }));
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({ success: true, receipt_id: 'lead-1' });
-        // Илгээсэн менежерийн нэрийг үл хэрэгсэж, төслийн бүртгэлтэй менежерт автоматаар онооно.
-        expect(state.writes).toMatchObject([
-            { shop_id: shop, project_id: garden, sales_manager_name: 'Канон Бат' },
-            { shop_id: shop, lead_id: 'lead-1', type: 'manager', meta: { action: 'auto_assign', to: 'Канон Бат' } },
-        ]);
+        // Илгээсэн менежерийн нэрийг үл хэрэгсэнэ; автоматаар ч хуваарилахгүй — менежер өөрөө хариуцаж авна (2026-10-15).
+        expect(state.writes).toMatchObject([{ shop_id: shop, project_id: garden, sales_manager_name: null }]);
+        expect(state.writes).toHaveLength(1);
         expect(state.rateChecks).toBe(1);
     });
-    it('leaves a public lead unassigned when the project has no linked active manager', async () => {
+    it('leaves a public lead unassigned even when the project has a linked active manager', async () => {
         vi.stubEnv('LEAD_PROJECT_ID', garden);
-        state.rows.sales_managers = [{ shop_id: shop, name: 'Канон Бат', user_id: null, is_active: true }];
+        expect(state.rows.sales_managers).toContainEqual(expect.objectContaining({ name: 'Канон Бат', is_active: true }));
         expect((await POST(request())).status).toBe(200);
         expect(state.writes).toMatchObject([{ project_id: garden, sales_manager_name: null }]);
         expect(state.writes).toHaveLength(1);

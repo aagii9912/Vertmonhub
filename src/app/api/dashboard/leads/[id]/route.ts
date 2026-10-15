@@ -3,7 +3,8 @@ import { getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { loadLeadTimeline } from '@/lib/leads/timeline-load';
 import { logger } from '@/lib/utils/logger';
-import { applyLeadScope, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { applyClaimPoolScope, applyLeadScope, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { ACTIVE_STATUSES } from '@/lib/leads/labels';
 import { updateStaffLead } from '@/lib/services/LeadService';
 import { withRoute } from '@/lib/api/route';
 import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
@@ -20,13 +21,14 @@ export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Лид �
     const db = supabaseAdmin();
     const scope = await resolveSalesProjectScope(db, authShop.id);
 
-    const { data: lead, error } = await applyLeadScope(db
-        .from('leads')
-        .select('*')
-        .eq('id', id)
-        .eq('shop_id', authShop.id)
-        .is('deleted_at', null), scope)
-        .maybeSingle();
+    const read = (pool: boolean) => {
+        const query = db.from('leads').select('*').eq('id', id).eq('shop_id', authShop.id).is('deleted_at', null);
+        return (pool ? applyClaimPoolScope(query, scope).in('status', ACTIVE_STATUSES) : applyLeadScope(query, scope)).maybeSingle();
+    };
+    let { data: lead, error } = await read(false);
+    // Менежер өөрийн төслийн хариуцагчгүй идэвхтэй лидийг хариуцаж авахаас өмнө харна (`claimOnly`).
+    const claimOnly = !error && !lead && scope.projectIds !== null;
+    if (claimOnly) ({ data: lead, error } = await read(true));
     if (error) return NextResponse.json({ error: 'Лид татахад алдаа гарлаа' }, { status: 500 });
     if (!lead) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
 
@@ -88,7 +90,7 @@ export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Лид �
     const activities = history?.activities ? [...history.activities].reverse().slice(0, 100) : [];
 
     if (partial.length) logger.warn('[leads/[id]] partial sub-queries failed', { id, partial });
-    return NextResponse.json({ lead, viewings: viewingsOut, contracts, activities, timeline: history?.timeline ?? null, property, partial });
+    return NextResponse.json({ lead, viewings: viewingsOut, contracts, activities, timeline: history?.timeline ?? null, property, partial, claimOnly });
 });
 
 /**

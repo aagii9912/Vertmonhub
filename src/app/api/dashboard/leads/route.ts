@@ -11,7 +11,7 @@ import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { insertLeadOnce, resolveLeadIdentity, resolveStaffLead } from '@/lib/services/LeadService';
 import { phoneIlikePattern } from '@/lib/utils/phone';
 import { withRoute } from '@/lib/api/route';
-import { applyLeadScope, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { applyClaimPoolScope, applyLeadScope, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 /** Хугацааны шүүлтүүр — гүйдэг цонх (өнөөдрөөс хойш N хоног). */
 const PERIOD_DAYS: Record<string, number> = {
@@ -27,6 +27,7 @@ const PERIOD_DAYS: Record<string, number> = {
  * phone — утасны давхардал шалгах (форматаас үл хамааран: «9911 2233» / «99112233» / «9911-2233»).
  * q — нэр, утас, и-мэйлээр хайлт; «нэргүй»/«нэргүй харилцагч» бол нэргүй лидүүдийг нэмж буцаана.
  * view — хадгалсан харагдац: all | mine (миний лид) | new | meetings (уулзалт товлосон) | active (хаагдаагүй).
+ * queue — ажлын жагсаалт; `unassigned` менежерт өөрийн төслүүдийн хариуцагчгүй лидийг (`claimOnly`) харуулна.
  * sort — created_at (анхдагч) | last_contact_at | customer_name | next_followup_at; dir — asc | desc.
  * Soft-delete хийгдсэн лийдийг (deleted_at) хасна.
  * manager — хариуцагч менежерээр шүүнэ (sales_manager_name, contracts API-ийн жишиг).
@@ -54,7 +55,11 @@ export const GET = withRoute({ module: 'leads', error: 'Лийд татахад 
     const projectId = requestedProject === 'all' ? null : requestedProject;
     if (projectId && !z.string().uuid().safeParse(projectId).success) return NextResponse.json({ error: 'Буруу төсөл' }, { status: 400 });
     if (projectId && !canAccessProject(scope, projectId)) return NextResponse.json({ error: 'Энэ төслийн лид харах эрхгүй' }, { status: 403 });
-    let query = applyLeadScope(db
+    const queue = searchParams.get('queue');
+    if (queue && !isLeadWorkQueue(queue)) return NextResponse.json({ error: 'Буруу ажлын жагсаалт' }, { status: 400 });
+    // «Хариуцагчгүй» жагсаалт менежерт өөрийн төслүүдийн хариуцаж авах лидийг харуулна (claim pool, `claimOnly`).
+    const pool = queue === 'unassigned' && scope.projectIds !== null;
+    let query = (pool ? applyClaimPoolScope : applyLeadScope)(db
         .from('leads')
         .select('*', { count: 'exact' })
         .eq('shop_id', authShop.id)
@@ -63,9 +68,6 @@ export const GET = withRoute({ module: 'leads', error: 'Лийд татахад 
         .order('created_at', { ascending: false })
         .range(pagination.from, pagination.to), scope);
     if (projectId) query = query.eq('project_id', projectId);
-
-    const queue = searchParams.get('queue');
-    if (queue && !isLeadWorkQueue(queue)) return NextResponse.json({ error: 'Буруу ажлын жагсаалт' }, { status: 400 });
     if (isLeadWorkQueue(queue)) query = query.or(workQueueFilter(queue));
 
     // Хадгалсан харагдац
@@ -130,7 +132,9 @@ export const GET = withRoute({ module: 'leads', error: 'Лийд татахад 
         return NextResponse.json({ error: 'Лийд татахад алдаа гарлаа' }, { status: 500 });
     }
 
-    return NextResponse.json({ leads: data || [], pagination: buildPageMeta(count ?? 0, pagination) });
+    // `claimOnly`: менежер зөвхөн хариуцаж авна; засвар, бусад үйлдэл claim-ийн дараа нээгдэнэ.
+    const leads = pool ? (data || []).map(lead => ({ ...lead, claimOnly: true })) : data || [];
+    return NextResponse.json({ leads, pagination: buildPageMeta(count ?? 0, pagination) });
 });
 
 const VALID_STATUSES = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'] as const;

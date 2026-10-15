@@ -58,11 +58,13 @@ export function LeadPanel({
     const [nameDraft, setNameDraft] = useState<string | null>(null);
 
     const lead = data?.lead;
+    // Хариуцагчгүй сангийн лид: менежер эхлээд хариуцаж авна, бусад засвар дараа нь нээгдэнэ.
+    const canEdit = canWrite && !data?.claimOnly;
     const { data: managers = [] } = useManagers(lead?.project_id ?? null);
     const { data: projects = [] } = useLeadProjects();
     const { data: categories = [] } = useLeadCategories();
     // Shop = төсөл: ганц төсөлтэй бол зөвхөн төсөлгүй хуучин лидэд төсөл оноох сонголт гарна.
-    const canEditProject = canWrite && (user?.role === 'admin' || user?.role === 'super_admin')
+    const canEditProject = canEdit && (user?.role === 'admin' || user?.role === 'super_admin')
         && (projects.length > 1 || !lead?.project_id);
     useRegisterAiContext(lead ? { type: 'lead', id: lead.id, label: leadDisplayName(lead) } : null);
 
@@ -149,19 +151,19 @@ export function LeadPanel({
                     />
                 ) : (
                     <h2 className={cn('min-w-0 truncate text-[16px] font-semibold', anonymous ? 'text-muted-foreground' : 'text-foreground')}>
-                        {canWrite && !anonymous ? (
+                        {canEdit && !anonymous ? (
                             <button type="button" title="Нэр засах" onClick={() => setNameDraft(leadDisplayName(lead))} className="max-w-full truncate rounded-sm text-left hover:underline focus-ring">
                                 {leadDisplayName(lead)}
                             </button>
                         ) : leadDisplayName(lead)}
                     </h2>
                 )}
-                {canWrite && anonymous && nameDraft === null && (
+                {canEdit && anonymous && nameDraft === null && (
                     <GhostButton onClick={() => setNameDraft('')} className="shrink-0">
                         <UserPen className="h-3.5 w-3.5" /> Нэр нэмэх
                     </GhostButton>
                 )}
-                <StatusPicker value={lead.status} disabled={!canWrite} size="md" onChange={(s, reason) => patch({ status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} />
+                <StatusPicker value={lead.status} disabled={!canEdit} size="md" onChange={(s, reason) => patch({ status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} />
                 {onClose && (
                     <button type="button" onClick={onClose} className="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring" aria-label="Хаах">
                         <X className="h-4 w-4" />
@@ -209,11 +211,11 @@ export function LeadPanel({
                     </>}
                     {(categories.length > 0 || !!lead.category_id) && <>
                         <Label>Ангилал</Label>
-                        <div><CategoryPicker value={lead.category_id ?? null} options={categories} size="md" disabled={!canWrite} onChange={(id) => patch({ category_id: id })} /></div>
+                        <div><CategoryPicker value={lead.category_id ?? null} options={categories} size="md" disabled={!canEdit} onChange={(id) => patch({ category_id: id })} /></div>
                     </>}
                     <Label>Сонирхол</Label>
                     <div>
-                        {canWrite ? (
+                        {canEdit ? (
                             <select
                                 aria-label="Сонирхол"
                                 value={interestValue}
@@ -233,7 +235,7 @@ export function LeadPanel({
                     </div>
                     <Label>Төсөв</Label>
                     <div>
-                        {canWrite ? (
+                        {canEdit ? (
                             <input
                                 aria-label="Төсөв (₮)"
                                 value={budgetDraft ?? (lead.budget_max ? String(lead.budget_max) : '')}
@@ -255,7 +257,7 @@ export function LeadPanel({
                         )}
                     </div>
                     <Label>Менежер</Label>
-                    <div><ManagerPicker value={lead.sales_manager_name ?? null} options={managers} disabled={!canWrite || user?.role === 'sales_manager' || !lead.project_id} onChange={(n) => patch({ sales_manager_name: n })} />{!lead.project_id && <p className="mt-1 text-xs text-muted-foreground">Төслийг тодорхойлсны дараа менежер хуваарилна.</p>}</div>
+                    <div><ManagerPicker value={lead.sales_manager_name ?? null} options={managers} disabled={!canEdit || user?.role === 'sales_manager' || !lead.project_id} onChange={(n) => patch({ sales_manager_name: n })} />{!lead.project_id && <p className="mt-1 text-xs text-muted-foreground">Төслийг тодорхойлсны дараа менежер хуваарилна.</p>}</div>
                     <Label>Дараагийн алхам</Label>
                     <div className="text-foreground">{nextStep(lead)}</div>
                     <Label>Сүүлд холбогдсон</Label>
@@ -276,7 +278,7 @@ export function LeadPanel({
                 </div>
 
                 {/* Тэмдэглэл бичих */}
-                {canWrite && (
+                {canEdit && (
                     <div className="border-b border-border px-4 py-3">
                         <div className={cn('rounded-md border bg-surface transition-shadow', note || isCall || isQuote ? 'border-brand shadow-[0_0_0_3px_var(--brand-soft)]' : 'border-border-strong')}>
                             {isQuote && (

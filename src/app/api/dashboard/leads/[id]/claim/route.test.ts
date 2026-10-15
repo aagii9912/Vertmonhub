@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
     denied: null as Response | null, isManager: true,
+    scope: { projectIds: null as string[] | null, managerName: null as string | null },
+    lead: { id: 'lead', project_id: 'project-a', sales_manager_name: null as string | null },
     result: { data: { id: 'lead' } as { id: string } | null, error: null as object | null },
     calls: [] as [string, ...unknown[]][],
 }));
@@ -10,15 +12,16 @@ vi.mock('@/lib/sales/manager-identity', () => ({ resolveManagerIdentity: async (
 vi.mock('@/lib/leads/activities', () => ({ logLeadActivity: async () => ({ id: 'activity' }) }));
 vi.mock('@/lib/sales/project-scope', () => ({
     ProjectScopeError: class extends Error {},
-    resolveSalesProjectScope: async () => ({ projectIds: null, managerName: null }),
-    applyLeadScope: (q: unknown) => q,
+    resolveSalesProjectScope: async () => state.scope,
+    applyProjectScope: (q: { in(column: string, values: string[]): unknown }, scope: { projectIds: string[] | null }) =>
+        scope.projectIds === null ? q : q.in('project_id', scope.projectIds),
     assertProjectManager: async () => {},
 }));
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: () => {
     const q: Record<string, unknown> = {};
     let writing = false;
     for (const method of ['update', 'eq', 'is', 'in', 'or', 'select']) q[method] = (...args: unknown[]) => { if (method === 'update') writing = true; state.calls.push([method, ...args]); return q; };
-    q.maybeSingle = async () => writing ? state.result : { data: { id: 'lead', project_id: 'project-a' }, error: null };
+    q.maybeSingle = async () => writing ? state.result : { data: state.lead, error: null };
     return q;
 } }) }));
 import { POST } from './route';
@@ -26,7 +29,11 @@ const context = { params: Promise.resolve({ id: '00000000-0000-4000-8000-0000000
 function request(date = '2099-01-01T10:00:00+08:00') {
     return new Request('http://localhost/api/dashboard/leads/id/claim', { method: 'POST', body: JSON.stringify({ next_followup_at: date }) });
 }
-beforeEach(() => { state.denied = null; state.isManager = true; state.calls = []; state.result = { data: { id: 'lead' }, error: null }; });
+beforeEach(() => {
+    state.denied = null; state.isManager = true; state.calls = []; state.result = { data: { id: 'lead' }, error: null };
+    state.scope = { projectIds: null, managerName: null };
+    state.lead = { id: 'lead', project_id: 'project-a', sales_manager_name: null };
+});
 describe('claim lead', () => {
     it('checks permission before touching data', async () => {
         state.denied = new Response(null, { status: 403 });
@@ -46,6 +53,19 @@ describe('claim lead', () => {
         expect(state.calls).toContainEqual(['is', 'deleted_at', null]);
         expect(state.calls).toContainEqual(['or', 'sales_manager_name.is.null,sales_manager_name.eq.""']);
         expect(state.calls.find(c => c[0] === 'update')?.[1]).toMatchObject({ sales_manager_name: 'Менежер', next_followup_at: '2099-01-01T10:00:00+08:00' });
+    });
+    it('lets a project-restricted manager claim an unassigned lead in their project (no auto-assignment, 2026-10-15)', async () => {
+        state.scope = { projectIds: ['project-a'], managerName: 'Менежер' };
+        expect((await POST(request(), context)).status).toBe(200);
+        expect(state.calls).toContainEqual(['in', 'project_id', ['project-a']]);
+        expect(state.calls).not.toContainEqual(['eq', 'sales_manager_name', 'Менежер']);
+        expect(state.calls.find(c => c[0] === 'update')?.[1]).toMatchObject({ sales_manager_name: 'Менежер' });
+    });
+    it('hides a colleague\'s lead from a restricted manager without writing', async () => {
+        state.scope = { projectIds: ['project-a'], managerName: 'Менежер' };
+        state.lead.sales_manager_name = 'Өөр менежер';
+        expect((await POST(request(), context)).status).toBe(404);
+        expect(state.calls.some(c => c[0] === 'update')).toBe(false);
     });
     it('reports competing ownership and DB failures instead of success', async () => {
         state.result.data = null;

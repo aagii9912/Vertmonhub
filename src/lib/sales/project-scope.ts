@@ -53,7 +53,9 @@ export function canAccessProject(scope: SalesProjectScope, projectId: string | n
     return scope.projectIds === null || (!!projectId && scope.projectIds.includes(projectId));
 }
 
-type ScopeQuery = { in(column: string, values: string[]): ScopeQuery; eq(column: string, value: string): ScopeQuery };
+type ScopeQuery = {
+    in(column: string, values: string[]): ScopeQuery; eq(column: string, value: string): ScopeQuery; or(filters: string): ScopeQuery;
+};
 
 export function applyProjectScope<T>(
     query: T, scope: SalesProjectScope, column = 'project_id',
@@ -66,6 +68,18 @@ export function applyLeadScope<T>(
 ): T {
     const scoped = applyProjectScope(query, scope, projectColumn);
     return scope.projectIds === null ? scoped : (scoped as ScopeQuery).eq(managerColumn, scope.managerName || '') as T;
+}
+
+/**
+ * Хариуцагчгүй лидийн сан (эзэмшигч 2026-10-15): лидийг автоматаар хуваарилахгүй тул менежер өөрийн
+ * төслүүдийн хариуцагчгүй лидийг харж, хариуцаж авна. Зөвхөн «Хариуцагчгүй» жагсаалт, түүний тоо,
+ * лидийн дэлгэрэнгүй ба claim-д хэрэглэнэ; бусад уншилт, тайлан, засвар `applyLeadScope` хэвээр.
+ */
+export function applyClaimPoolScope<T>(
+    query: T, scope: SalesProjectScope, projectColumn = 'project_id', managerColumn = 'sales_manager_name',
+): T {
+    return (applyProjectScope(query, scope, projectColumn) as ScopeQuery)
+        .or(`${managerColumn}.is.null,${managerColumn}.eq.""`) as T;
 }
 
 export async function assertProjectManager(db: SupabaseClient, shopId: string, projectId: string | null | undefined, managerName: string) {

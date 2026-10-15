@@ -1,4 +1,4 @@
-import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { applyClaimPoolScope, applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -11,7 +11,7 @@ import { awaitingReplyByCustomer, recentInboxMessages } from '@/lib/inbox/conver
  * GET /api/dashboard/nav-counts
  *
  * Sidebar болон гар утасны табын амьд тоонууд — нэг хөнгөн дуудлага:
- *   leads    — шинэ (status = new) лид
+ *   leads    — шинэ (status = new) лид; менежерт өөрийн төслийн хариуцагчгүй шинэ лидийг нэмнэ
  *   meetings — өнөөдрийн товлосон уулзалт
  *   inbox    — ажилтны хариу хүлээж буй яриа (харилцагчийн сүүлийн мессеж нь
  *              харилцагчийнх); Inbox жагсаалттай нэг query, нэг дүрэм
@@ -37,14 +37,18 @@ export async function GET() {
         // «Өнөөдөр» — Улаанбаатарын өдрийн хилээр (сервер UTC)
         const { start: dayStart, end: dayEnd } = ubDayRange();
 
+        // Менежерт өөрийн шинэ лид + хариуцаж авах боломжтой шинэ лид (автомат хуваарилалтгүй, 2026-10-15).
+        const newLeads = (pool: boolean) => (pool ? applyClaimPoolScope : applyLeadScope)(db
+            .from('leads')
+            .select('id', { count: 'exact', head: true })
+            .eq('shop_id', shopId)
+            .eq('status', 'new')
+            .is('deleted_at', null), scope)
+            .then((r) => { if (r.error) throw r.error; return r.count ?? 0; });
+
         const [leads, meetings, inbox] = await Promise.all([
-            canRead('leads') ? applyLeadScope(db
-                .from('leads')
-                .select('id', { count: 'exact', head: true })
-                .eq('shop_id', shopId)
-                .eq('status', 'new')
-                .is('deleted_at', null), scope)
-                .then((r) => (r.error ? undefined : r.count ?? 0)) : undefined,
+            canRead('leads') ? Promise.all([newLeads(false), scope.projectIds === null ? 0 : newLeads(true)])
+                .then(([own, pool]) => own + pool, () => undefined) : undefined,
             canRead('viewings') ? applyLeadScope(db
                 .from('property_viewings')
                 .select(scope.projectIds === null ? 'id' : 'id,leads!inner(project_id,sales_manager_name)', { count: 'exact', head: true })

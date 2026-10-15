@@ -140,12 +140,20 @@ describe('project and personal lead API boundaries', () => {
     it('lists and counts only assigned-to-self leads inside the manager project', async () => {
         const result = await list(request());
         expect((await result.json()).leads.map((lead: { id: string }) => lead.id)).toEqual([ownLead]);
-        expect((await (await summary(request())).json())).toMatchObject({ all: 1, mine: 1, new: 1, canClaim: false });
+        expect((await (await summary(request())).json())).toMatchObject({ all: 1, mine: 1, new: 1, canClaim: true, queues: { unassigned: 1 } });
         expect((await (await list(request('?manager=Хамтрагч'))).json()).leads).toEqual([]);
     });
 
-    it('keeps navigation lead/viewing counts in the same personal scope', async () => {
-        expect(await (await counts()).json()).toMatchObject({ leads: 1, meetings: 1 });
+    it('shows the manager the unassigned leads of their own projects as a claim-only pool (2026-10-15)', async () => {
+        const pool = (await (await list(request('?queue=unassigned'))).json()).leads;
+        expect(pool).toEqual([expect.objectContaining({ id: unassignedLead, claimOnly: true })]);
+        expect((await (await list(request('?queue=uncontacted'))).json()).leads.map((lead: { id: string }) => lead.id)).toEqual([ownLead]);
+        state.rows.sales_manager_projects = [];
+        expect((await (await list(request('?queue=unassigned'))).json()).leads).toEqual([]);
+    });
+
+    it('adds claimable new leads to the manager navigation count; viewings stay personal', async () => {
+        expect(await (await counts()).json()).toMatchObject({ leads: 2, meetings: 1 });
     });
 
     it('keeps the all-project selector within the manager own assigned scope', async () => {
@@ -163,13 +171,43 @@ describe('project and personal lead API boundaries', () => {
     });
 
     it('blocks detail, activity, edit, conversion and claim access to foreign or colleague leads', async () => {
-        for (const id of [otherLead, colleagueLead, unassignedLead]) {
+        for (const id of [otherLead, colleagueLead]) {
             expect((await detail(request(), context(id))).status).toBe(404);
             expect((await activities(request(), context(id))).status).toBe(404);
             expect((await contact(request('', 'POST', { content: 'Хандалт' }), context(id))).status).toBe(404);
             expect((await patch(request('', 'PATCH', { notes: 'Хандалт' }), context(id))).status).toBe(404);
             expect((await convert(request('', 'POST', {}), context(id))).status).toBe(404);
             expect((await claim(request('', 'POST', { next_followup_at: '2099-01-01T00:00:00Z' }), context(id))).status).toBe(404);
+        }
+        expect(state.writes).toEqual([]);
+    });
+
+    it('lets the manager open an unassigned project lead read-only, claim it, then work it', async () => {
+        const preview = await detail(request(), context(unassignedLead));
+        expect(preview.status).toBe(200);
+        expect(await preview.json()).toMatchObject({ lead: { id: unassignedLead }, claimOnly: true });
+        expect((await activities(request(), context(unassignedLead))).status).toBe(404);
+        expect((await contact(request('', 'POST', { content: 'Хандалт' }), context(unassignedLead))).status).toBe(404);
+        expect((await patch(request('', 'PATCH', { notes: 'Хандалт' }), context(unassignedLead))).status).toBe(404);
+        expect((await convert(request('', 'POST', {}), context(unassignedLead))).status).toBe(404);
+        expect(state.writes).toEqual([]);
+
+        expect((await claim(request('', 'POST', { next_followup_at: '2099-01-01T00:00:00Z' }), context(unassignedLead))).status).toBe(200);
+        expect(state.rows.leads.find(lead => lead.id === unassignedLead)).toMatchObject({ sales_manager_name: 'Манда' });
+        expect(await (await detail(request(), context(unassignedLead))).json()).toMatchObject({ claimOnly: false });
+        expect((await patch(request('', 'PATCH', { notes: 'Залгасан' }), context(unassignedLead))).status).toBe(200);
+        // Аль хэдийн авсан лидийг хамтрагч дахин авч чадахгүй.
+        expect((await claim(request('', 'POST', { next_followup_at: '2099-01-01T00:00:00Z' }), context(unassignedLead))).status).toBe(409);
+    });
+
+    it('does not show a closed or project-less unassigned lead in the manager pool', async () => {
+        state.rows.leads.push(
+            { id: 'closed-pool', shop_id: 'shop-1', project_id: mandala, customer_name: 'Хаагдсан', status: 'closed_lost', sales_manager_name: null, deleted_at: null },
+            { id: 'no-project', shop_id: 'shop-1', project_id: null, customer_name: 'Төсөлгүй', status: 'new', sales_manager_name: null, deleted_at: null },
+        );
+        for (const id of ['closed-pool', 'no-project']) {
+            expect((await detail(request(), context(id))).status).toBe(404);
+            expect((await claim(request('', 'POST', { next_followup_at: '2099-01-01T00:00:00Z' }), context(id))).status).not.toBe(200);
         }
         expect(state.writes).toEqual([]);
     });

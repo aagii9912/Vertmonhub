@@ -6,8 +6,9 @@
  * `anonymous: true`-г илт сонгоно, утас эсвэл и-мэйл заавал. Гадны суваг нэрийг
  * `normalizeLeadName`-ээр л цэвэрлэнэ.
  * Бүх суваг (ажилтан, Elysium, Facebook Lead Ads, нийтийн форм) `insertLeadOnce`-оор
- * бичиж, `client_request_id` давтагдвал аль хэдийн хадгалсан лидийг буцаана. Менежергүй шинэ лидийг
- * төслийн менежерт автоматаар хуваарилна (`lib/sales/auto-assign.ts`).
+ * бичиж, `client_request_id` давтагдвал аль хэдийн хадгалсан лидийг буцаана. Менежергүй ирсэн лидийг
+ * автоматаар хуваарилахгүй: төслийн менежерүүд «Хариуцагчгүй» жагсаалтаас өөрсдөө хариуцаж авна
+ * (эзэмшигч 2026-10-15, `/api/dashboard/leads/[id]/claim`), эсвэл админ онооно.
  * `sales_handoff_at`-ийг DB trigger тавина; энд тавихгүй.
  */
 
@@ -23,9 +24,7 @@ import { resolveActiveManagerName, resolveManagerIdentity } from '@/lib/sales/ma
 import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { leadCategoryName, logLeadCategoryChange, resolveLeadCategory, type LeadCategoryInput } from '@/lib/services/LeadCategoryService';
-import { pickAutoAssignManager } from '@/lib/sales/auto-assign';
 import { logLeadActivity } from '@/lib/leads/activities';
-import { logger } from '@/lib/utils/logger';
 import type { LeadSource, LeadStatus } from '@/types/property';
 
 export interface StaffLeadActor {
@@ -149,7 +148,7 @@ export async function resolveStaffLead(
 type LeadRow = Record<string, unknown> & { shop_id: string; project_id?: string | null; client_request_id?: string | null };
 
 export type InsertLeadResult =
-    | { ok: true; lead: Record<string, unknown>; duplicate: boolean; /** Автоматаар оноосон менежер (шинэ лидэд). */ autoAssigned?: string | null }
+    | { ok: true; lead: Record<string, unknown>; duplicate: boolean }
     | { ok: false; conflict: true }
     | { ok: false; conflict: false; error: PostgrestError };
 
@@ -183,24 +182,8 @@ export async function insertLeadOnce(
         const replayed = replay(prior.data);
         if (replayed) return replayed;
     }
-    // Хуваарилалт амжилтгүй бол лидийг алдахгүй: хариуцагчгүй хадгалж, админ хуваарилна.
-    const autoManager = row.project_id && !String(row.sales_manager_name ?? '').trim()
-        ? await pickAutoAssignManager(db, row.shop_id, row.project_id).catch(error => {
-            logger.warn('[LeadService] auto-assign skipped', { error });
-            return null;
-        })
-        : null;
-    const { data, error } = await db.from('leads').insert(autoManager ? { ...row, sales_manager_name: autoManager } : row)
-        .select(select).single<Record<string, unknown>>();
-    if (!error && data) {
-        if (autoManager && typeof data.id === 'string') {
-            await logLeadActivity(db, {
-                shopId: row.shop_id, leadId: data.id, type: 'manager',
-                content: `${autoManager} автоматаар хуваарилагдав`, meta: { action: 'auto_assign', to: autoManager },
-            });
-        }
-        return { ok: true, lead: data, duplicate: false, autoAssigned: autoManager };
-    }
+    const { data, error } = await db.from('leads').insert(row).select(select).single<Record<string, unknown>>();
+    if (!error && data) return { ok: true, lead: data, duplicate: false };
     if (error?.code === '23505' && requestId) {
         const raced = await existing();
         return (!raced.error && replay(raced.data)) || { ok: false, conflict: true };

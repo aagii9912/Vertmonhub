@@ -104,6 +104,8 @@ function LeadsWorkspace() {
     const total = data?.pagination.total ?? 0;
     const totalPages = data?.pagination.totalPages ?? 1;
     const projectNames = useMemo(() => Object.fromEntries(projects.map(p => [p.id, p.name])), [projects]);
+    // Менежерийн «Хариуцагчгүй» сангийн лидийг эхлээд хариуцаж авна: бөөнөөр болон мөрөн дээр засахгүй.
+    const selectable = useMemo(() => leads.filter(l => !l.claimOnly), [leads]);
     const selectedLeads = leads.filter(l => checked.has(l.id));
     const bulkManagers = managers.filter(m => selectedLeads.length === checked.size && selectedLeads.every(l => !!l.project_id && m.project_ids?.includes(l.project_id)));
     const filterManagers = project === 'all' ? managers : managers.filter(m => m.project_ids?.includes(project));
@@ -247,7 +249,7 @@ function LeadsWorkspace() {
                             <table className="w-full text-[13px]">
                                 <thead>
                                     <tr className="h-11 border-b border-border bg-surface-2/60 text-xs font-medium tracking-[0.03em] text-muted-foreground">
-                                        <th className="w-9 px-2"><CheckBox label="Бүгдийг сонгох" checked={leads.length > 0 && leads.every((l) => checked.has(l.id))} onChange={(v) => setChecked(v ? new Set(leads.map((l) => l.id)) : new Set())} /></th>
+                                        <th className="w-9 px-2"><CheckBox label="Бүгдийг сонгох" checked={selectable.length > 0 && selectable.every((l) => checked.has(l.id))} onChange={(v) => setChecked(v ? new Set(selectable.map((l) => l.id)) : new Set())} /></th>
                                         <Th onClick={() => toggleSort('customer_name')} active={sort === 'customer_name'} dir={dir}>Нэр</Th>
                                         <th className="px-2 text-left font-medium">Утас</th>
                                         <th className="px-2 text-left font-medium">Статус</th>
@@ -289,12 +291,12 @@ function LeadsWorkspace() {
                                                 className={cn('h-14 cursor-pointer border-b border-border transition-colors last:border-b-0 focus-ring', sel ? 'bg-brand-soft/60 shadow-[inset_2px_0_0_var(--brand)]' : 'hover:bg-surface-2/70', isFetching && 'opacity-90')}
                                             >
                                                 <td className="px-2" onClick={(e) => e.stopPropagation()}>
-                                                    <CheckBox label="Сонгох" checked={checked.has(l.id)} onChange={(v) => setChecked((prev) => { const n = new Set(prev); if (v) n.add(l.id); else n.delete(l.id); return n; })} />
+                                                    {!l.claimOnly && <CheckBox label="Сонгох" checked={checked.has(l.id)} onChange={(v) => setChecked((prev) => { const n = new Set(prev); if (v) n.add(l.id); else n.delete(l.id); return n; })} />}
                                                 </td>
                                                 <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand-strong' : isAnonymousLead(l) ? 'text-muted-foreground' : 'text-foreground')}>{leadDisplayName(l)}</span>{(projects.length > 1 || !l.project_id) && <span className="block max-w-[220px] truncate text-xs text-muted-foreground">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}</td>
                                                 <td className="mono-label px-2 text-fg-2">{l.customer_phone || '—'}</td>
-                                                <td className="px-2"><StatusPicker value={l.status} disabled={!canWrite} onChange={(s, reason) => patchLead(l.id, { status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} /></td>
-                                                {!showSplit && showCategory && <td className="px-2"><CategoryPicker value={l.category_id ?? null} options={categories} disabled={!canWrite} onChange={(id) => patchLead(l.id, { category_id: id })} /></td>}
+                                                <td className="px-2"><StatusPicker value={l.status} disabled={!canWrite || l.claimOnly} onChange={(s, reason) => patchLead(l.id, { status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} /></td>
+                                                {!showSplit && showCategory && <td className="px-2"><CategoryPicker value={l.category_id ?? null} options={categories} disabled={!canWrite || l.claimOnly} onChange={(id) => patchLead(l.id, { category_id: id })} /></td>}
                                                 {!showSplit && <td className="px-2 text-fg-2">{sourceLabel(l.source)}{l.landing_page_name && l.landing_page !== ELYSIUM_SITE_PAGE && <span className="block max-w-[200px] truncate text-xs text-muted-foreground" title={l.landing_page_name}>{l.landing_page_name}</span>}</td>}
                                                 <td className="px-2 text-fg-2">{interestLabel(l)}</td>
                                                 {!showSplit && <td className="px-2"><ManagerPicker value={l.sales_manager_name ?? null} options={managers} projectId={l.project_id ?? null} disabled={!canAssign} onChange={(n) => patchLead(l.id, { sales_manager_name: n })} /></td>}
