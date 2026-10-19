@@ -1,7 +1,21 @@
 'use client';
 
+import type { QueryClient } from '@tanstack/react-query';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
-import type { DailyReport, DailyReportConfig, DailyRosterEntry } from '@/lib/dashboard/daily-report';
+import type { DailyReport, DailyReportChange, DailyReportConfig, DailyReportConflict, DailyRosterEntry } from '@/lib/dashboard/daily-report';
+
+export interface DailyReportViewerInfo {
+    personal: boolean;
+    onboarding: boolean;
+    /** Багийн тэмдэглэл, баталгаажуулалт (тооны эрхийг editable шийднэ). */
+    canEditTeam: boolean;
+    /** Тоог нь засаж болох менежерүүд (баганын нэр): ээлжийн менежерт төслийн бүх идэвхтэй менежер. */
+    editable: string[];
+    /** Төсөлдөө бүртгэлтэй менежерийн өөрийн багана (багийн харагдацад null). */
+    own: string | null;
+    /** Админ: уулзалтыг аль менежерт тооцохыг солих эрх. */
+    canReassign: boolean;
+}
 
 export interface DailyReportResponse {
     date: string;
@@ -13,17 +27,37 @@ export interface DailyReportResponse {
     configInvalid?: boolean;
     /** Багийн харагдацад (загвар засахад) — менежерт хоосон. */
     roster: DailyRosterEntry[];
-    viewer: {
-        personal: boolean;
-        onboarding: boolean;
-        /** Багийн тэмдэглэл, баталгаажуулалт (тооны эрхийг editable шийднэ). */
-        canEditTeam: boolean;
-        /** Тоог нь засаж болох менежерүүд (баганын нэр). */
-        editable: string[];
-    };
+    viewer: DailyReportViewerInfo;
+}
+
+/** PUT /api/dashboard/daily-report-ийн 409: энэ хооронд өөр хүн өөрчилсөн нүд, тэмдэглэл. */
+export interface DailyReportConflictResponse {
+    error: string;
+    conflicts?: DailyReportConflict[];
+}
+
+export interface DailyReportHistoryResponse {
+    date: string;
+    changes: DailyReportChange[];
 }
 
 /** «Өдрийн тайлан» (/api/dashboard/daily-report). Хадгалсны дараа `invalidateQueries({ queryKey: ['daily-report'] })`. */
 export function useDailyReport(date: string) {
     return useDashboardQuery<DailyReportResponse>(['daily-report', date], `/api/dashboard/daily-report?date=${date}`, { keepPreviousData: true, staleTime: 15_000 });
+}
+
+/** Тухайн өдрийн өөрчлөлтийн түүх (нээсэн үед л уншина). Хадгалсны дараа `['daily-report-history']`-г шинэчилнэ. */
+export function useDailyReportHistory(date: string, enabled: boolean) {
+    return useDashboardQuery<DailyReportHistoryResponse>(['daily-report-history', date], `/api/dashboard/daily-report/history?date=${date}`, { enabled });
+}
+
+/** Тайлангаас уулзалт бүртгэсэн/тэмдэглэсний дараа: тайлан, түүх, уулзалт, лид, KPI-г шинэчилнэ. */
+export async function invalidateDailyMeetingQueries(queryClient: QueryClient) {
+    for (const key of ['viewings', 'leads', 'nav-counts', 'my-stats', 'manager-activity', 'sales-kpi', 'director', 'operations-report']) {
+        void queryClient.invalidateQueries({ queryKey: [key] });
+    }
+    await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['daily-report'] }),
+        queryClient.invalidateQueries({ queryKey: ['daily-report-history'] }),
+    ]);
 }

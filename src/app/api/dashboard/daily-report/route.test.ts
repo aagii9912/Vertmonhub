@@ -3,13 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import type { MemoryDb } from '@/test/memory-db';
 
-type Role = 'admin' | 'sales_manager' | 'staff' | 'director';
+type Role = 'admin' | 'sales_manager' | 'staff' | 'director' | 'meetings_admin' | 'super_admin';
 const state = vi.hoisted(() => ({ role: 'admin' as string, userId: 'admin-user', db: null as unknown as MemoryDb }));
 const PERMS: Record<Role, { role: string; modules: string[]; canWrite: boolean }> = {
     admin: { role: 'admin', modules: ['dashboard', 'reports', 'settings'], canWrite: true },
     sales_manager: { role: 'sales_manager', modules: ['dashboard', 'leads', 'viewings'], canWrite: true },
     staff: { role: 'viewer', modules: ['dashboard'], canWrite: true },
     director: { role: 'director', modules: ['dashboard', 'reports'], canWrite: false },
+    meetings_admin: { role: 'admin', modules: ['dashboard', 'reports', 'viewings'], canWrite: true },
+    super_admin: { role: 'super_admin', modules: ['dashboard'], canWrite: false },
 };
 const deny = () => NextResponse.json({ error: 'Энэ хэсэгт хандах эрх танд алга' }, { status: 403 });
 vi.mock('@/lib/auth/require-permission', () => {
@@ -101,7 +103,7 @@ describe('GET /api/dashboard/daily-report', () => {
         expect(response.headers.get('Cache-Control')).toBe('private, no-store');
         const body = await response.json();
         expect(body.configSaved).toBe(false);
-        expect(body.viewer).toEqual({ personal: false, onboarding: false, canEditTeam: true, editable: [KHON, CHAN], own: null });
+        expect(body.viewer).toEqual({ personal: false, onboarding: false, canEditTeam: true, editable: [KHON, CHAN], own: null, canReassign: false });
         expect(body.roster).toEqual([
             { name: CHAN, is_active: true, phone: null },
             { name: KHON, is_active: true, phone: '99112233' },
@@ -137,7 +139,7 @@ describe('GET /api/dashboard/daily-report', () => {
     it('shows a project manager the full team report and lets them edit every active registered colleague', async () => {
         asKhon();
         const body = await (await get('2026-09-30')).json();
-        expect(body.viewer).toEqual({ personal: true, onboarding: false, canEditTeam: true, editable: [KHON, CHAN], own: KHON });
+        expect(body.viewer).toEqual({ personal: true, onboarding: false, canEditTeam: true, editable: [KHON, CHAN], own: KHON, canReassign: false });
         expect(body.roster).toEqual([]);
         expect(body.report.managers.map((manager: { name: string }) => manager.name)).toEqual([KHON, CHAN]);
         expect(body.report.managers.map((manager: { phone: string | null }) => manager.phone)).toEqual(['99112233', null]);
@@ -170,10 +172,27 @@ describe('GET /api/dashboard/daily-report', () => {
         expect((await (await get('2026-09-30')).json()).viewer).toMatchObject({ canEditTeam: false, editable: [] });
     });
 
+    it('offers «Менежер солих» exactly when POST /meetings would accept a reassign', async () => {
+        const canReassign = async () => (await (await get('2026-09-30')).json()).viewer.canReassign;
+        // admin, уулзалтын бичих эрхтэй.
+        state.role = 'meetings_admin';
+        expect(await canReassign()).toBe(true);
+        // super_admin модулийн эрхээс үл хамаарна.
+        state.role = 'super_admin';
+        expect(await canReassign()).toBe(true);
+        // admin боловч viewings модульгүй; reports-той director; бүртгэлтэй менежер.
+        state.role = 'admin';
+        expect(await canReassign()).toBe(false);
+        state.role = 'director';
+        expect(await canReassign()).toBe(false);
+        asKhon();
+        expect(await canReassign()).toBe(false);
+    });
+
     it('asks an unlinked sales manager to be registered and refuses users without team reports', async () => {
         state.role = 'sales_manager';
         state.userId = 'loose-user';
-        expect((await (await get('2026-09-30')).json()).viewer).toEqual({ personal: true, onboarding: true, canEditTeam: false, editable: [], own: null });
+        expect((await (await get('2026-09-30')).json()).viewer).toEqual({ personal: true, onboarding: true, canEditTeam: false, editable: [], own: null, canReassign: false });
         state.role = 'staff';
         state.userId = 'admin-user';
         expect((await get('2026-09-30')).status).toBe(403);
