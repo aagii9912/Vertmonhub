@@ -17,7 +17,7 @@ import { LEAD_NAME_OR_ANONYMOUS, leadDisplayName, normalizeLeadName } from '@/li
 import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { shiftDate, ubDateStart } from '@/lib/sales/activity';
 import { assertProjectManager, ProjectScopeError } from '@/lib/sales/project-scope';
-import { findProjectLeadsByPhone, isUnassignedLead, type ProjectPhoneLead } from '@/lib/services/ViewingService';
+import { classifyPhoneLeads, findProjectLeadsByPhone, loadProjectManagerNames, type ProjectPhoneLead } from '@/lib/services/ViewingService';
 
 export interface DailyMeetingActor {
     userId: string;
@@ -39,6 +39,8 @@ const INVALID = ['22023', '22P02', '22007', '22008'];
 function rpcFailure(error: { code?: string } | null, messages: { notFound: string; invalid: string }) {
     const code = error?.code || '';
     if (code === 'P0002') return fail(404, messages.notFound);
+    // Хайлтын дараа ижил утастай лид үүссэн (зэрэгцээ бүртгэл).
+    if (code === '23505') return fail(409, 'Энэ утастай лид дөнгөж бүртгэгдлээ. Хуудсаа шинэчлээд дахин оролдоно уу.');
     if (INVALID.includes(code)) return fail(400, messages.invalid);
     if (MISSING.includes(code)) return fail(503, DAILY_MEETING_UNAVAILABLE);
     return fail(503, 'Уулзалт хадгалагдсангүй. Дахин оролдоно уу.');
@@ -60,7 +62,8 @@ export async function recordDailyMeeting(
 
     const scheduledAt = dailyMeetingScheduledAt(input.date, input.time, now);
     if (!scheduledAt) return fail(400, 'Уулзалтын цаг буруу байна');
-    if (Date.parse(scheduledAt) > now.getTime()) return fail(400, 'Ирээдүйн цагийн уулзалтыг бүртгэхгүй. Цагаа шалгана уу.');
+    // RPC-тэй ижил 5 минутын зай (хөтчийн цаг бага зэрэг түрүүлж болно).
+    if (Date.parse(scheduledAt) > now.getTime() + 5 * 60_000) return fail(400, 'Ирээдүйн цагийн уулзалтыг бүртгэхгүй. Цагаа шалгана уу.');
     const phone = dailyMeetingPhone(input.customer_phone);
     if (!phone) return fail(400, 'Утасны дугаараа бүтнээр оруулна уу');
 
@@ -71,16 +74,21 @@ export async function recordDailyMeeting(
     }
 
     let matches: ProjectPhoneLead[] | null;
-    try { matches = await findProjectLeadsByPhone(db, shopId, projectId, phone); }
-    catch { return fail(503, 'Лид хайхад алдаа гарлаа'); }
+    let activeManagers: Set<string>;
+    try {
+        [matches, activeManagers] = await Promise.all([
+            findProjectLeadsByPhone(db, shopId, projectId, phone), loadProjectManagerNames(db, shopId, projectId),
+        ]);
+    } catch { return fail(503, 'Лид хайхад алдаа гарлаа'); }
     if (matches === null) return fail(409, 'Олон лид таарлаа. Лидээ шалгана уу.');
-    const colleague = matches.find(row => !isUnassignedLead(row) && row.sales_manager_name !== input.manager);
-    if (colleague) return fail(409, `Энэ утастай харилцагч ${formalManagerName(colleague.sales_manager_name!.trim())}-ийн лид. Уулзалтыг тухайн менежерийн нэр дээр бүртгэнэ үү.`);
-    if (matches.some(isUnassignedLead)) {
-        return fail(409, `Энэ утастай лид хариуцагчгүй байна. ${formalManagerName(input.manager)} «Хариуцагчгүй» жагсаалтаас хариуцаж авсны дараа бүртгэнэ үү.`);
-    }
-    if (matches.length > 1) return fail(409, 'Олон лид таарлаа. Лидээ шалгана уу.');
-    const lead = matches[0] ?? null;
+    // Зорилтот менежерийн ганц лид бол түүнд холбоно (бусдын давхар лид байсан ч буруу нэр рүү заахгүй).
+    const verdict = classifyPhoneLeads(matches, {
+        owner: input.manager, activeManagers,
+        colleagueNext: 'Уулзалтыг тухайн менежерийн нэр дээр бүртгэнэ үү.',
+        claim: `Энэ утастай лид хариуцагчгүй байна. ${formalManagerName(input.manager)} «Хариуцагчгүй» жагсаалтаас хариуцаж авсны дараа бүртгэнэ үү.`,
+    });
+    if (verdict.kind === 'blocked') return fail(409, verdict.error);
+    const lead = verdict.kind === 'own' ? verdict.lead : null;
 
     // Шинэ харилцагчид л нэр (эсвэл «Нэр тодорхойгүй») шаардана; олдсон лидийн нэрийг өөрчлөхгүй.
     const customerName = input.anonymous ? null : normalizeLeadName(input.customer_name);
@@ -104,7 +112,7 @@ export async function recordDailyMeeting(
             customer_feedback: input.feedback,
             interest_level: input.interest_level,
             // Түүхэнд зөвхөн харагдах нэр (утас биш).
-            customer_label: leadDisplayName(lead ?? customerName),
+            customer_label: leadDisplayName(lead ?? customerName).slice(0, 200),
         },
     });
     const row = data as { viewing_id?: string; lead_id?: string | null; lead_created?: boolean } | null;

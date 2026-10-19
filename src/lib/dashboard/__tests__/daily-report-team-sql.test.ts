@@ -409,12 +409,14 @@ it('meetings: record on behalf of a colleague, complete the day\'s scheduled one
             await expect(record(invalid)).rejects.toMatchObject(code('22023'));
         }
         await expect(record({}, { user: adminUser, actor: '', projects: null })).rejects.toMatchObject(code('22023'));
+        // API-ийн хайлтын дараа ижил утастай лид үүссэн бол давхар лид үүсгэхгүй.
+        await expect(record()).rejects.toMatchObject(code('23505'));
         expect(await snapshot()).toEqual(before);
         // Түүх бичигдэхгүй бол лид, уулзалт ч үлдэхгүй (нэг гүйлгээ).
         await db.exec('RESET ROLE');
         await db.exec('ALTER TABLE public.daily_report_changes ADD CONSTRAINT fail_history CHECK (false) NOT VALID');
         await db.exec('SET ROLE service_role');
-        await expect(record()).rejects.toMatchObject(code('23514'));
+        await expect(record({ customer_phone: '95550001' })).rejects.toMatchObject(code('23514'));
         expect(await snapshot()).toEqual(before);
         await db.exec('RESET ROLE');
         await db.exec('ALTER TABLE public.daily_report_changes DROP CONSTRAINT fail_history');
@@ -452,6 +454,7 @@ it('meetings: record on behalf of a colleague, complete the day\'s scheduled one
         const noLead = await viewing({ leadId: null, at: at(day, '16:00'), manager: '' });
         const outside = await viewing({ leadId: await lead({ owner: null, project: null }), at: at(day, '17:00') });
         const inWindow = await viewing({ leadId: await lead({ owner: 'Бат' }), at: at(day, '12:00') });
+        const claimPool = await viewing({ leadId: await lead({ owner: null }), at: at(day, '12:30'), manager: '' });
         before = await snapshot();
         await expect(complete(otherDay, 'completed')).rejects.toMatchObject(code('P0002'));
         await expect(complete(upcoming, 'completed', {}, {}, later, window(later, later))).rejects.toMatchObject(code('22023'));
@@ -459,6 +462,8 @@ it('meetings: record on behalf of a colleague, complete the day\'s scheduled one
         await expect(complete(upcoming, 'completed', {}, {}, later, window(later, laterEnd))).rejects.toMatchObject(code('P0002'));
         await expect(complete(noLead, 'completed')).rejects.toMatchObject(code('P0002'));
         await expect(complete(outside, 'completed')).rejects.toMatchObject(code('P0002'));
+        // Хариуцагчгүй лид хариуцаж авах хүртэл менежерт зөвхөн уншигдана.
+        await expect(complete(claimPool, 'completed')).rejects.toMatchObject(code('P0002'));
         for (const actor of [{ user: strangerUser }, { actor: 'Бат' }, { projects: [foreignProject] }, { projects: [] }]) {
             await expect(complete(inWindow, 'completed', {}, actor)).rejects.toMatchObject(code('P0002'));
         }

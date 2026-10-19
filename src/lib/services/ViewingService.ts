@@ -6,7 +6,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logLeadActivity } from '@/lib/leads/activities';
-import { ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS, normalizeLeadName } from '@/lib/leads/labels';
+import { ACTIVE_STATUSES, ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS, normalizeLeadName } from '@/lib/leads/labels';
 import { z } from 'zod';
 import { ubDayRange } from '@/lib/utils/date';
 import { normalizePhone } from '@/lib/utils/phone';
@@ -59,7 +59,7 @@ export const CreateViewingSchema = z.object({
 
 const PHONE_LEAD_NOT_FOUND = 'Энэ утсаар лид олдсонгүй. Шинэ харилцагчийн нэрийг оруулах эсвэл «Нэр тодорхойгүй»-г сонгоно уу.';
 
-export interface ProjectPhoneLead { id: string; customer_name: string | null; sales_manager_name: string | null }
+export interface ProjectPhoneLead { id: string; customer_name: string | null; sales_manager_name: string | null; status: string | null }
 
 /**
  * Төслийн хэмжээнд (менежерийн хамрахаас үл хамааран) ижил утастай лидүүд — давхар лид үүсгэхээс
@@ -69,17 +69,57 @@ export interface ProjectPhoneLead { id: string; customer_name: string | null; sa
 export async function findProjectLeadsByPhone(db: SupabaseClient, shopId: string, projectId: string, phone: string): Promise<ProjectPhoneLead[] | null> {
     const digits = normalizePhone(phone);
     if (!digits) return [];
-    const { data, error } = await db.from('leads').select('id, customer_name, customer_phone, sales_manager_name')
+    const { data, error } = await db.from('leads').select('id, customer_name, customer_phone, sales_manager_name, status')
         .eq('shop_id', shopId).eq('project_id', projectId).is('deleted_at', null)
         .ilike('customer_phone', `%${digits.split('').join('%')}%`).limit(51);
     if (error) throw new Error(error.message);
     if ((data?.length ?? 0) > 50) return null;
     return (data ?? []).filter(row => normalizePhone(row.customer_phone) === digits)
-        .map(row => ({ id: row.id as string, customer_name: row.customer_name ?? null, sales_manager_name: row.sales_manager_name ?? null }));
+        .map(row => ({ id: row.id as string, customer_name: row.customer_name ?? null, sales_manager_name: row.sales_manager_name ?? null, status: row.status ?? null }));
 }
 
 /** Хариуцагчгүй лид (claim pool-ийн дүрэм: null эсвэл хоосон). */
 export const isUnassignedLead = (lead: Pick<ProjectPhoneLead, 'sales_manager_name'>) => !lead.sales_manager_name?.trim();
+
+/** Төслийн идэвхтэй, бүртгэлтэй менежерүүд — утасны давхцлын мессежийг хэрэгжих алхамтай болгоно. */
+export async function loadProjectManagerNames(db: SupabaseClient, shopId: string, projectId: string): Promise<Set<string>> {
+    const [managers, links] = await Promise.all([
+        db.from('sales_managers').select('name').eq('shop_id', shopId).eq('is_active', true),
+        db.from('sales_manager_projects').select('manager_name').eq('shop_id', shopId).eq('project_id', projectId),
+    ]);
+    if (managers.error || links.error) throw new Error(managers.error?.message || links.error?.message);
+    const registered = new Set((links.data ?? []).map(row => row.manager_name as string));
+    return new Set((managers.data ?? []).map(row => row.name as string).filter(name => !!name && registered.has(name)));
+}
+
+export type PhoneLeadVerdict = { kind: 'none' } | { kind: 'own'; lead: ProjectPhoneLead } | { kind: 'blocked'; error: string };
+
+/**
+ * Төслийн хэмжээнд олдсон ижил утастай лидийг ангилна: давхар лид үүсгэхгүй, уулзалт буруу нэр дээр
+ * орохгүй. `owner`-ийн ганц лид бол түүнийг (бусдын давхар лид байсан ч); идэвхтэй хамт олных бол
+ * `colleagueNext`; бүртгэлгүй/идэвхгүй нэр, олон менежер бол админд; хариуцагчгүй идэвхтэй лид бол `claim`;
+ * хариуцагчгүй хаагдсан лид бол админд.
+ */
+export function classifyPhoneLeads(matches: readonly ProjectPhoneLead[], options: {
+    owner: string | null;
+    activeManagers: ReadonlySet<string>;
+    colleagueNext: string;
+    claim: string;
+}): PhoneLeadVerdict {
+    const ownerOf = (row: ProjectPhoneLead) => row.sales_manager_name?.trim() || '';
+    const own = options.owner ? matches.filter(row => ownerOf(row) === options.owner) : [];
+    if (own.length === 1) return { kind: 'own', lead: own[0] };
+    if (own.length > 1) return { kind: 'blocked', error: 'Олон лид таарлаа. Лидээ шалгана уу.' };
+    const owners = [...new Set(matches.map(ownerOf).filter(Boolean))];
+    const active = owners.filter(name => options.activeManagers.has(name));
+    if (active.length === 1) return { kind: 'blocked', error: `Энэ утастай харилцагч ${formalManagerName(active[0])}-ийн лид. ${options.colleagueNext}` };
+    if (active.length > 1) return { kind: 'blocked', error: `Энэ утастай лид олон менежерт бүртгэлтэй (${active.map(formalManagerName).join(', ')}). Админаар давхар лидийг нэгтгүүлнэ үү.` };
+    if (owners.length) return { kind: 'blocked', error: `Энэ утастай лид бүртгэлгүй эсвэл идэвхгүй менежер (${owners.map(formalManagerName).join(', ')})-ийн нэр дээр байна. Админаар лидийг зөв менежерт шилжүүлнэ үү.` };
+    const unassigned = matches.filter(row => !ownerOf(row));
+    if (unassigned.some(row => (ACTIVE_STATUSES as string[]).includes(row.status ?? ''))) return { kind: 'blocked', error: options.claim };
+    if (unassigned.length) return { kind: 'blocked', error: 'Энэ утастай хаагдсан лид хариуцагчгүй байна. Админд хандаж менежер оноолгоно уу.' };
+    return { kind: 'none' };
+}
 
 /** Баталгаажуулах мэдээллийг зөвхөн уншина; preview хэзээ ч лид/уулзалт үүсгэхгүй. */
 export async function resolveViewingInput(db: SupabaseClient, shopId: string, input: unknown, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
@@ -148,16 +188,23 @@ export async function resolveViewingInput(db: SupabaseClient, shopId: string, in
     // хариуцагчгүй лидийг давхардуулж, уулзалт өөр нэр дээр орно — төслийн хэмжээнд шалгаж зогсооно.
     if (restricted && !lead && phone && projectId) {
         let owners: ProjectPhoneLead[] | null;
-        try { owners = await findProjectLeadsByPhone(db, shopId, projectId, phone); }
-        catch { return { ok: false as const, error: 'Лид хайхад алдаа гарлаа', status: 500 }; }
+        let activeManagers: Set<string>;
+        try {
+            [owners, activeManagers] = await Promise.all([
+                findProjectLeadsByPhone(db, shopId, projectId, phone), loadProjectManagerNames(db, shopId, projectId),
+            ]);
+        } catch { return { ok: false as const, error: 'Лид хайхад алдаа гарлаа', status: 500 }; }
         if (owners === null) return { ok: false as const, error: 'Олон лид таарлаа. Лидээ сонгоод уулзалт товлоно уу.', status: 409 };
-        const colleague = owners.find(row => !isUnassignedLead(row) && row.sales_manager_name !== scope.managerName);
-        if (colleague) return { ok: false as const, status: 409,
-            error: `Энэ утастай харилцагч ${formalManagerName(colleague.sales_manager_name!.trim())}-ийн лид. Өдрийн тайлангаас тухайн менежерийн нэр дээр уулзалт бүртгэнэ үү.` };
-        if (owners.some(isUnassignedLead)) return { ok: false as const, status: 409,
-            error: 'Энэ утастай лид хариуцагчгүй байна. «Хариуцагчгүй» жагсаалтаас хариуцаж аваад уулзалтаа бүртгэнэ үү.' };
+        // Болсон уулзалтыг өдрийн тайлангаас хамт олны нэр дээр бүртгэнэ; ирээдүйн уулзалтыг эзэн нь товлоно.
+        const held = p.walk_in || (!!p.scheduled_at && Date.parse(p.scheduled_at) <= Date.now());
+        const verdict = classifyPhoneLeads(owners, {
+            owner: scope.managerName, activeManagers,
+            colleagueNext: held ? 'Өдрийн тайлангаас тухайн менежерийн нэр дээр уулзалт бүртгэнэ үү.' : 'Уулзалтыг тухайн менежер эсвэл админ товлоно уу.',
+            claim: 'Энэ утастай лид хариуцагчгүй байна. «Хариуцагчгүй» жагсаалтаас хариуцаж аваад уулзалтаа бүртгэнэ үү.',
+        });
+        if (verdict.kind === 'blocked') return { ok: false as const, error: verdict.error, status: 409 };
         // Өөрийн лид хамрахын хайлтад олдоогүй (уралдаан) — давхар үүсгэхгүй.
-        if (owners.length) return { ok: false as const, error: 'Олон лид таарлаа. Лидээ сонгоод уулзалт товлоно уу.', status: 409 };
+        if (verdict.kind === 'own') return { ok: false as const, error: 'Олон лид таарлаа. Лидээ сонгоод уулзалт товлоно уу.', status: 409 };
     }
     if (nameMissing) return { ok: false as const, error: PHONE_LEAD_NOT_FOUND, status: 400 };
     if (property && property.project_id !== projectId) return { ok: false as const, error: 'Лидийн төслийн байрыг сонгоно уу', status: 400 };

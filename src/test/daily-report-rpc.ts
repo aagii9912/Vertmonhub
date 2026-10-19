@@ -45,6 +45,8 @@ function validate(args: Row) {
     if (userName !== null && userName !== undefined && (typeof userName !== 'string' || userName.length > 120)) throw invalid();
 }
 
+/** Шугам, чатын тэмдэглэлийг SQL шиг зайг нь шахаж харьцуулна. */
+const comparable = (key: string, value: string) => (key === 'general' ? value : value.replace(/\s+/g, ' ').trim());
 const noteText = (notes: Row, key: string): string => {
     if (key === 'chats') return notes.chats ?? '';
     if (key === 'general') return notes.general ?? '';
@@ -72,7 +74,7 @@ export function saveDailyReportRpc(args: Row, db: MemoryDb) {
     }
     for (const note of notes) {
         const current = noteText(currentNotes, note.key);
-        if ('expected' in note && current !== (note.expected ?? '')) conflicts.push({ kind: 'note', key: note.key, current });
+        if ('expected' in note && comparable(note.key, current) !== comparable(note.key, note.expected ?? '')) conflicts.push({ kind: 'note', key: note.key, current });
     }
     if (conflicts.length) return { ok: false, conflicts };
 
@@ -103,7 +105,7 @@ export function saveDailyReportRpc(args: Row, db: MemoryDb) {
     for (const note of notes) {
         const value = String(note.value).trim();
         const current = noteText(nextNotes, note.key);
-        if (value === current) continue;
+        if (comparable(note.key, value) === comparable(note.key, current)) continue;
         if (note.key === 'chats' || note.key === 'general') {
             if (value) nextNotes[note.key] = value; else delete nextNotes[note.key];
         } else {

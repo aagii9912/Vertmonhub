@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ResponseCreateParamsStreaming } from 'openai/resources/responses/responses';
 
-const mocks = vi.hoisted(() => ({ create: vi.fn(), execute: vi.fn() }));
+const mocks = vi.hoisted(() => ({ create: vi.fn(), execute: vi.fn(), managerName: vi.fn() }));
 vi.mock('@supabase/supabase-js', () => ({
     createClient: () => ({
         from: () => {
@@ -11,6 +11,7 @@ vi.mock('@supabase/supabase-js', () => ({
     }),
 }));
 vi.mock('@/lib/ai/data-assistant', () => ({ executeDataTool: mocks.execute }));
+vi.mock('@/lib/ai/data-assistant/functions', () => ({ resolveSalesManagerName: mocks.managerName }));
 vi.mock('@/lib/ai/openai/client', async importOriginal => ({
     ...await importOriginal<object>(),
     openai: () => ({ responses: { create: mocks.create } }),
@@ -33,6 +34,8 @@ const ctx = {
 beforeEach(() => {
     mocks.create.mockReset();
     mocks.execute.mockReset();
+    // Elysium-д бүртгэлийн нэр өөр (төсөл бүрийн бүртгэл).
+    mocks.managerName.mockReset().mockImplementation(async (_user: string, fallback: string, shopId: string) => (shopId === 'shop-elysium' ? 'Батаа.Дорж' : fallback));
 });
 
 describe('in_project', () => {
@@ -45,7 +48,7 @@ describe('in_project', () => {
     it('runs a data tool in the other project with that shop and labels the result', async () => {
         mocks.execute.mockResolvedValue([{ code: 'Б1-52', rooms: 2 }]);
         const result = await buildInProjectTool(ctx)!.run({ project: 'Elysium Residence', tool: 'list_properties', args: { rooms: 2 } });
-        expect(mocks.execute).toHaveBeenCalledWith('list_properties', { rooms: 2 }, 'shop-elysium', ctx.perms, 'user-1', false, 'Батаа');
+        expect(mocks.execute).toHaveBeenCalledWith('list_properties', { rooms: 2 }, 'shop-elysium', ctx.perms, 'user-1', false, 'Батаа.Дорж');
         expect(result).toEqual({ project: 'Elysium Residence', items: [{ code: 'Б1-52', rooms: 2 }] });
     });
 
@@ -63,7 +66,7 @@ describe('in_project', () => {
     it('turns writes, including AUTO tools, into a card bound to the other project', async () => {
         mocks.execute.mockResolvedValue({ requiresConfirmation: true, action: { tool: 'log_call', args: { lead_id: 'l1' } }, label: 'Дуудлага бүртгэх', preview: {} });
         const result = await buildInProjectTool(ctx)!.run({ project: 'Elysium Residence', tool: 'log_call', args: { lead_id: 'l1', summary: 'Ярьсан' } });
-        expect(mocks.execute).toHaveBeenCalledWith('log_call', { lead_id: 'l1', summary: 'Ярьсан' }, 'shop-elysium', ctx.perms, 'user-1', false, 'Батаа');
+        expect(mocks.execute).toHaveBeenCalledWith('log_call', { lead_id: 'l1', summary: 'Ярьсан' }, 'shop-elysium', ctx.perms, 'user-1', false, 'Батаа.Дорж');
         expect(result).toMatchObject({ requiresConfirmation: true, shopId: 'shop-elysium', label: 'Elysium Residence: Дуудлага бүртгэх' });
     });
 

@@ -41,7 +41,7 @@ const post = (body: unknown) => POST(new NextRequest('http://localhost/api/dashb
 const record = (extra: Record<string, unknown> = {}) => ({ action: 'record', date: TODAY, manager: CHAN, customer_phone: '9911-2233', customer_name: 'Бат', ...extra });
 const lead = (id: string, manager: string | null, extra: Record<string, unknown> = {}) => ({
     id, shop_id: 'shop-1', project_id: 'project-1', customer_name: `Харилцагч ${id}`, customer_phone: '+976 9911 2233',
-    sales_manager_name: manager, deleted_at: null, ...extra,
+    sales_manager_name: manager, status: 'new', deleted_at: null, ...extra,
 });
 const rpcError = (code: string) => () => { throw Object.assign(new Error('rpc failed'), { code }); };
 const calls = (name: string) => state.db.rpcCalls.filter(call => call.name === name);
@@ -143,7 +143,23 @@ describe('POST /api/dashboard/daily-report/meetings — record', () => {
         response = await post(record());
         expect(response.status).toBe(409);
         expect((await response.json()).error).toBe('Олон лид таарлаа. Лидээ шалгана уу.');
+
+        // Хаагдсан хариуцагчгүй лидийг хариуцаж авах боломжгүй; бүртгэлгүй нэр дээрх лидийг админ засна.
+        state.db.tables.leads = [lead('lead-closed', null, { status: 'closed_lost' })];
+        response = await post(record());
+        expect((await response.json()).error).toBe('Энэ утастай хаагдсан лид хариуцагчгүй байна. Админд хандаж менежер оноолгоно уу.');
+        state.db.tables.leads = [lead('lead-gone', 'Ажлаас.Гарсан')];
+        response = await post(record());
+        expect((await response.json()).error).toBe('Энэ утастай лид бүртгэлгүй эсвэл идэвхгүй менежер (Г. Ажлаас)-ийн нэр дээр байна. Админаар лидийг зөв менежерт шилжүүлнэ үү.');
         expect(state.db.rpcCalls).toEqual([]);
+    });
+
+    it('links the target manager’s own lead even when a colleague holds a duplicate', async () => {
+        state.db.tables.leads = [lead('lead-chan', CHAN), lead('lead-dup', KHON)];
+        state.db.rpcs.record_daily_report_meeting = () => ({ viewing_id: 'viewing-1', lead_id: 'lead-chan', lead_created: false });
+        const response = await post(record());
+        expect(response.status).toBe(201);
+        expect(state.db.rpcCalls[0].args.p_input).toMatchObject({ lead_id: 'lead-chan', customer_name: null });
     });
 
     it('requires the target to be an active manager registered in the project', async () => {

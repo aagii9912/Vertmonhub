@@ -142,6 +142,7 @@ export async function prepareAssistantRequest(req: Request): Promise<{ error: Ne
             history: Array.isArray(history) ? history.slice(-20) : [],
             conversationSummary: summaryRow?.summary || null,
             userName,
+            userEmail: resolvedUser.email,
             attachments: Array.isArray(attachments) ? (attachments as OrchestratorContext['attachments']) : [],
             projects,
         },

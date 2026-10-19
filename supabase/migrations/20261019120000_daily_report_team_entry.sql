@@ -210,7 +210,10 @@ BEGIN
         v_current_text := coalesce(CASE WHEN v_key LIKE 'line.%' THEN
                 CASE WHEN jsonb_typeof(v_notes->'lines') = 'object' THEN v_notes->'lines'->>substr(v_key, 6) END
             ELSE v_notes->>v_key END, '');
-        IF v_current_text IS DISTINCT FROM coalesce(v_note->>'expected', '') THEN
+        -- Шугам, чатын тэмдэглэлийг тайлан зайг нь шахаж харуулдаг тул тэр хэлбэрээр харьцуулна.
+        IF ((CASE WHEN v_key = 'general' THEN v_current_text ELSE btrim(regexp_replace(v_current_text, '\s+', ' ', 'g')) END)
+            IS DISTINCT FROM (CASE WHEN v_key = 'general' THEN coalesce(v_note->>'expected', '')
+                ELSE btrim(regexp_replace(coalesce(v_note->>'expected', ''), '\s+', ' ', 'g')) END)) THEN
             v_conflicts := v_conflicts || jsonb_build_array(jsonb_build_object('kind', 'note',
                 'key', v_key, 'current', v_current_text));
         END IF;
@@ -251,7 +254,8 @@ BEGIN
         v_current_text := coalesce(CASE WHEN v_key LIKE 'line.%' THEN
                 CASE WHEN jsonb_typeof(v_notes->'lines') = 'object' THEN v_notes->'lines'->>substr(v_key, 6) END
             ELSE v_notes->>v_key END, '');
-        CONTINUE WHEN v_text = v_current_text;
+        CONTINUE WHEN v_text = v_current_text OR (v_key <> 'general'
+            AND btrim(regexp_replace(v_text, '\s+', ' ', 'g')) = btrim(regexp_replace(v_current_text, '\s+', ' ', 'g')));
         IF v_key LIKE 'line.%' THEN
             v_line := substr(v_key, 6);
             v_lines := CASE WHEN jsonb_typeof(v_notes->'lines') = 'object' THEN v_notes->'lines' ELSE '{}'::jsonb END;
@@ -327,6 +331,8 @@ DECLARE
     v_lead public.leads%ROWTYPE;
     v_lead_created boolean := false;
     v_viewing_id uuid;
+    -- Өөрийн уулзалт эсэхийг нэрээр биш акаунтаар шийднэ (албан нэр бүртгэлийн нэрээс ялгаатай байж болно).
+    v_self boolean;
 BEGIN
     IF v_restricted AND (p_user_id IS NULL OR p_actor_name IS NULL OR cardinality(p_actor_project_ids) = 0) THEN
         RAISE EXCEPTION 'Уулзалт бүртгэх эрхгүй' USING ERRCODE = 'P0002';
@@ -398,7 +404,7 @@ BEGIN
         IF NOT FOUND THEN RAISE EXCEPTION 'Уулзалт бүртгэх эрхгүй' USING ERRCODE = 'P0002'; END IF;
     END IF;
 
-    PERFORM name FROM public.sales_managers
+    SELECT coalesce(user_id = p_user_id, false) INTO v_self FROM public.sales_managers
     WHERE shop_id = p_shop_id AND name = p_manager_name AND is_active
     FOR SHARE;
     IF NOT FOUND THEN
@@ -419,6 +425,18 @@ BEGIN
         FOR UPDATE;
         IF NOT FOUND THEN RAISE EXCEPTION 'Лид олдсонгүй' USING ERRCODE = 'P0002'; END IF;
     ELSE
+        -- Ижил утастай зэрэгцээ бүртгэлийг дарааллуулж, API-ийн хайлтын дараа үүссэн лидийг давхардуулахгүй
+        -- (normalizePhone-той ижил: зөвхөн цифр, 976 / 00976-г хасна).
+        PERFORM pg_advisory_xact_lock(hashtextextended(p_shop_id::text || ':' || v_project_id::text || ':' || (p_input->>'customer_phone'), 0));
+        IF EXISTS (SELECT 1 FROM (
+                SELECT regexp_replace(coalesce(customer_phone, ''), '\D', '', 'g') AS digits FROM public.leads
+                WHERE shop_id = p_shop_id AND project_id = v_project_id AND deleted_at IS NULL
+            ) AS phones
+            WHERE CASE WHEN char_length(digits) = 11 AND digits LIKE '976%' THEN substr(digits, 4)
+                WHEN char_length(digits) = 13 AND digits LIKE '00976%' THEN substr(digits, 6)
+                ELSE digits END = p_input->>'customer_phone') THEN
+            RAISE EXCEPTION 'Энэ утастай лид бүртгэгдсэн байна' USING ERRCODE = '23505';
+        END IF;
         INSERT INTO public.leads(shop_id, project_id, customer_name, customer_phone, status, source, sales_manager_name, last_contact_at)
         VALUES (p_shop_id, v_project_id, nullif(btrim(p_input->>'customer_name'), ''), p_input->>'customer_phone',
             'contacted', 'meeting', p_manager_name, v_scheduled_at)
@@ -441,7 +459,7 @@ BEGIN
 
     INSERT INTO public.lead_activities(shop_id, lead_id, type, content, meta, created_by, created_by_name)
     VALUES (p_shop_id, v_lead.id, 'meeting',
-        CASE WHEN p_actor_name IS DISTINCT FROM p_manager_name
+        CASE WHEN NOT v_self
             THEN 'Болсон уулзалт бүртгэв (' || p_actor_name || ' — ' || p_manager_name || '-ийн өмнөөс)'
             ELSE 'Ирсэн уулзалт бүртгэв' END,
         jsonb_build_object('viewing_id', v_viewing_id, 'scheduled_at', v_scheduled_at, 'via', 'daily_report',
@@ -485,6 +503,7 @@ DECLARE
     v_interest integer;
     v_feedback text;
     v_content text;
+    v_self boolean;
 BEGIN
     IF v_restricted AND (p_user_id IS NULL OR p_actor_name IS NULL OR cardinality(p_actor_project_ids) = 0) THEN
         RAISE EXCEPTION 'Уулзалт бүртгэх эрхгүй' USING ERRCODE = 'P0002';
@@ -524,7 +543,9 @@ BEGIN
     END IF;
 
     IF v_restricted THEN
+        -- Хариуцагчгүй (claim pool) лид хариуцаж авах хүртэл зөвхөн уншигдана.
         IF v_lead_id IS NULL OR v_lead.project_id IS NULL OR NOT coalesce(v_lead.project_id = ANY(p_actor_project_ids), false)
+            OR nullif(btrim(v_lead.sales_manager_name), '') IS NULL
             OR (SELECT count(*) FROM public.sales_managers WHERE shop_id = p_shop_id AND user_id = p_user_id) <> 1 THEN
             RAISE EXCEPTION 'Уулзалт бүртгэх эрхгүй' USING ERRCODE = 'P0002';
         END IF;
@@ -546,6 +567,8 @@ BEGIN
     FOR UPDATE;
     IF NOT FOUND THEN RAISE EXCEPTION 'Уулзалт олдсонгүй' USING ERRCODE = 'P0002'; END IF;
 
+    v_self := p_user_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.sales_managers
+        WHERE shop_id = p_shop_id AND name = v_viewing.sales_manager_name AND user_id = p_user_id);
     v_interest := v_viewing.interest_level;
     v_feedback := v_viewing.customer_feedback;
     IF p_status = 'completed' THEN
@@ -567,7 +590,7 @@ BEGIN
                 || CASE WHEN v_interest IS NOT NULL THEN ' · сонирхол ' || v_interest || '/5' ELSE '' END
                 || CASE WHEN nullif(v_feedback, '') IS NOT NULL THEN ' · ' || v_feedback ELSE '' END
             ELSE 'Уулзалтад ирээгүй' END
-            || CASE WHEN p_actor_name IS DISTINCT FROM v_viewing.sales_manager_name THEN ' (' || p_actor_name || ' бүртгэв)' ELSE '' END;
+            || CASE WHEN NOT v_self THEN ' (' || p_actor_name || ' бүртгэв)' ELSE '' END;
         INSERT INTO public.lead_activities(shop_id, lead_id, type, content, meta, created_by, created_by_name)
         VALUES (p_shop_id, v_lead_id, 'meeting', v_content,
             jsonb_build_object('viewing_id', p_viewing_id, 'status', p_status, 'scheduled_at', v_viewing.scheduled_at, 'via', 'daily_report'),
