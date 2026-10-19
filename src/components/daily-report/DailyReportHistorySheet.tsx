@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { dashboardMutate } from '@/lib/api/dashboardFetch';
 import { useDailyReportHistory } from '@/hooks/useDailyReport';
-import { formatTime } from '@/lib/utils/date';
+import { changeTime } from '@/components/daily-report/DailyReportDocument';
 import { reportDateLabel, type DailyReportChange } from '@/lib/dashboard/daily-report';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -100,7 +100,7 @@ export function DailyReportHistorySheet({ open, onOpenChange, date }: {
                                 return (
                                     <li key={change.id} className="grid gap-1 px-4 py-3 text-sm">
                                         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                                            <span className="num text-xs text-muted-foreground">{formatTime(change.at)}</span>
+                                            <span className="num text-xs text-muted-foreground">{changeTime(change.at, date)}</span>
                                             <span className="font-medium">{change.by || empty}</span>
                                             {change.restoredFrom !== null && <Badge variant="info">Сэргээсэн</Badge>}
                                         </div>

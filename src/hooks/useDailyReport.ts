@@ -15,6 +15,8 @@ export interface DailyReportViewerInfo {
     own: string | null;
     /** Админ: уулзалтыг аль менежерт тооцохыг солих эрх. */
     canReassign: boolean;
+    /** Уулзалт бүртгэж/шилжүүлж болох менежерүүд (төслийн идэвхтэй, бүртгэлтэй; хуучин хариунд байхгүй байж болно). */
+    meetingManagers?: string[];
 }
 
 export interface DailyReportResponse {

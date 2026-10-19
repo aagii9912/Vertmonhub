@@ -281,9 +281,9 @@ describe('team entry: cell authors and pending meetings', () => {
         }));
         expect(report.meetings.pending).toBe(3);
         expect(report.meetings.pendingItems).toEqual([
-            { id: 'p1', manager: '', short: '—', customer: 'Нэргүй харилцагч', time: '2026-09-30T03:00:00Z', type: 'unclassified' },
-            { id: 'p2', manager: 'Хонгорзул.Мөнхгэрэл', short: 'Хон', customer: 'Болд', time: '2026-09-30T06:00:00Z', type: 'repeat_customer' },
-            { id: 'p3', manager: 'Шинэ.Менежер', short: 'Шин', customer: 'Сараа', time: '2026-09-30T07:00:00Z', type: 'new_customer' },
+            { id: 'p1', manager: '', short: '—', customer: 'Нэргүй харилцагч', time: '2026-09-30T03:00:00Z', type: 'unclassified', assigned: true },
+            { id: 'p2', manager: 'Хонгорзул.Мөнхгэрэл', short: 'Хон', customer: 'Болд', time: '2026-09-30T06:00:00Z', type: 'repeat_customer', assigned: true },
+            { id: 'p3', manager: 'Шинэ.Менежер', short: 'Шин', customer: 'Сараа', time: '2026-09-30T07:00:00Z', type: 'new_customer', assigned: true },
         ]);
         // Товлосон уулзалт багана нэмэхгүй.
         expect(report.managers.map(manager => manager.short)).toEqual(['Ари', 'Чан', 'Хон']);

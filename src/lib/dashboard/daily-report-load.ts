@@ -107,7 +107,10 @@ type MeetingSelect = {
     // PostgREST embed: many-to-one нь объект, supabase-js-ийн төрөлд массив байж болно.
     leads: Embedded<{ customer_name: string | null }>; properties: Embedded<{ name: string | null }>;
 };
-type PendingSelect = { id: string; sales_manager_name: string | null; meeting_type: string | null; scheduled_at: string; leads: Embedded<{ customer_name: string | null }> };
+type PendingSelect = {
+    id: string; sales_manager_name: string | null; meeting_type: string | null; scheduled_at: string;
+    leads: Embedded<{ customer_name: string | null; sales_manager_name?: string | null; deleted_at?: string | null }>;
+};
 type Embedded<T> = T | T[] | null;
 const one = <T,>(value: Embedded<T>): T | null => (Array.isArray(value) ? value[0] ?? null : value);
 
@@ -139,7 +142,7 @@ export async function loadDailyReport(db: SupabaseClient, options: {
             return query.order('scheduled_at').order('id').range(from, to);
         }),
         allRows<PendingSelect>((from, to) => {
-            let query = db.from('property_viewings').select('id, sales_manager_name, meeting_type, scheduled_at, leads(customer_name)')
+            let query = db.from('property_viewings').select('id, sales_manager_name, meeting_type, scheduled_at, leads(customer_name, sales_manager_name, deleted_at)')
                 .eq('shop_id', shopId).is('deleted_at', null).eq('status', 'scheduled').gte('scheduled_at', start).lt('scheduled_at', end);
             if (only) query = query.eq('sales_manager_name', only);
             return query.order('scheduled_at').order('id').range(from, to);
@@ -174,9 +177,14 @@ export async function loadDailyReport(db: SupabaseClient, options: {
         roster,
         counts,
         meetings: meetingRows,
-        pendingMeetings: pending.map(row => ({
-            id: row.id, manager: row.sales_manager_name?.trim() || null, type: row.meeting_type, customer: leadDisplayName(one(row.leads)), scheduled_at: row.scheduled_at,
-        })),
+        pendingMeetings: pending.map(row => {
+            const lead = one(row.leads);
+            return {
+                id: row.id, manager: row.sales_manager_name?.trim() || null, type: row.meeting_type, customer: leadDisplayName(lead), scheduled_at: row.scheduled_at,
+                // complete_daily_report_meeting-ийн менежерийн дүрэм: лидтэй, устгаагүй, хариуцагчтай.
+                assigned: !!lead && !lead.deleted_at && !!lead.sales_manager_name?.trim(),
+            };
+        }),
         // Хувийн горимд багийн тэмдэглэл, баталгаажуулалт харуулахгүй (зөвхөн өөрийн багана).
         notes: only ? {} : readDailyReportNotes(reportRow.data?.notes),
         completed: !only && reportRow.data?.completed_at

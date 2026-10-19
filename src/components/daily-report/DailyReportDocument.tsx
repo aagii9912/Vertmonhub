@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, Check, Plus, UserRoundPen, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { formatTime } from '@/lib/utils/date';
+import { formatTime, ubDateStr } from '@/lib/utils/date';
 import { formatStaffPhone } from '@/lib/admin/staff-profile';
 import { Button } from '@/components/ui/Button';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/Select';
@@ -42,11 +42,19 @@ export interface DailyMeetingActions {
     busy: string | null;
     /** Цаг нь болоогүй товлосон уулзалт (тэмдэглэхгүй). */
     isUpcoming: (meeting: DailyPendingMeeting) => boolean;
+    /** Хариуцагчгүй/лидгүй уулзалтыг тэмдэглэх эрх (байгууллагын хэрэглэгч; менежерт сервер татгалзана). */
+    completeUnassigned: boolean;
 }
 
-/** «Оруулсан: Б. Ариунаа · 10:42» — нүдний tooltip. */
-export function cellAuthorTitle(author: DailyCellAuthor): string {
-    return `Оруулсан: ${author.by || '—'}${author.at ? ` · ${formatTime(author.at)}` : ''}`;
+/** Тайлангийн өдрөөс өөр өдөр бол огноотой: «10:42» эсвэл «10.20 10:42» (УБ). */
+export function changeTime(at: string, reportDate: string): string {
+    const day = ubDateStr(new Date(at));
+    return day === reportDate || !/^\d{4}-\d{2}-\d{2}$/.test(day) ? formatTime(at) : `${day.slice(5).replace('-', '.')} ${formatTime(at)}`;
+}
+
+/** «Оруулсан: Б. Ариунаа · 10:42» — нүдний tooltip (тайлангийн дараа өдөр оруулсан бол огноотой). */
+export function cellAuthorTitle(author: DailyCellAuthor, reportDate: string): string {
+    return `Оруулсан: ${author.by || '—'}${author.at ? ` · ${changeTime(author.at, reportDate)}` : ''}`;
 }
 
 /** Өөр хүн оруулсан нүдний тэмдэг (зөвхөн дэлгэцэд). */
@@ -92,11 +100,11 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
             <div className="space-y-2">
                 <section className={cn('grid gap-4', !forImage && 'lg:grid-cols-2 print:grid-cols-2 print:gap-3')} aria-label="Менежерийн тоон үзүүлэлт">
                     {report.lines.map(line => (
-                        <CountTable key={line.key} title={line.label} caption="Дуудлага" section={line} managers={managers} editing={editing} showPhones={line.key === 'personal'} showAuthors={showAuthors} />
+                        <CountTable key={line.key} title={line.label} caption="Дуудлага" section={line} managers={managers} editing={editing} showPhones={line.key === 'personal'} showAuthors={showAuthors} reportDate={report.date} />
                     ))}
-                    <CountTable title="Уулзалт" caption="Системээс" section={report.meetings} managers={managers} showAuthors={false}
+                    <CountTable title="Уулзалт" caption="Системээс" section={report.meetings} managers={managers} showAuthors={false} reportDate={report.date}
                         footer={forImage ? null : <Link href="/dashboard/viewings" className="inline-flex items-center gap-1 text-brand-strong hover:underline print:hidden">Уулзалт товлох<ArrowUpRight className="size-3.5" /></Link>} />
-                    {report.chats.rows.length > 0 && <CountTable title="Чат" caption="Менежерийн чат" section={report.chats} managers={managers} editing={editing} showAuthors={showAuthors} />}
+                    {report.chats.rows.length > 0 && <CountTable title="Чат" caption="Менежерийн чат" section={report.chats} managers={managers} editing={editing} showAuthors={showAuthors} reportDate={report.date} />}
                 </section>
                 {marked && (
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground print:hidden">
@@ -204,14 +212,17 @@ function PendingMeetings({ items, actions, titleOf }: {
                 {items.map(item => {
                     const time = formatTime(item.time);
                     const upcoming = actions.isUpcoming(item);
-                    const disabled = actions.busy !== null || upcoming;
+                    const locked = !item.assigned && !actions.completeUnassigned;
+                    const disabled = actions.busy !== null || upcoming || locked;
+                    const reason = locked ? 'Хариуцагчгүй эсвэл лидгүй уулзалт — админ менежер оноосны дараа тэмдэглэнэ'
+                        : upcoming ? 'Уулзалтын цаг болоогүй байна' : undefined;
                     return (
                         <li key={item.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-sm">
                             <span className="num w-11 shrink-0 text-muted-foreground">{time}</span>
                             <span className="w-14 shrink-0 truncate text-xs text-fg-2" title={titleOf(item.manager)}>{item.short}</span>
                             <span className="min-w-0 flex-1 truncate">{item.customer}</span>
                             {actions.onComplete && (
-                                <span className="flex shrink-0 gap-1.5" title={upcoming ? 'Уулзалтын цаг болоогүй байна' : undefined}>
+                                <span className="flex shrink-0 gap-1.5" title={reason}>
                                     <Button variant="secondary" size="sm" disabled={disabled} aria-label={`Болсон: ${item.customer} (${time})`}
                                         onClick={() => actions.onComplete!(item, 'completed')}><Check />Болсон</Button>
                                     <Button variant="ghost" size="sm" disabled={disabled} aria-label={`Ирээгүй: ${item.customer} (${time})`}
@@ -245,7 +256,7 @@ function SummaryRow({ label, text, note, edit }: {
     );
 }
 
-function CountTable({ title, caption, section, managers, editing, footer, showPhones = false, showAuthors }: {
+function CountTable({ title, caption, section, managers, editing, footer, showPhones = false, showAuthors, reportDate }: {
     title: string;
     caption: string;
     section: DailyGridSection;
@@ -255,6 +266,7 @@ function CountTable({ title, caption, section, managers, editing, footer, showPh
     showPhones?: boolean;
     /** Өөр хүн оруулсан нүдний тэмдэг (зураг дээр false; хэвлэхэд CSS-ээр нуугдана). */
     showAuthors: boolean;
+    reportDate: string;
 }) {
     const showTotalRow = section.rows.length > 1;
     // Засах үед нийлбэр ноорогтой хамт шинэчлэгдэнэ (хадгалаагүй ч харагдана).
@@ -303,18 +315,20 @@ function CountTable({ title, caption, section, managers, editing, footer, showPh
                                     const saved = row.values[manager.name];
                                     const author = showAuthors ? row.authors?.[manager.name] : undefined;
                                     const other = !!author?.other;
+                                    const authorText = other ? cellAuthorTitle(author!, reportDate) : undefined;
                                     return (
-                                        <td key={manager.name} title={other ? cellAuthorTitle(author!) : undefined}
+                                        <td key={manager.name} title={authorText}
                                             data-author={other ? 'other' : undefined}
                                             className={cn('num relative px-1.5 py-1 text-center', isOwn(manager) && 'bg-brand-soft/40')}>
                                             {editable ? (
                                                 <input type="number" inputMode="numeric" min={0} max={DAILY_COUNT_MAX} step={1}
                                                     aria-label={`${title} · ${row.label} · ${manager.title}`}
                                                     value={editing!.draft[key] ?? (saved === null ? '' : String(saved))}
-                                                    onChange={event => editing!.onCell(manager.name, row.key, event.target.value)}
+                                                    // Танигдахгүй текст («4e») хоосон биш — хадгалахад «Тоо буруу» гэж зогсооно.
+                                                    onChange={event => editing!.onCell(manager.name, row.key, event.currentTarget.validity.badInput ? '?' : event.target.value)}
                                                     className="num h-8 w-14 rounded-md border border-control bg-surface px-1.5 text-center text-[13px] text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" />
                                             ) : saved ?? ''}
-                                            {other && <AuthorDot className="absolute top-1 right-1" />}
+                                            {other && <><AuthorDot className="absolute top-1 right-1" /><span className="sr-only print:hidden">{authorText}</span></>}
                                         </td>
                                     );
                                 })}

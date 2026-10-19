@@ -1405,6 +1405,7 @@ export async function createLead(shopId: string, args: any, confirm: boolean, ac
         projectId: args.project_id, status: args.status, source: args.source,
         // Ангилал зөвхөн тохиргоонд байгаа яг нэрээр (list_lead_categories); зохиосон нэр алдаа буцаана.
         category: args.category !== undefined && args.category !== null ? { name: args.category } : undefined,
+        phone: identity.customer_phone,
     }, actor);
     if (!resolved.ok) return { error: resolved.error };
     if (![args.budget_min, args.budget_max].every((value) => value == null || isAmount(value))) {

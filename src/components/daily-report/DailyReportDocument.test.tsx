@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { buildDailyReport, readDailyReportConfig, type BuildDailyReportInput } from '@/lib/dashboard/daily-report';
-import { DailyReportDocument, type DailyMeetingActions } from './DailyReportDocument';
+import { cellAuthorTitle, changeTime, DailyReportDocument, type DailyMeetingActions } from './DailyReportDocument';
 
 const CHAN = 'Чанцалдулам.Раднаа';
 const KHON = 'Хонгорзул.Мөнхгэрэл';
@@ -22,7 +22,7 @@ const input = (patch: Partial<BuildDailyReportInput> = {}): BuildDailyReportInpu
     notes: {}, completed: null, only: null, ...patch,
 });
 const actions = (patch: Partial<DailyMeetingActions> = {}): DailyMeetingActions => ({
-    onAdd: vi.fn(), onComplete: vi.fn(), reassign: null, busy: null, isUpcoming: meeting => meeting.id === 'p2', ...patch,
+    onAdd: vi.fn(), onComplete: vi.fn(), reassign: null, busy: null, isUpcoming: meeting => meeting.id === 'p2', completeUnassigned: false, ...patch,
 });
 
 afterEach(cleanup);
@@ -94,5 +94,33 @@ describe('DailyReportDocument', () => {
         expect(within(pending).queryByRole('button')).toBeNull();
         rerender(<DailyReportDocument report={report} meetings={actions({ reassign: { managers: report.managers, onChange: vi.fn() } })} />);
         expect(screen.getByRole('combobox', { name: 'Менежер солих — Бат' })).toBeTruthy();
+    });
+
+    it('locks claim-pool meetings for managers but not for organisation users', () => {
+        const report = buildDailyReport(input({ pendingMeetings: [
+            { id: 'p1', manager: null, type: 'new_customer', customer: 'Болд', scheduled_at: '2026-10-19T03:00:00.000Z', assigned: false },
+        ] }));
+        const { rerender } = render(<DailyReportDocument report={report} meetings={actions()} />);
+        const button = () => screen.getByRole('button', { name: 'Болсон: Болд (11:00)' }) as HTMLButtonElement;
+        expect(button().disabled).toBe(true);
+        expect(button().parentElement?.getAttribute('title')).toContain('Хариуцагчгүй');
+        rerender(<DailyReportDocument report={report} meetings={actions({ completeUnassigned: true })} />);
+        expect(button().disabled).toBe(false);
+    });
+
+    it('dates an author or history time that falls on another day than the report', () => {
+        expect(cellAuthorTitle({ by: 'Б. Ариунаа', at: '2026-10-19T02:42:00.000Z', other: true }, '2026-10-19')).toBe('Оруулсан: Б. Ариунаа · 10:42');
+        expect(changeTime('2026-10-20T01:05:00.000Z', '2026-10-19')).toBe('10.20 09:05');
+    });
+
+    it('keeps an unreadable number entry instead of clearing the cell', () => {
+        const onCell = vi.fn();
+        render(<DailyReportDocument report={buildDailyReport(input())} editing={{
+            editable: new Set([CHAN]), own: null, draft: {}, onCell, notes: null, onNotes: vi.fn(),
+        }} />);
+        const chan = screen.getByRole('spinbutton', { name: 'Төслийн утас · Нийт · Р. Чанцалдулам' }) as HTMLInputElement;
+        Object.defineProperty(chan, 'validity', { value: { badInput: true }, configurable: true });
+        fireEvent.change(chan, { target: { value: '' } });
+        expect(onCell).toHaveBeenCalledWith(CHAN, 'call.l1.total', '?');
     });
 });

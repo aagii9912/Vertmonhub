@@ -198,7 +198,7 @@ async function handleLeadPost(request: NextRequest): Promise<NextResponse> {
             const scope = await resolveSalesProjectScope(supabase, shop.id, { userId: staffUserId, role: permissions.role });
             // Shop = төсөл: ажилтны идэвхтэй төсөл эхэлж, дараа нь сайтын тохиргоо.
             const staffProjectId = validation.data.project_id ?? await soleShopProjectId(supabase, shop.id) ?? configuredProjectId(request);
-            const resolved = await resolveStaffLead(supabase, shop.id, { projectId: staffProjectId },
+            const resolved = await resolveStaffLead(supabase, shop.id, { projectId: staffProjectId, phone },
                 { userId: staffUserId, role: permissions.role, scope });
             if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
             projectId = resolved.project_id;

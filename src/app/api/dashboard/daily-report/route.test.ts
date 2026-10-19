@@ -103,7 +103,7 @@ describe('GET /api/dashboard/daily-report', () => {
         expect(response.headers.get('Cache-Control')).toBe('private, no-store');
         const body = await response.json();
         expect(body.configSaved).toBe(false);
-        expect(body.viewer).toEqual({ personal: false, onboarding: false, canEditTeam: true, editable: [KHON, CHAN], own: null, canReassign: false });
+        expect(body.viewer).toEqual({ personal: false, onboarding: false, canEditTeam: true, editable: [KHON, CHAN], own: null, canReassign: false, meetingManagers: [KHON, CHAN] });
         expect(body.roster).toEqual([
             { name: CHAN, is_active: true, phone: null },
             { name: KHON, is_active: true, phone: '99112233' },
@@ -119,8 +119,9 @@ describe('GET /api/dashboard/daily-report', () => {
         expect(report.meetings.groups[0].items).toEqual([{ id: 'v1', manager: 'Чан', managerName: CHAN, text: 'Харилцагч v1 — Б2-58м2 10-30%; үлдэгдэл банк' }]);
         expect(report.meetings.pending).toBe(2);
         expect(report.meetings.pendingItems).toEqual([
-            { id: 'v8', manager: '', short: '—', customer: 'Нэргүй харилцагч', time: '2026-09-30T02:00:00.000Z', type: 'unclassified' },
-            { id: 'v5', manager: KHON, short: 'Хон', customer: 'Харилцагч v5', time: '2026-09-30T09:00:00.000Z', type: 'new_customer' },
+            // Хариуцагчгүй лидийн уулзалтыг менежер тэмдэглэхгүй (assigned=false).
+            { id: 'v8', manager: '', short: '—', customer: 'Нэргүй харилцагч', time: '2026-09-30T02:00:00.000Z', type: 'unclassified', assigned: false },
+            { id: 'v5', manager: KHON, short: 'Хон', customer: 'Харилцагч v5', time: '2026-09-30T09:00:00.000Z', type: 'new_customer', assigned: false },
         ]);
         expect(report.lines[0].note).toBe('Ерөнхий мэдээлэл');
         expect(report.completed).toEqual({ by: 'Р. Чанцалдулам', at: '2026-09-30T11:00:00.000Z' });
@@ -139,7 +140,7 @@ describe('GET /api/dashboard/daily-report', () => {
     it('shows a project manager the full team report and lets them edit every active registered colleague', async () => {
         asKhon();
         const body = await (await get('2026-09-30')).json();
-        expect(body.viewer).toEqual({ personal: true, onboarding: false, canEditTeam: true, editable: [KHON, CHAN], own: KHON, canReassign: false });
+        expect(body.viewer).toEqual({ personal: true, onboarding: false, canEditTeam: true, editable: [KHON, CHAN], own: KHON, canReassign: false, meetingManagers: [KHON, CHAN] });
         expect(body.roster).toEqual([]);
         expect(body.report.managers.map((manager: { name: string }) => manager.name)).toEqual([KHON, CHAN]);
         expect(body.report.managers.map((manager: { phone: string | null }) => manager.phone)).toEqual(['99112233', null]);
@@ -192,7 +193,7 @@ describe('GET /api/dashboard/daily-report', () => {
     it('asks an unlinked sales manager to be registered and refuses users without team reports', async () => {
         state.role = 'sales_manager';
         state.userId = 'loose-user';
-        expect((await (await get('2026-09-30')).json()).viewer).toEqual({ personal: true, onboarding: true, canEditTeam: false, editable: [], own: null, canReassign: false });
+        expect((await (await get('2026-09-30')).json()).viewer).toEqual({ personal: true, onboarding: true, canEditTeam: false, editable: [], own: null, canReassign: false, meetingManagers: [] });
         state.role = 'staff';
         state.userId = 'admin-user';
         expect((await get('2026-09-30')).status).toBe(403);

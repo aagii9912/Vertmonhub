@@ -252,6 +252,8 @@ export interface DailyPendingMeeting {
     /** scheduled_at (ISO). */
     time: string;
     type: MeetingKind;
+    /** Менежер «Болсон»/«Ирээгүй» тэмдэглэж болох эсэх: лидтэй, лид нь хариуцагчтай (claim pool биш). */
+    assigned: boolean;
 }
 export interface DailyMeetingGroup { type: MeetingKind; label: string; heading: string; count: number; items: DailyMeetingItem[] }
 
@@ -279,7 +281,7 @@ export interface BuildDailyReportInput {
     counts: readonly DailyCountRow[];
     meetings: readonly DailyMeetingRow[];
     /** «Товлосон» хэвээр (үр дүн бүртгээгүй) тухайн өдрийн уулзалтууд. */
-    pendingMeetings: readonly Pick<DailyMeetingRow, 'id' | 'manager' | 'type' | 'customer' | 'scheduled_at'>[];
+    pendingMeetings: readonly (Pick<DailyMeetingRow, 'id' | 'manager' | 'type' | 'customer' | 'scheduled_at'> & { assigned?: boolean })[];
     notes: DailyReportNotes;
     completed: { by: string | null; at: string } | null;
     /** Хувийн горим: зөвхөн энэ менежерийн багана. */
@@ -386,7 +388,7 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
             const name = row.manager ?? UNASSIGNED;
             return {
                 id: row.id, manager: name, short: shortOf.get(name) ?? (name ? defaultShortName(name) : '—'),
-                customer: clean(row.customer, 120), time: row.scheduled_at, type: meetingKind(row.type),
+                customer: clean(row.customer, 120), time: row.scheduled_at, type: meetingKind(row.type), assigned: row.assigned ?? true,
             };
         });
 

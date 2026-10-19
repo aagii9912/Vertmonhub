@@ -6,7 +6,7 @@ import { configMetrics, DailyReportDateSchema, SaveDailyReportSchema, UNASSIGNED
 import {
     checkDailyCellAccess, dailyReportActorName, loadDailyEditableManagers, resolveDailyReportRequest,
 } from '@/lib/dashboard/daily-report-access';
-import { DailyReportUnavailableError, loadDailyReport, loadDailyReportConfig, saveDailyReport } from '@/lib/dashboard/daily-report-load';
+import { DailyReportUnavailableError, loadDailyColleagues, loadDailyReport, loadDailyReportConfig, saveDailyReport } from '@/lib/dashboard/daily-report-load';
 
 const NO_STORE = { 'Cache-Control': 'private, no-store' };
 const unavailable = (error: unknown) => error instanceof DailyReportUnavailableError
@@ -21,6 +21,7 @@ const unavailable = (error: unknown) => error instanceof DailyReportUnavailableE
  *   идэвхтэй, бүртгэлтэй бүх менежерийн (`editable`) тоог засна. `viewer.own` = өөрийн багана.
  *   Бүртгэлд холбогдоогүй бол `onboarding`.
  * • Нүд бүр хэн оруулсныг `authors` (нэр, цаг, өөр хүн эсэх) харуулна; акаунтын id гаргахгүй.
+ * • `viewer.meetingManagers` — уулзалт бүртгэж/шилжүүлж болох менежерүүд (төслийн идэвхтэй, бүртгэлтэй).
  * • `viewer.canReassign` — уулзалтын менежерийг солих эрх (meetings route-ийн `reassign`-тэй ижил дүрэм:
  *   admin/super_admin, уулзалтын бичих эрх, хувийн горимгүй, багийн тайлан харах эрхтэй).
  * • Зөвхөн `dashboard` модультай байгууллагын хэрэглэгчид 403.
@@ -39,7 +40,7 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
 
     if (viewer.personal && !viewer.ownManager) {
         return NextResponse.json({ date, today, report: null, config: null, roster: [],
-            viewer: { personal: true, onboarding: true, canEditTeam: false, editable: [], own: null, canReassign: false } }, { headers: NO_STORE });
+            viewer: { personal: true, onboarding: true, canEditTeam: false, editable: [], own: null, canReassign: false, meetingManagers: [] } }, { headers: NO_STORE });
     }
     if (!viewer.canViewTeam) {
         return NextResponse.json({ error: 'Багийн өдрийн тайланг харах эрхгүй' }, { status: 403 });
@@ -55,6 +56,8 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
         const result = await loadDailyReport(db, { shopId: shop.id, shopName: shop.name || 'Төсөл', date, only: null });
         const allowed = writable ? await loadDailyEditableManagers(db, shop.id, viewer, result.roster) : new Set<string>();
         const editable = result.report.managers.map(manager => manager.name).filter(name => name !== UNASSIGNED && allowed.has(name));
+        // Уулзалтын RPC зорилтот менежерийг төслийн идэвхтэй бүртгэлээр шалгадаг — жагсаалт ижил.
+        const meetingManagers = viewer.personal && writable ? [...allowed] : await loadDailyColleagues(db, shop.id);
         return NextResponse.json({
             date, today,
             report: result.report,
@@ -63,7 +66,7 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
             configInvalid: result.configInvalid,
             // Бүртгэлийн жагсаалт зөвхөн загвар засахад; багийн нэрс тайланд өөрт нь бий.
             roster: viewer.personal ? [] : result.roster,
-            viewer: { personal: viewer.personal, onboarding: false, canEditTeam: writable, editable, own: viewer.ownManager, canReassign },
+            viewer: { personal: viewer.personal, onboarding: false, canEditTeam: writable, editable, own: viewer.ownManager, canReassign, meetingManagers },
         }, { headers: NO_STORE });
     } catch (error) {
         const response = unavailable(error);

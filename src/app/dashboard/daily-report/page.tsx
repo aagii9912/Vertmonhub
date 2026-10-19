@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -70,9 +70,9 @@ function mergedNotes(report: DailyReport, patch: Record<string, string>): DailyR
 }
 
 /**
- * Зөвхөн хэрэглэгчийн зассан, хадгалснаас өөр тэмдэглэл + клиентийн харсан хадгалсан текст
- * (`notesExpected`). Засаагүй түлхүүрийг илгээхгүй — энэ хооронд хамт олны өөрчилснийг дарахгүй.
- * `base` — 409-ийн `current` (хадгалсан эх текст): тайланд нэгтгэж харуулсан нь түүнтэй ижил бол түүгээр шалгуулна.
+ * Зөвхөн хэрэглэгчийн зассан тэмдэглэл + засаж эхлэхдээ харсан текст (`notesExpected`, `base`).
+ * Засаагүй түлхүүрийг илгээхгүй; энэ хооронд хамт олон өөрчилсөн бол сервер 409 буцаана
+ * (дахин уншсан тайлангийн утгаар биш — харуулаагүй өөрчлөлтийг дарахгүй).
  */
 function changedNotes(report: DailyReport, patch: Record<string, string>, base: Record<string, string>) {
     const shown = savedNotes(report);
@@ -81,11 +81,10 @@ function changedNotes(report: DailyReport, patch: Record<string, string>, base: 
     let changed = false;
     for (const [key, raw] of Object.entries(patch)) {
         const value = noteText(key, raw);
-        const saved = noteOf(shown, key);
-        if (value === saved) continue;
-        const original = base[key];
+        const seen = base[key] ?? noteOf(shown, key);
+        if (value === noteText(key, seen)) continue;
         setNote(notes, key, value);
-        setNote(notesExpected, key, original !== undefined && noteText(key, original) === saved ? original : saved);
+        setNote(notesExpected, key, seen);
         changed = true;
     }
     return changed ? { notes, notesExpected } : null;
@@ -108,6 +107,8 @@ function DailyReportView() {
     // Зассан тэмдэглэлийн түлхүүрүүд л (бүх тэмдэглэлийн хуулбар биш).
     const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
     const [conflicts, setConflicts] = useState<DailyReportConflict[]>([]);
+    // Засаж эхлэхдээ харсан утга (cellKey/тэмдэглэлийн түлхүүр → утга) — `expected`-ийг үүгээр илгээнэ.
+    const [cellBase, setCellBase] = useState<Record<string, number | null>>({});
     const [noteBase, setNoteBase] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -115,6 +116,8 @@ function DailyReportView() {
     const [meetingOpen, setMeetingOpen] = useState(false);
     const [meetingBusy, setMeetingBusy] = useState<string | null>(null);
     const [imageFormat, setImageFormat] = useState<ImageFormat | null>(null);
+    // Товлосон уулзалтын цаг болмогц «Болсон»/«Ирээгүй» идэвхжинэ (хуудас хөдөлгөөнгүй байсан ч).
+    const [now, setNow] = useState(() => Date.now());
     const imageRef = useRef<HTMLDivElement>(null);
     const query = useDailyReport(date);
     const data = query.data?.date === date ? query.data : undefined;
@@ -130,10 +133,18 @@ function DailyReportView() {
     // Уулзалт: POST /meetings-ийн дүрэм — viewings бичих эрх; бүртгэлтэй менежер өөрийн төсөлд, сүүлийн 7 хоногт.
     const canMeet = !!report && !!viewer && canWrite('viewings') && (!viewer.personal || !!own);
     const meetingWindow = !viewer?.personal || date >= shiftDate(today, -DAILY_MEETING_BACKDATE_DAYS);
-    const activeManagers = report?.managers.filter(manager => manager.inRoster && manager.active) ?? [];
-    const meetingManagers = viewer?.personal ? activeManagers.filter(manager => manager.name === own || editable.has(manager.name)) : activeManagers;
+    // Сервер зорилтот менежерийг төслийн идэвхтэй бүртгэлээр шалгадаг — тэр жагсаалтаар (хуучин хариунд: идэвхтэй багана).
+    const registered = viewer?.meetingManagers ? new Set(viewer.meetingManagers) : null;
+    const meetingManagers = report?.managers.filter(manager => (registered ? registered.has(manager.name) : manager.inRoster && manager.active)) ?? [];
+    const upcomingAt = (meeting: DailyPendingMeeting) => Date.parse(meeting.time) - 5 * 60_000;
+    const nextUnlock = Math.min(...(report?.meetings.pendingItems ?? []).map(upcomingAt).filter(at => at > now));
+    useEffect(() => {
+        if (!Number.isFinite(nextUnlock)) return;
+        const timer = setTimeout(() => setNow(Date.now()), Math.min(nextUnlock - Date.now() + 1000, 2_147_000_000));
+        return () => clearTimeout(timer);
+    }, [nextUnlock]);
 
-    const resetDraft = () => { setDraft({}); setNotesDraft({}); setConflicts([]); setNoteBase({}); };
+    const resetDraft = () => { setDraft({}); setNotesDraft({}); setConflicts([]); setCellBase({}); setNoteBase({}); };
     const goTo = (next: string) => {
         if (dirty) return;
         setDate(next);
@@ -146,20 +157,30 @@ function DailyReportView() {
         if (!report) return;
         const cells: Array<{ manager: string; metric: string; value: number | null; expected: number | null }> = [];
         const rows = [...report.lines.flatMap(line => line.rows), ...report.chats.rows];
-        for (const [key, raw] of Object.entries(draft)) {
+        // Баталгаажуулах/цуцлах нь зөвхөн баталгаажуулалт — ноорогтой хамт явахгүй.
+        const confirming = extra.complete !== undefined;
+        const dropped: string[] = [];
+        if (!confirming) for (const [key, raw] of Object.entries(draft)) {
             const [manager, metric] = key.split('\u0000');
+            const row = rows.find(item => item.key === metric);
+            // Загвараас хасагдсан үзүүлэлт, засах эрхгүй болсон менежер — дахин дахин 409/403 болохоос сэргийлж хасна.
+            if (!row || !editable.has(manager)) { dropped.push(key); continue; }
             const text = raw.trim();
             const value = text === '' ? null : Number(text);
             if (value !== null && (!Number.isInteger(value) || value < 0 || value > DAILY_COUNT_MAX)) {
-                toast.error(`Тоо буруу байна: ${formalManagerName(manager)} — ${text}`);
+                toast.error(`Тоо буруу байна: ${formalManagerName(manager)} — ${text === '?' ? 'зөвхөн тоо оруулна' : text}`);
                 return;
             }
-            // Хадгалсан (харуулсан) утга — энэ хооронд өөр хүн өөрчилсөн бол сервер 409 буцаана.
-            const saved = rows.find(row => row.key === metric)?.values[manager] ?? null;
-            if (saved !== value) cells.push({ manager, metric, value, expected: saved });
+            // Засаж эхлэхдээ харсан утга — энэ хооронд өөр хүн өөрчилсөн бол сервер 409 буцаана.
+            const seen = key in cellBase ? cellBase[key] : row.values[manager] ?? null;
+            if (seen !== value) cells.push({ manager, metric, value, expected: seen });
         }
-        const notes = changedNotes(report, notesDraft, noteBase);
-        if (!cells.length && !notes && extra.complete === undefined) {
+        if (dropped.length) {
+            setDraft(current => Object.fromEntries(Object.entries(current).filter(([key]) => !dropped.includes(key))));
+            toast.warning(`Тайлангийн загвар эсвэл эрх өөрчлөгдсөн тул ${dropped.length} нүдийг ноорогоос хаслаа.`);
+        }
+        const notes = confirming ? null : changedNotes(report, notesDraft, noteBase);
+        if (!cells.length && !notes && !confirming) {
             cancelEdit();
             toast('Өөрчлөлт алга');
             return;
@@ -175,6 +196,10 @@ function DailyReportView() {
                 // Ноорог хэвээр; шинэ утгыг уншиж, өөрчлөгдсөн нүдийг жагсаана.
                 const list = Array.isArray(body?.conflicts) ? body.conflicts : [];
                 setConflicts(list);
+                // Засах горим нээлттэй үлдэнэ (дахин уншсаны дараа автомат дүрэм хаахгүй).
+                setEditOverride(true);
+                // Зөрсөн утгыг хэрэглэгчид харуулсан тул дараагийн хадгалалт түүгээр шалгагдана.
+                setCellBase(current => ({ ...current, ...Object.fromEntries(list.flatMap(item => (item.kind === 'count' ? [[cellKey(item.manager, item.metric), item.current ?? null]] : []))) }));
                 setNoteBase(current => ({ ...current, ...Object.fromEntries(list.flatMap(item => (item.kind === 'note' ? [[item.key, item.current ?? '']] : []))) }));
                 toast.error(body?.error || 'Энэ хооронд өөр хүн өөрчилсөн байна. Хуудсаа шинэчлээд дахин оруулна уу.');
                 await query.refetch();
@@ -218,10 +243,11 @@ function DailyReportView() {
     const meetingActions: DailyMeetingActions | null = report ? {
         onAdd: canMeet && meetingWindow && meetingManagers.length > 0 ? () => setMeetingOpen(true) : null,
         onComplete: canMeet && meetingWindow ? completeMeeting : null,
-        reassign: viewer?.canReassign ? { managers: activeManagers, onChange: reassignMeeting } : null,
+        reassign: viewer?.canReassign ? { managers: meetingManagers, onChange: reassignMeeting } : null,
         busy: meetingBusy,
         // Сервер ирээдүйн (≤ одоо + 5 мин-аас хойш) уулзалтыг тэмдэглэхгүй.
-        isUpcoming: meeting => Date.parse(meeting.time) > Date.now() + 5 * 60_000,
+        isUpcoming: meeting => upcomingAt(meeting) > now,
+        completeUnassigned: !viewer?.personal,
     } : null;
 
     async function copy() {
@@ -246,7 +272,11 @@ function DailyReportView() {
     }
 
     const conflictText = (conflict: DailyReportConflict) => {
-        if (conflict.kind === 'note') return data?.config ? dailyNoteLabel(data.config, conflict.key) : conflict.key;
+        if (conflict.kind === 'note') {
+            const label = data?.config ? dailyNoteLabel(data.config, conflict.key) : conflict.key;
+            const current = noteText(conflict.key, conflict.current ?? '');
+            return `${label}: одоо ${current ? `«${current.length > 80 ? `${current.slice(0, 79)}…` : current}»` : 'хоосон'}`;
+        }
         const label = data?.config ? dailyMetricLabel(data.config, conflict.metric) : conflict.metric;
         return `${label} · ${formalManagerName(conflict.manager)}: одоо ${conflict.current ?? '—'}`;
     };
@@ -341,12 +371,25 @@ function DailyReportView() {
                         editable,
                         own,
                         draft,
-                        onCell: (manager, metric, value) => setDraft(current => ({ ...current, [cellKey(manager, metric)]: value })),
+                        onCell: (manager, metric, value) => {
+                            const key = cellKey(manager, metric);
+                            // Засаж эхэлмэгц горимыг тогтооно; харсан утгыг `expected`-д хадгална.
+                            setEditOverride(current => current ?? true);
+                            if (!(key in cellBase)) {
+                                const seen = [...report.lines.flatMap(line => line.rows), ...report.chats.rows].find(row => row.key === metric)?.values[manager] ?? null;
+                                setCellBase(base => (key in base ? base : { ...base, [key]: seen }));
+                            }
+                            setDraft(current => ({ ...current, [key]: value }));
+                        },
                         notes: viewer?.canEditTeam ? mergedNotes(report, notesDraft) : null,
                         onNotes: next => {
                             const current = mergedNotes(report, notesDraft);
                             const touched = notesEntries(next).filter(([key, value]) => value !== noteOf(current, key));
-                            if (touched.length) setNotesDraft(patch => ({ ...patch, ...Object.fromEntries(touched) }));
+                            if (!touched.length) return;
+                            setEditOverride(mode => mode ?? true);
+                            const shown = savedNotes(report);
+                            setNoteBase(base => ({ ...Object.fromEntries(touched.map(([key]) => [key, noteOf(shown, key)])), ...base }));
+                            setNotesDraft(patch => ({ ...patch, ...Object.fromEntries(touched) }));
                         },
                     } : null} />
                 </article>
