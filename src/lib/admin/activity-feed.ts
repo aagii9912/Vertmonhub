@@ -19,8 +19,8 @@ import { daySpan, shiftDate, ubDateStart } from '@/lib/sales/activity';
 import { ACTIVITY_LABEL, leadDisplayName } from '@/lib/leads/labels';
 import { MEETING_TYPE_META, type MeetingType } from '@/lib/viewings/labels';
 import {
-    CALL_CATEGORY_LABEL, DailyReportDateSchema, formalManagerName, readDailyReportConfig,
-    type CallCategory, type DailyReportConfig,
+    dailyMetricLabel, dailyNoteLabel, DailyReportDateSchema, formalManagerName, readDailyReportConfig,
+    type DailyReportConfig,
 } from '@/lib/dashboard/daily-report';
 
 /** Нэг хариунд харуулах дээд бичлэг (эх сурвалж бүрээс +1 уншиж `truncated`-ийг тодорхойлно). */
@@ -93,32 +93,6 @@ export function resolveFeedRange(input: { from?: string; to?: string }, today = 
 }
 
 /* ------------------------------------------------------------------ */
-/* Өдрийн тайлангийн нэр томьёо                                        */
-/* ------------------------------------------------------------------ */
-
-/** `call.l1.new` → «7786-2222 · Шинэ», `chat.page` → «Чат · Пэйж FB»; загварт байхгүй бол түлхүүр хэвээр. */
-export function historyMetricLabel(config: DailyReportConfig, metric: string): string {
-    const call = /^call\.([a-z0-9]{1,16})\.(total|new|repeat|other)$/.exec(metric);
-    if (call) {
-        const line = config.lines.find(item => item.key === call[1]);
-        if (!line) return metric;
-        return call[2] === 'total' ? line.label : `${line.label} · ${CALL_CATEGORY_LABEL[call[2] as CallCategory]}`;
-    }
-    const chat = /^chat\.([a-z0-9]{1,16})$/.exec(metric);
-    const channel = chat && config.chats.find(item => item.key === chat[1]);
-    return channel ? `Чат · ${channel.label}` : metric;
-}
-
-/** `line.l1` → «Тэмдэглэл · 7786-2222», `chats` → «Тэмдэглэл · Чат», `general` → «Тэмдэглэл · Ерөнхий». */
-export function historyNoteLabel(config: DailyReportConfig, key: string): string {
-    if (key === 'chats') return 'Тэмдэглэл · Чат';
-    if (key === 'general') return 'Тэмдэглэл · Ерөнхий';
-    const match = /^line\.([a-z0-9]{1,16})$/.exec(key);
-    const line = match && config.lines.find(item => item.key === match[1]);
-    return `Тэмдэглэл · ${line ? line.label : key}`;
-}
-
-/* ------------------------------------------------------------------ */
 /* Мөр → бичлэг (pure)                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -178,9 +152,9 @@ export function dailyChangeItem(row: DailyReportChangeRow, config: DailyReportCo
     let summary: string;
     let detail: string | null = null;
     if (row.kind === 'count') {
-        summary = `${historyMetricLabel(config, row.metric ?? '')} · ${managerTitle(row.manager_name)}: ${cell(row.old_value)} → ${cell(row.new_value)}${restored}`;
+        summary = `${dailyMetricLabel(config, row.metric ?? '')} · ${managerTitle(row.manager_name)}: ${cell(row.old_value)} → ${cell(row.new_value)}${restored}`;
     } else if (row.kind === 'note') {
-        summary = `${historyNoteLabel(config, row.note_key ?? '')} засав${restored}`;
+        summary = `${dailyNoteLabel(config, row.note_key ?? '')} засав${restored}`;
         detail = `${quoted(row.old_text)} → ${quoted(row.new_text)}`;
     } else if (row.kind === 'complete') {
         summary = row.new_text ? 'Тайланг баталгаажуулав' : 'Тайлангийн баталгаажуулалтыг цуцлав';

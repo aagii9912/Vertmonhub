@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMemoryDb } from '@/test/memory-db';
 import { readDailyReportConfig } from '@/lib/dashboard/daily-report';
 import {
-    auditItem, buildNameMismatchReport, dailyChangeItem, historyMetricLabel, historyNoteLabel, leadActivityItem,
+    auditItem, buildNameMismatchReport, dailyChangeItem, leadActivityItem,
     loadActivityFeed, loadNameMismatches, mergeFeed, resolveFeedRange,
     type ActivityFeedItem, type DailyReportChangeRow,
 } from '../activity-feed';
@@ -34,19 +34,6 @@ describe('resolveFeedRange', () => {
 });
 
 describe('өдрийн тайлангийн нэр томьёо', () => {
-    it('үзүүлэлт, тэмдэглэлийг загварын нэрээр; загварт байхгүй бол түлхүүрээр', () => {
-        expect(historyMetricLabel(config, 'call.l1.new')).toBe('7786-2222 · Шинэ');
-        expect(historyMetricLabel(config, 'call.l1.repeat')).toBe('7786-2222 · Захиалагч, давтан');
-        expect(historyMetricLabel(config, 'call.personal.total')).toBe('Менежерийн дуудлага');
-        expect(historyMetricLabel(config, 'chat.page')).toBe('Чат · Пэйж FB');
-        expect(historyMetricLabel(config, 'call.old.total')).toBe('call.old.total');
-        expect(historyMetricLabel(config, 'chat.gone')).toBe('chat.gone');
-        expect(historyNoteLabel(config, 'line.l1')).toBe('Тэмдэглэл · 7786-2222');
-        expect(historyNoteLabel(config, 'line.old')).toBe('Тэмдэглэл · line.old');
-        expect(historyNoteLabel(config, 'chats')).toBe('Тэмдэглэл · Чат');
-        expect(historyNoteLabel(config, 'general')).toBe('Тэмдэглэл · Ерөнхий');
-    });
-
     it('нүд, тэмдэглэл, баталгаажуулалт, уулзалтын өөрчлөлтийг хуучин → шинэ гэж бичнэ', () => {
         const count = dailyChangeItem(change({ old_value: 3, new_value: null, restored_from: 7 }), config, names);
         expect(count).toMatchObject({

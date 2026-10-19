@@ -341,7 +341,7 @@ describe('change history', () => {
         expect(dailyNoteLabel(elysium, 'line.l1')).toBe('Тэмдэглэл · 7786-2222');
         expect(dailyNoteLabel(elysium, 'chats')).toBe('Тэмдэглэл · Чат');
         expect(dailyNoteLabel(elysium, 'general')).toBe('Тэмдэглэл · Ерөнхий');
-        expect(dailyNoteLabel(elysium, 'line.l9')).toBe('line.l9');
+        expect(dailyNoteLabel(elysium, 'line.l9')).toBe('Тэмдэглэл · line.l9');
     });
 
     const CHAN = 'Чанцалдулам.Раднаа';

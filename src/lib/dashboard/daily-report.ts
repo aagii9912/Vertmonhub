@@ -586,7 +586,7 @@ export function dailyNoteLabel(config: DailyReportConfig, key: string): string {
     if (key === 'chats') return 'Тэмдэглэл · Чат';
     if (key === 'general') return 'Тэмдэглэл · Ерөнхий';
     const line = key.startsWith('line.') ? config.lines.find(item => item.key === key.slice(5)) : null;
-    return line ? `Тэмдэглэл · ${line.label}` : key;
+    return `Тэмдэглэл · ${line ? line.label : key}`;
 }
 
 /**
