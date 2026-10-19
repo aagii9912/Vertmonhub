@@ -1,38 +1,26 @@
 import { NextResponse } from 'next/server';
 import { withRoute } from '@/lib/api/route';
-import { getUserId } from '@/lib/auth/supabase-auth';
-import { resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { ubDateStr } from '@/lib/utils/date';
+import { configMetrics, DailyReportDateSchema, SaveDailyReportSchema, UNASSIGNED } from '@/lib/dashboard/daily-report';
 import {
-    configMetrics, DailyReportDateSchema, formalManagerName, SaveDailyReportSchema, UNASSIGNED,
-} from '@/lib/dashboard/daily-report';
-import {
-    DailyReportUnavailableError, loadDailyReport, loadDailyReportConfig, loadDailyRoster, resolveDailyReportViewer, saveDailyReport,
-} from '@/lib/dashboard/daily-report-load';
+    checkDailyCellAccess, dailyReportActorName, loadDailyEditableManagers, resolveDailyReportRequest,
+} from '@/lib/dashboard/daily-report-access';
+import { DailyReportUnavailableError, loadDailyReport, loadDailyReportConfig, saveDailyReport } from '@/lib/dashboard/daily-report-load';
 
 const NO_STORE = { 'Cache-Control': 'private, no-store' };
 const unavailable = (error: unknown) => error instanceof DailyReportUnavailableError
     ? NextResponse.json({ error: error.message }, { status: 503 })
     : null;
 
-type Permissions = NonNullable<Awaited<ReturnType<typeof resolvePermissions>>>;
-const canWriteDashboard = (permissions: Permissions) => permissions.role === 'super_admin'
-    || (permissions.permissions.canWrite && permissions.permissions.modules.includes('dashboard'));
-
-async function viewerOf(shopId: string) {
-    const [permissions, userId] = await Promise.all([resolvePermissions(), getUserId()]);
-    if (!permissions) return null;
-    const viewer = await resolveDailyReportViewer(supabaseAdmin(), shopId, { userId, role: permissions.role, modules: permissions.permissions.modules });
-    return { permissions, userId, viewer };
-}
-
 /**
  * GET /api/dashboard/daily-report?date=YYYY-MM-DD — «Өдрийн тайлан» (анхдагч: өнөөдөр, УБ).
  * • Багийн харагдац: super_admin эсвэл `reports` модультай, хувийн горимгүй хэрэглэгч — бүх менежер,
- *   уулзалтын жагсаалт, тэмдэглэл.
- * • Төсөлдөө бүртгэлтэй менежер: багийн бүх багана, уулзалт, тэмдэглэл; өөрийн тоог л засна.
+ *   уулзалтын жагсаалт, тэмдэглэл; бүртгэлийн аль ч менежерийн тоог засна.
+ * • Төсөлдөө бүртгэлтэй менежер: багийн бүх багана, уулзалт, тэмдэглэл; ээлжийн менежер тул төслийн
+ *   идэвхтэй, бүртгэлтэй бүх менежерийн (`editable`) тоог засна. `viewer.own` = өөрийн багана.
  *   Бүртгэлд холбогдоогүй бол `onboarding`.
+ * • Нүд бүр хэн оруулсныг `authors` (нэр, цаг, өөр хүн эсэх) харуулна; акаунтын id гаргахгүй.
  * • Зөвхөн `dashboard` модультай байгууллагын хэрэглэгчид 403.
  */
 export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдрийн тайланг гаргаж чадсангүй. Дахин оролдоно уу.' }, async ({ request, shop }) => {
@@ -43,24 +31,23 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
     const date = parsed.data;
     if (date > today) return NextResponse.json({ error: 'Ирээдүйн өдрийн тайлан гаргахгүй' }, { status: 400 });
 
-    const resolved = await viewerOf(shop.id);
+    const resolved = await resolveDailyReportRequest(shop.id);
     if (!resolved) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-    const { permissions, viewer } = resolved;
-    const writable = canWriteDashboard(permissions);
+    const { viewer, writable } = resolved;
 
     if (viewer.personal && !viewer.ownManager) {
         return NextResponse.json({ date, today, report: null, config: null, roster: [],
-            viewer: { personal: true, onboarding: true, canEditTeam: false, editable: [] } }, { headers: NO_STORE });
+            viewer: { personal: true, onboarding: true, canEditTeam: false, editable: [], own: null } }, { headers: NO_STORE });
     }
     if (!viewer.canViewTeam) {
         return NextResponse.json({ error: 'Багийн өдрийн тайланг харах эрхгүй' }, { status: 403 });
     }
 
     try {
-        const result = await loadDailyReport(supabaseAdmin(), { shopId: shop.id, shopName: shop.name || 'Төсөл', date, only: null });
-        const rosterNames = new Set(result.roster.map(entry => entry.name));
-        const editable = !writable ? [] : viewer.ownManager ? [viewer.ownManager]
-            : result.report.managers.map(manager => manager.name).filter(name => name !== UNASSIGNED && rosterNames.has(name));
+        const db = supabaseAdmin();
+        const result = await loadDailyReport(db, { shopId: shop.id, shopName: shop.name || 'Төсөл', date, only: null });
+        const allowed = writable ? await loadDailyEditableManagers(db, shop.id, viewer, result.roster) : new Set<string>();
+        const editable = result.report.managers.map(manager => manager.name).filter(name => name !== UNASSIGNED && allowed.has(name));
         return NextResponse.json({
             date, today,
             report: result.report,
@@ -69,7 +56,7 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
             configInvalid: result.configInvalid,
             // Бүртгэлийн жагсаалт зөвхөн загвар засахад; багийн нэрс тайланд өөрт нь бий.
             roster: viewer.personal ? [] : result.roster,
-            viewer: { personal: viewer.personal, onboarding: false, canEditTeam: writable, editable },
+            viewer: { personal: viewer.personal, onboarding: false, canEditTeam: writable, editable, own: viewer.ownManager },
         }, { headers: NO_STORE });
     } catch (error) {
         const response = unavailable(error);
@@ -79,11 +66,14 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
 });
 
 /**
- * PUT /api/dashboard/daily-report — { date, cells: [{ manager, metric, value|null }], notes?, complete? }
- * • Менежер зөвхөн өөрийн нүдийг засна; төслийн багийн тэмдэглэл, «Тайлан хийж гүйцэтгэсэн»-ийг
- *   ээлжийн менежер мөн хадгалж болно.
- * • Менежер нь тухайн төслийн бүртгэлийн нэр, үзүүлэлт нь төслийн загварт байх ёстой (null = цэвэрлэх
- *   нь загвараас хасагдсан үзүүлэлтэд ч болно). Ирээдүйн өдөр бөглөхгүй.
+ * PUT /api/dashboard/daily-report — { date, cells: [{ manager, metric, value|null, expected? }], notes?, notesExpected?, complete? }
+ * • Төсөлдөө бүртгэлтэй менежер (ээлжийн менежер) төслийн идэвхтэй, бүртгэлтэй бүх менежерийн тоог
+ *   оруулж/цэвэрлэнэ; багийн тэмдэглэл, «Тайлан хийж гүйцэтгэсэн»-ийг мөн хадгална. Багийн харагдацтай
+ *   хэрэглэгч бүртгэлийн аль ч менежерийн тоог засна.
+ * • `expected` (клиентийн харсан утга) зөрвөл юу ч бичихгүй 409 `{ conflicts }`. Тэмдэглэлийн зөвхөн
+ *   илгээсэн түлхүүр өөрчлөгдөнө. Өөрчлөлт бүр түүхэнд (хэн, хэзээ, хуучин → шинэ) хадгалагдана.
+ * • Үзүүлэлт нь төслийн загварт байх ёстой (null = цэвэрлэх нь загвараас хасагдсан үзүүлэлтэд ч болно).
+ *   Ирээдүйн өдөр бөглөхгүй.
  */
 export const PUT = withRoute({ module: 'dashboard', access: 'write', error: 'Өдрийн тайланг хадгалж чадсангүй. Дахин оролдоно уу.' }, async ({ request, shop }) => {
     const parsed = SaveDailyReportSchema.safeParse(await request.json().catch(() => null));
@@ -91,23 +81,14 @@ export const PUT = withRoute({ module: 'dashboard', access: 'write', error: 'Ө�
     const data = parsed.data;
     if (data.date > ubDateStr()) return NextResponse.json({ error: 'Ирээдүйн өдрийн тайлан бөглөхгүй' }, { status: 400 });
 
-    const resolved = await viewerOf(shop.id);
+    const resolved = await resolveDailyReportRequest(shop.id);
     if (!resolved) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
     const { userId, viewer } = resolved;
     const db = supabaseAdmin();
 
     try {
-        if (viewer.personal) {
-            const own = viewer.ownManager;
-            if (!own) return NextResponse.json({ error: 'Таны нэр борлуулалтын менежерийн бүртгэлд холбогдоогүй байна' }, { status: 403 });
-            if (data.cells.some(cell => cell.manager !== own)) return NextResponse.json({ error: 'Зөвхөн өөрийн тоог оруулна' }, { status: 403 });
-        } else if (!viewer.canViewTeam) {
-            return NextResponse.json({ error: 'Багийн өдрийн тайланг засах эрхгүй' }, { status: 403 });
-        } else if (data.cells.length) {
-            const roster = new Set((await loadDailyRoster(db, shop.id)).map(entry => entry.name));
-            const unknown = data.cells.find(cell => !roster.has(cell.manager));
-            if (unknown) return NextResponse.json({ error: `«${unknown.manager}» менежерийн бүртгэлд алга` }, { status: 400 });
-        }
+        const denied = await checkDailyCellAccess(db, shop.id, viewer, [...new Set(data.cells.map(cell => cell.manager))]);
+        if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status });
 
         if (data.cells.some(cell => cell.value !== null)) {
             const metrics = configMetrics((await loadDailyReportConfig(db, shop.id, shop.name || '')).config);
@@ -116,9 +97,10 @@ export const PUT = withRoute({ module: 'dashboard', access: 'write', error: 'Ө�
             }
         }
 
-        const userName = viewer.identity?.rosterEntry ? formalManagerName(viewer.identity.rosterEntry.name)
-            : viewer.identity?.fullName || 'Хэрэглэгч';
-        await saveDailyReport(db, { shopId: shop.id, userId, userName, data });
+        const saved = await saveDailyReport(db, { shopId: shop.id, userId, userName: dailyReportActorName(viewer), data });
+        if (!saved.ok) {
+            return NextResponse.json({ error: 'Энэ хооронд өөр хүн өөрчилсөн байна. Хуудсаа шинэчлээд дахин оруулна уу.', conflicts: saved.conflicts }, { status: 409, headers: NO_STORE });
+        }
         return NextResponse.json({ ok: true }, { headers: NO_STORE });
     } catch (error) {
         const response = unavailable(error);
