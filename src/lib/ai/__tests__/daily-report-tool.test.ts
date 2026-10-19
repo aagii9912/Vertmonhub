@@ -24,7 +24,8 @@ vi.mock('@/lib/dashboard/daily-report-load', async (importOriginal) => {
                 roster: [{ name: 'Хонгорзул.Мөнхгэрэл', is_active: true }, { name: 'Чанцалдулам.Раднаа', is_active: true }],
                 counts: [{ manager_name: 'Хонгорзул.Мөнхгэрэл', metric: 'call.l1.total', value: 4 }],
                 meetings: [{ id: 'm1', manager: 'Хонгорзул.Мөнхгэрэл', type: 'repeat_customer', customer: 'Загдсүрэн', property: null, notes: '10-50 хувь', feedback: null, scheduled_at: '2026-10-07T02:00:00Z' }],
-                pendingMeetings: 1, notes: {}, completed: null, only: options.only,
+                pendingMeetings: [{ id: 'p1', manager: 'Хонгорзул.Мөнхгэрэл', type: 'new_customer', customer: 'Болд', scheduled_at: '2026-10-07T05:00:00Z' }],
+                notes: {}, completed: null, only: options.only,
             });
             return { report };
         },

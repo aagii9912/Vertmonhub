@@ -10,6 +10,8 @@
  *  • Утасны шугамын дуудлага, чат = менежерүүдийн өдөр бүр оруулсан тоо (`daily_report_counts`).
  *    CallPro-гийн экспорт менежерээр задрахгүй, хотын дугаарын ихэнх дуудлага лид болдоггүй тул CRM-ийн
  *    лидийн дуудлагаас (lead_activities) гаргахгүй. Оруулаагүй нүд хоосон (`null`) — 0 биш.
+ *    Ээлжийн менежер төслийн бүх менежерийн тоог оруулж болно (2026-10-19): нүд бүр хэн оруулсныг
+ *    (`authors`), өөрчлөлт бүр түүхийг (`daily_report_changes`, хуучин → шинэ) хадгална.
  *  • Загвар (шугам, ангилал, чатын суваг, менежерийн дараалал/товчлол) нь төсөл бүрийн тохиргоо.
  */
 import { z } from 'zod';
@@ -134,7 +136,13 @@ export interface DailyReportManager {
     inRoster: boolean;
     active: boolean;
 }
-export interface DailyRosterEntry { name: string; is_active: boolean; phone?: string | null }
+export interface DailyRosterEntry {
+    name: string;
+    is_active: boolean;
+    phone?: string | null;
+    /** Холбосон акаунт — зөвхөн серверт (`authors.other`-ийг тооцоход); тайлангийн JSON-д гаргахгүй. */
+    user_id?: string | null;
+}
 
 /** Давхардсан товчлолыг уртасгаж ялгана (Хон / Хонг). */
 function withUniqueShorts(managers: Array<Omit<DailyReportManager, 'short'> & { short?: string }>): DailyReportManager[] {
@@ -190,7 +198,18 @@ export function readDailyReportNotes(raw: unknown): DailyReportNotes {
     return parsed.success ? parsed.data : {};
 }
 
-export interface DailyCountRow { manager_name: string; metric: string; value: number }
+export interface DailyCountRow {
+    manager_name: string;
+    metric: string;
+    value: number;
+    /** Сүүлд оруулсан акаунт (тайланд гаргахгүй, зөвхөн `other`-ийг тооцно). */
+    updated_by?: string | null;
+    /** Оруулсан хүний нэр (бүртгэлийн албан нэр, эсвэл хуучин мөрөнд профайлын нэр). */
+    updated_by_name?: string | null;
+    updated_at?: string | null;
+}
+/** Нүдийг хэн, хэзээ оруулсан; `other` = тухайн баганын менежерийн өөрийн акаунт биш. */
+export interface DailyCellAuthor { by: string | null; at: string | null; other: boolean }
 export interface DailyMeetingRow {
     id: string;
     manager: string | null;
@@ -208,12 +227,32 @@ export interface DailyGridRow {
     label: string;
     /** Менежер (баганын нэр) → тоо; оруулаагүй бол null. */
     values: Record<string, number | null>;
+    /** Дуудлага, чатын мөрөнд: менежер → оруулсан хүн (оруулсан нүдэнд л). Уулзалтад байхгүй. */
+    authors?: Record<string, DailyCellAuthor>;
     total: number;
 }
 export interface DailyGridSection { rows: DailyGridRow[]; total: number; byManager: Record<string, number> }
 export interface DailyLineSection extends DailyGridSection { key: string; label: string; categories: CallCategory[]; note: string }
 export type MeetingKind = MeetingType | 'unclassified';
-export interface DailyMeetingItem { id: string; manager: string; text: string }
+export interface DailyMeetingItem {
+    id: string;
+    /** Баганын товчлол. */
+    manager: string;
+    /** Канон нэр; хариуцагчгүй бол ''. */
+    managerName: string;
+    text: string;
+}
+/** «Товлосон» хэвээр (үр дүн бүртгээгүй) тухайн өдрийн уулзалт. */
+export interface DailyPendingMeeting {
+    id: string;
+    /** Канон нэр; хариуцагчгүй бол ''. */
+    manager: string;
+    short: string;
+    customer: string;
+    /** scheduled_at (ISO). */
+    time: string;
+    type: MeetingKind;
+}
 export interface DailyMeetingGroup { type: MeetingKind; label: string; heading: string; count: number; items: DailyMeetingItem[] }
 
 export interface DailyReport {
@@ -223,7 +262,7 @@ export interface DailyReport {
     managers: DailyReportManager[];
     lines: DailyLineSection[];
     chats: DailyGridSection & { note: string };
-    meetings: DailyGridSection & { groups: DailyMeetingGroup[]; pending: number };
+    meetings: DailyGridSection & { groups: DailyMeetingGroup[]; pending: number; pendingItems: DailyPendingMeeting[] };
     /** Тухайн өдөр тоо оруулсан менежерүүд (0-ийг оруулсан ч тооцно). */
     filled: string[];
     /** Загварын менежерээс тоо оруулаагүй нь (идэвхтэй, бүртгэлтэй). */
@@ -239,8 +278,8 @@ export interface BuildDailyReportInput {
     roster: readonly DailyRosterEntry[];
     counts: readonly DailyCountRow[];
     meetings: readonly DailyMeetingRow[];
-    /** «Товлосон» хэвээр (үр дүн бүртгээгүй) уулзалтын тоо. */
-    pendingMeetings: number;
+    /** «Товлосон» хэвээр (үр дүн бүртгээгүй) тухайн өдрийн уулзалтууд. */
+    pendingMeetings: readonly Pick<DailyMeetingRow, 'id' | 'manager' | 'type' | 'customer' | 'scheduled_at'>[];
     notes: DailyReportNotes;
     completed: { by: string | null; at: string } | null;
     /** Хувийн горим: зөвхөн энэ менежерийн багана. */
@@ -265,7 +304,8 @@ export function meetingItemText(meeting: Pick<DailyMeetingRow, 'customer' | 'pro
     return unique.length ? `${clean(meeting.customer, 120)} — ${unique.join('; ')}` : clean(meeting.customer, 120);
 }
 
-function gridSection(rows: Array<{ key: string; label: string; values: Record<string, number | null> }>, managers: readonly DailyReportManager[]): DailyGridSection {
+type GridInput = { key: string; label: string; values: Record<string, number | null>; authors?: Record<string, DailyCellAuthor> };
+function gridSection(rows: GridInput[], managers: readonly DailyReportManager[]): DailyGridSection {
     const byManager: Record<string, number> = Object.fromEntries(managers.map(manager => [manager.name, 0]));
     const full = rows.map(row => {
         const values: Record<string, number | null> = {};
@@ -289,17 +329,33 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
         ? resolveReportManagers({ ...config, managers: [{ name: only, short: config.managers?.find(manager => manager.name === only)?.short ?? defaultShortName(only) }] }, input.roster)
         : resolveReportManagers(config, input.roster, [...counts.map(row => row.manager_name), ...meetings.map(row => row.manager ?? UNASSIGNED)]);
 
-    const value = new Map<string, number>();
-    for (const row of counts) value.set(`${row.manager_name}\u0000${row.metric}`, row.value);
-    const valuesFor = (metric: string) => Object.fromEntries(managers.map(manager => [manager.name, value.get(`${manager.name}\u0000${metric}`) ?? null]));
+    const cell = new Map<string, DailyCountRow>();
+    for (const row of counts) cell.set(`${row.manager_name}\u0000${row.metric}`, row);
+    const valuesFor = (metric: string) => Object.fromEntries(managers.map(manager => [manager.name, cell.get(`${manager.name}\u0000${metric}`)?.value ?? null]));
+    // Баганын менежерийн өөрийн акаунт; холбоогүй менежерийн нүдийг акаунттай хүн оруулсан бол «өөр хүн».
+    const account = new Map(input.roster.map(entry => [entry.name, entry.user_id ?? null]));
+    const authorsFor = (metric: string) => {
+        const authors: Record<string, DailyCellAuthor> = {};
+        for (const manager of managers) {
+            const row = cell.get(`${manager.name}\u0000${metric}`);
+            if (!row) continue;
+            authors[manager.name] = {
+                by: row.updated_by_name?.trim() || null,
+                at: row.updated_at ?? null,
+                other: !!row.updated_by && row.updated_by !== account.get(manager.name),
+            };
+        }
+        return authors;
+    };
+    const countRow = (key: string, label: string): GridInput => ({ key, label, values: valuesFor(key), authors: authorsFor(key) });
 
     const lines: DailyLineSection[] = config.lines.map(line => {
         const rows = line.categories.length
-            ? line.categories.map(category => ({ key: callMetric(line.key, category), label: CALL_CATEGORY_LABEL[category], values: valuesFor(callMetric(line.key, category)) }))
-            : [{ key: callMetric(line.key, 'total'), label: 'Нийт', values: valuesFor(callMetric(line.key, 'total')) }];
+            ? line.categories.map(category => countRow(callMetric(line.key, category), CALL_CATEGORY_LABEL[category]))
+            : [countRow(callMetric(line.key, 'total'), 'Нийт')];
         return { key: line.key, label: line.label, categories: line.categories, ...gridSection(rows, managers), note: clean(input.notes.lines?.[line.key], DAILY_LIMITS.note) };
     });
-    const chats = gridSection(config.chats.map(chat => ({ key: chatMetric(chat.key), label: chat.label, values: valuesFor(chatMetric(chat.key)) })), managers);
+    const chats = gridSection(config.chats.map(chat => countRow(chatMetric(chat.key), chat.label)), managers);
 
     const sorted = [...meetings].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at) || a.id.localeCompare(b.id));
     const byKind = new Map<MeetingKind, DailyMeetingRow[]>(MEETING_KINDS.map(kind => [kind, []]));
@@ -319,8 +375,20 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
         label: meetingLabel(kind),
         heading: MEETING_HEADING[kind],
         count: byKind.get(kind)!.length,
-        items: byKind.get(kind)!.map(meeting => ({ id: meeting.id, manager: shortOf.get(meeting.manager ?? UNASSIGNED) ?? '', text: meetingItemText(meeting) })),
+        items: byKind.get(kind)!.map(meeting => ({
+            id: meeting.id, manager: shortOf.get(meeting.manager ?? UNASSIGNED) ?? '', managerName: meeting.manager ?? UNASSIGNED, text: meetingItemText(meeting),
+        })),
     }));
+    const pendingItems: DailyPendingMeeting[] = input.pendingMeetings
+        .filter(row => row.id && (!only || row.manager === only))
+        .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at) || a.id.localeCompare(b.id))
+        .map(row => {
+            const name = row.manager ?? UNASSIGNED;
+            return {
+                id: row.id, manager: name, short: shortOf.get(name) ?? (name ? defaultShortName(name) : '—'),
+                customer: clean(row.customer, 120), time: row.scheduled_at, type: meetingKind(row.type),
+            };
+        });
 
     const filled = [...new Set(counts.map(row => row.manager_name))].filter(name => managers.some(manager => manager.name === name));
     const expectsCounts = config.lines.length + config.chats.length > 0;
@@ -335,7 +403,7 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
         managers,
         lines,
         chats: { ...chats, note: clean(input.notes.chats, DAILY_LIMITS.note) },
-        meetings: { ...meetingGrid, groups, pending: input.pendingMeetings },
+        meetings: { ...meetingGrid, groups, pending: pendingItems.length, pendingItems },
         filled,
         missing,
         // Мөр шилжилтийг хадгална (бусад тайлбар нэг мөрөнд).
@@ -398,19 +466,169 @@ const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
 }, 'Огноо буруу байна');
 export const DailyReportDateSchema = DateSchema;
 
+const CountValueSchema = z.number().int().min(0).max(DAILY_COUNT_MAX);
+/** RPC-ийн нэг хадгалалтын тэмдэглэлийн дээд тоо (`save_daily_report`-ийн хязгаар). */
+export const DAILY_NOTES_PER_SAVE = 20;
+
 export const SaveDailyReportSchema = z.object({
     date: DateSchema,
     /** value = null бол тухайн нүдийг цэвэрлэнэ. */
     cells: z.array(z.object({
         manager: z.string().trim().min(1).max(120),
         metric: z.string().regex(DAILY_METRIC_PATTERN, 'Үзүүлэлт буруу байна'),
-        value: z.number().int().min(0).max(DAILY_COUNT_MAX).nullable(),
+        value: CountValueSchema.nullable(),
+        /** Клиентийн харсан хадгалсан утга (null = хоосон); энэ хооронд өөр хүн өөрчилсөн бол 409. */
+        expected: CountValueSchema.nullable().optional(),
     }).strict()).max(600).default([]),
+    /** Зөвхөн илгээсэн түлхүүрийг өөрчилнө; '' = цэвэрлэх. */
     notes: DailyReportNotesSchema.optional(),
+    /** Илгээсэн түлхүүрүүдийн клиентийн харсан хадгалсан текст (зөрвөл 409). */
+    notesExpected: DailyReportNotesSchema.optional(),
     /** true = «Тайлан хийж гүйцэтгэсэн» таны нэрээр; false = баталгаажуулалтыг цуцлах. */
     complete: z.boolean().optional(),
 }).strict().superRefine((input, ctx) => {
     const keys = input.cells.map(cell => `${cell.manager}\u0000${cell.metric}`);
     if (keys.some((key, index) => keys.indexOf(key) !== index)) ctx.addIssue({ code: 'custom', message: 'Нэг нүдийг давхар илгээсэн байна' });
+    if (input.notes && flattenDailyNotes(input.notes).length > DAILY_NOTES_PER_SAVE) ctx.addIssue({ code: 'custom', message: 'Тэмдэглэл хэт олон байна' });
 });
 export type SaveDailyReportInput = z.output<typeof SaveDailyReportSchema>;
+
+/** Тэмдэглэлийн түлхүүр: `line.<шугам>`, `chats`, `general` (DB-ийн `note_key`). */
+export type DailyNoteKey = `line.${string}` | 'chats' | 'general';
+export interface DailyNoteEntry { key: DailyNoteKey; value: string; expected?: string }
+
+/** Хэсэгчилсэн тэмдэглэл → RPC-ийн мөрүүд; `expected` нь зөвхөн тухайн түлхүүр `expected`-д байвал. */
+export function flattenDailyNotes(notes: DailyReportNotes, expected?: DailyReportNotes): DailyNoteEntry[] {
+    const entry = (key: DailyNoteKey, value: string, seen: string | undefined): DailyNoteEntry => (seen === undefined ? { key, value } : { key, value, expected: seen });
+    const out: DailyNoteEntry[] = Object.entries(notes.lines ?? {}).map(([line, value]) => entry(`line.${line}`, value, expected?.lines?.[line]));
+    if (notes.chats !== undefined) out.push(entry('chats', notes.chats, expected?.chats));
+    if (notes.general !== undefined) out.push(entry('general', notes.general, expected?.general));
+    return out;
+}
+/** Хадгалсан тэмдэглэлийн тухайн түлхүүрийн текст (байхгүй бол ''). */
+export function dailyNoteText(notes: DailyReportNotes, key: string): string {
+    if (key === 'chats') return notes.chats ?? '';
+    if (key === 'general') return notes.general ?? '';
+    return key.startsWith('line.') ? notes.lines?.[key.slice(5)] ?? '' : '';
+}
+/** Нэг түлхүүрийн тэмдэглэл (сэргээхэд). */
+export function dailyNotePatch(key: string, value: string): DailyReportNotes {
+    if (key === 'chats') return { chats: value };
+    if (key === 'general') return { general: value };
+    return { lines: { [key.slice(5)]: value } };
+}
+
+/** Хадгалах үед өөр хүн өөрчилсөн нүд/тэмдэглэл (`current` = одоогийн утга). */
+export type DailyReportConflict =
+    | { kind: 'count'; manager: string; metric: string; current: number | null }
+    | { kind: 'note'; key: string; current: string | null };
+
+/* ------------------------------------------------------------------ */
+/* Өөрчлөлтийн түүх                                                   */
+/* ------------------------------------------------------------------ */
+
+export const DAILY_CHANGE_KINDS = ['count', 'note', 'complete', 'meeting'] as const;
+export type DailyReportChangeKind = (typeof DAILY_CHANGE_KINDS)[number];
+
+/** `daily_report_changes`-ийн мөр (акаунтын id-гүй). */
+export interface DailyReportChangeRow {
+    id: number;
+    kind: string;
+    manager_name: string | null;
+    metric: string | null;
+    note_key: string | null;
+    old_value: number | null;
+    new_value: number | null;
+    old_text: string | null;
+    new_text: string | null;
+    restored_from: number | null;
+    meta: Record<string, unknown> | null;
+    changed_by_name: string | null;
+    changed_at: string;
+}
+
+export interface DailyReportChange {
+    id: number;
+    kind: DailyReportChangeKind;
+    manager: string | null;
+    /** «Р. Чанцалдулам». */
+    managerTitle: string | null;
+    metric: string | null;
+    /** «7786-2222 · Шинэ», «Чат · Пэйж FB», «Тэмдэглэл · 7786-2222», «Баталгаажуулалт», «Уулзалт». */
+    label: string;
+    old: number | null;
+    new: number | null;
+    oldText: string | null;
+    newText: string | null;
+    /** Уулзалтын үйлдэл (`record`, `complete`, `no_show`, `reassign`). */
+    action: string | null;
+    by: string | null;
+    at: string;
+    restoredFrom: number | null;
+    /** Энэ өөрчлөлтийг буцааж болох эсэх (тухайн нүдний сүүлийн өөрчлөлт, утга нь хэвээр, засах эрхтэй). */
+    restorable: boolean;
+}
+
+/** Үзүүлэлтийн нэр; загвараас хасагдсан бол түлхүүрээрээ. */
+export function dailyMetricLabel(config: DailyReportConfig, metric: string): string {
+    const call = /^call\.([a-z0-9]{1,16})\.(total|new|repeat|other)$/.exec(metric);
+    if (call) {
+        const line = config.lines.find(item => item.key === call[1]);
+        if (!line) return metric;
+        return call[2] === 'total' ? line.label : `${line.label} · ${CALL_CATEGORY_LABEL[call[2] as CallCategory]}`;
+    }
+    const chat = /^chat\.([a-z0-9]{1,16})$/.exec(metric);
+    const channel = chat && config.chats.find(item => item.key === chat[1]);
+    return channel ? `Чат · ${channel.label}` : metric;
+}
+/** Тэмдэглэлийн нэр; загвараас хасагдсан шугам бол түлхүүрээрээ. */
+export function dailyNoteLabel(config: DailyReportConfig, key: string): string {
+    if (key === 'chats') return 'Тэмдэглэл · Чат';
+    if (key === 'general') return 'Тэмдэглэл · Ерөнхий';
+    const line = key.startsWith('line.') ? config.lines.find(item => item.key === key.slice(5)) : null;
+    return line ? `Тэмдэглэл · ${line.label}` : key;
+}
+
+/**
+ * Түүхийн мөрүүд (шинэ нь эхэнд). Сэргээх: тоо/тэмдэглэл, тухайн нүдний хамгийн сүүлийн өөрчлөлт,
+ * шинэ утга нь одоо хадгалагдсантай ижил, хэрэглэгч тухайн нүдийг засах эрхтэй (тоог нь загварт байх).
+ */
+export function buildDailyReportChanges(rows: readonly DailyReportChangeRow[], context: {
+    config: DailyReportConfig;
+    /** Тухайн өдрийн одоогийн тоонууд. */
+    counts: readonly Pick<DailyCountRow, 'manager_name' | 'metric' | 'value'>[];
+    notes: DailyReportNotes;
+    /** Тоог нь засаж болох менежерүүд. */
+    editable: ReadonlySet<string>;
+    canEditNotes: boolean;
+}): DailyReportChange[] {
+    const current = new Map(context.counts.map(row => [`${row.manager_name}\u0000${row.metric}`, row.value]));
+    const metrics = configMetrics(context.config);
+    const seen = new Set<string>();
+    const sorted = [...rows].sort((a, b) => b.changed_at.localeCompare(a.changed_at) || b.id - a.id);
+    return sorted.filter(row => (DAILY_CHANGE_KINDS as readonly string[]).includes(row.kind)).map(row => {
+        const kind = row.kind as DailyReportChangeKind;
+        const label = kind === 'count' ? dailyMetricLabel(context.config, row.metric ?? '')
+            : kind === 'note' ? dailyNoteLabel(context.config, row.note_key ?? '')
+                : kind === 'complete' ? 'Баталгаажуулалт' : 'Уулзалт';
+        let restorable = false;
+        if (kind === 'count' && row.manager_name && row.metric) {
+            const cell = `count\u0000${row.manager_name}\u0000${row.metric}`;
+            restorable = !seen.has(cell) && context.editable.has(row.manager_name)
+                && (current.get(`${row.manager_name}\u0000${row.metric}`) ?? null) === row.new_value
+                && (row.old_value === null || metrics.has(row.metric));
+            seen.add(cell);
+        } else if (kind === 'note' && row.note_key) {
+            const cell = `note\u0000${row.note_key}`;
+            restorable = !seen.has(cell) && context.canEditNotes && dailyNoteText(context.notes, row.note_key) === (row.new_text ?? '');
+            seen.add(cell);
+        }
+        const manager = row.manager_name || null;
+        return {
+            id: row.id, kind, manager, managerTitle: manager ? formalManagerName(manager) : null, metric: row.metric, label,
+            old: row.old_value, new: row.new_value, oldText: row.old_text, newText: row.new_text,
+            action: kind === 'meeting' && typeof row.meta?.action === 'string' ? row.meta.action : null,
+            by: row.changed_by_name, at: row.changed_at, restoredFrom: row.restored_from, restorable,
+        };
+    });
+}

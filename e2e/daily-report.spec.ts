@@ -41,7 +41,7 @@ async function setup(page: Page, mode: 'team' | 'personal') {
             { id: 'm2', manager: KHON, type: 'new_customer', customer: 'Сараа', property: null, notes: 'Б1-89м2 бартер эсвэл УХН', feedback: null, scheduled_at: `${date}T03:00:00Z` },
             { id: 'm3', manager: KHON, type: 'new_customer', customer: 'Дорж', property: null, notes: 'Эмийн сан үйлчилгээний талбай Б2 блокоос 60 орчим мкв', feedback: null, scheduled_at: `${date}T04:00:00Z` },
         ],
-        pendingMeetings: 1,
+        pendingMeetings: [{ id: 'p1', manager: KHON, type: 'new_customer', customer: 'Болд', scheduled_at: `${date}T05:00:00Z` }],
         notes: state.notes,
         completed: state.completed,
         only: null,
