@@ -233,6 +233,7 @@ export const ADMIN_NAV: NavItem[] = [
     { name: 'Дүрүүд', href: '/admin/roles', icon: Shield, module: '', superAdmin: true, keywords: ['эрх', 'role', 'rbac'] },
     { name: 'Импорт', href: '/admin/import', icon: Upload, module: '', superAdmin: true, keywords: ['excel', 'csv', 'нэгж', 'import'] },
     { name: 'Холболтууд', href: '/admin/integrations', icon: Plug, module: '', superAdmin: true, keywords: ['elysium', 'integration'] },
+    { name: 'Өөрчлөлтийн түүх', href: '/admin/history', icon: History, module: '', superAdmin: true, keywords: ['түүх', 'аудит', 'history', 'audit', 'өөрчлөлт'] },
     { name: 'Систем', href: '/admin/settings', icon: SlidersHorizontal, module: '', superAdmin: true, keywords: ['admin settings'] },
 ];
 

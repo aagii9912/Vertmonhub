@@ -1290,9 +1290,17 @@ function confirmNeeded(tool: string, args: any, label: string, preview: Record<s
     return { requiresConfirmation: true, action: { tool, args }, label, preview };
 }
 
-/** Нэвтэрсэн хэрэглэгчийн (борлуулалтын менежер) харагдах нэрийг тодорхойлно. */
-export async function resolveSalesManagerName(userId?: string, fallback?: string): Promise<string> {
+/**
+ * AI бичилтийн менежерийн нэр (attribution). Тухайн төсөлд (shop) акаунтаараа холбогдсон идэвхтэй
+ * бүртгэлтэй бол бүртгэлийн канон нэр — тайлан, KPI менежерийг яг энэ нэрээр танина (профайлын нэр,
+ * и-мэйл бичигдвэл «өөр нэрээр» орно). Менежер биш хэрэглэгчид профайлын нэр → и-мэйл → fallback.
+ */
+export async function resolveSalesManagerName(userId: string | undefined, fallback: string | undefined, shopId: string | null): Promise<string> {
     if (!userId) return fallback || '';
+    if (shopId) {
+        const identity = await resolveManagerIdentity(supabaseAdmin, shopId, userId).catch(() => null);
+        if (identity?.isManager && identity.managerName) return identity.managerName;
+    }
     const { data } = await supabaseAdmin.from('user_profiles').select('full_name, email').eq('id', userId).maybeSingle();
     return data?.full_name || data?.email || fallback || '';
 }
