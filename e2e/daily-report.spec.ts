@@ -306,7 +306,8 @@ test('ээлжийн менежер хамт олныхоо тоог оруул�
     await expect(changes.filter({ hasText: 'Сэргээсэн' })).toContainText('5→3');
     await page.keyboard.press('Escape');
     await expect(history).toHaveCount(0);
-    await expect(report.getByRole('region', { name: 'Төслийн утас · 77862222', exact: true }).getByRole('cell').nth(1)).toHaveText('3');
+    // Нүдэнд тоо + дэлгэц уншигчид «Оруулсан: …» (нуугдмал текст).
+    await expect(report.getByRole('region', { name: 'Төслийн утас · 77862222', exact: true }).getByRole('cell').nth(1)).toHaveText(/^3(Оруулсан: .+)?$/);
 
     // Хамт олныхоо (Чанцалдулам) болсон уулзалтыг түүний нэр дээр бүртгэнэ.
     await report.getByRole('button', { name: 'Уулзалт нэмэх', exact: true }).click();
