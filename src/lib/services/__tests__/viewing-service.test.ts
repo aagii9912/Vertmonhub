@@ -217,6 +217,50 @@ describe('shared viewing creation', () => {
         expect(logLeadActivity).not.toHaveBeenCalled();
     });
 
+    it('stops a restricted manager from duplicating a colleague’s lead found by phone in the project', async () => {
+        const scope = { projectIds: [projectId], managerName: 'Канон' };
+        const { db, queries, rpcCalls } = fakeDb({
+            leads: [ok([]), ok([
+                { id: 'near-miss', customer_phone: '76911223', sales_manager_name: 'Өөр.Хүн' },
+                { id: 'colleague-lead', customer_phone: '+976 9911 2233', customer_name: 'Бат', sales_manager_name: 'Сараа.Бат' },
+            ])],
+            projects: [ok({ id: projectId })],
+        });
+        const result = await createViewing(db, 'shop', { project_id: projectId, customer_name: 'Бат', customer_phone: '9911 2233', scheduled_at: scheduledAt }, { ...actor, scope });
+        expect(result).toEqual({ ok: false, status: 409,
+            error: 'Энэ утастай харилцагч Б. Сараа-ийн лид. Өдрийн тайлангаас тухайн менежерийн нэр дээр уулзалт бүртгэнэ үү.' });
+        const projectWide = queries.filter(query => query.table === 'leads')[1];
+        expect(projectWide.filters).toEqual(expect.arrayContaining([['shop_id', 'shop'], ['project_id', projectId], ['deleted_at', null]]));
+        expect(projectWide.filters.some(filter => filter[0] === 'sales_manager_name')).toBe(false);
+        expect(queries.some(query => query.insert || query.updates)).toBe(false);
+        expect(rpcCalls).toEqual([]);
+    });
+
+    it('refuses an unassigned phone match in the preview too, before asking for a name', async () => {
+        const scope = { projectIds: [projectId], managerName: 'Канон' };
+        const unassigned = fakeDb({ leads: [ok([]), ok([{ id: 'pool', customer_phone: '99112233', sales_manager_name: null }])], projects: [ok({ id: projectId })] });
+        expect(await resolveViewingInput(unassigned.db, 'shop', { project_id: projectId, customer_phone: '99112233', scheduled_at: scheduledAt }, scope)).toEqual({
+            ok: false, status: 409, error: 'Энэ утастай лид хариуцагчгүй байна. «Хариуцагчгүй» жагсаалтаас хариуцаж аваад уулзалтаа бүртгэнэ үү.',
+        });
+        const nobody = fakeDb({ leads: [ok([]), ok([])], projects: [ok({ id: projectId })] });
+        expect(await resolveViewingInput(nobody.db, 'shop', { project_id: projectId, customer_phone: '99112233', scheduled_at: scheduledAt }, scope))
+            .toMatchObject({ ok: false, status: 400, error: expect.stringContaining('Энэ утсаар лид олдсонгүй') });
+        const fresh = fakeDb({ leads: [ok([]), ok([])], projects: [ok({ id: projectId })] });
+        expect(await resolveViewingInput(fresh.db, 'shop', { project_id: projectId, anonymous: true, customer_phone: '99112233', scheduled_at: scheduledAt }, scope))
+            .toMatchObject({ ok: true, data: { lead: null, projectId } });
+        expect(fresh.queries.filter(query => query.table === 'leads')).toHaveLength(2);
+    });
+
+    it('keeps name-only lookups and unrestricted users on the scoped search alone', async () => {
+        const scope = { projectIds: [projectId], managerName: 'Канон' };
+        const named = fakeDb({ leads: [ok([])], projects: [ok({ id: projectId })] });
+        expect(await resolveViewingInput(named.db, 'shop', { project_id: projectId, customer_name: 'Бат', scheduled_at: scheduledAt }, scope)).toMatchObject({ ok: true });
+        expect(named.queries.filter(query => query.table === 'leads')).toHaveLength(1);
+        const admin = fakeDb({ leads: [ok([])], projects: [ok({ id: projectId })] });
+        expect(await resolveViewingInput(admin.db, 'shop', { project_id: projectId, customer_name: 'Бат', customer_phone: '99112233', scheduled_at: scheduledAt })).toMatchObject({ ok: true });
+        expect(admin.queries.filter(query => query.table === 'leads')).toHaveLength(1);
+    });
+
     it('rejects an empty manager scope or missing actor before new-lead lookup or insertion', async () => {
         const { db, queries, rpcCalls } = fakeDb({});
         const input = { project_id: projectId, customer_name: 'Бат', scheduled_at: scheduledAt };
