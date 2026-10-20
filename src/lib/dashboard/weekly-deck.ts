@@ -621,9 +621,10 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     const period = { from: report.period_from, to: report.period_to };
     const coverage = reportCoverage(report);
     const blocked = comparisonBlockedByCoverage(match.comparison);
+    // Хуудастай адил харьцуулалтаас (`comparison`) уншина: өмнөх тайлангийн утгатай үзүүлэлт байвал л харьцуулна.
     const previous = match.previous;
-    const compared = !!previous && !blocked;
-    const against = previous && shiftReviewDate(previous.period_to, 1) === report.period_from ? 'Өмнөх 7 хоног' : 'Өмнөх тайлан';
+    const compared = !blocked && Object.values(match.comparison ?? {}).some(delta => delta.previous !== null);
+    const against = previous && shiftReviewDate(previous.period_to, 1) !== report.period_from ? 'Өмнөх тайлан' : 'Өмнөх 7 хоног';
     const mixedCurrency = report.warnings.some(warning => warning.code === 'mixed_currency');
     const unit = currency ? ` (${currency})` : typeof totals.spend === 'number' ? ' (валют тодорхойгүй)' : '';
     const origin = report.origin === 'api' ? 'Meta API' : 'Экспорт файл';
@@ -662,7 +663,7 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     statRow(summary, TOP + 1.95, META_WEEK_KEYS.slice(4).map(card), 1.7);
     const important = report.warnings.filter(warning => warning.level === 'warning');
     const footnotes = [
-        blocked ? 'Өдөр дутуу тул өмнөх долоо хоногтой харьцуулаагүй.' : !previous ? 'Өмнөх ижил хугацааны Meta тайлан алга — харьцуулаагүй.' : null,
+        blocked ? 'Өдөр дутуу тул өмнөх долоо хоногтой харьцуулаагүй.' : !compared ? 'Өмнөх ижил хугацааны Meta тайлан алга — харьцуулаагүй.' : null,
         previous && against === 'Өмнөх тайлан' && compared ? `Харьцуулсан тайлан: ${span({ from: previous.period_from, to: previous.period_to })}.` : null,
         currencyNote,
         important.length ? `${important.length} анхааруулга — слайдын тэмдэглэлд.` : null,

@@ -403,6 +403,11 @@ test('маркетинг өөрийн контент төлөвлөгөөгөө�
     await expect(channelsSection).toContainText('+1,400 (+25%)');
     await expect(channelsSection).toContainText('Онцлох орон сууц — Facebook пост');
     await channelsSection.getByText('Туршилтын хуудас', { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-2xl")][1]').screenshot({ path: 'output/workday/desktop-weekly-facebook.png' });
+    // Meta зар: слайдтай ижил кампанит ажлын хүснэгт (хаалттай, дарж нээнэ).
+    const metaCard = channelsSection.getByRole('region', { name: 'Meta Ads Manager' });
+    await metaCard.getByText('Кампанит ажлын хүснэгт (1 мөр)', { exact: true }).click();
+    await expect(metaCard.getByRole('region', { name: 'Задаргаа: Кампанит ажил' })).toContainText('[Block contents] 201 мкв 5 өрөө');
+    await metaCard.screenshot({ path: 'output/workday/desktop-weekly-meta-ads.png' });
 
     // Сувгийн дэлгэцийн зураг нэмэлт слайдаар.
     const extra = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Дэлгэцийн зураг, нэмэлт слайд', exact: true }) });
@@ -420,7 +425,7 @@ test('маркетинг өөрийн контент төлөвлөгөөгөө�
     expect(marketingFile.suggestedFilename()).toBe(`Vertmon · Туршилтын өгөгдөл - Маркетинг - Лхагва ${meetingDate}.pptx`);
     await marketingFile.saveAs('output/workday/weekly-marketing.pptx');
     const marketingDeck = await pptxText('output/workday/weekly-marketing.pptx');
-    for (const needle of ['МАРКЕТИНГИЙН АЛБА', 'Контент төлөвлөгөө ба гүйцэтгэл', 'Онцлох орон сууц: 201 мкв 5 өрөө', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт', 'Meta зар — долоо хоногийн тойм', 'Meta зар — кампанит ажлаар', '[Block contents] 201 мкв 5 өрөө', 'Төсөв ба зарцуулалт',
+    for (const needle of ['МАРКЕТИНГИЙН АЛБА', 'Контент төлөвлөгөө ба гүйцэтгэл', 'Онцлох орон сууц: 201 мкв 5 өрөө', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт', 'Meta зар — долоо хоногийн тойм', 'Өмнөх 7 хоног 250 USD · +50.38 (+20.2%)', 'Meta зар — кампанит ажлаар', '[Block contents] 201 мкв 5 өрөө', 'Төсөв ба зарцуулалт',
         'Туршилтын хуудас — долоо хоногийн үзүүлэлт', 'Энэ долоо хоногт нийтэлсэн пост', 'Онцлох орон сууц — Facebook пост', '70,662']) {
         expect(marketingDeck.text).toContain(needle);
     }
