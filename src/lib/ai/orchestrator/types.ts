@@ -84,6 +84,8 @@ export interface OrchestratorContext {
     onEvent?: (event: OrchestratorEvent) => void;
     /** Нэвтэрсэн хэрэглэгчийн нэр — үүсгэх үйлдэлд хадгална. */
     userName?: string;
+    /** Нэр тодорхойлох fallback (өөр төслийн менежерийн нэрийг `in_project` тухайн төслөөр нь шийднэ). */
+    userEmail?: string;
     attachments?: OrchestratorAttachment[];
     /** Дэд агентын ажиллагаанд: аль агент (trace/event-д). */
     agentId?: AgentId;

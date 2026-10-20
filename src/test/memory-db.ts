@@ -3,6 +3,7 @@
  * Дэмжих: select (count/head), insert (нэг/олон мөр), upsert (onConflict түлхүүрээр), update, delete, eq/neq/is/not(is, eq)/in/ilike/or (энгийн
  * `col.op.value`), order (олон түлхүүр), range/limit, maybeSingle/single, await.
  * DB-ийн хязгаарлалтыг `constraints` hook-оор дуурайна (unique → 23505, FK → 23503 гэх мэт).
+ * RPC-г `db.rpcs[нэр]` handler-оор дуурайна (бүртгээгүй RPC → PGRST202).
  */
 type Row = Record<string, any>;
 type DbError = { code: string; message: string };
@@ -23,12 +24,33 @@ export interface MemoryDb {
     /** Тухайн хүснэгтийн дараагийн уншилт/бичилтэд алдаа буцаана (нэг удаа). */
     failNext: Record<string, DbError>;
     from: (table: string) => any;
+    /** RPC дуурайлга: handler нь `{ data, error }` эсвэл зөвхөн data буцаана; throw хийвэл алдаа болно. */
+    rpcs: Record<string, (args: Record<string, any>, db: MemoryDb) => unknown>;
+    /** Дуудсан RPC-ууд (дарааллаар). */
+    rpcCalls: { name: string; args: Record<string, any> }[];
+    rpc: (name: string, args?: Record<string, any>) => Promise<{ data: any; error: DbError | null }>;
 }
 
 const valueAt = (row: Row, key: string) => key.split('.').reduce<any>((value, part) => value?.[part], row);
 
 export function createMemoryDb(tables: Record<string, Row[]> = {}, constraints: MemoryDbConstraints = {}): MemoryDb {
-    const db: MemoryDb = { tables, writes: [], failNext: {}, from: () => null };
+    const db: MemoryDb = { tables, writes: [], failNext: {}, from: () => null, rpcs: {}, rpcCalls: [], rpc: async () => ({ data: null, error: null }) };
+    db.rpc = async (name: string, args: Record<string, any> = {}) => {
+        db.rpcCalls.push({ name, args });
+        const forced = db.failNext[`rpc:${name}`];
+        if (forced) { delete db.failNext[`rpc:${name}`]; return { data: null, error: forced }; }
+        const handler = db.rpcs[name];
+        if (!handler) return { data: null, error: { code: 'PGRST202', message: `function ${name} not found` } };
+        try {
+            const result = await handler(args, db) as any;
+            return result && typeof result === 'object' && ('data' in result || 'error' in result)
+                ? { data: result.data ?? null, error: result.error ?? null }
+                : { data: result ?? null, error: null };
+        } catch (error) {
+            const e = error as Partial<DbError>;
+            return { data: null, error: { code: e.code || 'P0001', message: e.message || String(error) } };
+        }
+    };
     db.from = (table: string) => {
         const filters: Array<(row: Row) => boolean> = [];
         const orders: { key: string; ascending: boolean }[] = [];

@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
         const [scope, perms] = await Promise.all([resolveSalesProjectScope(db, authShop.id), resolvePermissions()]);
         const resolved = await resolveStaffLead(db, authShop.id, {
             projectId: input.project_id, status: input.status, source: input.source, assignManager: input.assignManager,
-            category: input.category_id ? { id: input.category_id } : undefined,
+            category: input.category_id ? { id: input.category_id } : undefined, phone: identity.customer_phone,
         }, { userId: uid, role: perms?.role || 'viewer', scope });
         if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
 

@@ -66,7 +66,7 @@ export async function POST(req: Request) {
         };
 
         // RBAC-г executeDataTool дотор дахин шалгана. confirm=true → бодит үйлдэл.
-        const userName = await resolveSalesManagerName(resolvedUser.id, resolvedUser.email);
+        const userName = await resolveSalesManagerName(resolvedUser.id, resolvedUser.email, effectiveShopId);
         const result = await executeDataTool(tool, args || {}, effectiveShopId, perms, resolvedUser.id, true, userName);
 
         const ok = !(result && result.error);

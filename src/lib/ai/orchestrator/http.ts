@@ -113,7 +113,7 @@ export async function prepareAssistantRequest(req: Request): Promise<{ error: Ne
 
     const [shopKnowledge, userName, summaryRow, projectRows] = await Promise.all([
         loadShopKnowledge(adminDb, effectiveShopId),
-        resolveSalesManagerName(resolvedUser.id, resolvedUser.email),
+        resolveSalesManagerName(resolvedUser.id, resolvedUser.email, effectiveShopId),
         conversationId ? loadConversationSummary(adminDb, String(conversationId), { userId: resolvedUser.id, shopId: effectiveShopId }) : Promise.resolve(null),
         // Shop = төсөл: хэрэглэгчийн хандах бусад төслийг `in_project`-оор асууж болно (best-effort).
         accessible.size > 1
@@ -142,6 +142,7 @@ export async function prepareAssistantRequest(req: Request): Promise<{ error: Ne
             history: Array.isArray(history) ? history.slice(-20) : [],
             conversationSummary: summaryRow?.summary || null,
             userName,
+            userEmail: resolvedUser.email,
             attachments: Array.isArray(attachments) ? (attachments as OrchestratorContext['attachments']) : [],
             projects,
         },

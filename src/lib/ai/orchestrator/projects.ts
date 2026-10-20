@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { executeDataTool } from '@/lib/ai/data-assistant';
+import { resolveSalesManagerName } from '@/lib/ai/data-assistant/functions';
 import { isCatalogTool } from '@/lib/ai/tool-catalog';
 import type { OrchestratorContext } from './types';
 
@@ -10,7 +11,7 @@ export const IN_PROJECT_TOOL_NAME = 'in_project';
  * хандах (owner ∪ shop_members, серверийн тооцоолсон) өөр төсөлд нэг data tool-ыг тэр shop-ийн эрх,
  * борлуулалтын хүрээгээр ажиллуулна. Бичих үйлдэл (AUTO ч) зөвхөн тухайн shop-той карт үүсгэнэ.
  */
-export function buildInProjectTool(ctx: Pick<OrchestratorContext, 'shopId' | 'projects' | 'perms' | 'userId' | 'userName'>) {
+export function buildInProjectTool(ctx: Pick<OrchestratorContext, 'shopId' | 'projects' | 'perms' | 'userId' | 'userName' | 'userEmail'>) {
     const others = (ctx.projects ?? []).filter(project => project.shopId !== ctx.shopId);
     if (!others.length) return null;
     const current = ctx.projects?.find(project => project.shopId === ctx.shopId)?.name;
@@ -35,7 +36,9 @@ export function buildInProjectTool(ctx: Pick<OrchestratorContext, 'shopId' | 'pr
         const name = String(args.tool ?? '');
         if (!isCatalogTool(name)) return { error: `«${name}» гэсэн data tool алга` };
         const toolArgs = args.args && typeof args.args === 'object' && !Array.isArray(args.args) ? args.args as Record<string, unknown> : {};
-        const result = await executeDataTool(name, toolArgs, target.shopId, ctx.perms, ctx.userId, false, ctx.userName || '');
+        // Менежерийн нэр төсөл бүрийн бүртгэлээс (карт батлахад action route ижил нэрийг бичнэ).
+        const userName = await resolveSalesManagerName(ctx.userId, ctx.userEmail || ctx.userName, target.shopId).catch(() => ctx.userName || '');
+        const result = await executeDataTool(name, toolArgs, target.shopId, ctx.perms, ctx.userId, false, userName || '');
         if (result && typeof result === 'object' && !Array.isArray(result) && result.requiresConfirmation) {
             return { ...result, shopId: target.shopId, label: `${target.name}: ${result.label}` };
         }

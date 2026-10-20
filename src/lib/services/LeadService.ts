@@ -25,6 +25,8 @@ import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeErr
 import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { leadCategoryName, logLeadCategoryChange, resolveLeadCategory, type LeadCategoryInput } from '@/lib/services/LeadCategoryService';
 import { logLeadActivity } from '@/lib/leads/activities';
+import { classifyPhoneLeads, findProjectLeadsByPhone, loadProjectManagerNames } from '@/lib/services/ViewingService';
+import { normalizePhone } from '@/lib/utils/phone';
 import type { LeadSource, LeadStatus } from '@/types/property';
 
 export interface StaffLeadActor {
@@ -42,6 +44,8 @@ export interface StaffLeadRequest {
     assignManager?: string | null;
     /** Лидийн ангилал (заавал биш): сонгогчийн id эсвэл AI-ийн яг нэр. Зөвхөн энэ төслийн идэвхтэй ангилал. */
     category?: LeadCategoryInput;
+    /** Харилцагчийн утас — хязгаарлагдсан менежер хамт олны/хариуцагчгүй лидийг давхардуулахгүй. */
+    phone?: string | null;
 }
 
 export interface ResolvedStaffLead {
@@ -111,6 +115,26 @@ export async function resolveStaffLead(
         .eq('id', projectId).eq('shop_id', shopId).maybeSingle();
     if (projectError) return { ok: false, status: 503, error: 'Төслийг шалгаж чадсангүй' };
     if (!project) return { ok: false, status: 400, error: 'Төсөл олдсонгүй' };
+
+    // Менежерийн хамрах хүрээ хамт олныхоо лидийг харахгүй тул төслийн хэмжээнд шалгана: давхар лид
+    // үүсч, уулзалт/дуудлага буруу нэр дээр орохоос сэргийлнэ (өөрийн давхар лидийг UI анхааруулдаг).
+    const phone = normalizePhone(request.phone);
+    if (actor.scope.projectIds !== null && phone && phone.length >= 8) {
+        let matches: Awaited<ReturnType<typeof findProjectLeadsByPhone>>;
+        let activeManagers: Set<string>;
+        try {
+            [matches, activeManagers] = await Promise.all([
+                findProjectLeadsByPhone(db, shopId, projectId, phone), loadProjectManagerNames(db, shopId, projectId),
+            ]);
+        } catch { return { ok: false, status: 503, error: 'Лид хайхад алдаа гарлаа' }; }
+        if (matches === null) return { ok: false, status: 409, error: 'Олон лид таарлаа. Лидээ шалгана уу.' };
+        const verdict = classifyPhoneLeads(matches, {
+            owner: actor.scope.managerName, activeManagers,
+            colleagueNext: 'Уулзалт болсон бол өдрийн тайлангаас тухайн менежерийн нэр дээр бүртгэнэ үү.',
+            claim: 'Энэ утастай лид хариуцагчгүй байна. «Хариуцагчгүй» жагсаалтаас хариуцаж авна уу.',
+        });
+        if (verdict.kind === 'blocked') return { ok: false, status: 409, error: verdict.error };
+    }
 
     if (request.status === 'closed_won' || request.status === 'closed_lost') {
         return { ok: false, status: 400, error: 'Шинэ лидийг идэвхтэй төлөвөөр бүртгэнэ. Гэрээ эсвэл алдсан шалтгаанаа дараа нь бүртгэнэ үү.' };

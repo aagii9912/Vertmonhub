@@ -53,6 +53,12 @@ vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: (table: string)
         eq: (key: string, value: unknown) => { filters.push(row => row[key] === value); return query; },
         is: (key: string, value: unknown) => { filters.push(row => (row[key] ?? null) === value); return query; },
         in: (key: string, values: unknown[]) => { filters.push(row => values.includes(row[key])); return query; },
+        ilike: (key: string, pattern: string) => {
+            const regex = new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*')}$`, 'iu');
+            filters.push(row => regex.test(String(row[key] ?? '')));
+            return query;
+        },
+        limit: (count: number) => { end = start + count - 1; return query; },
         order: () => query,
         range: (from: number, to: number) => { start = from; end = to; return query; },
         maybeSingle: async () => one(),

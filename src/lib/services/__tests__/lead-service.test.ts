@@ -32,10 +32,16 @@ const db = { from: (table: string) => {
         eq: (key: string, value: unknown) => { filters.push((row) => row[key] === value); return query; },
         in: () => query,
         is: () => query,
+        ilike: (key: string, pattern: string) => {
+            const regex = new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*')}$`, 'iu');
+            filters.push((row) => regex.test(String(row[key] ?? '')));
+            return query;
+        },
         order: () => query,
         limit: async (count: number) => ({ data: (state.tables[table] || []).filter((row) => filters.every((filter) => filter(row))).slice(0, count), error: null }),
         insert: (row: Row) => { payload = row; return query; },
         maybeSingle: async () => ({ data: first(), error: null }),
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: (state.tables[table] || []).filter((row) => filters.every((filter) => filter(row))), error: null }).then(resolve),
         single: async () => {
             if (state.insertError) {
                 if (state.raceRow) (state.tables[table] ||= []).push(state.raceRow);
@@ -84,6 +90,25 @@ describe('resolveStaffLead', () => {
             .toMatchObject({ ok: true, status: 'new', sales_manager_name: 'Батаа' });
         expect(await resolveStaffLead(db, 'shop-1', { projectId: project, assignManager: 'Сараа' }, admin)).toMatchObject({ ok: true, sales_manager_name: 'Сараа' });
         expect(await resolveStaffLead(db, 'shop-1', { projectId: project, assignManager: 'Байхгүй' }, admin)).toMatchObject({ ok: false, status: 400 });
+    });
+
+    it('stops a restricted manager from duplicating a colleague’s or an unassigned lead by phone', async () => {
+        const manager = { userId: 'manager-user', role: 'sales_manager', scope: { projectIds: [project], managerName: 'Батаа' } };
+        const lead = (id: string, owner: string | null, status = 'new') => ({ id, shop_id: 'shop-1', project_id: project, customer_phone: '+976 9911 2233', sales_manager_name: owner, status });
+        state.tables.leads = [lead('colleague', 'Сараа.Бат')];
+        state.tables.sales_managers = [{ shop_id: 'shop-1', name: 'Сараа.Бат', is_active: true }];
+        state.tables.sales_manager_projects = [{ shop_id: 'shop-1', project_id: project, manager_name: 'Сараа.Бат' }];
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project, phone: '9911 2233' }, manager)).toMatchObject({ ok: false, status: 409,
+            error: expect.stringContaining('Энэ утастай харилцагч') });
+        state.tables.leads = [lead('pool', null)];
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project, phone: '99112233' }, manager)).toMatchObject({ ok: false, status: 409,
+            error: 'Энэ утастай лид хариуцагчгүй байна. «Хариуцагчгүй» жагсаалтаас хариуцаж авна уу.' });
+        // Өөрийн давхар лид (UI анхааруулдаг), админ, утасгүй бол шалгахгүй.
+        state.tables.leads = [lead('own', 'Батаа')];
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project, phone: '99112233' }, manager)).toMatchObject({ ok: true });
+        state.tables.leads = [lead('pool', null)];
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project, phone: '99112233' }, admin)).toMatchObject({ ok: true });
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project }, manager)).toMatchObject({ ok: true });
     });
 
     it('accepts an optional active category of the same project shop', async () => {

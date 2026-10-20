@@ -92,6 +92,11 @@ const db = {
                 filters.push(row => row.sales_manager_name == null || row.sales_manager_name === '');
                 return query;
             },
+            ilike: (key: string, pattern: string) => {
+                const regex = new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*')}$`, 'iu');
+                filters.push(row => regex.test(String(row[key] ?? '')));
+                return query;
+            },
             limit: (count: number) => { limit = count; return query; },
             order: () => query,
             range: () => query,
