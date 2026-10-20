@@ -420,7 +420,7 @@ test('маркетинг өөрийн контент төлөвлөгөөгөө�
     expect(marketingFile.suggestedFilename()).toBe(`Vertmon · Туршилтын өгөгдөл - Маркетинг - Лхагва ${meetingDate}.pptx`);
     await marketingFile.saveAs('output/workday/weekly-marketing.pptx');
     const marketingDeck = await pptxText('output/workday/weekly-marketing.pptx');
-    for (const needle of ['МАРКЕТИНГИЙН АЛБА', 'Контент төлөвлөгөө ба гүйцэтгэл', 'Онцлох орон сууц: 201 мкв 5 өрөө', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт, Meta API', 'Төсөв ба зарцуулалт',
+    for (const needle of ['МАРКЕТИНГИЙН АЛБА', 'Контент төлөвлөгөө ба гүйцэтгэл', 'Онцлох орон сууц: 201 мкв 5 өрөө', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт', 'Meta зар — долоо хоногийн тойм', 'Meta зар — кампанит ажлаар', '[Block contents] 201 мкв 5 өрөө', 'Төсөв ба зарцуулалт',
         'Туршилтын хуудас — долоо хоногийн үзүүлэлт', 'Энэ долоо хоногт нийтэлсэн пост', 'Онцлох орон сууц — Facebook пост', '70,662']) {
         expect(marketingDeck.text).toContain(needle);
     }

@@ -119,3 +119,22 @@ it('compares per-type results with the previous fully covered week', async () =>
     expect(calls).toHaveTextContent('Дуудлага (Meta)76Нэг дуудлагын өртөг: 1.86 USD+17 (+28.8%)');
     expect(within(card).queryByText(/Өдөр дутуу/)).not.toBeInTheDocument();
 });
+
+it('shows the Meta summary the meeting slides show: CTR, CPM, untyped spend and every campaign by spend', async () => {
+    const base = metaReport();
+    const report = metaReport({ origin: 'api', file_name: null, data_to: '2026-09-29', totals: { ...base.totals, reach: 41200, frequency: 3.72, ctr_link: 0.48, cpm: 1.52, cost_per_link_click: 0.32 } });
+    respond({ report, exact: true, longer: false, previous: null, comparison: null });
+    show();
+    const card = await screen.findByRole('region', { name: 'Meta Ads Manager' });
+    const metrics = within(card).getAllByRole('term').map(term => term.textContent);
+    expect(metrics).toEqual(['Зарцуулсан дүн', 'Impressions (харагдалт)', 'Reach (хүрсэн хүн)', 'Frequency (давтамж)', 'Link clicks', 'Link CTR', 'CPM (1000 харагдалтын өртөг)', 'Нэг link click-ийн өртөг']);
+    expect(within(card).getByText('0.48%')).toBeInTheDocument();
+    expect(within(card).getByText('1.52 USD')).toBeInTheDocument();
+    // 233.1 − (141.09 + 43.21 + 6.95): Meta API төрөлгүй кампанит ажлын зардлыг нийтэд л оруулдаг.
+    expect(within(card).getByText('Үр дүнгийн төрөлгүй зардал: 41.85 USD')).toBeInTheDocument();
+    expect(within(card).getByText('Кампанит ажлын хүснэгт (4 мөр)')).toBeInTheDocument();
+    const table = within(card).getByRole('region', { name: 'Задаргаа: Кампанит ажил', hidden: true });
+    // Зардлаар буурахаар, зардалгүй (зогссон) кампанит ажил ч хүснэгтэд байна.
+    expect(within(table).getAllByRole('rowheader', { hidden: true }).map(cell => cell.textContent)).toEqual(['Дуудлага', 'Пост', 'Хүрэлт', 'Зогссон']);
+    expect(within(table).getAllByRole('row', { hidden: true })[1]).toHaveTextContent(/^Дуудлага141\.09 USD76Дуудлага \(Meta\)$/);
+});

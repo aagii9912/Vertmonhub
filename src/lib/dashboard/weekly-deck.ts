@@ -703,7 +703,8 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
             ...Array.from({ length: showDelta ? 2 : 1 }, () => bodyCell('', 'right')), bodyCell(formatChannelValue(amount, 'money'), 'right', style), bodyCell('', 'right')];
         if (untyped !== null) rows.push(spendRow('Үр дүнгийн төрөлгүй зардал', untyped, { italic: true, ...muted }));
         if (typeof totals.spend === 'number') rows.push(spendRow('Нийт зардал', totals.spend, { bold: true }));
-        const slide = content(pres, kicker, 'Meta зар — үр дүн төрлөөр', `${span(period)} · зардлыг кампанит ажлын зорилгоор хуваарилсан${blocked ? ' · өдөр дутуу тул харьцуулаагүй' : ''}`);
+        const slide = content(pres, kicker, 'Meta зар — үр дүн төрлөөр', [span(period),
+            mixedCurrency ? 'өөр валют холилдсон тул зардал тооцоогүй' : 'зардлыг кампанит ажлын зорилгоор хуваарилсан', blocked ? 'өдөр дутуу тул харьцуулаагүй' : null].filter(Boolean).join(' · '));
         const fontSize = rows.length > 8 ? 12 : 14;
         slide.addTable([head, ...rows], {
             x: M, y: TOP, w: CW, colW: showDelta ? [4.333, 1.6, 2.5, 1.8, 1.9] : [5.333, 2.0, 2.2, 2.6], fontFace: FONT, fontSize,

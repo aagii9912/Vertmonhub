@@ -393,6 +393,7 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(summary).toContain('Зарцуулсан дүн — Өөр валют холилдсон — тооцоогүй');
         expect(summary).toContain('Өмнөх ижил хугацааны Meta тайлан алга — харьцуулаагүй.');
         expect(summary).toContain('1 анхааруулга — слайдын тэмдэглэлд.');
+        expect(at('Meta зар — үр дүн төрлөөр')).toMatch(/өөр валют холилдсон тул зардал тооцоогүй Үр дүн Тоо Зардал Нэг үр дүнгийн өртөг Дуудлага \(Meta\) 58 — —/);
         const campaigns = at('Meta зар — кампанит ажлаар (1/2)');
         expect(campaigns).toContain('Нэг үр дүнгийн өртөг Зардал Impressions');
         expect(campaigns).not.toMatch(/120\.5|USD|₮/);
