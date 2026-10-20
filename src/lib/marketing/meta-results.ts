@@ -95,6 +95,9 @@ export const META_RESULT_ACTION_TYPES: Partial<Record<MetaResultType, readonly s
     page_engagement: ['page_engagement'],
 };
 
+/** Задаргааны мөрийн `tag` нь мэдэгдэх үр дүнгийн төрөл эсэх (хуучин мөр төрөлгүй байж болно). */
+export const isMetaResultType = (tag: string | null | undefined): tag is MetaResultType => !!tag && (META_RESULT_TYPES as readonly string[]).includes(tag);
+
 export const metaResultKey = (type: MetaResultType) => `results_${type}`;
 export const metaResultSpendKey = (type: MetaResultType) => `spend_${type}`;
 export const metaResultCostKey = (type: MetaResultType) => `cost_per_result_${type}`;
