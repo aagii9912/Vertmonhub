@@ -10,8 +10,8 @@ import type { BudgetOverview } from '@/lib/marketing/budget';
 import { reportCoverage, type ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
 import { CHANNEL_SOURCE_LABELS, CHANNEL_SOURCES, channelKeyMetrics, channelMetric, formatChannelValue, periodDays, type BreakdownRow } from '@/lib/marketing/channel-reports';
 import {
-    META_WEEK_KEYS, channelCurrency, comparisonBlockedByCoverage, formatChannelDelta, formatChannelMetric, metaCampaignRows, metaCostText, metaResultsByType,
-    metaRowTypeLabel, metaUntypedSpend,
+    META_WEEK_KEYS, channelCurrency, comparisonBlockedByCoverage, formatChannelDelta, formatChannelMetric, metaCampaignRows, metaCampaignsBySpend, metaCostText,
+    metaReachIsSum, metaResultsByType, metaRowTypeLabel, metaUntypedSpend,
 } from '@/lib/marketing/channel-week';
 import { isMetaResultType, metaResultKey } from '@/lib/marketing/meta-results';
 import { CONTENT_STATUS_LABEL, CONTENT_TYPE_LABEL, contentPlatformLabel, type ContentItem, type ContentPlanSummary } from '@/lib/marketing/content-plan';
@@ -98,6 +98,54 @@ const clipWords = (text: string, max: number) => {
 };
 const managerShort = (name: string | null) => name?.split('.')[0]?.trim() || '—';
 
+/**
+ * Arial-ийн тэмдэгтийн ойролцоо өргөн (em): нарийн тэмдэгт, цифр, том үсэг, өргөн жижиг үсэг, бусад.
+ * Слайдын хайрцагт текст багтах эсэхийг (мөр шилжилт, картын тоо) урьдчилан тооцоход л — PowerPoint,
+ * Keynote, QuickLook `fit: 'shrink'`-ийг файл засахаас нааш хэрэгжүүлдэггүй.
+ */
+function textEm(text: string, bold = false): number {
+    let em = 0;
+    for (const ch of text) {
+        if (/[\s.,:;'|!()\[\]ilIjtfr\-]/.test(ch)) em += 0.3;
+        else if (/\d/.test(ch)) em += 0.556;
+        else if (/[—%@]/.test(ch)) em += 0.95;
+        else if (/[mwMWшщжюыфмШЩЖЮЫФМ]/.test(ch)) em += 0.85 * (bold ? 1.07 : 1);
+        else if (/[A-ZА-ЯЁӨҮ]/.test(ch)) em += 0.68 * (bold ? 1.07 : 1);
+        else em += 0.54 * (bold ? 1.07 : 1);
+    }
+    return em;
+}
+/**
+ * Өгсөн өргөнд (инч) үгийн заагаар ороосон мөрийн тоо; нэг мөрт багтахгүй үг тэмдэгтээр хуваагдана.
+ * Өргөний 5%-ийг нөөцөлнө (дүгнэлт дутуу бус, илүү гарах нь дээр).
+ */
+function textLines(text: string, width: number, fontSize: number, bold = false): number {
+    const max = width * 72 / fontSize * 0.95;
+    let lines = 1;
+    let used = 0;
+    for (const word of text.split(/\s+/).filter(Boolean)) {
+        const w = textEm(word, bold);
+        const space = used > 0 ? textEm(' ') : 0;
+        if (used + space + w <= max) { used += space + w; continue; }
+        if (used > 0) { lines++; used = 0; }
+        const extra = Math.max(0, Math.ceil(w / max) - 1);
+        lines += extra;
+        used = w - extra * max;
+    }
+    return lines;
+}
+/** Нэрийг үгийн заагаар тайрч `maxLines` мөрт багтаана (баганын өргөн, фонтоор). */
+function clipToLines(text: string, width: number, fontSize: number, maxLines: number): string {
+    let max = text.length;
+    let out = text;
+    while (textLines(out, width, fontSize) > maxLines && max > 8) {
+        max -= 4;
+        out = clipWords(text, max);
+    }
+    return out;
+}
+const lineHeight = (fontSize: number) => fontSize * 1.24 / 72;
+
 type Slide = PptxGenJS.Slide;
 type Cell = PptxGenJS.TableCell;
 
@@ -134,7 +182,10 @@ function note(slide: Slide, lines: (string | false | null | undefined)[]) {
 function stat(slide: Slide, x: number, y: number, w: number, h: number, label: string, value: string, helper?: string, tone?: 'danger' | 'gold') {
     slide.addShape('roundRect', { x, y, w, h, fill: { color: C.surface }, line: { color: C.surface }, rectRadius: 0.08 });
     slide.addText(label, { x: x + 0.22, y: y + 0.16, w: w - 0.44, h: 0.3, fontFace: FONT, fontSize: 11, color: C.muted, margin: 0, isTextBox: true });
-    slide.addText(value, { x: x + 0.22, y: y + 0.46, w: w - 0.44, h: 0.62, fontFace: FONT, fontSize: value.length > 14 ? 20 : 26, bold: true, color: tone === 'danger' ? C.danger : tone === 'gold' ? C.gold : C.ink, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
+    // Хэмжээг өргөнөөр нь сонгоно («12,345.67 USD» 26pt-д 2 мөр болж доорх тайлбарыг дардаг).
+    let size = value.length > 14 ? 20 : 26;
+    while (size > 14 && textEm(value, true) * size / 72 * 1.03 > w - 0.44) size -= 2;
+    slide.addText(value, { x: x + 0.22, y: y + 0.46, w: w - 0.44, h: 0.62, fontFace: FONT, fontSize: size, bold: true, color: tone === 'danger' ? C.danger : tone === 'gold' ? C.gold : C.ink, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
     if (helper) slide.addText(helper, { x: x + 0.22, y: y + 1.08, w: w - 0.44, h: Math.max(0.3, h - 1.2), fontFace: FONT, fontSize: 10, color: C.muted, margin: 0, valign: 'top', isTextBox: true });
 }
 
@@ -147,22 +198,51 @@ function statRow(slide: Slide, y: number, items: { label: string; value: string;
 const headCell = (text: string, align: 'left' | 'right' | 'center' = 'left'): Cell => ({ text, options: { bold: true, color: C.muted, fill: { color: C.surface }, align } });
 const bodyCell = (text: string, align: 'left' | 'right' | 'center' = 'left', extra: PptxGenJS.TableCellProps = {}): Cell => ({ text, options: { color: C.ink, align, ...extra } });
 
-/** Хүснэгтийг шаардлагатай бол хэд хэдэн слайдад хуваана (гарчигт «1/2»). */
+const TABLE_MARGIN: [number, number, number, number] = [0.04, 0.08, 0.04, 0.08];
+
+/** Хүснэгтийн мөрийн ойролцоо өндөр (инч): хамгийн олон мөрт нүд × мөрийн өндөр + нүдний дээд, доод зай. */
+function tableRowHeight(cells: Cell[], colW: number[], fontSize: number, margin: readonly number[] = TABLE_MARGIN): number {
+    const lines = Math.max(1, ...cells.map((cell, index) => typeof cell.text === 'string' && cell.text
+        ? textLines(cell.text, (colW[index] ?? 1) - margin[1] - margin[3], fontSize, !!cell.options?.bold) : 1));
+    return lines * lineHeight(fontSize) + margin[0] + margin[2];
+}
+
+/**
+ * Хүснэгтийг шаардлагатай бол хэд хэдэн слайдад хуваана (гарчигт «1/2»). `perSlide` = нэг слайдын дээд
+ * мөр; `fitHeight` бол мөр бүрийн ороолтын өндрөөр (урт нэр 2 мөр) хүснэгт хөлийн мөрөнд хүрэхгүйгээр хуваана.
+ */
 function tableSlides(pres: PptxGenJS, opts: {
     kicker: string; title: string; subtitle?: string; head: Cell[]; rows: Cell[][]; footer?: Cell[];
-    colW: number[]; perSlide: number; fontSize?: number; notes?: string[];
+    colW: number[]; perSlide: number; fontSize?: number; notes?: string[]; fitHeight?: boolean;
 }) {
-    const pages = Math.max(1, Math.ceil(opts.rows.length / opts.perSlide));
-    for (let page = 0; page < pages; page++) {
-        const slide = content(pres, opts.kicker, pages > 1 ? `${opts.title} (${page + 1}/${pages})` : opts.title, opts.subtitle);
-        const rows = opts.rows.slice(page * opts.perSlide, (page + 1) * opts.perSlide);
-        const last = page === pages - 1;
+    const y = opts.subtitle ? TOP : TOP - 0.2;
+    const fontSize = opts.fontSize ?? 11;
+    const pagesOf = (): Cell[][][] => {
+        if (!opts.fitHeight) return Array.from({ length: Math.max(1, Math.ceil(opts.rows.length / opts.perSlide)) }, (_, page) => opts.rows.slice(page * opts.perSlide, (page + 1) * opts.perSlide));
+        const height = (cells: Cell[]) => tableRowHeight(cells, opts.colW, fontSize);
+        const room = BOTTOM - y - height(opts.head);
+        const pages: Cell[][][] = [[]];
+        let used = 0;
+        for (const row of opts.rows) {
+            const h = height(row);
+            const current = pages[pages.length - 1];
+            if (current.length && (current.length >= opts.perSlide || used + h > room)) { pages.push([]); used = 0; }
+            pages[pages.length - 1].push(row);
+            used += h;
+        }
+        if (opts.footer && pages[pages.length - 1].length > 1 && used + height(opts.footer) > room) pages.push([pages[pages.length - 1].pop()!]);
+        return pages;
+    };
+    const pages = pagesOf();
+    pages.forEach((rows, page) => {
+        const slide = content(pres, opts.kicker, pages.length > 1 ? `${opts.title} (${page + 1}/${pages.length})` : opts.title, opts.subtitle);
+        const last = page === pages.length - 1;
         slide.addTable([opts.head, ...rows, ...(last && opts.footer ? [opts.footer] : [])], {
-            x: M, y: opts.subtitle ? TOP : TOP - 0.2, w: CW, colW: opts.colW, fontFace: FONT, fontSize: opts.fontSize ?? 11,
-            border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.04, 0.08, 0.04, 0.08], autoPage: false,
+            x: M, y, w: CW, colW: opts.colW, fontFace: FONT, fontSize,
+            border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [...TABLE_MARGIN], autoPage: false,
         });
         note(slide, opts.notes ?? []);
-    }
+    });
 }
 
 function coverSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
@@ -605,11 +685,12 @@ function metaRowCost(row: BreakdownRow): string {
 }
 
 /**
- * Meta зар — Ads Manager-ийн хураангуй шиг: (1) нийт үзүүлэлт өмнөх долоо хоногтой, (2) үр дүн
+ * Meta зар — Ads Manager-ийн хураангуй шиг: (1) нийт үзүүлэлт өмнөх ижил урттай тайлантай, (2) үр дүн
  * төрлөөр нэг үр дүнгийн өртөгтэй, (3) кампанит ажлаар. Зөвхөн хурлын долоо хоногийн `meta_ads`
  * сувгийн тайлангаас (Meta API эсвэл Ads Manager-ийн экспорт). Зардал дансны валютаар — ₮ биш,
- * төгрөгийн дүнд нэмэхгүй; үр дүнг төрөл хооронд, reach-ийг өдөр/кампанит ажлаар нэмэхгүй; CRM-ийн
- * лид, гэрээтэй холбохгүй. Тайлангүй бол слайд нэмэхгүй (сувгийн слайд дутууг нэрлэнэ).
+ * төгрөгийн дүнд нэмэхгүй; үр дүнг төрөл хооронд, өдрийн reach-ийг нэмэхгүй (API-ийн олон кампанит
+ * ажлын reach-ийн нийлбэрийг «≈»-ээр); CRM-ийн лид, гэрээтэй холбохгүй. Тайлангүй бол слайд нэмэхгүй
+ * (сувгийн слайд дутууг нэрлэнэ).
  */
 function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     const match = input.channels?.meta_ads;
@@ -624,7 +705,11 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     // Хуудастай адил харьцуулалтаас (`comparison`) уншина: өмнөх тайлангийн утгатай үзүүлэлт байвал л харьцуулна.
     const previous = match.previous;
     const compared = !blocked && Object.values(match.comparison ?? {}).some(delta => delta.previous !== null);
-    const against = previous && shiftReviewDate(previous.period_to, 1) !== report.period_from ? 'Өмнөх тайлан' : 'Өмнөх 7 хоног';
+    // Өмнөх тайлан ижил урттай (`pickPreviousReport`); шошгыг жинхэнэ уртаар нь — 30 өдрийн экспортыг «7 хоног» гэхгүй.
+    const previousDays = previous ? periodDays({ from: previous.period_from, to: previous.period_to }) : null;
+    const adjacent = !!previous && shiftReviewDate(previous.period_to, 1) === report.period_from;
+    const previousWeek = adjacent && previousDays === 7;
+    const against = adjacent ? `Өмнөх ${previousDays} хоног` : 'Өмнөх тайлан';
     const mixedCurrency = report.warnings.some(warning => warning.code === 'mixed_currency');
     const unit = currency ? ` (${currency})` : typeof totals.spend === 'number' ? ' (валют тодорхойгүй)' : '';
     const origin = report.origin === 'api' ? 'Meta API' : 'Экспорт файл';
@@ -663,8 +748,8 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     statRow(summary, TOP + 1.95, META_WEEK_KEYS.slice(4).map(card), 1.7);
     const important = report.warnings.filter(warning => warning.level === 'warning');
     const footnotes = [
-        blocked ? 'Өдөр дутуу тул өмнөх долоо хоногтой харьцуулаагүй.' : !compared ? 'Өмнөх ижил хугацааны Meta тайлан алга — харьцуулаагүй.' : null,
-        previous && against === 'Өмнөх тайлан' && compared ? `Харьцуулсан тайлан: ${span({ from: previous.period_from, to: previous.period_to })}.` : null,
+        blocked ? `Өдөр дутуу тул ${previousWeek ? 'өмнөх долоо хоногтой' : 'өмнөх тайлантай'} харьцуулаагүй.` : !compared ? 'Өмнөх ижил хугацааны Meta тайлан алга — харьцуулаагүй.' : null,
+        previous && !previousWeek && compared ? `Харьцуулсан тайлан: ${span({ from: previous.period_from, to: previous.period_to })} (${previousDays} хоног).` : null,
         currencyNote,
         important.length ? `${important.length} анхааруулга — слайдын тэмдэглэлд.` : null,
     ].filter((line): line is string => !!line);
@@ -681,6 +766,8 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
 
     // 2. Үр дүн төрлөөр — төрөл хооронд нийлбэргүй.
     const types = metaResultsByType(totals);
+    const reachSum = metaReachIsSum(report);
+    const approxReach = (type: string) => reachSum && type === 'reach' ? '≈ ' : '';
     if (types.length || typeof totals.results === 'number') {
         const showDelta = compared && types.some(row => match.comparison?.[metaResultKey(row.type)]);
         const head = [headCell('Үр дүн'), headCell('Тоо', 'right'), ...(showDelta ? [headCell(against, 'right')] : []), headCell(`Зардал${unit}`, 'right'), headCell(`Нэг үр дүнгийн өртөг${unit}`, 'right')];
@@ -690,10 +777,10 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
             const change = delta && delta.previous !== null ? [count(delta.previous), formatChannelDelta(delta)].filter(Boolean).join(' · ') : '—';
             return [
                 bodyCell(row.label, 'left', { bold: true, ...(row.idle ? muted : {}) }),
-                bodyCell(count(row.results), 'right', { bold: !row.idle, ...(row.idle ? muted : {}) }),
+                bodyCell(row.results === null ? '—' : `${approxReach(row.type)}${count(row.results)}`, 'right', { bold: !row.idle, ...(row.idle ? muted : {}) }),
                 ...(showDelta ? [bodyCell(change, 'right')] : []),
                 bodyCell(row.spend === null ? '—' : formatChannelValue(row.spend, 'money'), 'right', row.idle ? muted : {}),
-                bodyCell(row.idle ? 'хүргэлтгүй' : metaCostText(row.type, row.cost), 'right', row.idle ? muted : {}),
+                bodyCell(row.idle ? 'хүргэлтгүй' : row.cost === null ? '—' : `${approxReach(row.type)}${metaCostText(row.type, row.cost)}`, 'right', row.idle ? muted : {}),
             ];
         }) : [[
             bodyCell('Results (төрөл тодорхойгүй)', 'left', { bold: true }), bodyCell(count(totals.results as number), 'right', { bold: true }),
@@ -707,18 +794,27 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
         const slide = content(pres, kicker, 'Meta зар — үр дүн төрлөөр', [span(period),
             mixedCurrency ? 'өөр валют холилдсон тул зардал тооцоогүй' : 'зардлыг кампанит ажлын зорилгоор хуваарилсан', blocked ? 'өдөр дутуу тул харьцуулаагүй' : null].filter(Boolean).join(' · '));
         const fontSize = rows.length > 8 ? 12 : 14;
+        const colW = showDelta ? [4.333, 1.6, 2.5, 1.8, 1.9] : [5.333, 2.0, 2.2, 2.6];
+        const margin: [number, number, number, number] = [0.06, 0.1, 0.06, 0.1];
         slide.addTable([head, ...rows], {
-            x: M, y: TOP, w: CW, colW: showDelta ? [4.333, 1.6, 2.5, 1.8, 1.9] : [5.333, 2.0, 2.2, 2.6], fontFace: FONT, fontSize,
-            border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.06, 0.1, 0.06, 0.1], autoPage: false,
+            x: M, y: TOP, w: CW, colW, fontFace: FONT, fontSize,
+            border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin, autoPage: false,
         });
         const approximate = report.origin === 'api' && report.warnings.some(warning => warning.code === 'field_ignored');
+        // «—»-ийн шалтгаан төрлөөс хамаарна: хүрсэн хүн = давхардалгүй тоо ирээгүй, бусад = Meta тоо өгөөгүй.
+        const noCount = types.filter(row => row.type !== 'reach' && row.results === null).map(row => row.label);
         const footnotes = [
-            types.some(row => row.results === null) ? '«—» = хүрсэн хүнийг өдөр, кампанит ажлаар нэмэхгүй тул тоолоогүй (зардлыг харуулав).' : null,
+            types.some(row => row.type === 'reach' && row.results === null) ? '«—» = хүрсэн хүнийг өдөр, кампанит ажлаар нэмэхгүй тул тоолоогүй (зардлыг харуулав).' : null,
+            noCount.length ? `«—» = ${noCount.join(', ')}: Meta үр дүнгийн тоо өгөөгүй (зардлыг л харуулав).` : null,
+            reachSum && types.some(row => row.type === 'reach' && row.results !== null)
+                ? '≈ = reach зорилготой кампанит ажлуудын давхардалгүй reach-ийн нийлбэр — кампанит ажил хооронд давхцаж болох тул бодит хүнээс их, 1000 хүнд ногдох өртөг бага гарч болно.' : null,
             approximate ? 'Зарим үр дүнг ad set-ийн зорилгоор ойролцоогоор тооцсон — тэмдэглэлийг үзнэ үү.' : null,
         ].filter((line): line is string => !!line);
-        // Хүснэгт богино бол (≤ 9 мөр) доод талд тайлбар; урт бол тэмдэглэлд л.
-        if (footnotes.length && rows.length <= 9) {
-            slide.addText(footnotes.join('\n'), { x: M, y: BOTTOM - 0.55, w: CW, h: 0.55, fontFace: FONT, fontSize: 11, color: C.muted, margin: 0, valign: 'bottom', isTextBox: true });
+        // Тайлбар хүснэгтийн доор багтвал слайдад, үгүй бол тэмдэглэлд л.
+        const tableBottom = TOP + [head, ...rows].reduce((sum, cells) => sum + tableRowHeight(cells, colW, fontSize, margin), 0);
+        const footH = footnotes.reduce((sum, line) => sum + textLines(line, CW, 11), 0) * lineHeight(11);
+        if (footnotes.length && tableBottom + 0.15 + footH <= BOTTOM) {
+            slide.addText(footnotes.join('\n'), { x: M, y: BOTTOM - footH, w: CW, h: footH, fontFace: FONT, fontSize: 11, color: C.muted, margin: 0, valign: 'bottom', isTextBox: true });
         }
         note(slide, [
             'Үр дүн = Meta-гийн зарын платформын үзүүлэлт (Ads Manager-ийн Results), Hub-ийн бүртгэлтэй холбож тооцоогүй. Өөр төрлийн үр дүнг нэг тоонд нэмээгүй.',
@@ -732,30 +828,39 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     // 3. Кампанит ажлаар.
     const campaigns = metaCampaignRows(report);
     if (!campaigns.length) return;
-    const money = typeof totals.spend === 'number';
+    const money = metaCampaignsBySpend(totals);
     const withReach = campaigns.some(row => typeof row.values.reach === 'number');
-    const named = new Set(campaigns.map(row => row.label)).size;
+    // Ижил нэртэй мөр = нэг кампанит ажлын өөр төрөл эсвэл ижил нэртэй өөр кампанит ажил — ялгах ID задаргаанд алга тул мөрөөр л тоолно.
+    const distinct = new Set(campaigns.map(row => row.label)).size === campaigns.length;
     const truncated = report.warnings.some(warning => warning.code === 'truncated');
     const value = (row: BreakdownRow, key: string) => typeof row.values[key] === 'number' ? row.values[key] : null;
+    const colW = withReach ? [3.6, 1.75, 0.95, 1.6, 1.15, 1.15, 1.0, 0.933] : [4.1, 1.85, 1.05, 1.65, 1.25, 1.25, 0.983];
     tableSlides(pres, {
         kicker, title: 'Meta зар — кампанит ажлаар',
-        subtitle: `${span(period)} · ${named} кампанит ажил${campaigns.length > named ? `, ${campaigns.length} мөр (үр дүнгийн төрлөөр)` : ''} · зардлаар эрэмбэлсэн${truncated ? ' · эхний 100 мөр' : ''}`,
+        subtitle: [span(period), distinct ? `${campaigns.length} кампанит ажил` : `${campaigns.length} мөр (кампанит ажил × үр дүнгийн төрөл)`,
+            money ? 'зардлаар эрэмбэлсэн' : 'харагдалтаар эрэмбэлсэн', truncated ? 'эхний 100 мөр' : null].filter(Boolean).join(' · '),
         head: [headCell('Кампанит ажил'), headCell('Үр дүнгийн төрөл'), headCell('Үр дүн', 'right'), headCell(`Нэг үр дүнгийн өртөг${unit}`, 'right'), headCell(`Зардал${unit}`, 'right'),
             headCell('Impressions', 'right'), ...(withReach ? [headCell('Reach', 'right')] : []), headCell('Link clicks', 'right')],
         rows: campaigns.map(row => [
-            bodyCell(clipWords(row.label.replace(/\s+/g, ' ').trim() || '(нэргүй)', 80)), bodyCell(metaRowTypeLabel(row), 'left', isMetaResultType(row.tag) ? {} : { color: C.muted }),
+            // Нэр ба төрөл нэг мөрийг 2-оос илүү мөр болгохгүй (хуудаслалт мөрийн өндрөөр).
+            bodyCell(clipToLines(row.label.replace(/\s+/g, ' ').trim() || '(нэргүй)', colW[0] - TABLE_MARGIN[1] - TABLE_MARGIN[3], 11, 2)),
+            // «(үр дүн)» дагавар баганын гарчигт байгаа тул хасна.
+            bodyCell(metaRowTypeLabel(row).replace(/ \(үр дүн\)$/, ''), 'left', isMetaResultType(row.tag) ? {} : { color: C.muted }),
             bodyCell(count(value(row, 'results')), 'right', { bold: true }), bodyCell(metaRowCost(row), 'right'),
             bodyCell(money && value(row, 'spend') !== null ? formatChannelValue(value(row, 'spend')!, 'money') : '—', 'right'),
             bodyCell(count(value(row, 'impressions')), 'right'), ...(withReach ? [bodyCell(count(value(row, 'reach')), 'right')] : []), bodyCell(count(value(row, 'link_clicks')), 'right'),
         ]),
-        colW: withReach ? [3.6, 1.75, 0.95, 1.6, 1.15, 1.15, 1.0, 0.933] : [4.1, 1.85, 1.05, 1.65, 1.25, 1.25, 0.983], perSlide: 11, fontSize: 11,
+        colW, perSlide: 11, fontSize: 11, fitHeight: true,
         notes: [
-            'Кампанит ажил бүр үр дүнгийн төрлөөрөө тусдаа мөр: олон төрлийн ad set-тэй кампанит ажил хэд хэдэн мөртэй.',
-            'Үр дүнг төрөл хооронд, хүрсэн хүнийг (Reach) кампанит ажил хооронд нэмэхгүй. Reach нь зөвхөн Meta-гийн давхардалгүй тоо ирсэн мөрт.',
-            money ? currencyNote : 'Файлд өөр валют холилдсон тул кампанит ажлын зардал, өртгийг харуулаагүй.',
-            truncated ? 'Задаргаанд зардлаар эхний 100 мөр хадгалагдсан; нийт дүнд бүх кампанит ажил орсон.' : '',
+            'Кампанит ажил бүр үр дүнгийн төрлөөрөө тусдаа мөр: олон төрлийн ad set-тэй кампанит ажил хэд хэдэн мөртэй. Ижил нэртэй өөр кампанит ажил ч тусдаа мөр.',
+            'Үр дүнг төрөл хооронд нэмэхгүй. Reach нь тухайн кампанит ажлын Meta-гийн давхардалгүй тоо (ирсэн мөрт л); мөрүүдийн reach-ийг нэмж нийт хүрсэн хүн гаргахгүй.',
+            reachSum ? '«Үр дүн төрлөөр» слайдын хүрсэн хүн (≈) нь reach зорилготой кампанит ажлуудын reach-ийн нийлбэр — давхцаж болно.' : null,
+            money ? currencyNote : mixedCurrency
+                ? 'Файлд өөр валют холилдсон тул кампанит ажлын зардал, өртгийг харуулаагүй, харьцуулахгүйн тулд харагдалтаар эрэмбэлсэн.'
+                : 'Тайланд зардал алга (экспортод зардлын багана сонгоогүй) тул кампанит ажлын зардал, өртгийг харуулаагүй; харагдалтаар эрэмбэлсэн.',
+            truncated ? 'Задаргаанд зардлаар эхний 100 мөр хадгалагдсан; нийт дүнд бүх кампанит ажил орсон.' : null,
             sourceNote,
-        ].filter(Boolean),
+        ].filter((line): line is string => !!line),
     });
 }
 

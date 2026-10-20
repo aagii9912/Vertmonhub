@@ -95,8 +95,8 @@ export const META_RESULT_ACTION_TYPES: Partial<Record<MetaResultType, readonly s
     page_engagement: ['page_engagement'],
 };
 
-/** Задаргааны мөрийн `tag` нь мэдэгдэх үр дүнгийн төрөл эсэх (хуучин мөр төрөлгүй байж болно). */
-export const isMetaResultType = (tag: string | null | undefined): tag is MetaResultType => !!tag && (META_RESULT_TYPES as readonly string[]).includes(tag);
+/** Мэдэгдэх үр дүнгийн төрөл эсэх: задаргааны мөрийн `tag` (хуучин мөр төрөлгүй байж болно), API-ийн `result_type`. */
+export const isMetaResultType = (value: unknown): value is MetaResultType => typeof value === 'string' && (META_RESULT_TYPES as readonly string[]).includes(value);
 
 export const metaResultKey = (type: MetaResultType) => `results_${type}`;
 export const metaResultSpendKey = (type: MetaResultType) => `spend_${type}`;

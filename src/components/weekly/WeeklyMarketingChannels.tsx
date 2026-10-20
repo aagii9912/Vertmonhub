@@ -9,7 +9,8 @@ import { cn } from '@/lib/utils';
 import { CHANNEL_LIMITS, CHANNEL_SOURCE_LABELS, CHANNEL_SOURCES, channelKeyMetrics, channelMetric, formatChannelValue, type ChannelSource, type MetricDelta } from '@/lib/marketing/channel-reports';
 import { reportCoverage, type ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
 import {
-    META_WEEK_KEYS, channelCurrency, comparisonBlockedByCoverage, formatChannelDelta, formatChannelMetric, metaCampaignRows, metaCostText, metaResultsByType, metaUntypedSpend,
+    META_WEEK_KEYS, channelCurrency, comparisonBlockedByCoverage, formatChannelDelta, formatChannelMetric, metaCampaignRows, metaCampaignsBySpend, metaCostText,
+    metaMissingResultsReason, metaReachIsSum, metaResultsByType, metaUntypedSpend,
 } from '@/lib/marketing/channel-week';
 import { META_RESULT_DEFS, isMetaResultType, metaResultKey } from '@/lib/marketing/meta-results';
 import { ChannelBreakdownTable } from '@/components/marketing/ChannelReportParts';
@@ -35,11 +36,15 @@ function Delta({ delta }: { delta?: MetricDelta }) {
     return <span className={cn('text-[11px]', delta.delta! > 0 ? 'text-status-success' : delta.delta! < 0 ? 'text-status-danger' : 'text-muted-foreground')}>{text}</span>;
 }
 
-/** Meta-гийн үр дүн төрөл бүрээр: тоо (reach-ийг өдрөөр нэмэхгүй тул «—» байж болно) ба нэг үр дүнгийн өртөг. Төрөл хооронд нийлбэргүй. */
-function MetaResults({ totals, comparison, currency }: { totals: Record<string, number | string>; comparison: Record<string, MetricDelta> | null; currency: string | null }) {
+/**
+ * Meta-гийн үр дүн төрөл бүрээр: тоо («—» = тоо ирээгүй, зардлыг харуулна) ба нэг үр дүнгийн өртөг. Төрөл хооронд
+ * нийлбэргүй. `reachSum` = API-ийн хүрсэн хүн нь хэд хэдэн кампанит ажлын reach-ийн нийлбэр (давхцаж болно) → «≈».
+ */
+function MetaResults({ totals, comparison, currency, reachSum }: { totals: Record<string, number | string>; comparison: Record<string, MetricDelta> | null; currency: string | null; reachSum: boolean }) {
     const types = metaResultsByType(totals);
     if (!types.length) return null;
     const untyped = metaUntypedSpend(totals);
+    const approx = (type: string) => reachSum && type === 'reach';
     return <div className="mt-3 border-t border-border pt-2">
         <p className="mb-1 text-[11px] font-medium text-muted-foreground">Үр дүн төрлөөр</p>
         <ul className="space-y-1.5 text-[12px]">
@@ -47,10 +52,12 @@ function MetaResults({ totals, comparison, currency }: { totals: Record<string, 
                 const delta = comparison?.[metaResultKey(row.type)];
                 return <li key={row.type} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3">
                     <span className="min-w-0">{row.label}</span>
-                    <span className="num text-right font-semibold" title={row.results === null ? 'Хүрсэн хүнийг өдөр, кампанит ажлаар нэмэхгүй' : undefined}>{row.results === null ? '—' : row.results.toLocaleString('en-US')}</span>
+                    <span className="num text-right font-semibold" title={row.results === null ? metaMissingResultsReason(row.type) : approx(row.type) ? REACH_SUM_NOTE : undefined}>
+                        {row.results === null ? '—' : `${approx(row.type) ? '≈ ' : ''}${row.results.toLocaleString('en-US')}`}
+                    </span>
                     <span className="num col-span-2 flex flex-wrap gap-x-2 text-[11px] text-muted-foreground">
-                        {/* Өртөг тооцох боломжгүй (reach) бол тухайн төрлийн зардлыг харуулна. */}
-                        <span>{row.cost !== null ? `${META_RESULT_DEFS[row.type].costLabel}: ${metaCostText(row.type, row.cost, currency)}` : `Зардал: ${row.spend !== null ? formatChannelValue(row.spend, 'money', currency) : '—'}`}</span>
+                        {/* Өртөг тооцох боломжгүй (тоо ирээгүй) бол тухайн төрлийн зардлыг харуулна. */}
+                        <span>{row.cost !== null ? `${META_RESULT_DEFS[row.type].costLabel}: ${approx(row.type) ? '≈ ' : ''}${metaCostText(row.type, row.cost, currency)}` : `Зардал: ${row.spend !== null ? formatChannelValue(row.spend, 'money', currency) : '—'}`}</span>
                         {row.results !== null && delta && (delta.delta !== null || delta.reason === 'coverage') && <Delta delta={delta} />}
                     </span>
                 </li>;
@@ -58,8 +65,11 @@ function MetaResults({ totals, comparison, currency }: { totals: Record<string, 
         </ul>
         {/* Meta API төрөлгүй кампанит ажлын зардлыг анхааруулгагүйгээр нийтэд л оруулдаг — нийт ≠ Σ төрлийн зардал. */}
         {untyped !== null && <p className="num mt-1.5 text-[11px] text-muted-foreground">Үр дүнгийн төрөлгүй зардал: {formatChannelValue(untyped, 'money', currency)}</p>}
+        {reachSum && types.some(row => row.type === 'reach' && row.results !== null) && <p className="mt-1.5 text-[11px] text-muted-foreground">≈ {REACH_SUM_NOTE}</p>}
     </div>;
 }
+
+const REACH_SUM_NOTE = 'Хүрсэн хүн (үр дүн): reach зорилготой кампанит ажлуудын давхардалгүй reach-ийн нийлбэр — кампанит ажил хооронд давхцаж болно.';
 
 /** Meta Ads, Facebook хуудас, CallPro, масс SMS-ийн экспорт — хурлын долоо хоногийн тоо, өмнөх тайлантай харьцуулсан. */
 export function WeeklyMarketingChannels({ from, to }: { from: string; to: string }) {
@@ -89,7 +99,8 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
                     const missedByHour = source === 'callpro'
                         ? report.breakdown.filter(row => row.kind === 'hour' && (row.values.missed ?? 0) > 0).sort((a, b) => (b.values.missed ?? 0) - (a.values.missed ?? 0)).slice(0, 3)
                         : [];
-                    // Кампанит ажил × үр дүнгийн төрөл, зардлаар (слайдын «Meta зар — кампанит ажлаар»-тай ижил дараалал).
+                    // Кампанит ажил × үр дүнгийн төрөл, зардлаар (слайдын «Meta зар — кампанит ажлаар»-тай ижил дараалал);
+                    // нийт зардалгүй (валют холилдсон) файлд мөрийн зардал алга тул «их зардалтай» жагсаалт гарахгүй.
                     const allCampaigns = source === 'meta_ads' ? metaCampaignRows(report) : [];
                     const campaigns = allCampaigns.filter(row => (row.values.spend ?? 0) > 0).slice(0, 4);
                     return (
@@ -116,7 +127,7 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
                                     {!partial && <dd><Delta delta={match.comparison?.[key]} /></dd>}
                                 </div>)}
                             </dl>
-                            {source === 'meta_ads' && <MetaResults totals={report.totals} comparison={partial ? null : match.comparison} currency={currency} />}
+                            {source === 'meta_ads' && <MetaResults totals={report.totals} comparison={partial ? null : match.comparison} currency={currency} reachSum={metaReachIsSum(report)} />}
                             {campaigns.length > 0 && <ul className="mt-3 space-y-1 border-t border-border pt-2 text-[11.5px] text-fg-2" aria-label="Их зардалтай кампанит ажил">
                                 {campaigns.map((row, index) => <li key={`${row.label}:${row.tag ?? ''}:${index}`} className="flex justify-between gap-3">
                                     <span className="min-w-0 truncate">{row.label}</span>
@@ -127,7 +138,7 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
                                 </li>)}
                             </ul>}
                             {allCampaigns.length > 0 && <details className="mt-2 text-[11.5px]">
-                                <summary className="cursor-pointer text-muted-foreground hover:text-foreground print:hidden">Кампанит ажлын хүснэгт ({allCampaigns.length} мөр)</summary>
+                                <summary className="cursor-pointer text-muted-foreground hover:text-foreground print:hidden">Кампанит ажлын хүснэгт ({allCampaigns.length} мөр{metaCampaignsBySpend(report.totals) ? '' : ', харагдалтаар'})</summary>
                                 <div className="mt-2"><ChannelBreakdownTable source="meta_ads" rows={allCampaigns} totals={report.totals} limit={CHANNEL_LIMITS.breakdown} /></div>
                             </details>}
                             {missedByHour.length > 0 && <p className="mt-3 border-t border-border pt-2 text-[11.5px] text-fg-2">

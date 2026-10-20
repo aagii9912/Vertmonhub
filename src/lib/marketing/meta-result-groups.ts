@@ -9,7 +9,7 @@
  *    төрлийн мөрөнд, эдгээр төрлийн аль нь ч биш ad set-ийн зардал хамгийн их зардалтай төрөлд.
  *  - Зөвхөн ижил нэгжийн үр дүнг нэмнэ; reach-ийг өдөр, ad set-ээр хэзээ ч нэмэхгүй (results = null).
  */
-import { META_RESULT_TYPES, type MetaResultType } from './meta-results';
+import { META_RESULT_TYPES, isMetaResultType, type MetaResultType } from './meta-results';
 
 /** `meta_ad_insights_daily`-ийн тайланд хэрэгтэй багана (PostgREST numeric-ийг string-ээр ч буцааж болно). */
 export interface MetaInsightRow {
@@ -47,7 +47,6 @@ export interface MetaResultGroup {
 }
 
 export const metaNumber = (value: unknown) => { const n = typeof value === 'number' ? value : Number(value); return Number.isFinite(n) ? n : 0; };
-export const isMetaResultType = (value: unknown): value is MetaResultType => (META_RESULT_TYPES as readonly unknown[]).includes(value);
 
 export function toMetaResultRows<T extends MetaInsightRow>(rows: readonly T[], mntOf?: (row: T) => number | null): MetaResultRow[] {
     return rows.map(r => ({

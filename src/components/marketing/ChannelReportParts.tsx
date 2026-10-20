@@ -7,16 +7,14 @@ import {
 import {
     META_RESULT_DEFS, isMetaResultType, metaResultCostKey, metaResultKey, metaResultSpendKey, presentMetaResultTypes,
 } from '@/lib/marketing/meta-results';
-import { metaCostText, metaRowTypeLabel } from '@/lib/marketing/channel-week';
+import { channelCurrency, metaCostText, metaMissingResultsReason, metaRowTypeLabel } from '@/lib/marketing/channel-week';
 import { Alert } from '@/components/ui/Alert';
 import { Badge } from '@/components/ui/Badge';
-
-const currencyOf = (totals: ChannelTotals) => typeof totals.currency === 'string' ? totals.currency : null;
 
 /** Үзүүлэлтийн утгыг төрлөөр нь (тоо, хувь, hh:mm:ss, валюттай мөнгө) форматлана. */
 export function formatMetric(source: ChannelSource, key: string, value: unknown, totals: ChannelTotals): string {
     const def = channelMetric(source, key);
-    return typeof value === 'number' && def ? formatChannelValue(value, def.kind, currencyOf(totals)) : '—';
+    return typeof value === 'number' && def ? formatChannelValue(value, def.kind, channelCurrency(totals)) : '—';
 }
 
 /** «6/7 өдөр» — өгөгдөл хамарсан өдөр / тайлангийн өдөр. */
@@ -74,7 +72,7 @@ export function MetaResultsByType({ totals, comparison }: { totals: ChannelTotal
         if (typeof totals.results !== 'number') return null;
         // Төрөлгүй (Result indicator сонгоогүй) хуучин тайлан.
         return <p className="text-sm"><span className="text-muted-foreground">Results (үр дүн, төрөл тодорхойгүй):</span> <span className="num font-semibold">{formatChannelValue(totals.results, 'count')}</span>
-            {typeof totals.cost_per_result === 'number' && <span className="text-muted-foreground"> · нэг үр дүн {formatChannelValue(totals.cost_per_result, 'money', currencyOf(totals))}</span>}</p>;
+            {typeof totals.cost_per_result === 'number' && <span className="text-muted-foreground"> · нэг үр дүн {formatChannelValue(totals.cost_per_result, 'money', channelCurrency(totals))}</span>}</p>;
     }
     return <div className="max-w-full overflow-x-auto rounded-lg border border-border" tabIndex={0} role="region" aria-label="Үр дүн төрлөөр">
         <table className="w-full min-w-[420px] text-left text-xs">
@@ -88,11 +86,11 @@ export function MetaResultsByType({ totals, comparison }: { totals: ChannelTotal
                 return <tr key={type} className="border-t border-border">
                     <th scope="row" className="px-3 py-2 font-medium">{def.label}</th>
                     <td className="num px-3 py-2 text-right">
-                        {typeof results === 'number' ? formatChannelValue(results, 'count') : <span className="text-muted-foreground" title="Хүрсэн хүнийг өдөр, кампанит ажлаар нэмэхгүй">—</span>}
+                        {typeof results === 'number' ? formatChannelValue(results, 'count') : <span className="text-muted-foreground" title={metaMissingResultsReason(type)}>—</span>}
                         {comparison && typeof results === 'number' && <span className="block text-[11px]"><DeltaText delta={comparison[metaResultKey(type)]} /></span>}
                     </td>
                     <td className="num px-3 py-2 text-right">{formatMetric('meta_ads', metaResultSpendKey(type), totals[metaResultSpendKey(type)], totals)}</td>
-                    <td className="num px-3 py-2 text-right" title={def.costLabel}>{metaCostText(type, totals[metaResultCostKey(type)], currencyOf(totals))}</td>
+                    <td className="num px-3 py-2 text-right" title={def.costLabel}>{metaCostText(type, totals[metaResultCostKey(type)], channelCurrency(totals))}</td>
                 </tr>;
             })}</tbody>
         </table>
@@ -136,7 +134,7 @@ export function ChannelBreakdownTable({ source, rows, totals, limit = 20 }: { so
     const header = (key: string) => meta && key === 'results' ? 'Үр дүн' : meta && key === 'cost_per_result' ? 'Нэг үр дүнгийн өртөг' : channelMetric(source, key)?.label;
     const cell = (row: BreakdownRow, key: string) => {
         const value = row.values[key];
-        if (meta && isMetaResultType(row.tag) && key === 'cost_per_result') return metaCostText(row.tag, value, currencyOf(totals));
+        if (meta && isMetaResultType(row.tag) && key === 'cost_per_result') return metaCostText(row.tag, value, channelCurrency(totals));
         if (meta && key === 'results') return typeof value === 'number' ? formatChannelValue(value, 'count') : '—';
         return formatMetric(source, key, value, totals);
     };

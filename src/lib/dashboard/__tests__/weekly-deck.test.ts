@@ -339,13 +339,16 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(types).toContain('Зарим үр дүнг ad set-ийн зорилгоор ойролцоогоор тооцсон');
 
         const first = text[index('Meta зар — кампанит ажлаар (1/2)')];
-        expect(first).toContain('12 кампанит ажил, 13 мөр (үр дүнгийн төрлөөр) · зардлаар эрэмбэлсэн');
+        // «Пост — 3 өрөө» хоёр мөр: нэг кампанит ажлын хоёр төрөл үү, ижил нэртэй хоёр кампанит ажил уу — ID-гүй тул мөрөөр л тоолно.
+        expect(first).toContain('13 мөр (кампанит ажил × үр дүнгийн төрөл) · зардлаар эрэмбэлсэн');
+        expect(first).not.toContain('12 кампанит ажил');
         // Reach нь Meta-гийн давхардалгүй тоо ирсэн мөрт л; бусад мөр «—».
         expect(first).toMatch(/Кампанит ажил Үр дүнгийн төрөл Үр дүн Нэг үр дүнгийн өртөг \(USD\) Зардал \(USD\) Impressions Reach Link clicks/);
-        // Хамгийн их зардалтай мөр эхэнд, урт нэр тайрагдана.
-        expect(first).toMatch(/Link clicks Elysium Residence — 2 өрөө 1\+1 урамшуулал, Лхагва гарагийн нээлттэй өдөрлөг… Дуудлага \(Meta\) 31 3\.89 120\.5 15,200 — 210/);
+        // Хамгийн их зардалтай мөр эхэнд, урт нэр 2 мөрт багтахаар үгийн заагаар тайрагдана.
+        expect(first).toMatch(/Link clicks Elysium Residence — 2 өрөө 1\+1 урамшуулал, Лхагва гарагийн нээлттэй… Дуудлага \(Meta\) 31 3\.89 120\.5 15,200 — 210/);
         expect(first).not.toContain('дахин ажиллуулсан');
-        expect(first).toMatch(/Пост — 3 өрөө Хүрсэн хүн \(үр дүн\) — — 40 30,100 — 12 Пост — 3 өрөө Постын харилцаа 980 0\.03 31\.2/);
+        // «(үр дүн)» дагаварыг баганын гарчиг илэрхийлнэ.
+        expect(first).toMatch(/Пост — 3 өрөө Хүрсэн хүн — — 40 30,100 — 12 Пост — 3 өрөө Постын харилцаа 980 0\.03 31\.2/);
         expect(first).toMatch(/Төрөлгүй тест Тодорхойгүй — — 20 2,100 — 9/);
         expect(first).toMatch(/Дуудлага 1 Постын харилцаа 240 0\.06 15 4,000 3,100 50/);
         const second = text[index('Meta зар — кампанит ажлаар (2/2)')];
@@ -397,7 +400,124 @@ describe('weekly meeting deck (.pptx)', () => {
         const campaigns = at('Meta зар — кампанит ажлаар (1/2)');
         expect(campaigns).toContain('Нэг үр дүнгийн өртөг Зардал Impressions');
         expect(campaigns).not.toMatch(/120\.5|USD|₮/);
-        expect(await notesOf(zip)).toContain('Анхааруулга: Файлд өөр өөр валют байна (USD, MNT).');
+        // Өөр валютын зардлыг хооронд нь харьцуулж эрэмбэлэхгүй: харагдалтаар (30,100 > 15,200 > 9,100 …).
+        expect(campaigns).toContain('13 мөр (кампанит ажил × үр дүнгийн төрөл) · харагдалтаар эрэмбэлсэн');
+        expect(campaigns).not.toContain('зардлаар эрэмбэлсэн');
+        expect(campaigns).toMatch(/Link clicks Пост — 3 өрөө Хүрсэн хүн — — — 30,100 — 12 Elysium Residence .+ 15,200 — 210 Пост — 3 өрөө Постын харилцаа 980 — — 9,100/);
+        const notes = await notesOf(zip);
+        expect(notes).toContain('Анхааруулга: Файлд өөр өөр валют байна (USD, MNT).');
+        expect(notes).toContain('Файлд өөр валют холилдсон тул кампанит ажлын зардал, өртгийг харуулаагүй');
+    });
+
+    it('marketing deck: a file without a spend column says so instead of blaming mixed currencies', async () => {
+        const report = metaApiReport({ origin: 'file', file_name: 'meta.csv', data_to: range.to, warnings: [] });
+        for (const key of Object.keys(report.totals)) if (/^(?:spend|cpm|cost_|spend_)/.test(key) || key === 'currency') delete report.totals[key];
+        const { text, zip } = await render(input({ kind: 'marketing', channels: withMeta(metaMatch(report, null)) }));
+        expect(text.find(slideText => slideText.includes('Meta зар — кампанит ажлаар (1/2)'))).toContain('харагдалтаар эрэмбэлсэн');
+        const notes = await notesOf(zip);
+        expect(notes).toContain('Тайланд зардал алга (экспортод зардлын багана сонгоогүй)');
+        expect(notes).not.toContain('өөр валют холилдсон');
+    });
+
+    it('marketing deck: a longer Meta report is compared under its real length, a non-adjacent one as «Өмнөх тайлан» with dates', async () => {
+        // Хурлын долоо хоногийг хамарсан 30 өдрийн экспорт ба өмнөх 30 өдрийн экспорт (зэрэгцээ).
+        const report = metaApiReport({ origin: 'file', file_name: 'meta-30d.csv', period_from: '2026-09-14', period_to: '2026-10-13', data_from: '2026-09-14', data_to: '2026-10-13' });
+        const previous = { ...report, id: 'meta-prev-30', period_from: '2026-08-15', period_to: '2026-09-13', data_from: '2026-08-15', data_to: '2026-09-13', totals: { ...report.totals, spend: 300, results_calls: 50 } };
+        const longer: ChannelReportMatch = { report, exact: false, longer: true, previous, comparison: compareReports(report, previous) };
+        const { text } = await render(input({ kind: 'marketing', channels: withMeta(longer) }));
+        const at = (needle: string) => text.find(slideText => slideText.includes(needle))!;
+        const summary = at('Meta зар — долоо хоногийн тойм');
+        expect(summary).toContain('хурлын долоо хоногоос урт тайлан (30 өдөр)');
+        expect(summary).toMatch(/Зарцуулсан дүн 412\.57 USD Өмнөх 30 хоног 300 USD · \+112\.57 \(\+37\.5%\)/);
+        expect(summary).toContain('Харьцуулсан тайлан: 2026.08.15 – 2026.09.13 (30 хоног).');
+        expect(summary).not.toContain('Өмнөх 7 хоног');
+        const types = at('Meta зар — үр дүн төрлөөр');
+        expect(types).toMatch(/Үр дүн Тоо Өмнөх 30 хоног Зардал \(USD\)/);
+        expect(types).not.toContain('Өмнөх 7 хоног');
+
+        // Өмнөх тайлан залгаа биш (долоо хоног алгассан) → «Өмнөх тайлан» ба огноо.
+        const week = metaApiReport({ data_to: range.to });
+        const gap = { ...week, id: 'meta-gap', period_from: '2026-09-23', period_to: '2026-09-29', data_from: '2026-09-23', data_to: '2026-09-29', totals: { ...week.totals, spend: 380 } };
+        const older = await render(input({ kind: 'marketing', channels: withMeta({ report: week, exact: true, longer: false, previous: gap, comparison: compareReports(week, gap) }) }));
+        const olderSummary = older.text.find(slideText => slideText.includes('Meta зар — долоо хоногийн тойм'))!;
+        expect(olderSummary).toMatch(/Зарцуулсан дүн 412\.57 USD Өмнөх тайлан 380 USD · \+32\.57/);
+        expect(olderSummary).toContain('Харьцуулсан тайлан: 2026.09.23 – 2026.09.29 (7 хоног).');
+        expect(olderSummary).not.toContain('Өмнөх 7 хоног');
+    });
+
+    it('marketing deck: API reach results summed over campaigns are marked «≈»; a missing non-reach count gets its own reason', async () => {
+        const base = metaApiReport({ data_to: range.to });
+        const report = metaApiReport({
+            data_to: range.to,
+            // Хоёр reach кампанит ажил: 30,000 + 20,000 (дансны давхардалгүй reach 40,000) → нийлбэр; «Бусад» төрөлд Meta тоо өгөөгүй.
+            totals: { ...base.totals, results_reach: 50000, spend_reach: 40, cost_per_result_reach: 0.8, spend_other: 12.5 },
+            breakdown: [
+                ...base.breakdown.filter(row => row.tag !== 'reach'),
+                { kind: 'campaign', label: 'Хүрэлт — Зайсан', tag: 'reach', values: { spend: 24, impressions: 41000, link_clicks: 5, reach: 30000, results: 30000, cost_per_result: 0.8 } },
+                { kind: 'campaign', label: 'Хүрэлт — Хан-Уул', tag: 'reach', values: { spend: 16, impressions: 26000, link_clicks: 3, reach: 20000, results: 20000, cost_per_result: 0.8 } },
+                { kind: 'campaign', label: 'Брэнд awareness', tag: 'other', values: { spend: 12.5, impressions: 18000, link_clicks: 2, results: null, cost_per_result: null } },
+            ],
+            warnings: [
+                { code: 'non_additive', level: 'info', message: 'Хүрсэн хүн (үр дүн) нь reach зорилготой 2 кампанит ажлын давхардалгүй reach-ийн нийлбэр — кампанит ажил хооронд давхцаж болно.' },
+                { code: 'no_values', level: 'info', message: 'Бусад үр дүн: үр дүнгийн тоо Meta-гаас ирээгүй — зөвхөн зардлыг тооцсон.' },
+            ],
+        });
+        const { text, zip } = await render(input({ kind: 'marketing', channels: withMeta(metaMatch(report, null)) }));
+        const types = text.find(slideText => slideText.includes('Meta зар — үр дүн төрлөөр'))!;
+        expect(types).toMatch(/Хүрсэн хүн \(үр дүн\) ≈ 50,000 40 ≈ 0\.8 \/ 1000 хүн Бусад үр дүн/);
+        expect(types).toMatch(/Бусад үр дүн — 12\.5 —/);
+        expect(types).toContain('≈ = reach зорилготой кампанит ажлуудын давхардалгүй reach-ийн нийлбэр — кампанит ажил хооронд давхцаж болох');
+        expect(types).toContain('«—» = Бусад үр дүн: Meta үр дүнгийн тоо өгөөгүй (зардлыг л харуулав).');
+        // Хүрсэн хүний тоо ирсэн тул reach-ийн «—» тайлбар гарахгүй.
+        expect(types).not.toContain('хүрсэн хүнийг өдөр, кампанит ажлаар нэмэхгүй');
+        const campaigns = text.find(slideText => slideText.includes('Meta зар — кампанит ажлаар'))!;
+        expect(campaigns).toContain('15 кампанит ажил · зардлаар эрэмбэлсэн');
+        const notes = await notesOf(zip);
+        expect(notes).toContain('мөрүүдийн reach-ийг нэмж нийт хүрсэн хүн гаргахгүй');
+        expect(notes).toContain('reach зорилготой кампанит ажлуудын reach-ийн нийлбэр — давхцаж болно');
+        expect(notes).not.toContain('кампанит ажил хооронд нэмэхгүй');
+    });
+
+    it('marketing deck: long Ads Manager campaign names wrap to two lines and page by height so the table never reaches the footer', async () => {
+        // Ads Manager-ийн бодит хэв маягийн нэрс (53–76 тэмдэгт), 22 кампанит ажил.
+        const names = [
+            '[Engagement] Орон сууцны байршлын давуу талыг хэрхэн тодорхойлох вэ? нийтлэл',
+            'Elysium Residence | Messages | Зайсан | Намрын урамшуулал | Retargeting video viewers',
+            '[ADV] Ухаалаг агаар сэлгэлттэй 3 өрөө байр — Лхагва гарагийн нээлттэй өдөрлөг',
+            'Mandala Garden — 2 өрөө 1+1 урамшуулал, Хан-Уул дүүрэг, 2026 оны намар',
+            'Mandala_Garden_Leads_Form_Autumn_2026_Lookalike_1pct_Ulaanbaatar_25-55',
+            '[Reach] Elysium Residence брэнд таниулах видео, 25–55 нас, Улаанбаатар',
+        ];
+        const tags = ['calls', 'messages', 'thruplay', 'landing_page_views', 'leads', 'reach'];
+        const base = metaApiReport({ data_to: range.to });
+        const report = metaApiReport({
+            data_to: range.to,
+            breakdown: Array.from({ length: 22 }, (_, i) => ({ kind: 'campaign' as const, label: `${names[i % names.length]} #${i + 1}`, tag: tags[i % tags.length],
+                values: { spend: 50 - i, impressions: 9000 - i * 100, link_clicks: 100 - i, results: tags[i % tags.length] === 'reach' ? null : 10 + i, cost_per_result: null } })),
+            totals: base.totals,
+        });
+        const { text, xml } = await render(input({ kind: 'marketing', channels: withMeta(metaMatch(report, null)) }));
+        const pages = xml.filter((_, index) => text[index].includes('Meta зар — кампанит ажлаар'));
+        // Нэр бүр 2 мөр: толгой + ≤ 10 мөр нэг слайдад (5.15 инч), 22 мөр → 3 слайд.
+        expect(pages).toHaveLength(3);
+        const rows = pages.map(page => (page.match(/<a:tr /g) ?? []).length - 1);
+        expect(rows.reduce((sum, n) => sum + n, 0)).toBe(22);
+        for (const n of rows) expect(n).toBeLessThanOrEqual(10);
+        expect(text.find(slideText => slideText.includes('Meta зар — кампанит ажлаар (1/3)'))).toContain('22 кампанит ажил');
+        // Төрлийн нэр дагаваргүй: «Landing page view», «ThruPlay (видео үзэлт)».
+        expect(text.join(' ')).toContain('Landing page view');
+    });
+
+    it('stat cards shrink a wide money value instead of wrapping it over the comparison line', async () => {
+        const report = metaApiReport({ data_to: range.to, totals: { ...metaApiReport().totals, spend: 12345.67, cpm: 1.5 } });
+        const { xml, text } = await render(input({ kind: 'marketing', channels: withMeta(metaMatch(report, { ...report.totals, spend: 11111.11 })) }));
+        const summary = xml[text.findIndex(slideText => slideText.includes('Meta зар — долоо хоногийн тойм'))];
+        // Утгын run-ий хэмжээ: `<a:t>утга</a:t>`-ийн өмнөх хамгийн сүүлийн sz.
+        const size = (value: string) => Number([...summary.slice(0, summary.indexOf(`<a:t>${value}</a:t>`)).matchAll(/sz="(\d+)"/g)].at(-1)?.[1]);
+        expect(size('12,345.67 USD')).toBeLessThan(2600);
+        expect(size('12,345.67 USD')).toBeGreaterThanOrEqual(2000);
+        // Нарийн утга хэвээр 26pt.
+        expect(size('98,234')).toBe(2600);
     });
 
     it('marketing deck adds no Meta slides when the week has no Meta report', async () => {

@@ -6,12 +6,14 @@
  * Meta зарыг Ads Manager-ийн хураангуй шиг харуулна: нийт үзүүлэлт, үр дүн төрлөөр (нэг үр дүнгийн
  * өртөгтэй), кампанит ажлын задаргаа. Дүрэм:
  *  - Зардал зарын дансны валютаар (ихэвчлэн USD): ₮ гэж бичихгүй, төгрөгийн дүнд нэмэхгүй.
- *  - Өөр төрлийн үр дүнг нэг тоонд нэмэхгүй; хүрсэн хүн (reach)-ийг өдөр, кампанит ажлаар нэмэхгүй.
+ *  - Өөр төрлийн үр дүнг нэг тоонд нэмэхгүй; өдрийн reach-ийг нэмэхгүй. Meta API-ийн «Хүрсэн хүн (үр дүн)»
+ *    reach зорилготой хэд хэдэн кампанит ажлынх бол кампанит ажил бүрийн давхардалгүй reach-ийн нийлбэр
+ *    (давхцаж болно) тул «≈»-тэй, тайлбартай харуулна (`metaReachIsSum`).
  *  - Үр дүн нь Meta-гийн зарын платформын тоо — CRM-ийн бүртгэлтэй холбож тооцохгүй.
  *  - Хоосон утга «—», 0 биш.
  */
 import {
-    channelMetric, formatChannelValue, type BreakdownRow, type ChannelSource, type ChannelTotals, type MetricDelta,
+    channelMetric, formatChannelValue, type BreakdownRow, type ChannelSource, type ChannelTotals, type ChannelWarning, type MetricDelta,
 } from './channel-reports';
 import {
     META_RESULT_DEFS, isMetaResultType, metaResultCostKey, metaResultKey, metaResultSpendKey, presentMetaResultTypes, type MetaResultType,
@@ -59,6 +61,27 @@ export function metaCostText(type: MetaResultType, value: unknown, currency?: st
     return `${formatChannelValue(value, 'money', currency)}${META_RESULT_DEFS[type].costScale === 1000 ? ' / 1000 хүн' : ''}`;
 }
 
+/**
+ * Үр дүнгийн тоо «—» байх шалтгаан: хүрсэн хүн бол давхардалгүй тоо ирээгүй (өдөр, кампанит ажлын
+ * reach-ийг нэмэхгүй); бусад төрөлд Meta тоо өгөөгүй (зорилгоор тооцох боломжгүй) эсвэл файлд
+ * Results багана алга. Аль ч үед зардлыг харуулна.
+ */
+export const metaMissingResultsReason = (type: MetaResultType) => type === 'reach'
+    ? 'Хүрсэн хүнийг өдөр, кампанит ажлаар нэмэхгүй тул тоолоогүй'
+    : 'Meta үр дүнгийн тоо өгөөгүй — зардлыг л харуулав';
+
+/**
+ * Meta API-ийн «Хүрсэн хүн (үр дүн)» нь reach зорилготой хэд хэдэн кампанит ажлын давхардалгүй reach-ийн
+ * нийлбэр эсэх (`buildMetaChannelReport`): кампанит ажил хооронд давхцаж болох тул ойролцоо, дансны Reach-ээс
+ * их байж болно. Экспорт файлынх нийлбэр биш (ганц мөр эсвэл Meta-гийн нийт мөр).
+ */
+export function metaReachIsSum(report: { origin?: string | null; totals: ChannelTotals; breakdown: readonly BreakdownRow[]; warnings: readonly ChannelWarning[] }): boolean {
+    if (report.origin !== 'api' || typeof report.totals[metaResultKey('reach')] !== 'number') return false;
+    const campaigns = report.breakdown.filter(row => row.kind === 'campaign' && row.tag === 'reach').length;
+    // API тайлан reach-д л `non_additive` (info) бичдэг: тоо байгаа үед энэ нь нийлбэрийн тэмдэглэл (задаргаа тайрагдсан ч).
+    return campaigns > 1 || report.warnings.some(warning => warning.code === 'non_additive' && warning.level === 'info');
+}
+
 export interface MetaTypeResult {
     type: MetaResultType;
     label: string;
@@ -95,17 +118,21 @@ export function metaUntypedSpend(totals: ChannelTotals): number | null {
     return rest >= 0.01 ? rest : null;
 }
 
+/** Кампанит ажлын задаргааг зардлаар эрэмбэлэх эсэх: нийт зардалгүй (валют холилдсон эсвэл зардлын багана алга) бол харагдалтаар. */
+export const metaCampaignsBySpend = (totals: ChannelTotals) => typeof totals.spend === 'number';
+
 /**
  * Кампанит ажлын задаргаа (кампанит ажил × үр дүнгийн төрөл), зардлаар буурахаар; зардалгүй мөр
- * сүүлд. Нийт зардал байхгүй бол (өөр валют холилдсон файл) мөрийн зардал, өртгийг хасна — өөр
- * валютын дүнг нэг баганад харуулахгүй.
+ * сүүлд. Нийт зардал байхгүй бол (өөр валют холилдсон файл) мөрийн зардал, өртгийг хасаж
+ * харагдалтаар эрэмбэлнэ — өөр валютын дүнг нэг баганад харуулахгүй, хооронд нь харьцуулахгүй.
  */
 export function metaCampaignRows(report: { totals: ChannelTotals; breakdown: readonly BreakdownRow[] }): BreakdownRow[] {
-    const money = typeof report.totals.spend === 'number';
+    const money = metaCampaignsBySpend(report.totals);
+    const key = money ? 'spend' : 'impressions';
     return report.breakdown
         .map((row, index) => ({ row, index }))
         .filter(({ row }) => row.kind === 'campaign')
-        .sort((a, b) => (b.row.values.spend ?? -1) - (a.row.values.spend ?? -1) || a.index - b.index)
+        .sort((a, b) => (b.row.values[key] ?? -1) - (a.row.values[key] ?? -1) || a.index - b.index)
         .map(({ row }) => money ? row : { ...row, values: { ...row.values, spend: null, cost_per_result: null } });
 }
 
