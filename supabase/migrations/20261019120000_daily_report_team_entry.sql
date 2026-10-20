@@ -65,9 +65,16 @@ GRANT SELECT, INSERT ON TABLE public.daily_report_changes TO service_role;
 REVOKE ALL ON SEQUENCE public.daily_report_changes_id_seq FROM PUBLIC, anon, authenticated, service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.daily_report_changes_id_seq TO service_role;
 
--- Админы «Өөрчлөлтийн түүх»: хэрэглэгч бүрээр шүүнэ.
-CREATE INDEX IF NOT EXISTS idx_data_audit_actor_created
-    ON public.data_audit_log (shop_id, actor_id, created_at DESC);
+-- Админы «Өөрчлөлтийн түүх»: хэрэглэгч бүрээр шүүнэ. data_audit_log (20260616130000) зарим орчинд
+-- (production 2026-10-20) үүсээгүй — тэр үед алгасна; хүснэгт үүсэхэд энэ файлыг дахин ажиллуулна.
+-- Аудит лог зөвхөн серверт (20260928120000-ийн дүрэм): browser-ийн role-уудын эрхийг цуцална.
+DO $$ BEGIN
+    IF to_regclass('public.data_audit_log') IS NOT NULL THEN
+        CREATE INDEX IF NOT EXISTS idx_data_audit_actor_created
+            ON public.data_audit_log (shop_id, actor_id, created_at DESC);
+        REVOKE ALL ON TABLE public.data_audit_log FROM anon, authenticated;
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_lead_activities_creator
     ON public.lead_activities (shop_id, created_by, created_at DESC);
 

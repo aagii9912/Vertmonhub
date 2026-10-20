@@ -122,6 +122,9 @@ function HistoryView() {
                     {data?.unavailable.includes('daily_report') && (
                         <Alert variant="info">Өдрийн тайлангийн өөрчлөлтийн түүх хараахан идэвхжээгүй байна (migration). Бусад түүх харагдаж байна.</Alert>
                     )}
+                    {data?.unavailable.includes('audit') && (
+                        <Alert variant="info">Өгөгдлийн аудит лог (data_audit_log) энэ өгөгдлийн санд үүсээгүй байна — харилцагч, гэрээний засварын түүх харагдахгүй.</Alert>
+                    )}
                     {data?.truncated && <Alert variant="warning">Сүүлийн {ACTIVITY_FEED_LIMIT} өөрчлөлт харагдаж байна. Хугацаагаа богиносгох эсвэл хэрэглэгчээр шүүнэ үү.</Alert>}
 
                     {feed.isPending && rangeValid ? (

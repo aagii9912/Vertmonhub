@@ -344,10 +344,13 @@ export async function loadActivityFeed(db: SupabaseClient, options: {
         assertOk(changesRes.error);
         changes = (changesRes.data ?? []) as DailyReportChangeRow[];
     }
-    assertOk(auditRes.error);
+    // data_audit_log үүсээгүй орчинд (production 2026-10-20) тэр эх сурвалжийг алгасна.
+    const auditMissing = !!auditRes.error && MISSING_TABLE.has(auditRes.error.code || '');
+    if (auditMissing) unavailable.push('audit');
+    else assertOk(auditRes.error);
     assertOk(activityRes.error);
     if (settingsRes.error && !MISSING_TABLE.has(settingsRes.error.code || '')) assertOk(settingsRes.error);
-    const audits = (auditRes.data ?? []) as AuditRow[];
+    const audits = (auditMissing ? [] : auditRes.data ?? []) as AuditRow[];
     const activities = (activityRes.data ?? []) as LeadActivityRow[];
     const { config } = readDailyReportConfig(settingsRes.error ? null : settingsRes.data?.config ?? null, options.shopName ?? '');
 

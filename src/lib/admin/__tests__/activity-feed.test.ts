@@ -157,6 +157,13 @@ describe('loadActivityFeed', () => {
         expect(feed.unavailable).toEqual(['daily_report']);
         expect(feed.items.map(item => item.id)).toEqual(['lead:x3', 'lead:x1', 'audit:a1']);
 
+        // Production-д data_audit_log үүсээгүй (2026-10-20): тэр эх сурвалжийг алгасна.
+        const noAudit = feedDb();
+        noAudit.failNext.data_audit_log = { code: '42P01', message: 'relation "public.data_audit_log" does not exist' };
+        const withoutAudit = await loadActivityFeed(noAudit as never, { shopId: SHOP, from: '2026-10-18', to: '2026-10-18', userId: null });
+        expect(withoutAudit.unavailable).toEqual(['audit']);
+        expect(withoutAudit.items.some(item => item.source === 'audit')).toBe(false);
+
         const broken = feedDb();
         broken.failNext.data_audit_log = { code: '57014', message: 'timeout' };
         await expect(loadActivityFeed(broken as never, { shopId: SHOP, from: '2026-10-18', to: '2026-10-18', userId: null })).rejects.toThrow('timeout');

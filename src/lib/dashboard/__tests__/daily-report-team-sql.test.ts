@@ -99,6 +99,28 @@ async function setup() {
 
 const code = (value: string) => ({ code: value });
 
+it('applies where data_audit_log was never created (production 2026-10-20) and adds its index once it exists', async () => {
+    const db = new PGlite();
+    try {
+        await db.exec(prerequisites);
+        await db.exec('DROP TABLE public.data_audit_log');
+        await db.exec(dailyReports);
+        await db.exec(migration);
+        expect((await db.query(`SELECT to_regclass('public.daily_report_changes')::text AS changes,
+            to_regclass('public.idx_data_audit_actor_created')::text AS audit_index`)).rows).toEqual([{ changes: 'daily_report_changes', audit_index: null }]);
+        await db.exec(`CREATE TABLE public.data_audit_log(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), shop_id uuid, actor_id uuid,
+            entity varchar(48) NOT NULL, entity_id text, action varchar(24) NOT NULL, changes jsonb DEFAULT '{}'::jsonb,
+            created_at timestamptz NOT NULL DEFAULT now())`);
+        await db.exec(migration);
+        expect((await db.query(`SELECT to_regclass('public.idx_data_audit_actor_created')::text AS audit_index,
+            has_table_privilege('anon', 'public.data_audit_log', 'SELECT') AS anon_read,
+            has_table_privilege('authenticated', 'public.data_audit_log', 'INSERT') AS user_write`)).rows)
+            .toEqual([{ audit_index: 'idx_data_audit_actor_created', anon_read: false, user_write: false }]);
+    } finally {
+        await db.close();
+    }
+});
+
 it('history table is append-only, service-role only, idempotent and cascades with the shop', async () => {
     const db = await setup();
     const change = (values: string) => db.exec(`INSERT INTO public.daily_report_changes(shop_id, report_date, kind, manager_name, metric, note_key, viewing_id, meta)

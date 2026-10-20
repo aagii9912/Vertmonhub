@@ -109,6 +109,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
   `20261013120000` (leads landing page columns) was applied and verified on 2026-10-13 before the Elysium landing attribution deploy; the Elysium site's own `event_leads.attribution` migration lives in that repo.
   `20261013140000` (meeting slides table, `content_calendar.image_paths/created_by`, private `report-media` bucket) was applied and verified on 2026-10-13 (RLS on, no anon/authenticated grants, RESTRICTIVE storage policy) before the slide code deploy.
   `20261019120000` (daily report team entry: `daily_report_counts.updated_by_name`, append-only `daily_report_changes`, `save_daily_report` and the three meeting RPCs) is NOT yet applied; apply it before deploying the code that reads it (the daily report and AI `get_daily_report` answer 503 without it).
+  Production had no `public.data_audit_log` (found 2026-10-20 when the first paste of `20261019120000` failed with 42P01), so `recordAudit` writes were silently lost and `transfer_contract` (which inserts into it) fails. Apply `20260616130000` together with `20261019120000`; the latter skips the audit index when the table is missing and makes the audit log server-only when it exists.
 - Real inventory is `property_units` (`property_block_summary` view); the `properties` listing table is mostly empty. `admins`, `plans`, `subscriptions`, `invoices`, `ai_memory` and `exec_sql` never existed — do not query them.
 - `node scripts/rls-audit.mjs` audits RLS/`security_invoker` read-only.
 
