@@ -2,7 +2,7 @@
 
 Огноо: 2026-10-19 (Улаанбаатар). Салбар: `feat/daily-report-team-entry`. Өмнөх баримт: [DAILY-REPORT-2026-10-07.md](DAILY-REPORT-2026-10-07.md).
 
-**Төлөв:** код салбарт, unit/SQL (PGlite) тест ногоон. Migration `20261019120000_daily_report_team_entry.sql` production-д **хараахан ороогүй** — deploy-ийн өмнө заавал хэрэглэнэ (доорх «Production алхам»). Migration-гүй орчинд өдрийн тайлан болон AI `get_daily_report` 503 («… идэвхжээгүй …») буцаана.
+**Төлөв:** 2026-10-20 migration `20260616130000` (`data_audit_log`, production-д үүсээгүй байсан) болон `20261019120000_daily_report_team_entry.sql`-ийг Supabase SQL Editor-оор нэг гүйлгээнд оруулсан (эзэмшигч баталсан), дараа нь код `main`-д орсон. Migration-гүй орчинд өдрийн тайлан болон AI `get_daily_report` 503 («… идэвхжээгүй …») буцаана.
 
 ## Асуудал (борлуулалтын менежерүүд, 2026-10-19)
 
