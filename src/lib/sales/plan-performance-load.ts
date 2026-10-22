@@ -5,12 +5,12 @@ import { ubParts } from '@/lib/utils/date';
 import { SalesYearSchema } from './monthly';
 import { getTeamMonthlySales } from './targets';
 import { buildPlanPerformance, type PlanContract, type PlanPerformance, type PlanReceipt } from './plan-performance';
+import { readLatestContractListImport } from '@/lib/contracts/live';
 
 const CONTRACT_COLUMNS = 'id, contract_date, contract_status, product_type, block_name, unit_label, total_price, prepayment_due, paid_amount';
 const OVERDUE_COLUMNS = ', overdue_amount, overdue_as_of';
 type DbError = { code?: string; message: string } | null;
 const missingColumn = (error: DbError, column: string) => !!error && ['42703', 'PGRST204'].includes(error.code ?? '') && error.message.includes(column);
-const missingTable = (error: DbError) => !!error && ['42P01', 'PGRST205'].includes(error.code ?? '');
 
 /**
  * Бүртгэсэн төлбөрийг сар × гэрээгээр — үйл ажиллагааны тайлангийн мөнгөн урсгалын дүрмээр (`summarizeCashTransactions`:
@@ -56,13 +56,8 @@ export async function loadPlanPerformance(db: SupabaseClient, options: {
         }
         return result as unknown as { data: PlanContract[] | null; error: { message: string } | null };
     };
-    const latestImport = async () => {
-        const { data, error } = await db.from('contract_list_imports').select('report_date')
-            .eq('shop_id', options.shopId).order('report_date', { ascending: false }).limit(1).maybeSingle();
-        if (missingTable(error)) return null;
-        if (error) throw new Error(error.message);
-        return (data?.report_date as string | undefined) ?? null;
-    };
+    // Хүснэгт байхгүй (migration ороогүй) бол импортгүй гэж үзнэ; бусад алдаа дамжина.
+    const latestImport = () => readLatestContractListImport(db, options.shopId).then(result => result.latest?.report_date ?? null);
     const [months, planRows, contracts, latestImportDate, transactions] = await Promise.all([
         getTeamMonthlySales(db, options.shopId, year),
         fetchAllRows<{ year: number }>((from, to) => db.from('team_sales_targets').select('year')

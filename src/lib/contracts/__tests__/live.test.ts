@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createMemoryDb } from '@/test/memory-db';
-import { isOverdueContract, loadLatestContractListImport, NOT_CANCELLED_CONTRACT } from '../live';
+import { isOverdueContract, loadLatestContractListImport, NOT_CANCELLED_CONTRACT, readLatestContractListImport } from '../live';
 
 describe('NOT_CANCELLED_CONTRACT', () => {
     it('NULL төлөвтэйг үлдээж, зөвхөн цуцалсныг хасна (IS DISTINCT FROM)', async () => {
@@ -27,7 +27,7 @@ describe('loadLatestContractListImport', () => {
             ],
         });
         await expect(loadLatestContractListImport(db as unknown as SupabaseClient, 'shop-1'))
-            .resolves.toEqual({ report_date: '2026-10-21', file_name: 'old.xlsx', row_count: 80 });
+            .resolves.toEqual({ report_date: '2026-10-21', file_name: 'old.xlsx', row_count: 80, created_at: '2026-10-21T02:00:00Z', created_by_name: null });
         await expect(loadLatestContractListImport(db as unknown as SupabaseClient, 'shop-3')).resolves.toBeNull();
     });
 
@@ -35,6 +35,19 @@ describe('loadLatestContractListImport', () => {
         const db = createMemoryDb({ contract_list_imports: [] });
         db.failNext.contract_list_imports = { code: '42P01', message: 'relation does not exist' };
         await expect(loadLatestContractListImport(db as unknown as SupabaseClient, 'shop-1')).rejects.toThrow('relation does not exist');
+        db.failNext.contract_list_imports = { code: '57014', message: 'timeout' };
+        await expect(loadLatestContractListImport(db as unknown as SupabaseClient, 'shop-1')).rejects.toThrow('timeout');
+    });
+});
+
+describe('readLatestContractListImport', () => {
+    it('хүснэгт байхгүй бол available=false, бусад алдааг дамжуулна', async () => {
+        const db = createMemoryDb({ contract_list_imports: [] });
+        db.failNext.contract_list_imports = { code: '42P01', message: 'relation does not exist' };
+        await expect(readLatestContractListImport(db as unknown as SupabaseClient, 'shop-1')).resolves.toEqual({ latest: null, available: false });
+        await expect(readLatestContractListImport(db as unknown as SupabaseClient, 'shop-1')).resolves.toEqual({ latest: null, available: true });
+        db.failNext.contract_list_imports = { code: '57014', message: 'timeout' };
+        await expect(readLatestContractListImport(db as unknown as SupabaseClient, 'shop-1')).rejects.toThrow('timeout');
     });
 });
 

@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { withRoute } from '@/lib/api/route';
 import { supabaseAdmin } from '@/lib/supabase';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { contractIdsByPreviousHolder } from '@/lib/services/ContractService';
 import { summarizeContracts, type ContractSummaryRow } from '@/lib/contracts/summary';
+import { loadLatestContractListImport } from '@/lib/contracts/live';
 
 /** `?sortBy=` — зөвхөн эдгээр багана (өмнө нь дурын нэр `.order()`-т орж 500 өгдөг байв). */
 const SORTABLE = new Set([
@@ -23,28 +23,6 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const FILTER_TEXT_MAX = 100;
 
 type Row = Record<string, unknown>;
-
-export interface LatestContractListImport {
-    report_date: string;
-    file_name: string | null;
-    row_count: number;
-    /** Сүүлийн файлд байгаагүй гэрээ (overdue_as_of ≠ файлын огноо) — статистиктай үед л. */
-    not_in_file?: number;
-}
-
-/** Сүүлийн HUB импорт (файлын огноогоор). Хүснэгтийн алдааг нууж «импортгүй» гэж харуулахгүй. */
-async function loadLatestImport(supabase: SupabaseClient, shopId: string): Promise<LatestContractListImport | null> {
-    const { data, error } = await supabase
-        .from('contract_list_imports')
-        .select('report_date, file_name, row_count')
-        .eq('shop_id', shopId)
-        .order('report_date', { ascending: false })
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-    if (error) throw error;
-    return data ? { report_date: String(data.report_date), file_name: (data.file_name as string | null) ?? null, row_count: Number(data.row_count) || 0 } : null;
-}
 
 const filterText = (value: string | null) => {
     const text = value?.trim();
@@ -89,7 +67,7 @@ export const GET = withRoute({ module: 'contracts', error: 'Гэрээ тата�
     // Шилжүүлсэн гэрээ өмнөх эзэмшигчийн нэр, утас, регистрээр ч олдоно.
     const [previousHolderIds, latestImport] = await Promise.all([
         search ? contractIdsByPreviousHolder(supabase, shopId, search) : Promise.resolve([] as string[]),
-        withStats || notInLatest ? loadLatestImport(supabase, shopId) : Promise.resolve(null),
+        withStats || notInLatest ? loadLatestContractListImport(supabase, shopId) : Promise.resolve(null),
     ]);
     const latestDate = latestImport?.report_date ?? null;
     const filtered = !!(search || status || manager || channel || productType || block || paymentCondition || overdueOnly || undatedOnly
@@ -154,7 +132,10 @@ export const GET = withRoute({ module: 'contracts', error: 'Гэрээ тата�
             stats: summarizeContracts(projectRows as ContractSummaryRow[], options),
             footer: summarizeContracts((filteredRows ?? projectRows) as ContractSummaryRow[], options),
             facets: contractFacets(projectRows),
-            latestImport: latestImport && { ...latestImport, not_in_file: projectRows.filter(row => row.overdue_as_of !== latestImport.report_date).length },
+            latestImport: latestImport && {
+                report_date: latestImport.report_date, file_name: latestImport.file_name, row_count: latestImport.row_count,
+                // Сүүлийн файлд байгаагүй гэрээ (overdue_as_of ≠ файлын огноо).
+                not_in_file: projectRows.filter(row => row.overdue_as_of !== latestImport.report_date).length },
         };
     };
 

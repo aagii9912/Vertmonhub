@@ -10,9 +10,8 @@ import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { ERP_LIMITS } from '@/lib/erp/import';
 import { ubDateStr } from '@/lib/utils/date';
 import { dateSchema } from '@/lib/marketing/performance';
-import {
-    commitContractListImport, loadLatestContractListImport, previewContractListImport,
-} from '@/lib/services/ContractListImportService';
+import { commitContractListImport, previewContractListImport } from '@/lib/services/ContractListImportService';
+import { readLatestContractListImport } from '@/lib/contracts/live';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -38,7 +37,7 @@ const field = (form: FormData, name: string) => {
 // Сүүлийн гэрээний жагсаалтын (HUB) импорт: огноо, файл, мөрийн тоо.
 // ============================================
 export const GET = withRoute({ module: 'contracts', error: 'Гэрээний импортын түүх уншиж чадсангүй' }, async ({ shop }) => {
-    const result = await loadLatestContractListImport(supabaseAdmin(), shop.id);
+    const result = await readLatestContractListImport(supabaseAdmin(), shop.id);
     return NextResponse.json(result, { headers: noCache });
 });
 

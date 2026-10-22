@@ -15,6 +15,7 @@ import { ERP_LIMITS } from '@/lib/erp/import';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { logger } from '@/lib/utils/logger';
 import { loadTransferredContractIds } from '@/lib/services/ContractService';
+import { isMissingContractListSchema, readLatestContractListImport, type LatestContractListImport } from '@/lib/contracts/live';
 import {
     CONTRACT_LIST_CONTRACT_FIELDS, CONTRACT_LIST_UNIT_FIELDS, contractListConflictMessage, parseContractList, planContractListImport,
     type ContractListContract, type ContractListImportPlan, type ContractListParse, type ContractListUnit,
@@ -36,29 +37,11 @@ export interface ContractListImportContext {
 }
 export interface ContractListImportFile { name: string; buffer: ArrayBuffer }
 export interface ContractListImportResult { status: number; body: Record<string, unknown> }
-export interface LatestContractListImport { report_date: string; file_name: string | null; row_count: number; created_at: string; created_by_name: string | null }
-
 const fail = (status: number, error: string, extra: Record<string, unknown> = {}): ContractListImportResult => ({ status, body: { error, ...extra } });
 
 class ImportUnavailable extends Error {}
 
-/** Хүснэгт/багана/функц байхгүй (migration ороогүй) эсэх. */
-function isMissingSchema(error: { code?: string; message?: string } | null | undefined): boolean {
-    if (!error) return false;
-    return ['42P01', 'PGRST205', '42703', 'PGRST204', '42883', 'PGRST202'].includes(error.code ?? '')
-        || /does not exist|could not find/i.test(error.message ?? '');
-}
-
-/** Сүүлийн импорт (огноогоор). Хүснэгт байхгүй бол `available: false`. */
-export async function loadLatestContractListImport(db: SupabaseClient, shopId: string): Promise<{ latest: LatestContractListImport | null; available: boolean }> {
-    const { data, error } = await db.from('contract_list_imports').select('report_date,file_name,row_count,created_at,created_by_name')
-        .eq('shop_id', shopId).order('report_date', { ascending: false }).order('created_at', { ascending: false }).limit(1).maybeSingle();
-    if (error) {
-        if (isMissingSchema(error)) return { latest: null, available: false };
-        throw new Error(`Гэрээний импортын түүх уншиж чадсангүй: ${error.message}`);
-    }
-    return { latest: (data as LatestContractListImport | null) ?? null, available: true };
-}
+const isMissingSchema = isMissingContractListSchema;
 
 /** Файлын төрөл, хэмжээ ERP импортын дүрмээр (`erp-imports`); .xls → тайлбартай алдаа. */
 async function readSheets(file: ContractListImportFile) {
@@ -112,7 +95,7 @@ async function loadState(db: SupabaseClient, shopId: string): Promise<ImportStat
                 if (isMissingSchema({ message })) return [];
                 throw error;
             }),
-        loadLatestContractListImport(db, shopId).then(result => {
+        readLatestContractListImport(db, shopId).then(result => {
             if (!result.available) throw new ImportUnavailable('contract_list_imports');
             return result.latest;
         }),
