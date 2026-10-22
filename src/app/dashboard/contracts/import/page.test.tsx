@@ -96,6 +96,7 @@ it('previews the file, gates «Батлах» on the review checkbox and saves t
     expect(form.get('acceptReview')).toBe('true');
     expect(form.get('requestId')).toMatch(/^[0-9a-f-]{36}$/);
     expect(screen.getByRole('link', { name: 'Гэрээ харах' })).toHaveAttribute('href', '/dashboard/contracts');
+    expect(screen.getByRole('link', { name: 'Огноогүй 10 гэрээ' })).toHaveAttribute('href', '/dashboard/contracts?filter=undated');
     expect(screen.getByRole('link', { name: 'Өөрчлөлтийн түүх' })).toHaveAttribute('href', '/admin/history');
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['contracts'] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['plan-performance'] });

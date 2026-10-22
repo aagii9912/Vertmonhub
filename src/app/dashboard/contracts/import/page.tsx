@@ -247,9 +247,10 @@ function ImportWorkspace({ shopId }: { shopId: string }) {
                     <p className="mt-3 text-sm">
                         <span className="num">{saved.inserted}</span> шинэ · <span className="num">{saved.updated}</span> шинэчилсэн · <span className="num">{preview.counts.unchanged}</span> хэвээр · <span className="num">{preview.reportDate}</span>-ны файл
                     </p>
-                    {preview.stillUndated > 0 && <p className="mt-1 text-xs text-muted-foreground">Огноогүй <span className="num">{preview.stillUndated}</span> гэрээ файлд байхгүй тул огноогүй хэвээр — гэрээний хуудаснаас огноо оруулна.</p>}
+                    {preview.stillUndated > 0 && <p className="mt-1 text-xs text-muted-foreground">Огноогүй <span className="num">{preview.stillUndated}</span> гэрээ файлд байхгүй тул огноогүй хэвээр — гэрээ бүрийн дэлгэрэнгүйгээс огноо оруулна.</p>}
                     <div className="mt-4 flex flex-wrap gap-2">
                         <Button href="/dashboard/contracts">Гэрээ харах</Button>
+                        {preview.stillUndated > 0 && <Button variant="secondary" href="/dashboard/contracts?filter=undated">Огноогүй {preview.stillUndated} гэрээ</Button>}
                         {can('reports') && <Button variant="secondary" href="/dashboard/reports/plan">Төлөвлөгөөний биелэлт</Button>}
                         {isSuperAdmin && <Button variant="secondary" href="/admin/history">Өөрчлөлтийн түүх</Button>}
                         <Button variant="ghost" onClick={restart}>Өөр файл импортлох</Button>

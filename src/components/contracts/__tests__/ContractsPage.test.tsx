@@ -228,6 +228,8 @@ describe('ContractsPage — filters', () => {
         expect(lastParams().undated).toBe(true);
         fireEvent.click(toggle);
         expect(lastParams().undated).toBe(false);
+        // Арилгасны дараа ч товч үлдэнэ (дахин асааж болно).
+        expect(button('Огноогүй')).toHaveAttribute('aria-pressed', 'false');
     });
 
     it('sends type, block, payment condition, «not in the latest file» and the order-date range to the API', () => {

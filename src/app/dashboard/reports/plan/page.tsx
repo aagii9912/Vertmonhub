@@ -151,7 +151,8 @@ function PlanReport({ data, segment, segmentLabel }: { data: PlanResponse; segme
         {data.undated.count > 0 && <Alert variant="warning">
             <AlertTitle>Огноогүй {data.undated.count} гэрээ сарын гүйцэтгэлд ороогүй</AlertTitle>
             <AlertDescription>
-                {undatedInScope > 0 ? `Энэ хэсэгт ${undatedInScope} нь хамаарна; хувь «+» тэмдэгтэй.` : 'Энэ хэсгийн хувьд бүрэн.'} Гэрээний дэлгэрэнгүйгээс «Захиалга өгсөн огноо»-г оруулбал тооцогдоно.
+                {undatedInScope > 0 ? `Энэ хэсэгт ${undatedInScope} нь хамаарна; хувь «+» тэмдэгтэй.` : 'Энэ хэсгийн хувьд бүрэн.'} Гэрээний дэлгэрэнгүйгээс «Захиалга өгсөн огноо»-г оруулбал тооцогдоно.{' '}
+                <Link href="/dashboard/contracts?filter=undated" className="underline">Гэрээний жагсаалтаас харах</Link>
                 <details className="mt-2">
                     <summary className="cursor-pointer font-medium">Огноогүй гэрээнүүд</summary>
                     <ul className="mt-2 grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
@@ -160,6 +161,7 @@ function PlanReport({ data, segment, segmentLabel }: { data: PlanResponse; segme
                             <span className="text-foreground/80"> · {item.productType ? unitCategoryLabel(item.productType) : 'Төрөлгүй'} · <span className="num">{item.amount === null ? '—' : whole(item.amount)}</span></span>
                         </li>)}
                     </ul>
+                    {data.undated.count > data.undated.contracts.length && <p className="mt-2">… бусад <span className="num">{data.undated.count - data.undated.contracts.length}</span> гэрээг жагсаалтаас харна уу.</p>}
                 </details>
             </AlertDescription>
         </Alert>}

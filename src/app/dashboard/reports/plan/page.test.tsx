@@ -54,6 +54,8 @@ describe('plan fulfilment page', () => {
         expect(screen.getByText(/Агуулах — 1 гэрээ · 40/)).toBeInTheDocument();
         expect(screen.getByText('Огноогүй 1 гэрээ сарын гүйцэтгэлд ороогүй')).toBeInTheDocument();
         expect(screen.getByRole('link', { name: 'Б1-108 (01)' })).toHaveAttribute('href', '/dashboard/contracts/3');
+        expect(screen.getByRole('link', { name: 'Гэрээний жагсаалтаас харах' })).toHaveAttribute('href', '/dashboard/contracts?filter=undated');
+        expect(screen.queryByText(/бусад .* гэрээг жагсаалтаас харна уу/)).not.toBeInTheDocument();
         expect(screen.getByText(/Энэ онд цуцлагдсан: 1 гэрээ · 900 \(9-р сар 1 · 900\)/)).toBeInTheDocument();
         expect(screen.getAllByText('Мөнгөн урсгалыг санхүүгийн эрхтэй ажилтан харна.').length).toBeGreaterThan(0);
         expect(screen.queryByRole('heading', { name: /Мөнгөн урсгал/ })).not.toBeInTheDocument();
@@ -70,6 +72,14 @@ describe('plan fulfilment page', () => {
         const september = screen.getByRole('rowheader', { name: '9-р сар' }).closest('tr')!;
         expect(within(september).queryByText(/\d+%/)).not.toBeInTheDocument();
         expect(screen.queryByText(/Агуулах — 1 гэрээ/)).not.toBeInTheDocument();
+        cache.clear();
+    });
+
+    it('says how many undated contracts the capped list leaves out', async () => {
+        const data = report(null);
+        const cache = open({ ...data, undated: { ...data.undated, count: 130 } });
+        expect(await screen.findByText('Огноогүй 130 гэрээ сарын гүйцэтгэлд ороогүй')).toBeInTheDocument();
+        expect(screen.getByText((_, node) => node?.tagName === 'P' && node.textContent === '… бусад 129 гэрээг жагсаалтаас харна уу.')).toBeInTheDocument();
         cache.clear();
     });
 

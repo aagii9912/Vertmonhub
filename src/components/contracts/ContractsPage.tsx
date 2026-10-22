@@ -213,7 +213,7 @@ function ContractsWorkspace({ initialFilter }: { initialFilter: string | null })
                 {managers.length > 0 && <FilterChip value={manager} onChange={withReset(setManager)} label="Менежер" options={managers.map((m) => [m.name, m.name])} />}
                 <Toggle pressed={overdue} onChange={withReset(setOverdue)} tone="danger"><AlertCircle className="size-4" />Хоцролттой</Toggle>
                 {latestImport && <Toggle pressed={notInLatest} onChange={withReset(setNotInLatest)}><FileX2 className="size-4" />Сүүлийн файлд байхгүй</Toggle>}
-                {undated && <Toggle pressed={undated} onChange={withReset(setUndated)}><CalendarX2 className="size-4" />Огноогүй</Toggle>}
+                {(initialFilter === 'undated' || undated) && <Toggle pressed={undated} onChange={withReset(setUndated)}><CalendarX2 className="size-4" />Огноогүй</Toggle>}
                 <span title="Захиалга өгсөн огноо" className={cn('inline-flex h-11 items-center gap-1.5 rounded-lg border px-2.5 text-xs md:h-9', from || to ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border bg-surface text-fg-2')}>
                     <span className="whitespace-nowrap">Огноо</span>
                     <input type="date" value={from} max={to || undefined} onChange={(e) => withReset(setFrom)(e.target.value)} aria-label="Захиалга өгсөн огноо — эхлэх" className="num h-7 rounded-md border border-control bg-surface px-1.5 text-xs text-foreground" />
