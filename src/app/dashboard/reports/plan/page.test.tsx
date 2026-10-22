@@ -106,6 +106,19 @@ describe('plan fulfilment page', () => {
         cache.clear();
     });
 
+    it('does not say cash is unrecorded when a month has a manually entered amount', async () => {
+        const months = emptyMonthlySales();
+        months[8] = { ...months[8], cashflow_target_amount: 330, manual_cashflow_actual_amount: 190 };
+        const built = buildPlanPerformance({
+            year: 2026, now: new Date('2026-10-22T04:00:00Z'), months, planYears: [2026], latestImportDate: '2026-10-20',
+            receipts: [], contracts: [contract('1', {})],
+        });
+        const cache = open({ ...built, shopName: 'Elysium Residence' });
+        expect(await screen.findByText('Зөвхөн гараар оруулсан орсон мөнгө')).toBeInTheDocument();
+        expect(screen.queryByText('Орсон мөнгө бүртгэгдээгүй')).not.toBeInTheDocument();
+        cache.clear();
+    });
+
     it('says «Бүртгэл алга» instead of 0₮ when paid amounts are known but no payment was recorded', async () => {
         const built = buildPlanPerformance({
             year: 2026, now: new Date('2026-10-22T04:00:00Z'), months: emptyMonthlySales(), planYears: [2026], latestImportDate: null,

@@ -261,8 +261,14 @@ function CashTable({ data, segment, segmentLabel }: { data: PlanResponse; segmen
             <p className="text-xs text-muted-foreground">Дүн ₮-өөр · бэлэн, банк, ипотек; бартер орохгүй</p>
         </header>
         {cash.availability === 'none' && <div className="border-b border-border p-3"><Alert variant="info">
-            <AlertTitle>Орсон мөнгө бүртгэгдээгүй</AlertTitle>
-            <AlertDescription>HUB файлд төлсөн дүн байхгүй тул автоматаар тооцохгүй. Сарын дүнг «Төлөвлөгөө ба баг» хуудсанд оруулах, эсвэл файлдаа «Нийт төлсөн дүн» багана нэмбэл хоёр дахь файлаас эхлэн зөрүүгээр тооцно.</AlertDescription>
+            {/* Гараар оруулсан сар байвал «бүртгэгдээгүй» гэж бичихгүй — хүснэгтэд тэр дүн харагдана. */}
+            {ytd?.actual === null || ytd?.actual === undefined ? <>
+                <AlertTitle>Орсон мөнгө бүртгэгдээгүй</AlertTitle>
+                <AlertDescription>HUB файлд төлсөн дүн байхгүй тул автоматаар тооцохгүй. Сарын дүнг «Төлөвлөгөө ба баг» хуудсанд оруулах, эсвэл файлдаа «Нийт төлсөн дүн» багана нэмбэл хоёр дахь файлаас эхлэн зөрүүгээр тооцно.</AlertDescription>
+            </> : <>
+                <AlertTitle>Зөвхөн гараар оруулсан орсон мөнгө</AlertTitle>
+                <AlertDescription>HUB файлд төлсөн дүн байхгүй тул системээс тооцохгүй; «Төлөвлөгөө ба баг» хуудсанд оруулсан сарын дүн л харагдана. Файлдаа «Нийт төлсөн дүн» багана нэмбэл хоёр дахь файлаас эхлэн зөрүүгээр тооцно.</AlertDescription>
+            </>}
         </Alert></div>}
         {cash.availability === 'no_ledger' && <div className="border-b border-border p-3"><Alert variant="info">
             <AlertTitle>Системд төлбөр бүртгэгдээгүй (Бүртгэл алга)</AlertTitle>
