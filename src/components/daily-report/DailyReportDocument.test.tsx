@@ -125,6 +125,30 @@ describe('DailyReportDocument', () => {
         expect(within(summary).getByText('Шинэ лид').nextElementSibling?.textContent).toBe('Нийт 3 лид бүртгэгдсэн.');
     });
 
+    it('compares phone leads with the calls entered on screen only, and updates while counts are being entered', () => {
+        const leads = [...Array.from({ length: 5 }, () => ({ manager: CHAN, source: 'phone' })), { manager: KHON, source: 'phone' }];
+        const report = buildDailyReport(input({ leads }));
+        const { container, rerender } = render(<DailyReportDocument report={report} />);
+        const region = screen.getByRole('region', { name: 'Дуудлага ба утасны лид' });
+        expect(region.closest('.rounded-2xl')?.className).toContain('print:hidden');
+        // Чан: 4 дуудлага < 5 утасны лид; Хон: 2 ≥ 1.
+        const flagged = container.querySelectorAll('td[data-flag="short"]');
+        expect(flagged).toHaveLength(1);
+        expect(flagged[0].getAttribute('title')).toBe('Утсаар 5 лид бүртгэсэн ч бүх шугамд 4 дуудлага оруулсан');
+        expect(within(region).queryByRole('rowheader', { name: 'Нийт' })).toBeNull();
+        expect(report.lines[0].total).toBe(6);
+
+        rerender(<DailyReportDocument report={report} editing={{
+            editable: new Set([CHAN, KHON]), own: null, draft: { [`${CHAN}\u0000call.l1.total`]: '5' }, onCell: vi.fn(), notes: null, onNotes: vi.fn(),
+        }} />);
+        expect(container.querySelectorAll('td[data-flag="short"]')).toHaveLength(0);
+
+        rerender(<DailyReportDocument report={report} forImage />);
+        expect(screen.queryByRole('region', { name: 'Дуудлага ба утасны лид' })).toBeNull();
+        rerender(<DailyReportDocument report={buildDailyReport(input({ leads: [{ manager: CHAN, source: 'facebook' }] }))} />);
+        expect(screen.queryByRole('region', { name: 'Дуудлага ба утасны лид' })).toBeNull();
+    });
+
     it('dates an author or history time that falls on another day than the report', () => {
         expect(cellAuthorTitle({ by: 'Б. Ариунаа', at: '2026-10-19T02:42:00.000Z', other: true }, '2026-10-19')).toBe('Оруулсан: Б. Ариунаа · 10:42');
         expect(changeTime('2026-10-20T01:05:00.000Z', '2026-10-19')).toBe('10.20 09:05');

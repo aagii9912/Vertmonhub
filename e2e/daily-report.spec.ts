@@ -201,6 +201,10 @@ test('багийн өдрийн тайлан: хүснэгт, хэн оруул�
     await expect(newLeads.getByRole('rowheader', { name: 'Вэбсайт' })).toBeVisible();
     await expect(newLeads.getByRole('columnheader', { name: '—' })).toHaveAttribute('title', 'Оноогдоогүй');
     await expect(report.getByText('Нийт 4 лид бүртгэгдсэн.', { exact: true })).toBeVisible();
+    // Хонгорзул утсаар 1 лид бүртгэсэн, 6 дуудлага оруулсан — анхааруулгагүй.
+    await expect(report.getByRole('region', { name: 'Дуудлага ба утасны лид', exact: true })).toBeVisible();
+    await expect(report.locator('td[data-flag="short"]')).toHaveCount(0);
+    await expect(page.getByText(/Утсаар лид бүртгэсэн ч дуудлагын тоо/)).toHaveCount(0);
     await page.screenshot({ path: 'test-results/e2e/daily-report-team.png', fullPage: true });
 
     // Зураг (PNG/JPEG): мессенжерт илгээх цагаан тайлан, 2x нягтрал, дэлгэцийн загвартай адил 2 баганатай (1180px → 2360px).
@@ -276,11 +280,18 @@ test('ээлжийн менежер хамт олныхоо тоог оруул�
     await expect(report.getByText('Бат — Б2-58м2 10-30%; үлдэгдэл банк')).toBeVisible();
     await expect(page.getByText('Ээлжийн менежер бүх менежерийн дуудлага, чатын тоог оруулж болно', { exact: false })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Загвар', exact: true })).toHaveCount(0);
+    // Хонгорзул утсаар лид бүртгэсэн ч дуудлагаа оруулаагүй — анхааруулна, тоо оруулахад шууд арилна.
+    const phoneGap = page.getByText('Утсаар лид бүртгэсэн ч дуудлагын тоо дутуу байж магадгүй: М. Хонгорзул (дуудлага —, утасны лид 1).', { exact: false });
+    await expect(phoneGap).toBeVisible();
+    await expect(report.locator('td[data-flag="short"]')).toHaveAttribute('title', 'Утсаар 1 лид бүртгэсэн ч дуудлагын тоо оруулаагүй');
+    await page.screenshot({ path: 'test-results/e2e/daily-report-phone-gap.png', fullPage: true });
     // Өөрийн багана хоосон тул шууд оруулах горим; өөрийн багана тодорсон, хамт олных засагдана.
     await expect(personalCalls.getByRole('columnheader', { name: 'Хон 9008 5678' })).toHaveAttribute('title', 'М. Хонгорзул — таны багана');
     const chanLine = page.getByRole('spinbutton', { name: 'Төслийн утас · 77862222 · Нийт · Р. Чанцалдулам' });
     await expect(chanLine).toHaveValue('2');
     await page.getByRole('spinbutton', { name: 'Төслийн утас · 77862222 · Нийт · М. Хонгорзул' }).fill('2');
+    await expect(phoneGap).toHaveCount(0);
+    await expect(report.locator('td[data-flag="short"]')).toHaveCount(0);
     await page.getByRole('spinbutton', { name: 'Менежерийн дуудлага · Нийт · М. Хонгорзул' }).fill('3');
     await page.getByRole('spinbutton', { name: 'Чат · Хувь чат · М. Хонгорзул' }).fill('4');
     await chanLine.fill('5');
@@ -376,6 +387,7 @@ test('ээлжийн менежер хамт олныхоо тоог оруул�
     expect(copied).not.toContain('Оруулсан');
     await page.emulateMedia({ media: 'print' });
     await expect(report.getByRole('region', { name: 'Менежерийн дуудлага', exact: true })).toBeVisible();
+    await expect(report.getByRole('region', { name: 'Дуудлага ба утасны лид', exact: true })).toBeHidden();
     await expect(personalCalls.getByText('9008 5678', { exact: true })).toBeVisible();
     await expect(report.getByText('— өөр хүн оруулсан тоо (дээр нь очиж хэн оруулсныг харна)')).toBeHidden();
     await expect(report.getByRole('button', { name: 'Уулзалт нэмэх', exact: true })).toBeHidden();

@@ -26,7 +26,7 @@ import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/Dropdown';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
-import { cellKey, DailyReportDocument, type DailyMeetingActions } from '@/components/daily-report/DailyReportDocument';
+import { cellKey, DailyReportDocument, draftPhoneLeadChecks, type DailyMeetingActions } from '@/components/daily-report/DailyReportDocument';
 import { DailyMeetingDialog } from '@/components/daily-report/DailyMeetingDialog';
 import { DailyReportHistorySheet } from '@/components/daily-report/DailyReportHistorySheet';
 import { DailyReportSettingsSheet } from '@/components/daily-report/DailyReportSettingsSheet';
@@ -345,6 +345,12 @@ function DailyReportView({ initial }: { initial: { date: string; to: string | nu
         notices.push({ tone: 'warning', text: meetingActions?.onComplete
             ? <span>Энэ өдөр товлосон {report.meetings.pending} уулзалтын үр дүн бүртгэгдээгүй тул тайланд ороогүй. Доорх «Товлосон, үр дүн бүртгээгүй» жагсаалтаас «Болсон» эсвэл «Ирээгүй» гэж тэмдэглэнэ үү; шинэ уулзалтыг <Link href="/dashboard/viewings" className="font-medium underline">Уулзалт</Link> хуудаснаас товлоно.</span>
             : <span>{ranged ? 'Энэ хугацаанд' : 'Энэ өдөр'} товлосон {report.meetings.pending} уулзалтын үр дүн бүртгэгдээгүй тул тайланд ороогүй. <Link href="/dashboard/viewings" className="font-medium underline">Уулзалт</Link> хуудсанд «Болсон» гэж тэмдэглэнэ үү.</span> });
+    }
+    // Утсаар бүртгэсэн лид = утсаар ярьсан дуудлага; засаж байхад ноорогтой нь шууд шалгана.
+    const phoneGaps = report ? draftPhoneLeadChecks(report, editMode ? draft : null).filter(check => check.short) : [];
+    if (phoneGaps.length > 0) {
+        notices.push({ tone: 'warning', text: `Утсаар лид бүртгэсэн ч дуудлагын тоо ${ranged ? 'энэ хугацаанд ' : ''}дутуу байж магадгүй: ${phoneGaps
+            .map(check => `${formalManagerName(check.manager)} (дуудлага ${check.calls ?? '—'}, утасны лид ${check.leads})`).join(', ')}. Тэр дуудлагуудыг ирсэн шугамынх нь тоонд оруулна уу.` });
     }
     if (report && report.missing.length > 0) notices.push({ tone: 'warning', text: `${ranged ? 'Энэ хугацаанд тоо огт оруулаагүй' : 'Тоо оруулаагүй'}: ${report.missing.join(', ')}.` });
     if (data?.configInvalid) notices.push({ tone: 'warning', text: 'Хадгалсан загвар уншигдсангүй — анхдагч загварыг харуулж байна. «Загвар»-аас дахин хадгална уу.' });

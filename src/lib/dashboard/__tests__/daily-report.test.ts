@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     buildDailyReport, buildDailyReportChanges, configMetrics, dailyMetricLabel, dailyNoteLabel, dailyNotePatch, dailyNoteText, DailyReportConfigSchema,
     DEFAULT_DAILY_REPORT_CONFIG, defaultShortName, flattenDailyNotes, formalManagerName, formatDailyReportText, joinDailyGeneralNotes, meetingItemText,
-    nextConfigKey, readDailyReportConfig, reportPeriodLabel, resolveReportManagers, SaveDailyReportSchema, sumDailyCounts,
+    nextConfigKey, phoneLeadChecks, readDailyReportConfig, reportPeriodLabel, resolveReportManagers, SaveDailyReportSchema, sumDailyCounts,
     type BuildDailyReportInput, type DailyReportChangeRow, type DailyReportConfig,
 } from '../daily-report';
 
@@ -207,6 +207,26 @@ describe('buildDailyReport', () => {
         const own = buildDailyReport(input({ leads, only: 'Чанцалдулам.Раднаа', notes: {}, completed: null }));
         expect(own.leads.total).toBe(3);
         expect(own.managers.map(manager => manager.name)).toEqual(['Чанцалдулам.Раднаа']);
+    });
+
+    it('checks that phone leads are covered by the calls entered on all lines, without adding them to the calls', () => {
+        const phone = (manager: string | null, count = 1) => Array.from({ length: count }, () => ({ manager, source: 'phone' }));
+        const report = buildDailyReport(input({ leads: [
+            ...phone('Ариунбилэг.Нямхүү'), ...phone('Хонгорзул.Мөнхгэрэл', 7), ...phone('Батаа.Дорж'), ...phone(null),
+            { manager: 'Чанцалдулам.Раднаа', source: 'facebook' },
+        ] }));
+        // Ари 1+2 дуудлага ≥ 1 лид; Хон 1+5 < 7; Бат дуудлага оруулаагүй; хариуцагчгүйг шалгахгүй.
+        expect(phoneLeadChecks(report).map(check => [check.manager, check.calls, check.leads, check.short])).toEqual([
+            ['Ариунбилэг.Нямхүү', 3, 1, false],
+            ['Чанцалдулам.Раднаа', 6, 0, false],
+            ['Хонгорзул.Мөнхгэрэл', 6, 7, true],
+            ['Батаа.Дорж', null, 1, true],
+        ]);
+        expect(report.lines.map(line => line.total)).toEqual([4, 11]);
+        // Засаж буй ноорог (Хон 7786-2222 · Шинэ: 1 → 2) шууд тооцогдоно.
+        const draft = phoneLeadChecks(report, (manager, row) => (manager === 'Хонгорзул.Мөнхгэрэл' && row.key === 'call.l1.new' ? 2 : row.values[manager] ?? null));
+        expect(draft.find(check => check.manager === 'Хонгорзул.Мөнхгэрэл')).toMatchObject({ calls: 7, short: false });
+        expect(phoneLeadChecks(buildDailyReport(input({ leads: [{ manager: 'Хонгорзул.Мөнхгэрэл', source: 'facebook' }] })))).toEqual([]);
     });
 
     it('shows one zero total row when no lead was registered', () => {

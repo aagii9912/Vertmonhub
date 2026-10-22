@@ -18,7 +18,7 @@ import { getManagerPerformance } from '@/lib/reports/manager-performance';
 import { loadWeeklySales } from '@/lib/dashboard/weekly-sales-load';
 import { formatWeeklySalesText, meetingDateSchema, nextMeetingDate } from '@/lib/dashboard/weekly-review';
 import { listWeeklyUpdates, saveWeeklyUpdate } from '@/lib/dashboard/weekly-updates';
-import { DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, formatDailyReportText } from '@/lib/dashboard/daily-report';
+import { DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, formatDailyReportText, phoneLeadChecks } from '@/lib/dashboard/daily-report';
 import { DailyReportUnavailableError, loadDailyReport, resolveDailyReportViewer } from '@/lib/dashboard/daily-report-load';
 import { logger } from '@/lib/utils/logger';
 import { addCustomerTag, removeCustomerTag, replyToCustomer, mergeCustomers, updateCustomerInfo } from '@/lib/services/CustomerOps';
@@ -111,7 +111,8 @@ export async function getManagerActivityTool(shopId: string, args: Args, userId:
 const DAILY_GUIDANCE = 'Утасны шугамын дуудлага, чат = менежерүүдийн өдөр бүр гараар оруулсан тоо (CallPro, CRM-ийн лидийн дуудлага биш); '
     + 'missingManagers нь тоогоо оруулаагүй менежер — 0 гэж бүү тайлбарла. Уулзалт = системд «Болсон» гэж бүртгэсэн уулзалт (Шинэ/Давтан/Захиалагч); '
     + 'pendingMeetings нь үр дүнгээ бүртгээгүй товлосон уулзалт (тайланд ороогүй). '
-    + 'newLeads = тухайн өдөр системд бүртгэгдсэн (устгаагүй) лидийн тоо, ОДООГИЙН хариуцагчаар, эх үүсвэрээр; «Оноогдоогүй» = хариуцагчгүй. plainText-ийг хэрэглэгч мессенжерт хуулахад бэлэн — тоог бүү өөрчил.';
+    + 'newLeads = тухайн өдөр системд бүртгэгдсэн (устгаагүй) лидийн тоо, ОДООГИЙН хариуцагчаар, эх үүсвэрээр; «Оноогдоогүй» = хариуцагчгүй. '
+    + 'phoneLeadGaps = утсаар лид бүртгэсэн ч бүх шугамд оруулсан дуудлага нь хоосон эсвэл түүнээс бага менежер — дуудлагын тоогоо шалгахыг сануул, тоог өөрөө бүү нэм. plainText-ийг хэрэглэгч мессенжерт хуулахад бэлэн — тоог бүү өөрчил.';
 
 /** «Өдрийн тайлан» — API-тай ижил дүрэм: бүртгэлтэй менежер төслийн багийн тайланг харна. */
 export async function getDailyReportTool(shopId: string, args: Args, userId: string, perms: AssistantPerms, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
@@ -153,6 +154,8 @@ export async function getDailyReportTool(shopId: string, args: Args, userId: str
             total: report.leads.total, byManager: byManager(report.leads.byManager),
             bySource: report.leads.rows.filter(row => row.total > 0).map(row => ({ source: row.label, count: row.total })),
         },
+        phoneLeadGaps: phoneLeadChecks(report).filter(check => check.short)
+            .map(check => ({ manager: short.get(check.manager) ?? check.manager, calls: check.calls, phoneLeads: check.leads })),
         missingManagers: report.missing,
         completedBy: report.completed?.by ?? null,
         guidance: DAILY_GUIDANCE,
