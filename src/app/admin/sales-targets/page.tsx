@@ -17,9 +17,9 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { formatMNT } from '@/lib/utils/currency';
 import {
-    emptyMonthlySales, MONTHLY_SALES_FIELDS, MONTHLY_SALES_LABELS, MonthlySalesMonthSchema,
-    MONTHLY_SALES_BLOCKS, MONTHLY_SALES_BLOCK_LABELS, hasMonthlySalesBreakdown, monthlySalesWithBlockTotals,
-    monthlySalesPatches, parseMonthlySalesAmount, summarizeMonthlySales,
+    emptyMonthlySales, MONTHLY_SALES_FIELDS, MONTHLY_SALES_LABELS, MONTHLY_SALES_METRICS, MonthlySalesMonthSchema,
+    MONTHLY_SALES_BLOCKS, MONTHLY_SALES_BLOCK_LABELS, MONTHLY_SALES_COUNT_MAX, hasMonthlySalesBreakdown, isMonthlySalesCount,
+    monthlySalesAttainment, monthlySalesWithBlockTotals, monthlySalesPatches, parseMonthlySalesValue, summarizeMonthlySales,
     type MonthlySalesBlock, type MonthlySalesField, type MonthlySalesMonth,
 } from '@/lib/sales/monthly';
 
@@ -38,6 +38,7 @@ interface ManagerRow {
 interface SalesTargetsData {
     months: MonthlySalesMonth[];
     teamActual: number[];
+    teamCount: number[];
     computedActualSource: string;
     managers: ManagerRow[];
     teamMembers: Array<{ id: string; full_name: string; role?: string | null }>;
@@ -51,10 +52,14 @@ const NO_SHOPS: Array<{ id: string; name: string }> = [];
 const NO_MONTHLY_SALES = emptyMonthlySales();
 type MonthInputs = { month: number; blocks: Record<MonthlySalesBlock, Record<MonthlySalesField, string>> };
 type TargetDraft = { before: MonthlySalesMonth[]; inputs: MonthInputs[] };
-const TABLE_FIELDS: MonthlySalesField[] = [
-    'target_amount', 'manual_contract_actual_amount', 'cashflow_target_amount', 'manual_cashflow_actual_amount',
-];
-const isPlan = (field: MonthlySalesField) => field.endsWith('target_amount');
+const TABLE_COLUMNS = MONTHLY_SALES_METRICS.flatMap(metric => [
+    { kind: 'plan', field: metric.plan, metric }, { kind: 'actual', field: metric.actual, metric }, { kind: 'pct', field: metric.actual, metric },
+] as const);
+const COLUMN_HEAD = { plan: 'Төлөвлөгөө', actual: 'Гүйцэтгэл', pct: 'Хувь' } as const;
+const COLUMN_TONE = { plan: 'bg-status-success-soft', actual: 'bg-status-pending-soft', pct: '' } as const;
+const formatValue = (field: MonthlySalesField, value: number | null) => value === null ? '—'
+    : isMonthlySalesCount(field) ? value.toLocaleString('en-US') : formatMNT(value);
+const formatPct = (value: number | null) => value === null ? '—' : `${value}%`;
 
 function monthInputs(months: MonthlySalesMonth[]): MonthInputs[] {
     return months.map(row => ({ month: row.month,
@@ -118,6 +123,7 @@ export default function SalesTargetsAdminPage() {
             return {
                 months: parsedMonths.data,
                 teamActual: d.teamActual || Array(12).fill(0),
+                teamCount: d.teamCount || Array(12).fill(0),
                 computedActualSource: d.computedActualSource || 'CRM-ийн гэрээ · одоо идэвхтэй менежерүүдийн нийлбэр',
                 managers: (d.managers || []).map((manager: ManagerRow) => ({ ...manager, project_ids: manager.project_ids || [] })),
                 teamMembers: d.teamMembers || [],
@@ -143,13 +149,13 @@ export default function SalesTargetsAdminPage() {
     const originalMonths = targetDraft?.before ?? data?.months ?? NO_MONTHLY_SALES;
     const inputs = targetDraft?.inputs ?? monthInputs(originalMonths);
     const invalidCells = inputs.some(row => MONTHLY_SALES_BLOCKS.some(block => MONTHLY_SALES_FIELDS.some(field =>
-        parseMonthlySalesAmount(row.blocks[block][field]) === undefined)));
+        parseMonthlySalesValue(field, row.blocks[block][field]) === undefined)));
     const months = inputs.map((row, index) => {
         const original = originalMonths[index];
         const block_amounts = { ...original.block_amounts };
         for (const block of MONTHLY_SALES_BLOCKS) {
             for (const field of MONTHLY_SALES_FIELDS) {
-                const amount = parseMonthlySalesAmount(row.blocks[block][field]) ?? null;
+                const amount = parseMonthlySalesValue(field, row.blocks[block][field]) ?? null;
                 if (amount !== (original.block_amounts?.[block]?.[field] ?? null)) {
                     block_amounts[block] = { ...block_amounts[block], [field]: amount };
                 }
@@ -157,11 +163,13 @@ export default function SalesTargetsAdminPage() {
         }
         return monthlySalesWithBlockTotals({ ...original, block_amounts });
     });
-    const invalidTotals = months.some(row => MONTHLY_SALES_FIELDS.some(field => (row[field] ?? 0) > 1e13));
+    const invalidTotals = months.some(row => MONTHLY_SALES_FIELDS.some(field =>
+        (row[field] ?? 0) > (isMonthlySalesCount(field) ? MONTHLY_SALES_COUNT_MAX : 1e13)));
     const invalidAmounts = invalidCells || invalidTotals;
     const patches = targetDraft && !invalidAmounts ? monthlySalesPatches(targetDraft.before, months) : [];
     const summary = summarizeMonthlySales(months);
     const teamActual = data?.teamActual ?? NO_MONTHS;
+    const teamCount = data?.teamCount ?? NO_MONTHS;
     const managers = managersDraft ?? data?.managers ?? NO_MANAGERS;
     const teamMembers = data?.teamMembers ?? NO_TEAM_MEMBERS;
     const projects = data?.projects ?? NO_PROJECTS;
@@ -316,6 +324,7 @@ export default function SalesTargetsAdminPage() {
     }
 
     const computedYearActual = teamActual.reduce((total, amount) => total + amount, 0);
+    const computedYearCount = teamCount.reduce((total, count) => total + count, 0);
     const activeCount = managers.filter((m) => m.is_active).length;
     const visibleManagers = showInactive ? managers : managers.filter((m) => m.is_active);
     const inactiveCount = managers.length - activeCount;
@@ -329,7 +338,7 @@ export default function SalesTargetsAdminPage() {
         <div className="space-y-6">
             <PageHeader
                 title="Борлуулалтын төлөвлөгөө"
-                subtitle="Блок тус бүрийн гэрээний дүн, мөнгөн урсгалын төлөвлөгөө ба гүйцэтгэл."
+                subtitle="Блок тус бүрийн гэрээний тоо, дүн, мөнгөн урсгалын төлөвлөгөө ба гүйцэтгэл."
             />
 
             {/* Toolbar */}
@@ -372,29 +381,31 @@ export default function SalesTargetsAdminPage() {
                             <div className="flex items-center justify-between">
                                 <div>
                                     <p className="text-sm font-semibold text-foreground">Сарын төлөвлөгөө, гүйцэтгэл</p>
-                                    <p className="text-xs text-muted-foreground">{year} он · дүнг ₮-ээр оруулна · хоосон нүд = оруулаагүй</p>
+                                    <p className="text-xs text-muted-foreground">{year} он · гэрээний тоог ширхгээр, дүнг ₮-ээр оруулна · хоосон нүд = оруулаагүй</p>
                                 </div>
                                 <TrendingUp className="h-4 w-4 text-brand-strong" />
                             </div>
 
-                            <p className="text-xs text-muted-foreground">Мөнгөн урсгал нь тухайн сард хүлээн авсан урьдчилгаа, төлбөрийн дүн. Гүйцэтгэлийг гараар оруулна.</p>
+                            <p className="text-xs text-muted-foreground">Мөнгөн урсгал нь тухайн сард хүлээн авсан урьдчилгаа, төлбөрийн дүн. Гүйцэтгэлийг гараар оруулна; хувь = гүйцэтгэл ÷ төлөвлөгөө.</p>
                             <div className="max-h-[65vh] overflow-auto rounded-lg border border-border">
-                                <table className="w-full min-w-[900px] border-separate border-spacing-0 text-sm">
-                                    <caption className="sr-only">{year} оны блок тус бүрийн гэрээний дүн, мөнгөн урсгалын төлөвлөгөө ба гүйцэтгэл</caption>
+                                <table className="w-full min-w-[1280px] border-separate border-spacing-0 text-sm">
+                                    <caption className="sr-only">{year} оны блок тус бүрийн гэрээний тоо, дүн, мөнгөн урсгалын төлөвлөгөө, гүйцэтгэл ба хувь</caption>
                                     <thead className="sticky top-0 z-10 bg-surface-2 text-foreground">
                                         <tr>
                                             <th rowSpan={3} scope="col" className="w-24 border-b border-r border-border px-3 py-3 text-left">Сар</th>
                                             <th rowSpan={3} scope="col" className="w-32 border-b border-r border-border px-3 py-3 text-left">Блок / төрөл</th>
-                                            <th colSpan={4} scope="colgroup" className="border-b border-border px-3 py-2 text-center font-semibold">{year} он</th>
+                                            <th colSpan={TABLE_COLUMNS.length} scope="colgroup" className="border-b border-border px-3 py-2 text-center font-semibold">{year} он</th>
                                         </tr>
                                         <tr>
-                                            <th colSpan={2} scope="colgroup" className="border-b border-r border-border px-3 py-2 text-center">Гэрээний дүн</th>
-                                            <th colSpan={2} scope="colgroup" className="border-b border-border px-3 py-2 text-center">Мөнгөн урсгал</th>
+                                            {MONTHLY_SALES_METRICS.map(metric => (
+                                                <th key={metric.key} colSpan={3} scope="colgroup" className="border-b border-r border-border px-3 py-2 text-center last:border-r-0">{metric.label}</th>
+                                            ))}
                                         </tr>
                                         <tr>
-                                            {TABLE_FIELDS.map(field => (
-                                                <th key={field} scope="col" className={`border-b border-r border-border px-3 py-2 text-center last:border-r-0 ${isPlan(field) ? 'bg-status-success-soft text-status-success' : 'bg-status-pending-soft text-status-pending'}`}>
-                                                    {isPlan(field) ? 'Төлөвлөгөө' : 'Гүйцэтгэл'}
+                                            {TABLE_COLUMNS.map(({ kind, metric }) => (
+                                                <th key={`${metric.key}-${kind}`} scope="col" className={`border-b border-r border-border px-3 py-2 text-center last:border-r-0 ${
+                                                    kind === 'plan' ? 'bg-status-success-soft text-status-success' : kind === 'actual' ? 'bg-status-pending-soft text-status-pending' : 'text-muted-foreground'}`}>
+                                                    {COLUMN_HEAD[kind]}
                                                 </th>
                                             ))}
                                         </tr>
@@ -405,18 +416,26 @@ export default function SalesTargetsAdminPage() {
                                                 <tr key={block}>
                                                     {blockIndex === 0 && <th rowSpan={4} scope="rowgroup" className="border-b border-r border-border bg-surface-2 px-3 py-3 text-left font-semibold">{MONTHS[row.month - 1]} сар</th>}
                                                     <th scope="row" className="whitespace-nowrap border-b border-r border-border px-3 py-2 text-left font-medium">{MONTHLY_SALES_BLOCK_LABELS[block]}</th>
-                                                    {TABLE_FIELDS.map(field => {
-                                                        const invalid = parseMonthlySalesAmount(row.blocks[block][field]) === undefined;
-                                                        return <td key={field} className={`border-b border-r border-border p-1.5 last:border-r-0 ${isPlan(field) ? 'bg-status-success-soft' : 'bg-status-pending-soft'}`}>
+                                                    {TABLE_COLUMNS.map(({ kind, field, metric }) => {
+                                                        const cellLabel = `${year} оны ${MONTHS[row.month - 1]} сар ${MONTHLY_SALES_BLOCK_LABELS[block]}`;
+                                                        if (kind === 'pct') {
+                                                            const pct = monthlySalesAttainment(
+                                                                parseMonthlySalesValue(metric.actual, row.blocks[block][metric.actual]) ?? null,
+                                                                parseMonthlySalesValue(metric.plan, row.blocks[block][metric.plan]) ?? null);
+                                                            return <td key={`${metric.key}-pct`} aria-label={`${cellLabel} ${metric.label} гүйцэтгэлийн хувь`} className="num whitespace-nowrap border-b border-r border-border px-3 py-2 text-right text-muted-foreground last:border-r-0">{formatPct(pct)}</td>;
+                                                        }
+                                                        const count = isMonthlySalesCount(field);
+                                                        const invalid = parseMonthlySalesValue(field, row.blocks[block][field]) === undefined;
+                                                        return <td key={field} className={`border-b border-r border-border p-1.5 last:border-r-0 ${COLUMN_TONE[kind]}`}>
                                                             <input
-                                                                type="text" inputMode="decimal"
-                                                                aria-label={`${year} оны ${MONTHS[row.month - 1]} сар ${MONTHLY_SALES_BLOCK_LABELS[block]} ${MONTHLY_SALES_LABELS[field]}`}
+                                                                type="text" inputMode={count ? 'numeric' : 'decimal'}
+                                                                aria-label={`${cellLabel} ${MONTHLY_SALES_LABELS[field]}`}
                                                                 aria-invalid={invalid}
                                                                 disabled={saving}
                                                                 value={row.blocks[block][field]}
                                                                 onChange={event => setMonth(row.month, block, field, event.target.value)}
                                                                 placeholder="—"
-                                                                className={`num w-full min-w-32 rounded border bg-transparent px-2 py-2 text-right text-sm text-foreground ${invalid ? 'border-status-danger' : 'border-control'}`}
+                                                                className={`num w-full rounded border bg-transparent px-2 py-2 text-right text-sm text-foreground ${count ? 'min-w-20' : 'min-w-32'} ${invalid ? 'border-status-danger' : 'border-control'}`}
                                                             />
                                                         </td>;
                                                     })}
@@ -424,9 +443,13 @@ export default function SalesTargetsAdminPage() {
                                             ))}
                                             <tr className="bg-surface-2 font-semibold">
                                                 <th scope="row" className="border-b border-r border-border px-3 py-3 text-left">Нийт</th>
-                                                {TABLE_FIELDS.map(field => (
+                                                {TABLE_COLUMNS.map(({ kind, field, metric }) => kind === 'pct' ? (
+                                                    <td key={`${metric.key}-pct`} aria-label={`${year} оны ${MONTHS[row.month - 1]} сар Нийт ${metric.label} гүйцэтгэлийн хувь`} className="num border-b border-r border-border px-3 py-3 text-right last:border-r-0">
+                                                        {formatPct(monthlySalesAttainment(months[index][metric.actual], months[index][metric.plan]))}
+                                                    </td>
+                                                ) : (
                                                     <td key={field} aria-label={`${year} оны ${MONTHS[row.month - 1]} сар Нийт ${MONTHLY_SALES_LABELS[field]}`} className="num border-b border-r border-border px-3 py-3 text-right last:border-r-0">
-                                                        {months[index][field] === null ? '—' : formatMNT(months[index][field])}
+                                                        {formatValue(field, months[index][field])}
                                                         {months[index][field] !== null && !hasMonthlySalesBreakdown(months[index], field)
                                                             && <span className="mt-1 block text-xs font-normal text-muted-foreground">Задаргаагүй</span>}
                                                     </td>
@@ -437,9 +460,13 @@ export default function SalesTargetsAdminPage() {
                                     <tfoot className="bg-surface-2">
                                         <tr>
                                             <th colSpan={2} scope="row" className="border-r border-border px-3 py-3 text-left">Жилийн нийт</th>
-                                            {TABLE_FIELDS.map(field => (
+                                            {TABLE_COLUMNS.map(({ kind, field, metric }) => kind === 'pct' ? (
+                                                <td key={`${metric.key}-pct`} aria-label={`${year} оны жилийн ${metric.label} гүйцэтгэлийн хувь`} className="num border-r border-border px-3 py-3 text-right font-semibold last:border-r-0">
+                                                    {formatPct(summary.attainmentPct[metric.key])}
+                                                </td>
+                                            ) : (
                                                 <td key={field} className="num border-r border-border px-3 py-3 text-right last:border-r-0">
-                                                    <span className="font-semibold">{summary.totals[field].amount === null ? '—' : formatMNT(summary.totals[field].amount)}</span>
+                                                    <span className="font-semibold">{formatValue(field, summary.totals[field].amount)}</span>
                                                     <span className="mt-1 block text-xs text-muted-foreground">{summary.totals[field].filledMonths}/12 сар</span>
                                                 </td>
                                             ))}
@@ -447,11 +474,11 @@ export default function SalesTargetsAdminPage() {
                                     </tfoot>
                                 </table>
                             </div>
-                            <p className="text-xs text-muted-foreground">Сарын нийт нь бөглөсөн блокийн нийлбэр; жилийн нийт нь бөглөсөн саруудын нийлбэр. Хоосон нүдийг 0 гэж тооцохгүй.</p>
+                            <p className="text-xs text-muted-foreground">Сарын нийт нь бөглөсөн блокийн нийлбэр; жилийн нийт нь бөглөсөн саруудын нийлбэр. Хоосон нүдийг 0 гэж тооцохгүй. Жилийн хувийг төлөвлөгөө, гүйцэтгэл хоёулаа бөглөгдсөн саруудаар л тооцно.</p>
                             {originalMonths.some(row => MONTHLY_SALES_FIELDS.some(field => row[field] !== null && !hasMonthlySalesBreakdown(row, field))) && (
                                 <p className="text-xs text-muted-foreground">Өмнө оруулсан задаргаагүй нийт дүн хэвээр харагдана. Тухайн баганад блокийн дүн оруулахад нийлбэрээр шинэчлэгдэнэ.</p>
                             )}
-                            {invalidAmounts && <p role="alert" className="text-xs text-status-danger">Дүн болон сарын нийлбэр 0–10,000,000,000,000₮ хооронд, хамгийн ихдээ хоёр орны бутархайтай байна.</p>}
+                            {invalidAmounts && <p role="alert" className="text-xs text-status-danger">Гэрээний тоо 0–1,000,000 хооронд бүхэл тоо; дүн болон сарын нийлбэр 0–10,000,000,000,000₮ хооронд, хамгийн ихдээ хоёр орны бутархайтай байна.</p>}
                             {targetConflict && (
                                 <div role="alert" className="rounded-lg border border-status-pending/30 bg-status-pending-soft p-3 text-sm">
                                     <p>Өөр хэрэглэгч сарын мэдээллийг өөрчилсөн. Таны засвар хадгалагдаагүй.</p>
@@ -468,10 +495,10 @@ export default function SalesTargetsAdminPage() {
                                 </Button>
                             </div>
                             <details className="rounded-lg border border-border px-3 py-2">
-                                <summary className="cursor-pointer text-sm font-medium">CRM-ээр тооцсон гэрээний дүн · {formatMNT(computedYearActual)}</summary>
-                                <p className="mt-2 text-xs text-muted-foreground">{data?.computedActualSource}. Энэ дүнг дээрх гар гүйцэтгэлд нэмж нийлбэрлэхгүй.</p>
+                                <summary className="cursor-pointer text-sm font-medium">CRM-ээр тооцсон гэрээ · {computedYearCount.toLocaleString('en-US')} гэрээ · {formatMNT(computedYearActual)}</summary>
+                                <p className="mt-2 text-xs text-muted-foreground">{data?.computedActualSource}. Энэ тоо, дүнг дээрх гар гүйцэтгэлд нэмж нийлбэрлэхгүй.</p>
                                 <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
-                                    {teamActual.map((amount, index) => <p key={index} className="num rounded-md bg-surface-2 p-2">{MONTHS[index]} сар: {formatMNT(amount)}</p>)}
+                                    {teamActual.map((amount, index) => <p key={index} className="num rounded-md bg-surface-2 p-2">{MONTHS[index]} сар: {teamCount[index].toLocaleString('en-US')} гэрээ · {formatMNT(amount)}</p>)}
                                 </div>
                             </details>
                         </CardContent>

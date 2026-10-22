@@ -109,14 +109,18 @@ export async function GET(request: NextRequest) {
         // Багийн гүйцэтгэл = идэвхтэй менежерүүдийн нийлбэр
         const activeNames = new Set(managers.filter((m) => m.is_active).map((m) => m.name));
         const teamActual = Array(12).fill(0);
+        const teamCount = Array(12).fill(0);
         for (const [name, m] of byManager) {
             if (!activeNames.has(name)) continue;
-            for (let i = 0; i < 12; i++) teamActual[i] += m.actuals[i];
+            for (let i = 0; i < 12; i++) {
+                teamActual[i] += m.actuals[i];
+                teamCount[i] += m.counts[i];
+            }
         }
 
         // Compatibility figures remain CRM-derived and never enter the manual performance totals.
         const teamTarget = months.map(row => row.target_amount ?? 0);
-        return NextResponse.json({ year, months, summary: summarizeMonthlySales(months), teamTarget, teamActual,
+        return NextResponse.json({ year, months, summary: summarizeMonthlySales(months), teamTarget, teamActual, teamCount,
             computedActualSource: 'CRM-ийн гэрээ · одоо идэвхтэй менежерүүдийн нийлбэр', managers, teamMembers, projects }, {
             headers: { 'Cache-Control': 'private, no-store' },
         });

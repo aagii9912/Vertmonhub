@@ -8,7 +8,7 @@ import { SaxesParser } from 'saxes';
 import { buildWeeklyDeck, weeklyDeckFileName, type DeckImage, type WeeklyDeckInput } from '../weekly-deck';
 import { buildWeeklySales } from '../weekly-sales';
 import { weeklyDiscussionItems } from '../weekly-review';
-import { buildOperationsReport } from '../operations-report';
+import { buildMonthlyPerformance, buildOperationsReport } from '../operations-report';
 import { buildBudgetOverview } from '@/lib/marketing/budget';
 import { buildMarketingPerformance } from '@/lib/marketing/performance';
 import type { ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
@@ -285,6 +285,21 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(month).toContain('— / төлөвлөгөө 5.35 тэрбум ₮ · —');
         expect(month).toContain('Сарын гэрээний тоо тодорхойгүй');
         for (const slideText of text) expect(slideText).not.toMatch(/Байгуулсан гэрээ 0 |Тайлант долоо хоногт гэрээ бүртгэгдээгүй|Энэ сард гэрээ бүртгэгдээгүй/);
+    });
+
+    it('sales deck: the month plan slide shows contract count plan, actual and attainment before the amounts', async () => {
+        const month = { from: '2026-10-01', to: '2026-10-31' };
+        const monthSales = { ...operations(month.from, month.to), monthlyPerformance: buildMonthlyPerformance([{ year: 2026, month: 10,
+            target_amount: 2500000000, contract_count_target: 100, manual_contract_count_actual: 100 }], month, true) };
+        const { text } = await render(input({ monthSales }));
+        const plan = text.find(slideText => slideText.includes('сарын төлөвлөгөө ба гүйцэтгэл'))!;
+        expect(plan).toMatch(/Гэрээний тооны төлөвлөгөө 100 Гэрээний тооны гүйцэтгэл 100 Удирдлагын баталгаажуулсан Гүйцэтгэлийн хувь 100%/);
+        expect(plan.indexOf('Гэрээний тооны төлөвлөгөө')).toBeLessThan(plan.indexOf('Гэрээний төлөвлөгөө'));
+        // Without a manual count the recorded contracts of the month stand in, labelled by their source.
+        const recorded = await render(input({ monthSales: { ...monthSales, monthlyPerformance: buildMonthlyPerformance([{ year: 2026, month: 10,
+            target_amount: null, contract_count_target: 20 }], month, true) } }));
+        const fallback = recorded.text.find(slideText => slideText.includes('сарын төлөвлөгөө ба гүйцэтгэл'))!;
+        expect(fallback).toMatch(/Гэрээний тооны төлөвлөгөө 20 Гэрээний тооны гүйцэтгэл 14 ERP-ийн гэрээ Гүйцэтгэлийн хувь 70%/);
     });
 
     it('never prints missing amounts as zero and keeps missing images out of the slide', async () => {

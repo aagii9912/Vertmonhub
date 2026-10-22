@@ -4,7 +4,7 @@ import { unitCategoryLabel } from '@/lib/inventory/labels';
 import { getLeadWorkQueues } from '@/lib/leads/work-queue';
 import { formatMNT } from '@/lib/utils/currency';
 import { ubDateStr, ubMonthRange } from '@/lib/utils/date';
-import { MONTHLY_SALES_FIELDS, MONTHLY_SALES_LABELS, type MonthlySalesMonth } from '@/lib/sales/monthly';
+import { isMonthlySalesCount, MONTHLY_SALES_LABELS, MONTHLY_SALES_METRICS, monthlySalesAttainment, type MonthlySalesField, type MonthlySalesMonth } from '@/lib/sales/monthly';
 import { periodContractAmount, periodContractCount, undatedContractsHint } from './contract-dates';
 
 export const OperationsRangeSchema = z.object({
@@ -55,6 +55,7 @@ export interface OperationsTransaction {
 export interface OperationsTarget {
     year: number; month: number; target_amount: Amount;
     cashflow_target_amount?: Amount; manual_contract_actual_amount?: Amount; manual_cashflow_actual_amount?: Amount;
+    contract_count_target?: Amount; manual_contract_count_actual?: Amount;
     revision?: number;
 }
 
@@ -92,6 +93,8 @@ export function buildMonthlyPerformance(targets: OperationsTarget[], range: Oper
         const [year, month] = key.split('-').map(Number);
         const row = byMonth.get(key);
         return { year, month, revision: row?.revision ?? 0,
+            contract_count_target: amount(row?.contract_count_target ?? null),
+            manual_contract_count_actual: amount(row?.manual_contract_count_actual ?? null),
             target_amount: amount(row?.target_amount ?? null),
             manual_contract_actual_amount: amount(row?.manual_contract_actual_amount ?? null),
             cashflow_target_amount: cashflowVisible ? amount(row?.cashflow_target_amount ?? null) : null,
@@ -257,9 +260,15 @@ export function formatOperationsReportText(report: OperationsReport): string {
         ...(report.monthlyPerformance ? [
             'Сарын төлөвлөгөө ба гараар оруулсан гүйцэтгэл (системийн бүртгэлтэй нэмж нийлүүлэхгүй):',
             ...(!report.monthlyPerformance.completeMonths ? ['Сарын мэдээллийг харьцуулахдаа бүтэн сар сонгоно уу.'] : []),
-            ...report.monthlyPerformance.months.map(row => `${row.year}-${String(row.month).padStart(2, '0')}: ${MONTHLY_SALES_FIELDS
-                .filter(field => report.monthlyPerformance!.cashflowVisible || !field.includes('cashflow'))
-                .map(field => `${MONTHLY_SALES_LABELS[field]} ${row[field] === null ? 'Оруулаагүй' : formatMNT(row[field])}`).join(' · ')}`),
+            ...report.monthlyPerformance.months.map(row => {
+                const value = (field: MonthlySalesField) => row[field] === null ? 'Оруулаагүй' : isMonthlySalesCount(field) ? `${row[field]} гэрээ` : formatMNT(row[field]);
+                return `${row.year}-${String(row.month).padStart(2, '0')}: ${MONTHLY_SALES_METRICS
+                    .filter(metric => report.monthlyPerformance!.cashflowVisible || metric.key !== 'cashflow')
+                    .map(metric => {
+                        const pct = monthlySalesAttainment(row[metric.actual], row[metric.plan]);
+                        return `${MONTHLY_SALES_LABELS[metric.plan]} ${value(metric.plan)} · ${MONTHLY_SALES_LABELS[metric.actual]} ${value(metric.actual)}${pct === null ? '' : ` (${pct}%)`}`;
+                    }).join(' · ')}`;
+            }),
         ] : []),
         ...(cash ? [
             `Мөнгөөр орсон бүртгэл: ${cash.receiptCount} гүйлгээ · ${formatMNT(cash.receipts)}`,
