@@ -302,6 +302,20 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(fallback).toMatch(/Гэрээний тооны төлөвлөгөө 20 Гэрээний тооны гүйцэтгэл 14 ERP-ийн гэрээ Гүйцэтгэлийн хувь 70%/);
     });
 
+    it('sales deck: totals of unknown paid amounts are a lower bound, and ERP cash is not divided by the month cash plan', async () => {
+        const month = { from: '2026-10-01', to: '2026-10-31' };
+        const monthSales = { ...operations(month.from, month.to), monthlyPerformance: buildMonthlyPerformance([{ year: 2026, month: 10,
+            target_amount: 2500000000, cashflow_target_amount: 750000000 }], month, true) };
+        const { text } = await render(input({ monthSales }));
+        const contracts = text.filter(slideText => slideText.includes('Энэ долоо хоногийн гэрээ')).join(' ');
+        // 14 гэрээний 5-ынх нь төлсөн дүн хоосон: 9 × 60 сая = 540 сая «+», хэзээ ч 0 биш; урьдчилгаа бүгд мэдэгдэнэ.
+        expect(contracts).toContain('540,000,000₮+');
+        expect(contracts).toContain('1,680,000,000₮');
+        const plan = text.find(slideText => slideText.includes('сарын төлөвлөгөө ба гүйцэтгэл'))!;
+        // 540 сая ₮ нь хоёр snapshot-ын хоорондох ERP зөрүү — сарын 750 сая ₮-ийн төлөвлөгөөтэй хувь гаргахгүй (72% биш).
+        expect(plan).toMatch(/Орсон мөнгөний төлөвлөгөө 750 сая ₮ Орсон мөнгөний гүйцэтгэл 540 сая ₮ ERP зөрүү 2026\.10\.06 → 2026\.10\.13 Гүйцэтгэлийн хувь —/);
+    });
+
     it('never prints missing amounts as zero and keeps missing images out of the slide', async () => {
         const { text, zip } = await render(input({ slides: [slide('s1', { part: 'sales', section: 'event', title: 'Зураггүй', image_paths: [media(9)] })], images: {}, budget: null, sales: undefined, previousSales: undefined }));
         const contracts = text.find(slideText => slideText.includes('Энэ долоо хоногийн гэрээ (1/2)'))!;

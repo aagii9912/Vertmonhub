@@ -36,6 +36,13 @@ const REPORTS: ReportTile[] = [
         accent: 'brand',
     },
     {
+        href: '/dashboard/reports/plan',
+        title: 'Төлөвлөгөөний биелэлт',
+        description: 'Сар, блок (Б1 · Б2 · Зогсоол) тус бүрийн гэрээний тоо, дүн, мөнгөн урсгалын төлөвлөгөө ба гүйцэтгэл',
+        icon: FileBarChart,
+        accent: 'brand',
+    },
+    {
         href: '/dashboard/reports/kpi',
         title: 'Сарын KPI тайлан',
         description: 'Менежерийн сарын лид, уулзалт, гэрээ, борлуулалт, хийсэн ажлыг автоматаар нэгтгэсэн тайлан',

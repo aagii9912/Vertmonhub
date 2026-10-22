@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { nextMeetingDate, lastCompletedReviewRange, weeklyReviewRange, reviewWeekOf, reviewWeeksBetween, meetingDateSchema, WeeklyUpdateSchema, formatReviewChange, formatWeeklyReview, weeklyDiscussionItems, type WeeklyUpdate } from '../weekly-review';
+import { nextMeetingDate, lastCompletedReviewRange, weeklyReviewRange, reviewWeekOf, reviewWeeksBetween, meetingDateSchema, WeeklyUpdateSchema, formatReviewChange, formatWeeklyReview, formatWeeklySalesText, weeklyDiscussionItems, type WeeklyUpdate } from '../weekly-review';
 import { formatWorkdayDate } from '@/lib/utils/date';
 import { buildMarketingPerformance, type MarketingSpend } from '@/lib/marketing/performance';
 import { buildOperationsReport } from '../operations-report';
-import { buildWeeklySales } from '../weekly-sales';
+import { buildWeeklySales, type ContractLine } from '../weekly-sales';
 
 describe('Лхагва гарагийн тайлангийн хугацаа', () => {
     it('Улаанбаатарын Лхагва гарагийг UTC өдрөөс үл хамааран сонгоно', () => {
@@ -74,6 +74,17 @@ describe('Лхагва гарагийн тайлангийн хугацаа', ()
         expect(text).toContain('Энэ долоо хоног: — гэрээ · — (огноогүй 1 гэрээ ороогүй)');
         expect(text).toContain('2026-10 сар: — гэрээ · — / төлөвлөгөө');
         expect(text).not.toMatch(/Гэрээ: 0 |Энэ долоо хоног: 0 гэрээ|\(0%\)/);
+    });
+    it('сарын хувийн хажууд төлөвлөгөөнд хамаарах дүнг бичиж, Агуулахыг хасна', () => {
+        const range = weeklyReviewRange('2026-09-30');
+        const line = (key: string, kind: ContractLine['kind'], total: number): ContractLine => ({
+            key, contractNumber: key, date: '2026-09-24', kind, kindLabel: kind, block: 'Б1', unit: `Б1-${key}`, customer: null, area: null,
+            pricePerSqm: null, advanceCondition: null, total, advance: null, paid: null, manager: null, channel: null, status: 'active',
+        });
+        const report = buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [line('1', 'residential', 300), line('2', 'industry', 100)], inventory: null, monthTarget: 600 });
+        const text = formatWeeklySalesText(report).join('\n');
+        // 300 / 600 = 50% — хувь нь 400₮ (Агуулах орсон)-тай биш, төлөвлөгөөнд хамаарах 300₮-тэй хамт.
+        expect(text).toContain('2026-09 сар: 2 гэрээ · 400₮ · төлөвлөгөөнд хамаарах 300₮ (төлөвлөгөөгүй 1 гэрээ хассан) / төлөвлөгөө 600₮ (50%)');
     });
     it('зардлын бүртгэлгүй болон илэрхий бүртгэсэн 0 дүнг ялгана', () => {
         const base = { shopName: 'Тест', meetingDate: '2026-09-30', notices: [] };

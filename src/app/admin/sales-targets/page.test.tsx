@@ -15,6 +15,20 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.f
 let months: MonthlySalesMonth[];
 let posts: Array<{ shopId: string; year: number; months: MonthlySalesPatch[] }>;
 let failureStatus: number;
+const none = { value: null, lowerBound: false };
+const metrics = (count: number | null, amount: number | null, lowerBound = false) => ({
+    contract_count: { value: count, lowerBound }, contract: { value: amount, lowerBound }, cashflow: none,
+});
+// Төлөвлөгөөний биелэлтийн системийн дүн: 1-р сард Б1-д 3+ гэрээ (огноогүй гэрээтэй), бусад нь тодорхойгүй.
+const system = {
+    months: Array.from({ length: 12 }, (_, index) => ({
+        month: index + 1, status: 'past',
+        total: index === 0 ? metrics(3, 100, true) : metrics(null, null, true),
+        blocks: { b1: index === 0 ? metrics(3, 100, true) : metrics(null, null, true), b2: metrics(null, null, true), parking: metrics(null, null, true) },
+        outside: index === 0 ? { count: 1, amount: 40 } : { count: 0, amount: 0 },
+    })),
+    year: metrics(3, 100, true), undated: 2, source: 'Төслийн бүх гэрээ (менежерээр шүүхгүй)',
+};
 const year = new Date().getFullYear();
 const label = (field: string, block = 'Б1 блок') => `${year} оны 1-р сар ${block} ${field}`;
 const open = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>
@@ -39,11 +53,12 @@ beforeEach(() => {
             }
             return Response.json({ success: true, months: body.months.map((patch: MonthlySalesPatch) => months[patch.month - 1]) });
         }
-        return Response.json({ months, teamActual: [100, ...Array(11).fill(0)], managers: [], teamMembers: [], projects: [] });
+        return Response.json({ months, system, managers: [], teamMembers: [], projects: [] });
     });
 });
 
-describe('monthly sales administration form', () => {
+// 217 нүдтэй маягт: ачаалал ихтэй CI/машин дээр 5 секундээс удаж болно.
+describe('monthly sales administration form', { timeout: 15_000 }, () => {
     it('shows 216 labelled block cells and saves explicit zero without filling other metrics', async () => {
         open();
         const cashActual = await screen.findByRole('textbox', { name: label('Орсон мөнгөний гүйцэтгэл') });
@@ -57,7 +72,12 @@ describe('monthly sales administration form', () => {
         await waitFor(() => expect(saveButton()).toBeDisabled());
         expect(screen.getByRole('textbox', { name: label('Орсон мөнгөний гүйцэтгэл') })).toHaveValue('0');
         expect(screen.getByRole('textbox', { name: label('Гэрээний гүйцэтгэл') })).toHaveValue('');
-        expect(screen.getByText(/CRM-ээр тооцсон гэрээ ·/)).toHaveTextContent('100');
+        expect(screen.getByText(/CRM-ээр тооцсон гэрээ ·/)).toHaveTextContent('3+ гэрээ · 100₮+');
+        expect(screen.getByText(/Огноогүй 2 гэрээ сард ороогүй/)).toBeInTheDocument();
+        expect(screen.getByText(/Төлөвлөгөөгүй 1 гэрээ · 40₮/)).toBeInTheDocument();
+        // Б1-ийн гүйцэтгэлийн нүдний доор системийн дүн — гар утгыг солихгүй.
+        expect(screen.getAllByText('Систем: 100₮+').length).toBe(2);
+        expect(screen.getAllByText('Систем: 3+').length).toBe(2);
     });
 
     it('takes whole contract counts and shows each attainment % after the actual', async () => {

@@ -38,6 +38,9 @@ export function WeeklySalesDetails({ query, canOpenErp }: { query: ReturnType<ty
     const undated = report.sources.undatedContracts;
     const monthTotal = periodContractAmount(report.month.total, report.month.count, undated, formatMNTShort);
     const monthPct = report.month.attainmentPct === null ? '—' : `${report.month.attainmentPct}%${undated ? '+' : ''}`;
+    // Хувь нь зөвхөн төлөвлөгөөнд хамаарах гэрээгээр — хажууд нь тэр дүнг (Агуулах г.м.-ийг хассан) харуулна.
+    const outsidePlan = report.month.outsidePlanCount ?? 0;
+    const plannedTotal = outsidePlan ? periodContractAmount(report.month.planTotal, report.month.planCount, undated, formatMNTShort) : monthTotal;
 
     return (
         <div className="space-y-6">
@@ -47,7 +50,7 @@ export function WeeklySalesDetails({ query, canOpenErp }: { query: ReturnType<ty
                 <Figure label="Энэ 7 хоногийн гэрээ" value={periodContractCount(report.week.count, undated)}
                     helper={undated ? undatedContractsShort(undated) : `${formatMNTShort(report.week.total)} · өмнөх ${report.previousWeek.count} (${formatMNTShort(report.previousWeek.total)})`} />
                 <Figure label={`${Number(report.month.month.slice(5))}-р сарын гэрээ`} value={periodContractCount(report.month.count, undated)}
-                    helper={report.month.target ? `${monthTotal} / төлөвлөгөө ${formatMNTShort(report.month.target)} · ${monthPct}` : `${monthTotal} · сарын төлөвлөгөө тохируулаагүй`} />
+                    helper={report.month.target ? `${plannedTotal} / төлөвлөгөө ${formatMNTShort(report.month.target)} · ${monthPct}${outsidePlan ? ` · төлөвлөгөөгүй ${outsidePlan} гэрээ хассан` : ''}` : `${monthTotal} · сарын төлөвлөгөө тохируулаагүй`} />
                 <Figure label="Мөнгөн орлого (ERP)" value={report.cash ? formatMNTShort(report.cash.delta) : '—'} helper={report.cash ? `${report.cash.from} → ${report.cash.to}` : 'Хоёр долоо хоногийн ERP экспорт хэрэгтэй'} />
                 <Figure label="Төлбөрийн хоцролт" value={report.receivables ? formatMNTShort(report.receivables.overdue) : '—'}
                     helper={report.receivables ? `${report.receivables.overdueContracts} гэрээ · үлдэгдэл ${formatMNTShort(report.receivables.balance)}` : 'ERP гэрээний экспорт хэрэгтэй'} />

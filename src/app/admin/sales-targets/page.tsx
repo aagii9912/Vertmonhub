@@ -20,12 +20,21 @@ import {
     emptyMonthlySales, MONTHLY_SALES_FIELDS, MONTHLY_SALES_LABELS, MONTHLY_SALES_METRICS, MonthlySalesMonthSchema,
     MONTHLY_SALES_BLOCKS, MONTHLY_SALES_BLOCK_LABELS, MONTHLY_SALES_COUNT_MAX, hasMonthlySalesBreakdown, isMonthlySalesCount,
     monthlySalesAttainment, monthlySalesWithBlockTotals, monthlySalesPatches, parseMonthlySalesValue, summarizeMonthlySales,
-    type MonthlySalesBlock, type MonthlySalesField, type MonthlySalesMonth,
+    type MonthlySalesBlock, type MonthlySalesField, type MonthlySalesMetric, type MonthlySalesMonth,
 } from '@/lib/sales/monthly';
+
+type SystemValue = { value: number | null; lowerBound: boolean };
+type SystemMetrics = Partial<Record<MonthlySalesMetric['key'], SystemValue>>;
+/** Төлөвлөгөөний биелэлтийн ачаалагчийн системийн дүн (төслийн бүх гэрээ) — гар гүйцэтгэлтэй нэмэхгүй, зөвхөн харьцуулалт. */
+interface SystemActuals {
+    months: Array<{ month: number; status: string; total: SystemMetrics; blocks: Record<MonthlySalesBlock, SystemMetrics>; outside: { count: number; amount: number } }>;
+    year: SystemMetrics;
+    undated: number;
+    source: string;
+}
 
 const ROLE_LABEL: Record<string, string> = { super_admin: 'Super Admin', admin: 'Админ', marketing: 'Маркетинг', viewer: 'Харах эрх' };
 const MONTHS = ['1-р', '2-р', '3-р', '4-р', '5-р', '6-р', '7-р', '8-р', '9-р', '10-р', '11-р', '12-р'];
-const NO_MONTHS: number[] = Array(12).fill(0);
 
 interface ManagerRow {
     name: string;
@@ -37,8 +46,7 @@ interface ManagerRow {
 
 interface SalesTargetsData {
     months: MonthlySalesMonth[];
-    teamActual: number[];
-    teamCount: number[];
+    system: SystemActuals | null;
     computedActualSource: string;
     managers: ManagerRow[];
     teamMembers: Array<{ id: string; full_name: string; role?: string | null }>;
@@ -60,6 +68,8 @@ const COLUMN_TONE = { plan: 'bg-status-success-soft', actual: 'bg-status-pending
 const formatValue = (field: MonthlySalesField, value: number | null) => value === null ? '—'
     : isMonthlySalesCount(field) ? value.toLocaleString('en-US') : formatMNT(value);
 const formatPct = (value: number | null) => value === null ? '—' : `${value}%`;
+const formatSystem = (field: MonthlySalesField, value: SystemValue | undefined) => !value || value.value === null ? null
+    : `${formatValue(field, value.value)}${value.lowerBound ? '+' : ''}`;
 
 function monthInputs(months: MonthlySalesMonth[]): MonthInputs[] {
     return months.map(row => ({ month: row.month,
@@ -122,9 +132,8 @@ export default function SalesTargetsAdminPage() {
             if (!parsedMonths.success) throw new Error('Сарын төлөвлөгөөний мэдээлэл дутуу байна. Дахин ачаална уу.');
             return {
                 months: parsedMonths.data,
-                teamActual: d.teamActual || Array(12).fill(0),
-                teamCount: d.teamCount || Array(12).fill(0),
-                computedActualSource: d.computedActualSource || 'CRM-ийн гэрээ · одоо идэвхтэй менежерүүдийн нийлбэр',
+                system: d.system ?? null,
+                computedActualSource: d.computedActualSource || 'Төслийн бүх гэрээ',
                 managers: (d.managers || []).map((manager: ManagerRow) => ({ ...manager, project_ids: manager.project_ids || [] })),
                 teamMembers: d.teamMembers || [],
                 projects: d.projects || [],
@@ -168,8 +177,7 @@ export default function SalesTargetsAdminPage() {
     const invalidAmounts = invalidCells || invalidTotals;
     const patches = targetDraft && !invalidAmounts ? monthlySalesPatches(targetDraft.before, months) : [];
     const summary = summarizeMonthlySales(months);
-    const teamActual = data?.teamActual ?? NO_MONTHS;
-    const teamCount = data?.teamCount ?? NO_MONTHS;
+    const system = data?.system ?? null;
     const managers = managersDraft ?? data?.managers ?? NO_MANAGERS;
     const teamMembers = data?.teamMembers ?? NO_TEAM_MEMBERS;
     const projects = data?.projects ?? NO_PROJECTS;
@@ -210,7 +218,7 @@ export default function SalesTargetsAdminPage() {
                 ...current, months: current.months.map(row => saved.get(row.month) ?? row),
             } : current);
             setTargetDraft(null);
-            await Promise.all(['admin-sales-targets', 'director', 'kpi-report', 'my-stats', 'operations-report', 'weekly-sales'].map(key =>
+            await Promise.all(['admin-sales-targets', 'director', 'kpi-report', 'my-stats', 'operations-report', 'weekly-sales', 'plan-performance'].map(key =>
                 queryClient.invalidateQueries({ queryKey: [key, shopId] })));
             toast.success('Төлөвлөгөө, гүйцэтгэл хадгалагдлаа');
         } catch (cause) {
@@ -323,8 +331,6 @@ export default function SalesTargetsAdminPage() {
         }
     }
 
-    const computedYearActual = teamActual.reduce((total, amount) => total + amount, 0);
-    const computedYearCount = teamCount.reduce((total, count) => total + count, 0);
     const activeCount = managers.filter((m) => m.is_active).length;
     const visibleManagers = showInactive ? managers : managers.filter((m) => m.is_active);
     const inactiveCount = managers.length - activeCount;
@@ -437,6 +443,9 @@ export default function SalesTargetsAdminPage() {
                                                                 placeholder="—"
                                                                 className={`num w-full rounded border bg-transparent px-2 py-2 text-right text-sm text-foreground ${count ? 'min-w-20' : 'min-w-32'} ${invalid ? 'border-status-danger' : 'border-control'}`}
                                                             />
+                                                            {kind === 'actual' && formatSystem(field, system?.months[row.month - 1]?.blocks[block]?.[metric.key]) && (
+                                                                <span className="num mt-1 block whitespace-nowrap text-right text-xs text-muted-foreground">Систем: {formatSystem(field, system?.months[row.month - 1]?.blocks[block]?.[metric.key])}</span>
+                                                            )}
                                                         </td>;
                                                     })}
                                                 </tr>
@@ -452,6 +461,8 @@ export default function SalesTargetsAdminPage() {
                                                         {formatValue(field, months[index][field])}
                                                         {months[index][field] !== null && !hasMonthlySalesBreakdown(months[index], field)
                                                             && <span className="mt-1 block text-xs font-normal text-muted-foreground">Задаргаагүй</span>}
+                                                        {kind === 'actual' && formatSystem(field, system?.months[row.month - 1]?.total[metric.key])
+                                                            && <span className="num mt-1 block whitespace-nowrap text-xs font-normal text-muted-foreground">Систем: {formatSystem(field, system?.months[row.month - 1]?.total[metric.key])}</span>}
                                                     </td>
                                                 ))}
                                             </tr>
@@ -495,11 +506,21 @@ export default function SalesTargetsAdminPage() {
                                 </Button>
                             </div>
                             <details className="rounded-lg border border-border px-3 py-2">
-                                <summary className="cursor-pointer text-sm font-medium">CRM-ээр тооцсон гэрээ · {computedYearCount.toLocaleString('en-US')} гэрээ · {formatMNT(computedYearActual)}</summary>
-                                <p className="mt-2 text-xs text-muted-foreground">{data?.computedActualSource}. Энэ тоо, дүнг дээрх гар гүйцэтгэлд нэмж нийлбэрлэхгүй.</p>
-                                <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
-                                    {teamActual.map((amount, index) => <p key={index} className="num rounded-md bg-surface-2 p-2">{MONTHS[index]} сар: {teamCount[index].toLocaleString('en-US')} гэрээ · {formatMNT(amount)}</p>)}
-                                </div>
+                                <summary className="cursor-pointer text-sm font-medium">
+                                    CRM-ээр тооцсон гэрээ · {system
+                                        ? `${formatSystem('manual_contract_count_actual', system.year.contract_count) ?? '—'} гэрээ · ${formatSystem('manual_contract_actual_amount', system.year.contract) ?? '—'}`
+                                        : 'тооцоолж чадсангүй'}
+                                </summary>
+                                <p className="mt-2 text-xs text-muted-foreground">
+                                    {system?.source ?? data?.computedActualSource}. Энэ тоо, дүнг дээрх гар гүйцэтгэлд нэмж нийлбэрлэхгүй; гүйцэтгэлийн нүдний доорх «Систем» нь мөн энэ дүн.
+                                    {system?.undated ? ` Огноогүй ${system.undated} гэрээ сард ороогүй — «+» нь доод хязгаар, «—» нь тодорхойгүй.` : ''}
+                                </p>
+                                {system ? <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                                    {system.months.map(row => <p key={row.month} className="num rounded-md bg-surface-2 p-2">
+                                        {MONTHS[row.month - 1]} сар: {formatSystem('manual_contract_count_actual', row.total.contract_count) ?? '—'} гэрээ · {formatSystem('manual_contract_actual_amount', row.total.contract) ?? '—'}
+                                        {row.outside.count > 0 && <span className="block text-muted-foreground">Төлөвлөгөөгүй {row.outside.count} гэрээ · {formatMNT(row.outside.amount)}</span>}
+                                    </p>)}
+                                </div> : <p className="mt-2 text-xs text-status-danger">Системийн гүйцэтгэлийг уншиж чадсангүй. Дахин ачаална уу.</p>}
                             </details>
                         </CardContent>
                     </Card>
@@ -513,7 +534,7 @@ export default function SalesTargetsAdminPage() {
                                         <Users className="h-4 w-4 text-brand-strong" /> Идэвхтэй менежерүүд
                                     </p>
                                     <p className="text-xs text-muted-foreground">
-                                        {activeCount} идэвхтэй · багийн гүйцэтгэл эдгээрийн нийлбэр
+                                        {activeCount} идэвхтэй · менежерийн жагсаалт, хувийн гүйцэтгэлд; багийн гүйцэтгэлийг төслийн бүх гэрээгээр тооцно
                                     </p>
                                     <p className="mt-1 text-xs text-muted-foreground">
                                         {projects.length === 1

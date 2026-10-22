@@ -2,12 +2,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { emptyMonthlySales } from '@/lib/sales/monthly';
+import { buildPlanPerformance } from '@/lib/sales/plan-performance';
 
 const mocks = vi.hoisted(() => ({
     userId: '10000000-0000-4000-8000-000000000001' as string | null,
     superAdmin: true, accessible: true,
-    save: vi.fn(), load: vi.fn(), actuals: vi.fn(),
+    save: vi.fn(), load: vi.fn(), actuals: vi.fn(), plan: vi.fn(),
 }));
+vi.mock('@/lib/sales/plan-performance-load', () => ({ loadPlanPerformance: (...args: unknown[]) => mocks.plan(...args) }));
 vi.mock('@/lib/auth/supabase-auth', () => ({
     getUserId: async () => mocks.userId,
     assertShopAccess: async (shopId: string) => mocks.accessible ? shopId : null,
@@ -36,6 +38,9 @@ beforeEach(() => {
     mocks.userId = '10000000-0000-4000-8000-000000000001'; mocks.superAdmin = true; mocks.accessible = true;
     mocks.load.mockResolvedValue(emptyMonthlySales());
     mocks.actuals.mockResolvedValue(new Map());
+    mocks.plan.mockImplementation(async () => buildPlanPerformance({ year: 2026, now: new Date('2026-10-22T04:00:00Z'), months: emptyMonthlySales(), planYears: [],
+        contracts: [{ id: 'k1', contract_date: '2026-10-03', contract_status: 'active', product_type: 'parking', block_name: 'Б1', total_price: 70, sales_manager: 'Ростерт байхгүй' } as never],
+        receipts: [], latestImportDate: null }));
     mocks.save.mockResolvedValue({ data: [{ ...emptyMonthlySales()[9], revision: 8, manual_cashflow_actual_amount: 0 }], error: null });
 });
 
@@ -96,8 +101,20 @@ describe('monthly sales API boundary', () => {
         expect(result.months[0].manual_cashflow_actual_amount).toBeNull();
         expect(result.summary.totals.manual_contract_actual_amount.amount).toBe(100);
         expect(result.summary.totals.manual_cashflow_actual_amount.amount).toBe(0);
-        expect(result.teamActual).toEqual(Array(12).fill(0));
-        expect(result.computedActualSource).toContain('CRM');
+        // Системийн дүн төслийн бүх гэрээгээр (роостерт байхгүй менежерийн гэрээ ч), гар гүйцэтгэлтэй нэмэгдэхгүй; ирээдүйн сар null.
+        expect(result.teamActual).toEqual([...Array(9).fill(0), 70, null, null]);
+        expect(result.teamCount[9]).toBe(1);
+        expect(result.system.months[9].blocks.parking.contract).toEqual({ value: 70, lowerBound: false });
+        expect(result.system.year.contract).toEqual({ value: 70, lowerBound: false });
+        expect(result.computedActualSource).toContain('менежерээр шүүхгүй');
+        expect(mocks.plan).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ shopId, year: 2026 }));
+    });
+
+    it('keeps the plan editable when only the system comparison cannot be read', async () => {
+        mocks.plan.mockRejectedValue(new Error('contracts unavailable'));
+        const response = await GET(new NextRequest(`http://localhost/api/admin/sales-targets?shopId=${shopId}&year=2026`));
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ system: null, teamActual: null });
     });
 
     it('fails the read if the new columns cannot be loaded, rather than claiming all-zero performance', async () => {

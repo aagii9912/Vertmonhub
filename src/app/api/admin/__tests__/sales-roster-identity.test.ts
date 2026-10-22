@@ -55,6 +55,12 @@ vi.mock('@/lib/sales/targets', () => ({
     getMonthlyActualsByManager: async () => new Map(),
     sumYear: () => 0,
 }));
+// Системийн гүйцэтгэлийн харьцуулалт энэ тестийн сэдэв биш (monthly-sales.test.ts) — хоосон тайлан.
+vi.mock('@/lib/sales/plan-performance-load', async () => {
+    const { buildPlanPerformance } = await import('@/lib/sales/plan-performance');
+    return { loadPlanPerformance: async () => buildPlanPerformance({ year: 2026, now: new Date('2026-10-22T04:00:00Z'),
+        months: emptyMonthlySales(), planYears: [], contracts: [], receipts: [], latestImportDate: null }) };
+});
 import { GET, PUT } from '../sales-targets/route';
 
 const request = (managers: Array<{ name: string; user_id: string | null; is_active: boolean; project_ids?: string[] }>) => new NextRequest('http://localhost/api/admin/sales-targets', {

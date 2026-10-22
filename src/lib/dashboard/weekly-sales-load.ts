@@ -6,6 +6,7 @@ import { listErpSnapshots, loadErpDatasets, snapshotRecords } from '@/lib/erp/sn
 import { inventoryStatusOf } from '@/lib/admin/import/units';
 import type { InventoryStatus } from '@/lib/inventory/labels';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { hasBlockPlan } from '@/lib/sales/plan-performance';
 import { buildWeeklySales, type ContractLine } from './weekly-sales';
 import { shiftReviewDate, weeklyReviewRange } from './weekly-review';
 
@@ -102,12 +103,13 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
     }
 
     const { data: target, error: targetError } = await db.from('team_sales_targets')
-        .select('target_amount').eq('shop_id', shopId).eq('year', year).eq('month', monthNumber).maybeSingle();
+        .select('target_amount, block_amounts').eq('shop_id', shopId).eq('year', year).eq('month', monthNumber).maybeSingle();
     if (targetError) throw targetError;
 
     const report = buildWeeklySales({
         range, sales, previousSales, crmContracts, crmUndated, inventory,
         monthTarget: target?.target_amount ? money(target.target_amount) : null,
+        monthBlockPlanned: hasBlockPlan(target?.block_amounts),
     });
     // Захиалагчийн нэрийг зөвхөн гэрээ харах эрхтэй хүнд харуулна.
     if (!options.canSeeCustomers) report.week.lines = report.week.lines.map(line => ({ ...line, customer: null }));
