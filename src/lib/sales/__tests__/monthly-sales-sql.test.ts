@@ -10,6 +10,7 @@ let db: PGlite;
 const migration = readFileSync('supabase/migrations/20261008122000_team_monthly_sales.sql', 'utf8');
 const blocksMigration = readFileSync('supabase/migrations/20261008130000_team_sales_blocks.sql', 'utf8');
 const countsMigration = readFileSync('supabase/migrations/20261022120000_team_sales_contract_counts.sql', 'utf8');
+const dropOldCountsMigration = readFileSync('supabase/migrations/20261022160000_drop_old_contract_count_columns.sql', 'utf8');
 const save = (months: unknown[], user = actor, shopId = shop, year = 2026) => db.query(
     'SELECT save_team_monthly_sales($1,$2,$3::jsonb,$4) AS saved', [shopId, year, JSON.stringify(months), user],
 );
@@ -175,5 +176,36 @@ describe('audited monthly monetary RPC', () => {
         } }])).rejects.toMatchObject({ code: '22023' });
         await expect(db.query('UPDATE team_sales_targets SET contract_count_target = -1')).rejects.toThrow(/team_sales_contract_counts/);
         expect((await db.query('SELECT contract_count_target, revision FROM team_sales_targets')).rows).toEqual([{ contract_count_target: null, revision: 0 }]);
+    });
+});
+
+describe('dropping the unused 20261013150000 count pair', () => {
+    // The pair production received from the unmerged feat/meeting-prep-bundle branch.
+    const addOldPair = () => db.exec(`ALTER TABLE team_sales_targets ADD COLUMN target_count integer, ADD COLUMN manual_contract_actual_count integer;
+        ALTER TABLE team_sales_targets ADD CONSTRAINT team_monthly_sales_counts CHECK (target_count IS NULL OR target_count BETWEEN 0 AND 1000000);`);
+    const columns = async () => (await db.query<{ column_name: string }>(`SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'team_sales_targets' AND column_name LIKE '%count%' ORDER BY column_name`)).rows.map(row => row.column_name);
+
+    it('drops the empty old pair and its constraint, keeps the live pair and the RPC, and re-runs as a no-op', async () => {
+        await addOldPair();
+        await db.exec(dropOldCountsMigration);
+        await db.exec(dropOldCountsMigration);
+        expect(await columns()).toEqual(['contract_count_target', 'manual_contract_count_actual']);
+        expect((await db.query("SELECT conname FROM pg_constraint WHERE conname = 'team_monthly_sales_counts'")).rows).toEqual([]);
+        await save([{ month: 1, expectedRevision: 0, block_amounts: { b1: { contract_count_target: 7 } } }]);
+        expect((await db.query('SELECT contract_count_target, target_amount::int FROM team_sales_targets')).rows).toEqual([{ contract_count_target: 7, target_amount: 500 }]);
+    });
+
+    it('refuses while the old pair holds a value, a block cell, or the old RPC still writes it', async () => {
+        await addOldPair();
+        await db.exec('UPDATE team_sales_targets SET manual_contract_actual_count = 3');
+        await expect(db.exec(dropOldCountsMigration)).rejects.toThrow(/hold values in 1 rows/);
+        await db.exec(`UPDATE team_sales_targets SET manual_contract_actual_count = NULL, block_amounts = '{"b2": {"target_count": 4}}'`);
+        await expect(db.exec(dropOldCountsMigration)).rejects.toThrow(/1 block cells/);
+        await db.exec(`UPDATE team_sales_targets SET block_amounts = '{}'`);
+        await db.exec(`CREATE OR REPLACE FUNCTION save_team_monthly_sales(p_shop_id uuid, p_year integer, p_months jsonb, p_actor uuid)
+            RETURNS jsonb LANGUAGE sql AS $$ SELECT jsonb_build_object('field', 'target_count') $$`);
+        await expect(db.exec(dropOldCountsMigration)).rejects.toThrow(/apply 20261022120000 first/);
+        expect(await columns()).toEqual(['contract_count_target', 'manual_contract_actual_count', 'manual_contract_count_actual', 'target_count']);
     });
 });
