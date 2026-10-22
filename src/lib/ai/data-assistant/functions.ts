@@ -34,6 +34,7 @@ import { propertyStatusLabel, unitStatusLabel, type InventoryStatus } from '@/li
 import { contractStatusLabel } from '@/lib/contracts/labels';
 import { loadLatestContractListImport, NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
 import { summarizeContracts, type ContractSummaryRow } from '@/lib/contracts/summary';
+import { periodContractAmount, periodContractCount, undatedContractsHint } from '@/lib/dashboard/contract-dates';
 import { loadLatestErpProducts } from '@/lib/erp/snapshots';
 import { parseUnitUpdate, unitFieldLabel, updateInventoryUnit } from '@/lib/inventory/unit-update';
 import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
@@ -83,11 +84,14 @@ function getDateFilter(timeRange: string): string {
 export async function fetchDashboardStats(shopId: string, timeRange: string = 'month', scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     const isoDate = getDateFilter(timeRange);
     const dateOnly = ubDateStr(new Date(isoDate));
-    const [contracts, customersRes, leadsAll, units] = await Promise.all([
+    const [contracts, undatedRes, customersRes, leadsAll, units] = await Promise.all([
         // Цуцалсан, устгасан гэрээ борлуулалтад орохгүй (manager_monthly_sales-тэй нэг дүрэм).
         fetchAllRows<{ total_price: number | string | null }>((from, to) => supabaseAdmin
             .from('property_contracts').select('total_price').eq('shop_id', shopId)
             .is('deleted_at', null).or(NOT_CANCELLED_CONTRACT).gte('contract_date', dateOnly).order('id').range(from, to)),
+        // Огноогүй амьд гэрээ хугацаанд орохгүй — байвал тоо, дүн доод хэмжээ (lib/dashboard/contract-dates.ts).
+        supabaseAdmin.from('property_contracts').select('id', { count: 'exact', head: true }).eq('shop_id', shopId)
+            .is('deleted_at', null).is('contract_date', null).or(NOT_CANCELLED_CONTRACT),
         supabaseAdmin.from('customers').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).is('deleted_at', null),
         fetchAllRows<{ status: string | null }>((from, to) => applyLeadScope(supabaseAdmin
             .from('leads').select('status').eq('shop_id', shopId)
@@ -97,10 +101,12 @@ export async function fetchDashboardStats(shopId: string, timeRange: string = 'm
             .from('property_units').select('status').eq('shop_id', shopId)
             .eq('category', 'residential').order('id').range(from, to)),
     ]);
+    if (undatedRes.error) throw new Error(undatedRes.error.message);
     if (customersRes.error) throw new Error(customersRes.error.message);
 
     // Гэрээний нийт үнэ нь кассад бодитоор орсон мөнгө биш.
     const totalContractValue = contracts.reduce((sum, c) => sum + (Number(c.total_price) || 0), 0);
+    const undatedContracts = undatedRes.count || 0;
     const leadsByStatus = {
         new: leadsAll.filter(l => l.status === 'new').length,
         contacted: leadsAll.filter(l => l.status === 'contacted').length,
@@ -119,6 +125,11 @@ export async function fetchDashboardStats(shopId: string, timeRange: string = 'm
     return {
         timeRange, totalContracts: contracts.length, totalContractValue,
         contractValueBasis: 'Гэрээний нийт үнийн нийлбэр (MNT, цуцалсан гэрээ ороогүй, гэрээний огноогоор); бодитоор хүлээн авсан мөнгөн орлого биш.',
+        ...(undatedContracts ? {
+            undatedContracts,
+            contractsNote: `${undatedContractsHint(undatedContracts)} Гэрээний тоог «${periodContractCount(contracts.length, undatedContracts)}», `
+                + `дүнг «${periodContractAmount(totalContractValue, contracts.length, undatedContracts, formatMNT)}» гэж хэл — 0 гэж бүү хэл.`,
+        } : {}),
         totalCustomers: customersRes.count || 0, totalLeads: leadsAll.length, leadsByStatus,
         totalProperties: units.length,
         inventory: {
@@ -424,12 +435,17 @@ export async function fetchCustomerInsights(shopId: string, args: any, scope: Sa
             .order('created_at', { ascending: false }), scope);
 
         // Contracts are denormalized — join by phone (no FK).
-        const { data: contracts } = customer.phone ? await supabaseAdmin.from('property_contracts')
+        const contractsRes = customer.phone ? await supabaseAdmin.from('property_contracts')
             .select('id, contract_number, contract_status, unit_label, block_name, total_price, paid_amount, balance, paid_percent, overdue_amount, overdue_as_of, overdue_days, sales_manager, sales_channel, order_date, contract_date')
             .eq('shop_id', shopId).eq('customer_phone', customer.phone).is('deleted_at', null)
-            .order('contract_date', { ascending: false }) : { data: [] };
+            .order('contract_date', { ascending: false }) : { data: [], error: null };
+        if (contractsRes.error) logger.warn('[AI get_customer_insights] contracts read failed', { error: contractsRes.error });
 
-        return { customer, leads: leads || [], contracts: contracts || [] };
+        return {
+            customer, leads: leads || [], contracts: contractsRes.data || [],
+            // Уншилтын алдааг «гэрээгүй» гэж харуулахгүй.
+            ...(contractsRes.error ? { contracts_error: 'Гэрээ уншигдсангүй. Гэрээгүй гэж бүү дүгнэ.' } : {}),
+        };
     }
 
     // ---- Customer list ----

@@ -6,6 +6,7 @@
 import { Resend } from 'resend';
 import { logger } from '@/lib/utils/logger';
 import { formatMNT } from '@/lib/utils/currency';
+import { periodContractCount, undatedContractsShort } from '@/lib/dashboard/contract-dates';
 
 // Initialize Resend client
 const resend = process.env.RESEND_API_KEY
@@ -61,6 +62,8 @@ export interface DirectorDigestData {
     date: string;
     newLeads: number;
     newContracts: number;
+    /** Гэрээний огноогүй амьд гэрээ — байвал шинэ гэрээний тоо доод хэмжээ («N+»/«—», contract-dates.ts). */
+    undatedContracts?: number;
     activeContracts: number;
     totalSales: number;
     /** Гэрээнд бүртгэсэн төлсөн дүн; бүгд тодорхойгүй (ERP) бол null («—»). */
@@ -96,7 +99,7 @@ export async function sendDirectorDigestEmail(to: string, d: DirectorDigestData)
     <div style="padding:24px">
       <table style="width:100%;border-collapse:separate;border-spacing:8px"><tr>
         ${tile('Шинэ лийд', String(d.newLeads))}
-        ${tile('Шинэ гэрээ', String(d.newContracts))}
+        ${tile('Шинэ гэрээ', periodContractCount(d.newContracts, d.undatedContracts ?? 0))}
         ${tile('Идэвхтэй гэрээ', String(d.activeContracts))}
         ${tile('Хоцролттой', String(d.overdueCount))}
       </tr></table>
@@ -105,6 +108,7 @@ export async function sendDirectorDigestEmail(to: string, d: DirectorDigestData)
         ${tile('Цуглуулсан', d.collected === null ? '—' : `${formatMNT(d.collected)}${d.collectedPartial ? '+' : ''}`)}
         ${d.overdueAmount != null ? tile(`Төлбөр хоцролт${d.overdueAsOf ? ` · ${d.overdueAsOf}` : ''}`, formatMNT(d.overdueAmount)) : ''}
       </tr></table>
+      ${d.undatedContracts ? `<p style="margin:8px 0 0;font-size:12px;color:#6b7280">${undatedContractsShort(d.undatedContracts)}</p>` : ''}
       <h3 style="margin:24px 0 8px;font-size:15px;color:#111">🏆 Топ менежерүүд</h3>
       <table style="width:100%;border-collapse:collapse;font-size:13px">${managerRows}</table>
       <p style="margin-top:24px;font-size:12px;color:#9ca3af">Энэ тайланг Vertmon Hub автоматаар илгээв.</p>
@@ -127,6 +131,8 @@ export interface WeeklyReportData {
     meetings: number;
     wonLeads: number;
     newContracts: number;
+    /** Гэрээний огноогүй амьд гэрээ — байвал шинэ гэрээний тоо доод хэмжээ («N+»/«—», contract-dates.ts). */
+    undatedContracts?: number;
     topSources: Array<{ source: string; count: number }>;
 }
 export async function sendWeeklyReportEmail(to: string, d: WeeklyReportData): Promise<boolean> {
@@ -153,8 +159,9 @@ export async function sendWeeklyReportEmail(to: string, d: WeeklyReportData): Pr
         ${tile('Шинэ лийд', String(d.newLeads))}
         ${tile('Уулзалт', String(d.meetings))}
         ${tile('Хожсон лийд', String(d.wonLeads))}
-        ${tile('Шинэ гэрээ', String(d.newContracts))}
+        ${tile('Шинэ гэрээ', periodContractCount(d.newContracts, d.undatedContracts ?? 0))}
       </tr></table>
+      ${d.undatedContracts ? `<p style="margin:8px 0 0;font-size:12px;color:#6b7280">${undatedContractsShort(d.undatedContracts)}</p>` : ''}
       <h3 style="margin:24px 0 8px;font-size:15px;color:#111">📣 Лийдийн топ эх үүсвэрүүд</h3>
       <table style="width:100%;border-collapse:collapse;font-size:13px">${sourceRows}</table>
       <p style="margin-top:24px;font-size:12px;color:#9ca3af">Энэ тайланг Vertmon Hub автоматаар илгээв.</p>

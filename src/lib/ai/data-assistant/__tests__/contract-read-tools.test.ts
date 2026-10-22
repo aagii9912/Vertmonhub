@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryDb } from '@/test/memory-db';
-import { fetchContractDetails, fetchContracts, fetchContractsSummary } from '../functions';
+import { fetchContractDetails, fetchContracts, fetchContractsSummary, fetchCustomerInsights } from '../functions';
 
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => db }));
 
@@ -176,5 +176,30 @@ describe('get_contract_details', () => {
         expect(result.contract.paid_amount_fmt).toBe('40₮');
         expect(result.contract).not.toHaveProperty('paid_note');
         expect(result.contract).not.toHaveProperty('overdue_note');
+    });
+});
+
+describe('get_customer_insights', () => {
+    beforeEach(() => {
+        db.tables.customers = [{ id: 'cust-1', shop_id: 'shop-1', deleted_at: null, name: 'Туршилт', phone: '99112233', created_at: '2026-10-01T00:00:00Z' }];
+        db.tables.leads = [];
+        db.tables.property_contracts = [
+            contract('mine', { customer_phone: '99112233', contract_date: '2026-09-15', order_date: '2026-09-15', overdue_amount: 0, overdue_as_of: LATEST }),
+            contract('deleted', { customer_phone: '99112233', deleted_at: '2026-10-02T00:00:00Z' }),
+        ];
+    });
+
+    it('устгасан гэрээг харуулахгүй, HUB талбарыг буцаана', async () => {
+        const result: any = await fetchCustomerInsights('shop-1', { customer_id: 'cust-1' });
+        expect(result.contracts.map((c: Row) => c.id)).toEqual(['mine']);
+        expect(result.contracts[0]).toMatchObject({ order_date: '2026-09-15', overdue_as_of: LATEST });
+        expect(result).not.toHaveProperty('contracts_error');
+    });
+
+    it('гэрээний уншилтын алдааг «гэрээгүй» гэж нуухгүй', async () => {
+        db.failNext.property_contracts = { code: '42703', message: 'column property_contracts.overdue_amount does not exist' };
+        const result: any = await fetchCustomerInsights('shop-1', { customer_id: 'cust-1' });
+        expect(result.contracts).toEqual([]);
+        expect(result.contracts_error).toContain('Гэрээгүй гэж бүү дүгнэ');
     });
 });

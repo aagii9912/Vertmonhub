@@ -26,7 +26,11 @@ beforeEach(() => {
     db.failNext = {};
     db.tables = {
         shops: [{ id: 'hub', name: 'HUB төсөл' }, { id: 'crm', name: 'CRM төсөл' }],
-        leads: [],
+        leads: [
+            { id: 'l-new', shop_id: 'hub', deleted_at: null, created_at: '2026-10-20T01:00:00Z' },
+            { id: 'l-deleted', shop_id: 'hub', deleted_at: '2026-10-20T02:00:00Z', created_at: '2026-10-20T01:30:00Z' },
+            { id: 'l-old', shop_id: 'hub', deleted_at: null, created_at: '2026-10-18T01:00:00Z' },
+        ],
         sales_managers: [{ shop_id: 'hub', name: 'Туршилт Менежер', is_active: true }],
         manager_performance: [{ shop_id: 'hub', sales_manager: 'Туршилт Менежер', contract_count: 1, total_sales: 100, total_collected: null }],
         contract_list_imports: [{ shop_id: 'hub', report_date: HUB_DATE, file_name: 'hub.xlsx', row_count: 4, created_at: '2026-10-18T02:00:00Z' }],
@@ -55,7 +59,10 @@ describe('director digest cron', () => {
         await run();
         expect(digestFor('HUB төсөл')).toMatchObject({
             date: '2026-10-19',
+            newLeads: 1,
             newContracts: 2,
+            // «f» (хаагдсан) огноогүй — шинэ гэрээний тоо доод хэмжээ.
+            undatedContracts: 1,
             activeContracts: 3,
             totalSales: 250,
             collected: null,
@@ -70,7 +77,7 @@ describe('director digest cron', () => {
     it('импортгүй төсөлд хуваарийн хоногоор; төлсөн дүн заримдаа тодорхойгүй бол мэдэгдэж буй нийлбэр', async () => {
         await run();
         expect(digestFor('CRM төсөл')).toMatchObject({
-            newContracts: 1, activeContracts: 2, totalSales: 310, collected: 150, collectedPartial: true,
+            newLeads: 0, newContracts: 1, undatedContracts: 1, activeContracts: 2, totalSales: 310, collected: 150, collectedPartial: true,
             overdueCount: 1, overdueAmount: null, overdueAsOf: null, topManagers: [],
         });
     });

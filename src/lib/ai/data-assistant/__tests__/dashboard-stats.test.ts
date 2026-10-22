@@ -25,7 +25,8 @@ beforeEach(() => {
             select: (_fields: string, options?: { head?: boolean }) => { head = !!options?.head; return chain; },
             eq: (field: string, value: unknown) => { rows = rows.filter(r => r[field] === value); return chain; },
             is: (field: string, value: unknown) => { rows = rows.filter(r => r[field] === value); return chain; },
-            gte: (field: string, value: string) => { rows = rows.filter(r => String(r[field]) >= value); return chain; },
+            // SQL шиг: NULL >= x үнэн биш.
+            gte: (field: string, value: string) => { rows = rows.filter(r => r[field] != null && String(r[field]) >= value); return chain; },
             // PostgREST `or`: `col.is.null` / `col.neq.value` (SQL: NULL <> x үнэн биш).
             or: (filter: string) => {
                 const clauses = filter.split(',').map(clause => clause.split('.'));
@@ -75,6 +76,26 @@ describe('AI dashboard statistics', () => {
         const result = await fetchDashboardStats('shop-1', 'all_time');
         expect(result).toMatchObject({ totalContracts: 3, totalContractValue: 123 });
         expect(result.contractValueBasis).toContain('цуцалсан гэрээ ороогүй');
+        expect(result).not.toHaveProperty('contractsNote');
+    });
+
+    it('marks the period count and value as a lower bound while live contracts have no contract date', async () => {
+        tables.property_contracts = [
+            row('dated', { total_price: 100, contract_date: '2026-09-01', contract_status: 'active' }),
+            row('undated', { total_price: 50, contract_date: null, contract_status: 'active' }),
+            row('undated-cancelled', { total_price: 5, contract_date: null, contract_status: 'cancelled' }),
+            row('undated-deleted', { total_price: 5, contract_date: null, contract_status: 'active', deleted_at: '2026-09-02' }),
+        ];
+        const result = await fetchDashboardStats('shop-1', 'all_time');
+        expect(result).toMatchObject({ totalContracts: 1, totalContractValue: 100, undatedContracts: 1 });
+        expect(result.contractsNote).toContain('«1+»');
+        expect(result.contractsNote).toContain('«100₮+»');
+
+        tables.property_contracts = [row('undated', { total_price: 50, contract_date: null, contract_status: null })];
+        const unknown = await fetchDashboardStats('shop-1', 'month');
+        expect(unknown).toMatchObject({ totalContracts: 0, undatedContracts: 1 });
+        expect(unknown.contractsNote).toContain('тоог «—»');
+        expect(unknown.contractsNote).toContain('0 гэж бүү хэл');
     });
 
     it('counts canonical residential inventory across pages, scopes rows and distinguishes contract value from cash', async () => {

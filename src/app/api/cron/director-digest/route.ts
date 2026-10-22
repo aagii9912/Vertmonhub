@@ -48,7 +48,7 @@ async function handler(request: Request) {
                         .or(NOT_CANCELLED_CONTRACT)
                         .order('id')
                         .range(from, to)),
-                    supabase.from('leads').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).gte('created_at', since),
+                    supabase.from('leads').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).is('deleted_at', null).gte('created_at', since),
                 ]);
                 const failed = managersRes.error || rosterRes.error || newLeadsRes.error;
                 if (failed) throw new Error(failed.message);
@@ -63,8 +63,10 @@ async function handler(request: Request) {
 
                 const latestImportDate = latestImport?.report_date ?? null;
                 const summary = summarizeContracts(contracts, { latestImportDate });
-                // Гэрээний огноо (UI, AI, HUB импорт бүгд бөглөдөг) — өчигдрөөс хойш.
+                // Гэрээний огноо (UI, AI, HUB импорт бүгд бөглөдөг) — өчигдрөөс хойш. Огноогүй амьд гэрээ байвал
+                // тоо доод хэмжээ («N+»/«—», lib/dashboard/contract-dates.ts), 0 биш.
                 const newContracts = contracts.filter((c) => !!c.contract_date && c.contract_date >= sinceDate).length;
+                const undatedContracts = contracts.filter((c) => !c.contract_date).length;
                 const collectedKnown = summary.unknown_paid < contracts.length;
 
                 const digest = {
@@ -72,6 +74,7 @@ async function handler(request: Request) {
                     date: sinceDate,
                     newLeads: newLeadsRes.count || 0,
                     newContracts,
+                    undatedContracts,
                     activeContracts: summary.active,
                     totalSales: summary.total_sales,
                     // Төлсөн дүн бүгд тодорхойгүй бол null («—»), зарим нь бол мэдэгдэж буй нийлбэр («+»).

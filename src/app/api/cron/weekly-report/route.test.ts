@@ -48,10 +48,31 @@ describe('weekly report cron', () => {
     it('шинэ гэрээг өнгөрсөн 7 УБ өдрийн гэрээний огноогоор, цуцалсан/устгасныг хасаж тоолно', async () => {
         const response = await GET(new Request('http://localhost/api/cron/weekly-report'));
         const body = await response.json();
-        expect(body.results).toEqual([expect.objectContaining({ shop: 'Туршилт төсөл', newContracts: 3, emailed: true })]);
+        expect(body.results).toEqual([expect.objectContaining({ shop: 'Туршилт төсөл', newContracts: 3, undatedContracts: 1, emailed: true })]);
         expect(mocks.email).toHaveBeenCalledWith('director@example.test', expect.objectContaining({
-            newContracts: 3, weekStart: '2026-10-12', weekEnd: '2026-10-19',
+            newContracts: 3, undatedContracts: 1, weekStart: '2026-10-12', weekEnd: '2026-10-19',
         }));
+    });
+
+    it('огноогүй амьд гэрээг (цуцалсан, устгасныг хасаж) тусад нь тоолж, имэйлд доод хэмжээ болгон дамжуулна', async () => {
+        db.tables.property_contracts = [
+            contract('undated', { contract_date: null }),
+            contract('undated-cancelled', { contract_date: null, contract_status: 'cancelled' }),
+            contract('undated-deleted', { contract_date: null, deleted_at: '2026-10-16T00:00:00Z' }),
+        ];
+        db.tables.leads = [{ id: 'l1', shop_id: 'shop-1', deleted_at: null, source: 'facebook', status: 'new', created_at: '2026-10-17T00:00:00Z' }];
+        const body = await (await GET(new Request('http://localhost/api/cron/weekly-report'))).json();
+        expect(body.results).toEqual([expect.objectContaining({ newContracts: 0, undatedContracts: 1, newLeads: 1 })]);
+        expect(mocks.email).toHaveBeenCalledWith('director@example.test', expect.objectContaining({ newContracts: 0, undatedContracts: 1 }));
+    });
+
+    it('устгасан уулзалтыг тоолохгүй', async () => {
+        db.tables.property_viewings = [
+            { id: 'v1', shop_id: 'shop-1', deleted_at: null, scheduled_at: '2026-10-15T03:00:00Z' },
+            { id: 'v2', shop_id: 'shop-1', deleted_at: '2026-10-16T00:00:00Z', scheduled_at: '2026-10-15T04:00:00Z' },
+        ];
+        const body = await (await GET(new Request('http://localhost/api/cron/weekly-report'))).json();
+        expect(body.results).toEqual([expect.objectContaining({ meetings: 1 })]);
     });
 
     it('гэрээний уншилт алдаатай бол «0 шинэ гэрээ» гэж илгээхгүй', async () => {

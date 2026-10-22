@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => {
 });
 vi.mock('resend', () => ({ Resend: class { emails = { send: mocks.send }; } }));
 
-import { sendDirectorDigestEmail, type DirectorDigestData } from '../email';
+import { sendDirectorDigestEmail, sendWeeklyReportEmail, type DirectorDigestData, type WeeklyReportData } from '../email';
 
 const digest: DirectorDigestData = {
     shopName: 'Туршилт төсөл', date: '2026-10-19', newLeads: 1, newContracts: 2, activeContracts: 3,
@@ -42,5 +42,32 @@ describe('director digest email', () => {
         await sendDirectorDigestEmail('director@example.test', { ...digest, collected: 0, overdueAmount: 0, overdueAsOf: null });
         expect(tileValue('Цуглуулсан')).toBe('0₮');
         expect(tileValue('Төлбөр хоцролт')).toBe('0₮');
+    });
+});
+
+describe('шинэ гэрээний тоо огноогүй гэрээтэй үед (contract-dates дүрэм)', () => {
+    const weekly: WeeklyReportData = {
+        shopName: 'Туршилт төсөл', weekStart: '2026-10-12', weekEnd: '2026-10-19', newLeads: 4, meetings: 2, wonLeads: 0,
+        newContracts: 3, topSources: [],
+    };
+
+    it('огноогүй гэрээгүй бол тоо хэвээр, тайлбаргүй', async () => {
+        await sendDirectorDigestEmail('director@example.test', digest);
+        expect(tileValue('Шинэ гэрээ')).toBe('2');
+        expect(html()).not.toContain('Огноогүй');
+        await sendWeeklyReportEmail('director@example.test', weekly);
+        expect(tileValue('Шинэ гэрээ')).toBe('3');
+        expect(html()).not.toContain('Огноогүй');
+    });
+
+    it('огноогүй гэрээтэй бол «N+», нэг ч олдоогүй бол «—» (0 биш)', async () => {
+        await sendDirectorDigestEmail('director@example.test', { ...digest, undatedContracts: 77 });
+        expect(tileValue('Шинэ гэрээ')).toBe('2+');
+        expect(html()).toContain('Огноогүй 77 гэрээ');
+        await sendDirectorDigestEmail('director@example.test', { ...digest, newContracts: 0, undatedContracts: 77 });
+        expect(tileValue('Шинэ гэрээ')).toBe('—');
+        await sendWeeklyReportEmail('director@example.test', { ...weekly, newContracts: 0, undatedContracts: 5 });
+        expect(tileValue('Шинэ гэрээ')).toBe('—');
+        expect(html()).toContain('Огноогүй 5 гэрээ');
     });
 });

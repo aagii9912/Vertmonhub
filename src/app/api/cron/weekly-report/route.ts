@@ -13,7 +13,8 @@ import { NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
  * өнгөрсөн 7 хоногийн лийд, уулзалт, гэрээний нэгтгэлийг push-аар мэдэгдэж,
  * DIGEST_EMAIL тохируулсан бол Resend имэйлээр илгээнэ. CRON_SECRET-ээр хамгаалагдсан.
  * Шинэ гэрээ = гэрээний огноо (contract_date) нь өнгөрсөн 7 УБ өдөрт (өнөөдрийг оруулахгүй) багтсан,
- * цуцлаагүй, устгаагүй гэрээ — импортоор нэмэгдсэн хуучин гэрээ «шинэ» болж тоологдохгүй.
+ * цуцлаагүй, устгаагүй гэрээ — импортоор нэмэгдсэн хуучин гэрээ «шинэ» болж тоологдохгүй. Огноогүй амьд гэрээ
+ * байвал тоо доод хэмжээ («N+», нэг ч олдоогүй бол «—»; lib/dashboard/contract-dates.ts), 0 биш.
  */
 
 async function run(request: Request) {
@@ -36,7 +37,7 @@ async function run(request: Request) {
 
         for (const shop of shops || []) {
             try {
-                const [leadsRes, meetingsRes, contractsRes] = await Promise.all([
+                const [leadsRes, meetingsRes, contractsRes, undatedRes] = await Promise.all([
                     db.from('leads')
                         .select('source, status')
                         .eq('shop_id', shop.id)
@@ -45,6 +46,7 @@ async function run(request: Request) {
                     db.from('property_viewings')
                         .select('id', { count: 'exact', head: true })
                         .eq('shop_id', shop.id)
+                        .is('deleted_at', null)
                         .gte('scheduled_at', sinceISO),
                     db.from('property_contracts')
                         .select('id', { count: 'exact', head: true })
@@ -53,9 +55,15 @@ async function run(request: Request) {
                         .or(NOT_CANCELLED_CONTRACT)
                         .gte('contract_date', weekStart)
                         .lt('contract_date', weekEnd),
+                    db.from('property_contracts')
+                        .select('id', { count: 'exact', head: true })
+                        .eq('shop_id', shop.id)
+                        .is('deleted_at', null)
+                        .is('contract_date', null)
+                        .or(NOT_CANCELLED_CONTRACT),
                 ]);
                 // Уншилт алдаатай бол «0 шинэ гэрээ» гэж мэдээлэхгүй.
-                const failed = leadsRes.error || meetingsRes.error || contractsRes.error;
+                const failed = leadsRes.error || meetingsRes.error || contractsRes.error || undatedRes.error;
                 if (failed) throw new Error(failed.message);
 
                 const leadRows = leadsRes.data || [];
@@ -63,6 +71,7 @@ async function run(request: Request) {
                 const wonLeads = leadRows.filter((l) => l.status === 'closed_won').length;
                 const meetings = meetingsRes.count || 0;
                 const newContracts = contractsRes.count || 0;
+                const undatedContracts = undatedRes.count || 0;
                 if (newLeads === 0 && meetings === 0 && newContracts === 0) {
                     results.push({ shop: shop.name, skipped: true });
                     continue;
@@ -95,11 +104,12 @@ async function run(request: Request) {
                         meetings,
                         wonLeads,
                         newContracts,
+                        undatedContracts,
                         topSources,
                     });
                 }
 
-                results.push({ shop: shop.name, newLeads, meetings, wonLeads, newContracts, emailed });
+                results.push({ shop: shop.name, newLeads, meetings, wonLeads, newContracts, undatedContracts, emailed });
             } catch (error) {
                 // нэг төслийн алдаа бусдыг зогсоохгүй
                 logger.error('[WeeklyReport] shop error:', { shopId: shop.id, error });
