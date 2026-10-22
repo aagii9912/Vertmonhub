@@ -1,7 +1,9 @@
 // @vitest-environment node
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { planContractListImport, type ContractListContract, type ContractListUnit, type HubRow } from '../list-import';
 
 const shop = '10000000-0000-4000-8000-000000000001';
 const otherShop = '10000000-0000-4000-8000-000000000002';
@@ -75,6 +77,7 @@ beforeEach(async () => {
         ALTER TABLE property_contracts ADD CONSTRAINT chk_contracts_total_price_nonneg CHECK (total_price IS NULL OR total_price >= 0) NOT VALID;
         ALTER TABLE property_contracts ADD CONSTRAINT chk_contracts_paid_amount_nonneg CHECK (paid_amount IS NULL OR paid_amount >= 0) NOT VALID;
         CREATE TABLE contract_transfers (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), shop_id uuid NOT NULL, contract_id uuid NOT NULL);
+        CREATE TABLE finance_transactions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), shop_id uuid NOT NULL, contract_id uuid, amount numeric(18,2));
         CREATE TABLE data_audit_log (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), shop_id uuid, actor_id uuid, entity varchar(48) NOT NULL,
             entity_id text, action varchar(24) NOT NULL, changes jsonb DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT clock_timestamp());
     `);
@@ -84,7 +87,7 @@ beforeEach(async () => {
     await db.exec(`
         ALTER VIEW property_units_with_buyer SET (security_invoker = on);
         GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
-        GRANT ALL ON shops, projects, property_contracts, payment_schedules, contract_transfers, data_audit_log, admin_audit_log, property_units TO service_role;
+        GRANT ALL ON shops, projects, property_contracts, payment_schedules, contract_transfers, finance_transactions, data_audit_log, admin_audit_log, property_units TO service_role;
         GRANT SELECT ON property_units_with_buyer TO anon, authenticated, service_role;
     `);
     await db.query('INSERT INTO shops VALUES ($1), ($2)', [shop, otherShop]);
@@ -297,5 +300,77 @@ describe('import_contract_list', () => {
         await expect(call({ ops: [{ op: 'update', id: contract(1), set: { order_date: '2026-09-15' }, expect: { order_date: null }, label: 'Б1-16' }] }))
             .rejects.toMatchObject({ code: '23514' });
         expect(await snapshot()).toEqual(before);
+    });
+});
+
+describe('import_contract_list with the planner (lib/contracts/list-import)', () => {
+    /** Сервис PostgREST-ээр уншдагтай ижил хэлбэр: огноо текстээр, numeric тоогоор. */
+    const readState = async () => ({
+        contracts: (await db.query<ContractListContract>(`SELECT id, product_type, unit_label, block_name, unit_number, legacy_unit_number, contract_status,
+            order_date::text, contract_date::text, total_price::float8 AS total_price, price_per_sqm::float8 AS price_per_sqm,
+            contracted_area::float8 AS contracted_area, prepayment_condition, prepayment_due::float8 AS prepayment_due, payment_condition,
+            overdue_amount::float8 AS overdue_amount, overdue_as_of::text, customer_name, customer_first_name, customer_last_name,
+            contract_number, sales_manager, paid_amount::float8 AS paid_amount
+            FROM property_contracts WHERE shop_id = $1 AND deleted_at IS NULL ORDER BY id`, [shop])).rows,
+        units: (await db.query<ContractListUnit>('SELECT code, category, block, floor, model, unit_number, legacy_unit_number, status FROM property_units WHERE shop_id = $1', [shop])).rows,
+    });
+    const hubRow = (overrides: Partial<HubRow>): HubRow => ({
+        row: 2, productType: 'residential', block: 'Б1', unitNumber: '16', floor: '05', model: null, area: null, prepaymentCondition: null,
+        pricePerSqm: null, total: 439503120, prepaymentDue: null, overdue: 0, orderDate: '2026-09-15', status: 'active',
+        firstName: null, lastName: null, paymentCondition: null, contractNumber: null, salesManager: null, paidTotal: null, ...overrides,
+    });
+
+    it('refuses to cancel a contract with cash-ledger payments', async () => {
+        await db.exec('RESET ROLE');
+        await db.query('INSERT INTO finance_transactions (shop_id, contract_id, amount) VALUES ($1, $2, 1000)', [shop, contract(1)]);
+        await db.exec('SET ROLE service_role');
+        const result = await call({ ops: [{ op: 'update', id: contract(1), set: { contract_status: 'cancelled' }, expect: { contract_status: 'active' }, label: 'Б1-16' }] });
+        expect(result).toMatchObject({ ok: false, conflicts: [{ code: 'has_payments' }] });
+    });
+
+    it('applies a planned import (fills, closed status, new and cancelled rows) and re-planning the same file yields zero ops', async () => {
+        await db.exec('RESET ROLE');
+        await db.query(`INSERT INTO property_units (shop_id, project_id, phase, block, code, category, status, floor, model, unit_number, legacy_unit_number) VALUES
+            ($1, $2, 'Elysium', 'Б1', 'Б1-19 (B1)', 'parking', 'sold', 'B1', 'P', '19', '19'),
+            ($1, $2, 'Elysium', 'Б1', 'Б1-19 (01)', 'parking', 'available', '01', 'P', '19', '19'),
+            ($1, $2, 'Elysium', 'Б1', 'Б1-60', 'residential', 'available', '12', 'E3', '0', '60')`, [shop, project]);
+        await db.query("UPDATE property_units SET floor = '05', legacy_unit_number = '16', unit_number = '0' WHERE code = 'Б1-16'");
+        await db.query("UPDATE property_units SET floor = '07', legacy_unit_number = '50', unit_number = '0' WHERE code = 'Б1-50'");
+        await db.exec('SET ROLE service_role');
+        const rows = [
+            hubRow({ firstName: 'Тест', lastName: 'Хэрэглэгч', area: 58.1, pricePerSqm: 7564598, prepaymentCondition: '50%', prepaymentDue: 219751560,
+                paymentCondition: 'Тусгай', overdue: 20010000 }),
+            hubRow({ row: 3, productType: 'parking', unitNumber: '19', floor: 'B1', total: 79700000, pricePerSqm: 79700000, area: 12.5,
+                orderDate: '2026-09-03', status: 'closed', firstName: 'Зогсоол', lastName: 'Эзэн', paymentCondition: 'Энгийн' }),
+            hubRow({ row: 4, unitNumber: '60', floor: '12', total: 377650000, area: 58.1, pricePerSqm: 6500000, prepaymentCondition: '30%',
+                prepaymentDue: 113295000, orderDate: '2026-10-10', firstName: 'Шинэ', lastName: 'Худалдан' }),
+            hubRow({ row: 5, unitNumber: '50', floor: '07', total: 250000000, orderDate: '2026-07-01', status: 'cancelled' }),
+        ];
+        const input = { rows, transferredIds: new Set<string>(), paymentContractIds: new Set<string>(), latestImportDate: null,
+            reportDate: '2026-10-21', fileName: 'HUB.xlsx', today: '2026-10-21' };
+        const planned = planContractListImport({ ...input, ...await readState() });
+        expect(planned.errors).toEqual([]);
+        expect(planned.blocking).toEqual([]);
+        expect(planned.counts).toMatchObject({ insert: 1, insertCancelled: 0, update: 3, unchanged: 0 });
+        const result = await call({ reportDate: '2026-10-21', planHash: createHash('sha256').update(planned.canonical).digest('hex'),
+            ops: planned.ops, rows: planned.rows, summary: planned.summary });
+        expect(result).toMatchObject({ ok: true, inserted: 1, updated: 3 });
+
+        await db.exec('RESET ROLE');
+        const after = (await db.query<Record<string, unknown>>(`SELECT unit_label, contract_status, order_date::text, contract_date::text,
+            price_per_sqm::float8 AS price_per_sqm, overdue_amount::float8 AS overdue_amount, overdue_as_of::text, customer_first_name, paid_amount, balance
+            FROM property_contracts WHERE unit_label IN ('Б1-16', 'Б1-19 (B1)', 'Б1-60') ORDER BY unit_label`)).rows;
+        expect(after).toEqual([
+            { unit_label: 'Б1-16', contract_status: 'active', order_date: '2026-09-15', contract_date: '2026-09-15', price_per_sqm: 7564598,
+                overdue_amount: 20010000, overdue_as_of: '2026-10-21', customer_first_name: 'Тест', paid_amount: null, balance: null },
+            { unit_label: 'Б1-19 (B1)', contract_status: 'closed', order_date: '2026-09-03', contract_date: '2026-09-03', price_per_sqm: null,
+                overdue_amount: 0, overdue_as_of: '2026-10-21', customer_first_name: 'Зогсоол', paid_amount: null, balance: null },
+            { unit_label: 'Б1-60', contract_status: 'active', order_date: '2026-10-10', contract_date: '2026-10-10', price_per_sqm: 6500000,
+                overdue_amount: 0, overdue_as_of: '2026-10-21', customer_first_name: 'Шинэ', paid_amount: null, balance: null },
+        ]);
+        await db.exec('SET ROLE service_role');
+        const replanned = planContractListImport({ ...input, latestImportDate: '2026-10-21', ...await readState() });
+        expect(replanned.ops).toEqual([]);
+        expect(replanned.counts).toMatchObject({ unchanged: 4 });
     });
 });
