@@ -116,9 +116,9 @@ function SalesVsTarget({ data, loading, className, month }: { data?: ReturnType<
             ) : (
                 <>
                     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                        <span className="num text-[34px] font-semibold leading-none tracking-[-0.02em] text-foreground">{formatMNTShort(s.actual)}</span>
-                        {s.target > 0 ? (
-                            <span className="text-[13px] text-muted-foreground">Зорилт {formatMNTShort(s.target)} · <b className={cn('font-semibold', s.attainmentPct >= 100 ? 'text-status-success' : 'text-foreground')}>{s.attainmentPct}%</b></span>
+                        <span className="num text-[34px] font-semibold leading-none tracking-[-0.02em] text-foreground">{s.actual === null ? '—' : `${formatMNTShort(s.actual)}${s.lowerBound ? '+' : ''}`}</span>
+                        {s.target !== null && s.target > 0 ? (
+                            <span className="text-[13px] text-muted-foreground">Зорилт {formatMNTShort(s.target)}{s.attainmentPct !== null && <> · <b className={cn('font-semibold', s.attainmentPct >= 100 ? 'text-status-success' : 'text-foreground')}>{s.attainmentPct}%{s.lowerBound ? '+' : ''}</b></>}</span>
                         ) : (
                             <Link href="/admin/sales-targets" className="text-[12.5px] text-brand-strong hover:underline">Сарын зорилт тохируулах</Link>
                         )}
@@ -128,12 +128,17 @@ function SalesVsTarget({ data, loading, className, month }: { data?: ReturnType<
                             </span>
                         )}
                     </div>
-                    {s.target > 0 && <Progress value={s.actual} max={s.target} className="max-w-md" />}
+                    {s.target !== null && s.target > 0 && s.actual !== null && <Progress value={s.actual} max={s.target} className="max-w-md" />}
                     <div className="text-[12.5px] text-fg-2">
                         <b className="num font-semibold text-foreground">{s.units} байр</b>
                         {s.unitsByType.length > 0 && <span className="text-muted-foreground"> · {s.unitsByType.map((u) => `${u.type} ${u.count}`).join(' · ')}</span>}
                     </div>
-                    <TrendChart actual={s.trendActual} target={s.trendTarget} current={month} />
+                    <p className="text-[12px] text-muted-foreground">
+                        Төслийн төлөвлөгөөнд хамаарах бүх гэрээ (Б1, Б2, зогсоол), захиалга өгсөн огноогоор, цуцлагдсаныг хассан.
+                        {s.undated > 0 && ` Огноогүй ${s.undated} гэрээ сарын дүнд ороогүй («+»).`}{' '}
+                        <Link href="/dashboard/reports/plan" className="text-brand-strong hover:underline">Төлөвлөгөөний биелэлт</Link>
+                    </p>
+                    <TrendChart actual={s.trendActual.map((value) => value ?? 0)} target={s.trendTarget.map((value) => value ?? 0)} current={month} />
                 </>
             )}
         </Panel>

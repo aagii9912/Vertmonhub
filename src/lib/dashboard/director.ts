@@ -266,19 +266,28 @@ export interface DirectorPayload {
     /** Сонгосон сар */
     year: number;
     month: number; // 1–12
+    /**
+     * Багийн гүйцэтгэл = төслийн төлөвлөгөөнд хамаарах бүх амьд гэрээ (менежерээр шүүхгүй), гар гүйцэтгэл давамгайлна —
+     * `loadPlanPerformance`-ийн «Нийт» гэрээний дүн. Тодорхойгүй бол null (хэзээ ч 0 биш).
+     */
     sales: {
-        actual: number;
-        target: number;
-        attainmentPct: number;
-        /** Өмнөх сартай харьцуулсан % (өмнөх 0 бол null) */
+        actual: number | null;
+        target: number | null;
+        attainmentPct: number | null;
+        /** Огноогүй гэрээ байгаа тул гүйцэтгэл доод хязгаар («+»). */
+        lowerBound: boolean;
+        /** Өмнөх сартай харьцуулсан % (өмнөх 0, тодорхойгүй эсвэл доод хязгаартай бол null) */
         momDeltaPct: number | null;
         units: number;
         unitsByType: { type: string; count: number }[];
-        /** [12] тухайн жилийн сар бүрийн бодит / зорилт (₮) */
-        trendActual: number[];
-        trendTarget: number[];
-        yearActual: number;
-        yearTarget: number;
+        /** [12] тухайн жилийн сар бүрийн бодит / зорилт (₮); тодорхойгүй сар null */
+        trendActual: (number | null)[];
+        trendTarget: (number | null)[];
+        /** Он эхнээс (энэ сар хүртэл) гүйцэтгэл ба бүтэн жилийн төлөвлөгөө. */
+        yearActual: number | null;
+        yearTarget: number | null;
+        /** Төслийн огноогүй амьд гэрээ. */
+        undated: number;
     };
     leaderboard: LeaderboardRow[];
     funnel: FunnelResult;
@@ -297,13 +306,13 @@ export interface DirectorPayload {
     missing: string[];
 }
 
-/** Сарын % (хязгааргүй — 110% байж болно), зорилтгүй бол 0. */
-export function attainmentPct(actual: number, target: number): number {
-    return target > 0 ? Math.round((actual / target) * 100) : 0;
+/** Сарын % (хязгааргүй — 110% байж болно). Зорилтгүй эсвэл гүйцэтгэл тодорхойгүй бол null — хэзээ ч 0 гэж таамаглахгүй. */
+export function attainmentPct(actual: number | null, target: number | null): number | null {
+    return actual === null || target === null || target <= 0 ? null : Math.round((actual / target) * 100);
 }
 
-/** Өмнөх сартай харьцуулсан өөрчлөлт, %. Өмнөх 0 бол null (харуулахгүй). */
-export function momDeltaPct(current: number, previous: number): number | null {
-    if (previous <= 0) return null;
+/** Өмнөх сартай харьцуулсан өөрчлөлт, %. Өмнөх 0 эсвэл аль нэг нь тодорхойгүй бол null (харуулахгүй). */
+export function momDeltaPct(current: number | null, previous: number | null): number | null {
+    if (current === null || previous === null || previous <= 0) return null;
     return Math.round(((current - previous) / previous) * 100);
 }
