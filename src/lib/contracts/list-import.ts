@@ -359,7 +359,7 @@ export interface ContractListMissingItem { contractId: string; label: string; st
 export interface ContractListUnitMismatch { label: string; unitStatus: string | null; unitStatusLabel: string; kind: 'live_on_free' | 'cancelled_on_sold' }
 export type ContractListInfoCode = 'holder_differs' | 'holder_transferred' | 'erp_transferred';
 export interface ContractListInfoItem { code: ContractListInfoCode; label: string; row: number; message: string; fileName?: string | null; currentName?: string | null; contractId?: string }
-export type ContractListBlockingCode = 'paid_known' | 'has_payments' | 'unlinked' | 'unit_taken';
+export type ContractListBlockingCode = 'paid_known' | 'has_payments' | 'unlinked' | 'unit_taken' | 'duplicate_contract_number';
 export interface ContractListBlockingItem { code: ContractListBlockingCode; label: string; row: number | null; message: string; contractId?: string }
 export interface ContractListFileTotal { status: ContractListStatus; label: string; rows: number; total: number; prepaymentDue: number; overdue: number }
 export interface ContractListCounts { insert: number; insertCancelled: number; update: number; unchanged: number; review: number; blocking: number; missing: number }
@@ -524,6 +524,8 @@ export function planContractListImport(input: ContractListPlanInput): ContractLi
     // Тулгагдсан эсвэл хаагдсан (холбоогүй) гэрээ — «Файлд байхгүй»-д орохгүй.
     const accounted = new Set<string>();
     const finalLive = new Map<string, boolean>();
+    // Импорт бичих гэрээний дугаар (хоосныг бөглөх, шинэ гэрээ) — давхардлыг доор шалгана.
+    const numberWrites: Array<{ number: string; row: number; label: string; contractId?: string }> = [];
     let unchanged = 0;
     const notes = `Гэрээний жагсаалт «${input.fileName?.trim() || 'HUB'}» (${reportDate})-аас импортолсон.`;
 
@@ -622,16 +624,39 @@ export function planContractListImport(input: ContractListPlanInput): ContractLi
             const fields = Object.keys(diff.set) as ContractListField[];
             if (!fields.length) { unchanged++; continue; }
             ops.push({ op: 'update', id: pair.contract.id, set: diff.set, expect: diff.expect, label, review: diff.review.length > 0 });
+            if (typeof diff.set.contract_number === 'string') numberWrites.push({ number: diff.set.contract_number, row: pair.row.row, label, contractId: pair.contract.id });
             if (diff.review.length) review.push({ contractId: pair.contract.id, label, row: pair.row.row, changes: diff.review });
             for (const change of diff.auto) autoChanges.push({ ...change, contractId: pair.contract.id, unitLabel: label });
         }
         for (const row of insertRows) {
             const fields = insertFields(row, unit, reportDate, notes);
             ops.push({ op: 'insert', fields, label, review: false });
+            if (typeof fields.contract_number === 'string') numberWrites.push({ number: fields.contract_number, row: row.row, label });
             inserts.push({ label, row: row.row, status: row.status, orderDate: row.orderDate, total: row.total, name: fields.customer_name as string | null });
         }
         // Импортын дараах байдал (байрны төлвийн зөрүүнд): амьд мөр, эсвэл файлд байхгүй хэвээр үлдэх амьд гэрээ.
         finalLive.set(key, liveOnUnit || free(liveDb).length > 0);
+    }
+
+    // Гэрээний дугаар төсөлд давтагдахгүй (uq_contracts_shop_number, цуцалсан гэрээ ч тооцогдоно): бичих дугаар өөр гэрээнд
+    // эсвэл файлын өөр мөрөнд байвал батлахыг хаана (эс бөгөөс RPC unique зөрчлөөр унана).
+    const numberOwner = new Map<string, ContractListContract>();
+    for (const contract of input.contracts) {
+        const number = contract.contract_number?.trim();
+        if (number && !numberOwner.has(number)) numberOwner.set(number, contract);
+    }
+    const firstWrite = new Map<string, number>();
+    for (const write of [...numberWrites].sort((a, b) => a.row - b.row)) {
+        const number = write.number.trim();
+        const owner = numberOwner.get(number);
+        const earlierRow = firstWrite.get(number);
+        const where = owner && owner.id !== write.contractId ? `гэрээ ${contractLabel(owner)}` : earlierRow !== undefined ? `мөр ${earlierRow}` : null;
+        if (where) {
+            blocking.push({ code: 'duplicate_contract_number', label: write.label, row: write.row, ...(write.contractId ? { contractId: write.contractId } : {}),
+                message: `Мөр ${write.row}: гэрээний дугаар «${number}» давхардсан (${where})` });
+        } else {
+            firstWrite.set(number, write.row);
+        }
     }
 
     // Файлд байхгүй амьд гэрээ — өөрчлөхгүй, жагсаана.

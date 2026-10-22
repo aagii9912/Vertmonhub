@@ -238,7 +238,11 @@ describe('POST /api/dashboard/contracts/import — preview and commit', () => {
 
     it('maps RPC errors and conflict results', async () => {
         const cases: Array<[unknown, number, Record<string, unknown>]> = [
-            [{ data: null, error: { code: '23505', message: 'dup' } }, 409, { code: 'request_reused' }],
+            [{ data: null, error: { code: '23505', message: 'dup', hint: 'request_reused' } }, 409, { code: 'request_reused' }],
+            [{ data: null, error: { code: '23505', message: 'dup' } }, 409, { code: 'duplicate_contract_number', error: 'Гэрээний дугаар давхардсан байна. Файлаа шалгана уу' }],
+            [{ data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "uq_contracts_shop_number"',
+                details: 'Key (shop_id, contract_number)=(00000000-0000-4000-8000-000000000001, EL-7) already exists.' } }, 409,
+                { code: 'duplicate_contract_number', error: 'Гэрээний дугаар «EL-7» давхардсан байна. Файлаа шалгана уу' }],
             [{ data: null, error: { code: '40001', message: 'serialization' } }, 409, { code: 'stale_preview' }],
             [{ data: null, error: { code: '42501', message: 'denied' } }, 403, {}],
             [{ data: null, error: { code: '22023', message: 'Импортын утгын төрөл буруу байна' } }, 400, { error: 'Импортын утгын төрөл буруу байна' }],

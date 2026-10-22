@@ -383,6 +383,22 @@ describe('planContractListImport', () => {
         expect(JSON.stringify(result.summary)).not.toContain('Тэмүүлэн');
     });
 
+    it('blocks a contract number the import would write when another contract (even cancelled) or another file row has it', () => {
+        const other = contract(2, { unit_label: 'Б1-110', legacy_unit_number: '110', contract_status: 'cancelled', contract_number: 'EL-1' });
+        const taken = plan({ rows: [hub({ contractNumber: 'EL-1' })], contracts: [contract(1), other] });
+        expect(taken.blocking).toEqual([{ code: 'duplicate_contract_number', label: 'Б1-16', row: 2, contractId: id(1),
+            message: 'Мөр 2: гэрээний дугаар «EL-1» давхардсан (гэрээ Б1-110)' }]);
+
+        const twice = plan({ rows: [hub({ contractNumber: 'EL-7' }), hub({ row: 3, block: 'Б2', unitNumber: '231', floor: '22', model: 'A', contractNumber: ' EL-7 ' })],
+            contracts: [contract(1)] });
+        expect(twice.blocking).toEqual([{ code: 'duplicate_contract_number', label: 'Б2-231', row: 3,
+            message: 'Мөр 3: гэрээний дугаар «EL-7» давхардсан (мөр 2)' }]);
+
+        // Гэрээ өөрийн дугаартай (бичихгүй) эсвэл тулгагдсан гэрээ өөрөө тэр дугаартай бол хаахгүй.
+        expect(plan({ rows: [hub({ contractNumber: 'EL-1' })], contracts: [contract(1, { contract_number: 'EL-1' })] }).blocking).toEqual([]);
+        expect(plan({ rows: [hub({ contractNumber: 'EL-1' })], contracts: [contract(1, { contract_number: 'OLD' }), other] }).blocking).toEqual([]);
+    });
+
     it('guards the report date and flags files older than the latest import', () => {
         expect(plan({ rows: [hub()], reportDate: '2026-10-23' }).errors).toContain('Файлын огноо (2026-10-23) өнөөдрөөс хойш байж болохгүй');
         const early = plan({ rows: [hub()], reportDate: '2026-10-10' });

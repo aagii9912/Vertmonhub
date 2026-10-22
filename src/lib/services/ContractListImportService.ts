@@ -212,7 +212,13 @@ export async function commitContractListImport(ctx: ContractListImportContext, f
     });
     if (error) {
         if (error.code === '42883' || error.code === 'PGRST202') return fail(503, MIGRATION_MISSING);
-        if (error.code === '23505') return fail(409, 'Энэ хүсэлтээр өөр импорт бүртгэгдсэн байна. Файлаа дахин шалгана уу', { code: 'request_reused' });
+        // RPC хүсэлтийн давталтыг HINT-ээр тэмдэглэнэ; бусад 23505 = гэрээний дугаарын unique (uq_contracts_shop_number).
+        if (error.code === '23505' && (error.hint === 'request_reused' || /\brequest_id\b/.test(error.details ?? ''))) return fail(409, 'Энэ хүсэлтээр өөр импорт бүртгэгдсэн байна. Файлаа дахин шалгана уу', { code: 'request_reused' });
+        if (error.code === '23505') {
+            const number = /Key \(shop_id, ?contract_number\)=\([^,]*, ?(.*)\) already exists/.exec(error.details ?? '')?.[1]?.trim();
+            return fail(409, number ? `Гэрээний дугаар «${number}» давхардсан байна. Файлаа шалгана уу` : 'Гэрээний дугаар давхардсан байна. Файлаа шалгана уу',
+                { code: 'duplicate_contract_number' });
+        }
         if (error.code === '40001') return fail(409, STALE, { code: 'stale_preview' });
         if (error.code === '42501') return fail(403, 'Гэрээний импортын эрх алга');
         if (error.code?.startsWith('22')) return fail(400, error.message || 'Импортын өгөгдөл буруу байна');

@@ -245,7 +245,7 @@ BEGIN
     SELECT * INTO v_stored FROM public.contract_list_imports WHERE shop_id = p_shop_id AND request_id = p_request_id;
     IF FOUND THEN
         IF v_stored.plan_hash IS DISTINCT FROM p_plan_hash THEN
-            RAISE EXCEPTION 'Энэ хүсэлтээр өөр импорт бүртгэгдсэн байна' USING ERRCODE = '23505';
+            RAISE EXCEPTION 'Энэ хүсэлтээр өөр импорт бүртгэгдсэн байна' USING ERRCODE = '23505', HINT = 'request_reused';
         END IF;
         RETURN jsonb_build_object('ok', true, 'replayed', true, 'import_id', v_stored.id,
             'inserted', coalesce(v_stored.summary->'inserted', '0'::jsonb), 'updated', coalesce(v_stored.summary->'updated', '0'::jsonb),
@@ -257,7 +257,7 @@ BEGIN
     SELECT * INTO v_stored FROM public.contract_list_imports WHERE shop_id = p_shop_id AND request_id = p_request_id;
     IF FOUND THEN
         IF v_stored.plan_hash IS DISTINCT FROM p_plan_hash THEN
-            RAISE EXCEPTION 'Энэ хүсэлтээр өөр импорт бүртгэгдсэн байна' USING ERRCODE = '23505';
+            RAISE EXCEPTION 'Энэ хүсэлтээр өөр импорт бүртгэгдсэн байна' USING ERRCODE = '23505', HINT = 'request_reused';
         END IF;
         RETURN jsonb_build_object('ok', true, 'replayed', true, 'import_id', v_stored.id,
             'inserted', coalesce(v_stored.summary->'inserted', '0'::jsonb), 'updated', coalesce(v_stored.summary->'updated', '0'::jsonb),

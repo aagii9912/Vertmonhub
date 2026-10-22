@@ -271,7 +271,7 @@ describe('import_contract_list', () => {
         await db.exec('SET ROLE service_role');
         const before = await snapshot();
         expect(await call({ ops, summary: { other: true } })).toEqual({ ok: true, replayed: true, import_id: importId, inserted: 2, updated: 2, summary: result.summary });
-        await expect(call({ ops, planHash: OTHER_HASH })).rejects.toMatchObject({ code: '23505' });
+        await expect(call({ ops, planHash: OTHER_HASH })).rejects.toMatchObject({ code: '23505', hint: 'request_reused' });
         expect(await snapshot()).toEqual(before);
     });
 
