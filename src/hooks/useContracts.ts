@@ -128,8 +128,32 @@ export function useContract(id: string | null) {
     });
 }
 
-/** Гэрээний огноо өөрчлөгдвөл сар, долоо хоногийн тайлан, төлөвлөгөөний биелэлт ч шинэчлэгдэнэ. */
+/** Гэрээний огноо, менежер өөрчлөгдвөл сар, долоо хоногийн тайлан, төлөвлөгөөний биелэлт ч шинэчлэгдэнэ. */
 const CONTRACT_DATE_READERS = ['contracts', 'director', 'operations-report', 'weekly-sales', 'kpi-report', 'my-stats', 'plan-performance', 'admin-sales-targets'];
+
+export interface ContractManagerOption { name: string; roster: boolean; contracts: number }
+
+/** Гэрээний менежер сонгох нэрс (roster + гэрээнд бичигдсэн ERP нэр); засах үед л уншина. */
+export function useContractManagerOptions(enabled: boolean) {
+    const { shop } = useAuth();
+    return useQuery<ContractManagerOption[]>({
+        queryKey: ['contracts', 'managers', shop?.id],
+        queryFn: async () => (await dashboardJson<{ managers: ContractManagerOption[] }>('/api/dashboard/contracts/managers')).managers,
+        enabled: !!shop?.id && enabled,
+        staleTime: 5 * 60_000,
+    });
+}
+
+/** Гэрээний менежерийг солих (PATCH `sales_manager`; хязгааргүй хэрэглэгч, сервер аудит бичнэ). */
+export function useSetContractManager(contractId: string) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (name: string) => dashboardMutate<{ contract: ContractRow }>(`/api/dashboard/contracts/${contractId}`, 'PATCH', { sales_manager: name }),
+        onSettled: () => {
+            for (const key of CONTRACT_DATE_READERS) void qc.invalidateQueries({ queryKey: [key] });
+        },
+    });
+}
 
 /** «Огноо оруулах»: захиалга өгсөн огноо хоосон гэрээнд нэг удаа (PATCH `order_date`; гэрээний огноо хоосон бол мөн бөглөнө). */
 export function useSetContractOrderDate(contractId: string) {

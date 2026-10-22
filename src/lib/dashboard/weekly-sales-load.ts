@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { erpNumber, parseErpSale, PRODUCT_KIND_LABEL, productKind, type ProductKind } from '@/lib/erp/records';
 import { listErpSnapshots, loadErpDatasets, snapshotRecords } from '@/lib/erp/snapshots';
 import { loadReportInventory } from '@/lib/inventory/report-inventory';
+import { customerShortName } from '@/lib/contracts/list-format';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { hasBlockPlan } from '@/lib/sales/plan-performance';
 import { buildWeeklySales, type ContractLine } from './weekly-sales';
@@ -12,6 +13,7 @@ type CrmContract = {
     unit_label: string | null; unit_number: string | null; contracted_area: number | string | null; price_per_sqm: number | string | null;
     prepayment_condition: string | null; total_price: number | string | null; prepayment_due: number | string | null;
     paid_amount: number | string | null; sales_manager: string | null; sales_channel: string | null; contract_status: string | null; customer_name: string | null;
+    customer_first_name: string | null; customer_last_name: string | null; rooms: number | null;
 };
 
 const money = (value: number | string | null) => value === null || value === '' ? null : erpNumber(String(value));
@@ -60,14 +62,14 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
         crmUndatedLines = undatedRows.map(row => ({ kind: crmKind(row.product_type), block: row.block_name }));
         const earliest = [`${month}-01`, shiftReviewDate(range.from, -7)].sort()[0];
         const rows = await fetchAllRows<CrmContract>((from, to) => db.from('property_contracts')
-            .select('id, contract_number, contract_date, product_type, block_name, unit_label, unit_number, contracted_area, price_per_sqm, prepayment_condition, total_price, prepayment_due, paid_amount, sales_manager, sales_channel, contract_status, customer_name')
+            .select('id, contract_number, contract_date, product_type, block_name, unit_label, unit_number, contracted_area, price_per_sqm, prepayment_condition, total_price, prepayment_due, paid_amount, sales_manager, sales_channel, contract_status, customer_name, customer_first_name, customer_last_name, rooms')
             .eq('shop_id', shopId).is('deleted_at', null).gte('contract_date', earliest).lte('contract_date', range.to)
             .order('contract_date').order('id').range(from, to));
         crmContracts = rows.filter(row => row.contract_status !== 'cancelled').map(row => {
             const kind = crmKind(row.product_type);
             return {
                 key: row.id, contractNumber: row.contract_number, date: row.contract_date, kind, kindLabel: PRODUCT_KIND_LABEL[kind],
-                block: row.block_name, unit: row.unit_label ?? row.unit_number, customer: row.customer_name,
+                block: row.block_name, unit: row.unit_label ?? row.unit_number, customer: customerShortName(row), rooms: row.rooms,
                 area: money(row.contracted_area), pricePerSqm: money(row.price_per_sqm), advanceCondition: row.prepayment_condition,
                 total: money(row.total_price), advance: money(row.prepayment_due), paid: money(row.paid_amount),
                 manager: row.sales_manager, channel: row.sales_channel, status: row.contract_status ?? '',

@@ -53,6 +53,8 @@ export interface ContractLine {
     block: string | null;
     unit: string | null;
     customer: string | null;
+    /** Өрөөний тоо: гэрээнд байвал түүнийг, эс бөгөөс үлдэгдлийн байрнаас (ижил ангилал + код). */
+    rooms?: number | null;
     area: number | null;
     pricePerSqm: number | null;
     advanceCondition: string | null;
@@ -131,9 +133,12 @@ export function buildWeeklySales(input: WeeklySalesInput) {
     const notes: string[] = [];
 
     // Гэрээ: ERP байвал түүнээс, үгүй бол CRM-ээс. Цуцлагдсан гэрээг тоолохгүй.
-    const allLines = input.sales
+    const unitRooms = new Map((input.inventory?.rows ?? []).map(unit => [`${unit.kind}|${unit.code}`, unit.rooms]));
+    const withRooms = (line: ContractLine): ContractLine => line.rooms != null || !line.unit ? line
+        : { ...line, rooms: unitRooms.get(`${line.kind}|${line.unit.split(',')[0].trim()}`) ?? null };
+    const allLines = (input.sales
         ? input.sales.rows.filter(sale => sale.status !== 'cancelled').map(saleToLine)
-        : input.crmContracts ?? [];
+        : input.crmContracts ?? []).map(withRooms);
     if (!input.sales) notes.push(input.crmContracts ? 'ERP гэрээний экспорт оруулаагүй тул CRM-ийн гэрээг ашиглав.' : 'Гэрээний мэдээлэл алга.');
     const weekLines = allLines.filter(line => within(line.date, range.from, range.to)).sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || a.key.localeCompare(b.key));
     const monthLines = allLines.filter(line => line.date?.startsWith(month));

@@ -158,3 +158,21 @@ describe('buildWeeklySales', () => {
         expect(map.floors[1].cells.E4).toEqual([expect.objectContaining({ code: 'Б1-4', status: 'handed_over', manager: 'Менежер.Б' })]);
     });
 });
+
+describe('contract line rooms', () => {
+    it('keeps the contract rooms and fills missing ones from the same-category unit (HUB contracts carry none)', () => {
+        const line = (key: string, unitLabel: string, kind: 'residential' | 'parking', rooms?: number | null) => ({
+            key, contractNumber: null, date: '2026-09-18', kind, kindLabel: '', block: 'Б2', unit: unitLabel, customer: null, rooms,
+            area: 57.87, pricePerSqm: null, advanceCondition: null, total: 1, advance: null, paid: null, manager: null, channel: null, status: 'active',
+        });
+        const report = buildWeeklySales({
+            range, sales: null, previousSales: null, monthTarget: null,
+            crmContracts: [line('a', 'Б2-171', 'residential'), line('b', 'Б2-208', 'residential', 3), line('c', 'Б1-13 (01), Зогсоол', 'parking'), line('d', 'Б9-1', 'residential')],
+            inventory: { info: { date: '2026-10-22', source: 'HUB', kind: 'contracts' }, rows: [
+                unit('Б2-171', { block: 'Б2', rooms: 2 }), unit('Б2-208', { block: 'Б2', rooms: 4 }),
+                unit('Б1-13 (01)', { kind: 'parking', rooms: 1 }), unit('Б1-13 (01)', { kind: 'industry', rooms: null }),
+            ] },
+        });
+        expect(report.week.lines.map(row => [row.key, row.rooms])).toEqual([['a', 2], ['b', 3], ['c', 1], ['d', null]]);
+    });
+});

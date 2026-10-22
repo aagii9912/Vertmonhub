@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
     contract: {} as Record<string, unknown>,
     payments: {} as Record<string, unknown>,
     refetchContract: vi.fn(), refetchPayments: vi.fn(),
-    update: vi.fn(), add: vi.fn(), confirm: vi.fn(), toastError: vi.fn(), toastSuccess: vi.fn(), setOrderDate: vi.fn(),
+    update: vi.fn(), add: vi.fn(), confirm: vi.fn(), toastError: vi.fn(), toastSuccess: vi.fn(), setOrderDate: vi.fn(), setManager: vi.fn(),
+    mode: { isManager: false } as { isManager: boolean } | undefined,
+    managerOptions: [] as Array<{ name: string; roster: boolean; contracts: number }>,
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, shop: { id: 'shop-a' } }) }));
@@ -20,7 +22,10 @@ vi.mock('@/hooks/useContracts', () => ({
     useAddPayment: () => ({ mutateAsync: mocks.add, isPending: false }),
     useUpdatePayment: () => ({ mutate: mocks.update, isPending: false }),
     useSetContractOrderDate: () => ({ mutate: mocks.setOrderDate, isPending: false }),
+    useContractManagerOptions: () => ({ data: mocks.managerOptions, isLoading: false, isError: false }),
+    useSetContractManager: () => ({ mutate: mocks.setManager, isPending: false }),
 }));
+vi.mock('@/hooks/useDashboardMode', () => ({ useDashboardMode: () => ({ data: mocks.mode }) }));
 vi.mock('@/hooks/useLeads', () => ({ useLeadDetail: () => ({ data: undefined }) }));
 vi.mock('@/lib/navigation/pageTitle', () => ({ usePageTitle: vi.fn() }));
 vi.mock('@/lib/ai/context', () => ({ useRegisterAiContext: vi.fn() }));
@@ -42,6 +47,8 @@ beforeEach(() => {
     mocks.contract = loaded({ contract });
     mocks.payments = loaded({ payments: [unpaid] });
     mocks.confirm.mockResolvedValue(true);
+    mocks.mode = { isManager: false };
+    mocks.managerOptions = [];
 });
 
 describe('ContractDetail load states', () => {
@@ -254,5 +261,32 @@ describe('ContractDetail HUB fields', () => {
         const [options] = mocks.confirm.mock.calls[0] as [{ description: string }];
         expect(options.description).toContain('Гэрээний огноо 2026-10-05 хэвээр');
         expect(mocks.setOrderDate).not.toHaveBeenCalled();
+    });
+});
+
+describe('ContractDetail manager', () => {
+    it('lets an unrestricted writer pick the manager of a HUB contract from the roster or names already on contracts', async () => {
+        mocks.contract = loaded({ contract: { ...contract, sales_manager: null } });
+        mocks.managerOptions = [{ name: 'Khongoroo', roster: true, contracts: 0 }, { name: 'Хонгорзул.Мөнхгэрэл', roster: false, contracts: 12 }];
+        render(<ContractDetail id="contract-1" />);
+        fireEvent.click(screen.getByRole('button', { name: /Менежер оруулах/ }));
+        const select = screen.getByRole('combobox', { name: 'Менежер' });
+        expect(within(select).getByRole('option', { name: 'Хонгорзул.Мөнхгэрэл · гэрээнд 12' })).toBeInTheDocument();
+        fireEvent.change(select, { target: { value: 'Хонгорзул.Мөнхгэрэл' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Менежер хадгалах' }));
+        await waitFor(() => expect(mocks.setManager).toHaveBeenCalledWith('Хонгорзул.Мөнхгэрэл', expect.any(Object)));
+        expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Менежерийг «Хонгорзул.Мөнхгэрэл» болгох уу?' }));
+    });
+
+    it('shows the manager read-only to restricted managers, readers and while the mode is unknown', () => {
+        mocks.contract = loaded({ contract: { ...contract, sales_manager: 'Ариунбилэг.Нямхүү' } });
+        for (const [user, mode] of [[writer, { isManager: true }], [reader, { isManager: false }], [writer, undefined]] as const) {
+            mocks.user = user;
+            mocks.mode = mode;
+            const { unmount } = render(<ContractDetail id="contract-1" />);
+            expect(screen.getAllByText('Ариунбилэг.Нямхүү').length).toBeGreaterThan(0);
+            expect(screen.queryByRole('button', { name: /Солих|Менежер оруулах/ })).not.toBeInTheDocument();
+            unmount();
+        }
     });
 });
