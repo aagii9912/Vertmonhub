@@ -15,6 +15,7 @@ import type { ErpProduct, ErpSale, ProductKind } from '@/lib/erp/records';
 import { PRODUCT_KIND_LABEL } from '@/lib/erp/records';
 import type { InventoryStatus } from '@/lib/inventory/labels';
 import { UNIT_STATUS_LABEL } from '@/lib/inventory/labels';
+import { contractPlanScope, countsTowardPlan } from '@/lib/sales/plan-performance';
 import { knownPeriodAmount, undatedContractsHint } from './contract-dates';
 
 const DAY = 86_400_000;
@@ -76,10 +77,17 @@ export interface WeeklySalesInput {
     inventory: { info: SnapshotInfo & { kind: 'erp' | 'crm' }; rows: ErpProduct[] } | null;
     /** Сарын гэрээний төлөвлөгөө (₮). Тохируулаагүй бол null. */
     monthTarget: number | null;
+    /**
+     * Сарын төлөвлөгөө блокоор (Б1/Б2/Зогсоол) задалсан эсэх. Задалсан бол Б1/Б2-оос бусад блокийн орон сууц
+     * төлөвлөгөөнд хамаарахгүй; өгөөгүй бол задаргаагүй гэж үзнэ (нийт төлөвлөгөөнд орно). Агуулах, Үйлчилгээ үргэлж гадуур.
+     */
+    monthBlockPlanned?: boolean;
 }
 
 const sum = (values: Array<number | null>) => values.reduce<number>((total, value) => total + (value ?? 0), 0);
 const missing = (values: Array<number | null>) => values.filter(value => value === null).length;
+/** Нэг ч утга тодорхойгүй бол нийлбэр тодорхойгүй (null) — хоосон төлсөн дүн, урьдчилгааг 0 гэж нэмэхгүй. */
+export const knownSum = (values: Array<number | null>): number | null => values.some(value => value === null) ? null : sum(values);
 
 export function saleToLine(sale: ErpSale): ContractLine {
     return {
@@ -100,7 +108,7 @@ function summarize(lines: ContractLine[]) {
         barter: lines.filter(line => /бартер/i.test(line.channel ?? '')).length,
         byKind: [...byKind].map(([kind, rows]) => ({
             kind, label: PRODUCT_KIND_LABEL[kind], count: rows.length, total: sum(rows.map(row => row.total)),
-            advance: sum(rows.map(row => row.advance)), paid: sum(rows.map(row => row.paid)),
+            advance: knownSum(rows.map(row => row.advance)), paid: knownSum(rows.map(row => row.paid)),
         })).sort((a, b) => b.total - a.total),
     };
 }
@@ -225,11 +233,15 @@ export function buildWeeklySales(input: WeeklySalesInput) {
 
     const week = summarize(weekLines);
     const monthSummary = summarize(monthLines);
+    // Төлөвлөгөөтэй харьцуулахдаа зөвхөн төлөвлөгөөнд хамаарах гэрээ («Төлөвлөгөөний биелэлт»-тэй нэг дүрэм).
+    const planLines = monthLines.filter(line => countsTowardPlan(contractPlanScope({ product_type: line.kind, block_name: line.block }), input.monthBlockPlanned ?? false));
+    const planTotal = sum(planLines.map(line => line.total));
     const previousWeekLines = allLines.filter(line => within(line.date, previousWeek.from, previousWeek.to));
     return {
         range,
         month: { month, weeks, ...monthSummary, byWeek: monthByWeek,
-            target: input.monthTarget, attainmentPct: input.monthTarget && knownPeriodAmount(monthSummary.total, monthSummary.count, undated) !== null ? Math.round(monthSummary.total / input.monthTarget * 100) : null },
+            planCount: planLines.length, planTotal, outsidePlanCount: monthLines.length - planLines.length,
+            target: input.monthTarget, attainmentPct: input.monthTarget && knownPeriodAmount(planTotal, planLines.length, undated) !== null ? Math.round(planTotal / input.monthTarget * 100) : null },
         week: { ...week, lines: weekLines },
         previousWeek: { ...previousWeek, count: previousWeekLines.length, total: sum(previousWeekLines.map(line => line.total)) },
         byManager,
