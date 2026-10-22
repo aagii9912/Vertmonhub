@@ -107,6 +107,9 @@ export function buildMonthlyPerformance(targets: OperationsTarget[], range: Oper
 }
 
 /** Cash-basis meaning is shared by the operations report and finance dashboard/AI. */
+/** Мөнгөн орлогод тооцох хэлбэр (бартер, хэлбэр тодорхойгүйг оруулахгүй). */
+export const CASH_RECEIPT_METHODS = ['cash', 'bank', 'bank_transfer', 'mortgage'] as const;
+
 export function summarizeCashTransactions(transactions: OperationsTransaction[], range: OperationsRange, receiptClassificationAvailable = true) {
     const cash = {
         receipts: 0, receiptCount: 0, contractReceipts: 0, disbursements: 0, disbursementCount: 0,
@@ -118,7 +121,7 @@ export function summarizeCashTransactions(transactions: OperationsTransaction[],
         if (t.txn_date < range.from || t.txn_date > range.to) continue;
         const value = amount(t.amount);
         if (value === null) throw new Error('Гүйлгээний дүн дутуу байна');
-        if (['cash', 'bank', 'bank_transfer', 'mortgage'].includes(t.method || '')) {
+        if ((CASH_RECEIPT_METHODS as readonly string[]).includes(t.method || '')) {
             if (t.type === 'receipt') {
                 cash.receipts += value;
                 cash.receiptCount++;

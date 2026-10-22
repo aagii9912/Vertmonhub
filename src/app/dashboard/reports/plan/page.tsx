@@ -140,7 +140,7 @@ function PlanReport({ data, segment, segmentLabel }: { data: PlanResponse; segme
                 helper={`Жилийн төлөвлөгөөнөөс ${planPctText(ytdAmount?.yearPct ?? null, !!ytdAmount?.lowerBound)} · төлөвлөгөө ${short(ytdAmount?.yearPlan ?? null)}`} />
             {cashVisible
                 ? <Tile label="Орсон мөнгө (он эхнээс)" title={CASH_TOOLTIP}
-                    value={ytdCash?.actual === null || ytdCash?.actual === undefined ? (data.cash!.availability === 'none' ? 'Оруулаагүй' : '—') : short(ytdCash.actual, ytdCash.lowerBound)}
+                    value={ytdCash?.actual === null || ytdCash?.actual === undefined ? (data.cash!.availability === 'none' ? 'Оруулаагүй' : data.cash!.availability === 'no_ledger' ? 'Бүртгэл алга' : '—') : short(ytdCash.actual, ytdCash.lowerBound)}
                     helper={`Төлөвлөгөө ${short(ytdCash?.plan ?? null)}${ytdCash?.pct !== null && ytdCash?.pct !== undefined ? ` · ${planPctText(ytdCash.pct, ytdCash.lowerBound)}` : ''}`} />
                 : <Tile label="Орсон мөнгө" value={<span className="text-base">Санхүүгийн эрх шаардлагатай</span>} helper="Мөнгөн урсгалыг санхүүгийн эрхтэй ажилтан харна." />}
             <Tile label="Төлбөр хоцролт" tone={overdue.amount ? 'danger' : undefined}
@@ -262,6 +262,12 @@ function CashTable({ data, segment, segmentLabel }: { data: PlanResponse; segmen
             <AlertTitle>Орсон мөнгө бүртгэгдээгүй</AlertTitle>
             <AlertDescription>HUB файлд төлсөн дүн байхгүй тул автоматаар тооцохгүй. Сарын дүнг «Төлөвлөгөө ба баг» хуудсанд оруулах, эсвэл файлдаа «Нийт төлсөн дүн» багана нэмбэл хоёр дахь файлаас эхлэн зөрүүгээр тооцно.</AlertDescription>
         </Alert></div>}
+        {cash.availability === 'no_ledger' && <div className="border-b border-border p-3"><Alert variant="info">
+            <AlertTitle>Системд төлбөр бүртгэгдээгүй (Бүртгэл алга)</AlertTitle>
+            <AlertDescription>Гэрээний төлсөн дүн мэдэгдэж байгаа ч сар бүр орсон төлбөр системд бүртгэгдээгүй тул сарын орсон мөнгийг 0 гэж тооцохгүй. Сарын дүнг «Төлөвлөгөө ба баг» хуудсанд гараар оруулна уу.</AlertDescription>
+        </Alert></div>}
+        {cash.availability !== 'no_ledger' && cash.availability !== 'none' && cash.ledgerSince && cash.ledgerSince.slice(0, 4) === String(data.year) && cash.ledgerSince.slice(5, 7) !== '01'
+            && <p className="border-b border-border px-3.5 py-2.5 text-xs text-muted-foreground">Төлбөрийн бүртгэл <span className="num">{cash.ledgerSince}</span>-аас эхэлсэн — өмнөх сарын орсон мөнгө «—».</p>}
         {cash.availability === 'partial' && <p className="border-b border-border px-3.5 py-2.5 text-xs text-status-pending">{cash.unknownPaid} гэрээний төлсөн дүн тодорхойгүй тул бүртгэсэн төлбөр доод хязгаар («+»).</p>}
         <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-separate border-spacing-0 text-sm">

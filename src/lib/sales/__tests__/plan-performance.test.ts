@@ -197,7 +197,7 @@ describe('Elysium 2026 plan fulfilment (HUB fixtures)', () => {
         expect(report.cash).toBeNull();
         expect(month(9).total.metrics.cashflow).toBeUndefined();
         const withFinance = buildPlanPerformance(base({ receipts: [] }));
-        expect(withFinance.cash).toEqual({ availability: 'none', unknownPaid: 88, liveContracts: 88 });
+        expect(withFinance.cash).toEqual({ availability: 'none', unknownPaid: 88, liveContracts: 88, ledgerSince: null });
         expect(withFinance.months[8].total.metrics.cashflow).toMatchObject({ plan: 1_251_032_400, actual: null, pct: null });
         expect(withFinance.ytd.total.metrics.cashflow).toMatchObject({ plan: 9_316_526_400, yearPlan: 11_890_591_200, actual: null });
     });
@@ -289,8 +289,8 @@ describe('projects without a block plan and cash receipts', () => {
             { month: '2026-09', contractId: 'k1', amount: 30 }, { month: '2026-09', contractId: 'k2', amount: 20 },
             { month: '2026-09', contractId: null, amount: 7 }, { month: '2026-09', contractId: 'k3', amount: 5 },
         ];
-        const full = buildPlanPerformance(base({ contracts, receipts }));
-        expect(full.cash).toEqual({ availability: 'full', unknownPaid: 0, liveContracts: 3 });
+        const full = buildPlanPerformance(base({ contracts, receipts, ledgerSince: '2025-11-03' }));
+        expect(full.cash).toEqual({ availability: 'full', unknownPaid: 0, liveContracts: 3, ledgerSince: '2025-11-03' });
         expect(full.months[8].blocks.b1.metrics.cashflow).toMatchObject({ actual: 30, lowerBound: false });
         expect(full.months[8].blocks.parking.metrics.cashflow).toMatchObject({ actual: 20 });
         // Гэрээгүй төлбөр нийтэд л, агуулахын төлбөр төлөвлөгөөнөөс гадуур.
@@ -298,10 +298,42 @@ describe('projects without a block plan and cash receipts', () => {
         expect(full.months[8].outside.cash).toBe(5);
         expect(full.months[7].total.metrics.cashflow).toMatchObject({ actual: 0, lowerBound: false });
 
-        const partial = buildPlanPerformance(base({ contracts: [...contracts, contract({ paid_amount: null })], receipts }));
+        const partial = buildPlanPerformance(base({ contracts: [...contracts, contract({ paid_amount: null })], receipts, ledgerSince: '2025-11-03' }));
         expect(partial.cash!.availability).toBe('partial');
         expect(partial.months[8].total.metrics.cashflow).toMatchObject({ actual: 57, lowerBound: true });
         expect(partial.months[7].total.metrics.cashflow).toMatchObject({ actual: null, lowerBound: true });
+    });
+
+    it('treats an empty ledger as unknown cash, not 0₮, even when every paid amount is known (imported)', () => {
+        const contracts = [contract({ id: 'k1', paid_amount: 50 }), contract({ id: 'k2', bucket: 'parking', paid_amount: 0 })];
+        for (const input of [{ receipts: [] }, { receipts: [], ledgerSince: null }]) {
+            const report = buildPlanPerformance(base({ contracts, ...input }));
+            expect(report.cash).toEqual({ availability: 'no_ledger', unknownPaid: 0, liveContracts: 2, ledgerSince: null });
+            expect(report.months[8].total.metrics.cashflow).toMatchObject({ actual: null, pct: null });
+            expect(report.months[8].blocks.b1.metrics.cashflow).toMatchObject({ actual: null });
+            expect(report.months[8].outside.cash).toBeNull();
+            expect(report.ytd.total.metrics.cashflow).toMatchObject({ actual: null, pct: null });
+        }
+        // Гараар оруулсан дүн давамгайлсаар; бусад сар тодорхойгүй тул он эхнээс «+».
+        const months = elysiumPlan();
+        months[8] = { ...months[8], manual_cashflow_actual_amount: 500 };
+        const manual = buildPlanPerformance(base({ contracts, months, receipts: [], ledgerSince: null }));
+        expect(manual.months[8].total.metrics.cashflow).toMatchObject({ actual: 500, source: 'manual', lowerBound: false });
+        expect(manual.ytd.total.metrics.cashflow).toMatchObject({ actual: 500, lowerBound: true });
+    });
+
+    it('leaves months before the first recorded receipt unknown', () => {
+        const contracts = [contract({ id: 'k1', paid_amount: 50 })];
+        const receipts = [{ month: '2026-09', contractId: 'k1', amount: 30 }];
+        const report = buildPlanPerformance(base({ contracts, receipts, ledgerSince: '2026-08-20' }));
+        expect(report.cash!.availability).toBe('full');
+        expect(report.months[6].total.metrics.cashflow).toMatchObject({ actual: null, pct: null });
+        expect(report.months[6].blocks.b1.metrics.cashflow).toMatchObject({ actual: null, lowerBound: false });
+        expect(report.months[7].total.metrics.cashflow).toMatchObject({ actual: 0, lowerBound: false });
+        expect(report.months[8].total.metrics.cashflow).toMatchObject({ actual: 30, lowerBound: false });
+        expect(report.ytd.total.metrics.cashflow).toMatchObject({ actual: 30, lowerBound: true });
+        // Өгөөгүй бол тухайн оны хамгийн эртний орлогоос.
+        expect(buildPlanPerformance(base({ contracts, receipts })).months[7].total.metrics.cashflow).toMatchObject({ actual: null });
     });
 
     it('never counts unknown cash as zero next to a manual figure (lower bound instead)', () => {

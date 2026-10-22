@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { summarizeCashTransactions, type OperationsTransaction } from '@/lib/dashboard/operations-report';
+import { CASH_RECEIPT_METHODS, summarizeCashTransactions, type OperationsTransaction } from '@/lib/dashboard/operations-report';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { ubParts } from '@/lib/utils/date';
 import { SalesYearSchema } from './monthly';
@@ -58,7 +58,15 @@ export async function loadPlanPerformance(db: SupabaseClient, options: {
     };
     // Хүснэгт байхгүй (migration ороогүй) бол импортгүй гэж үзнэ; бусад алдаа дамжина.
     const latestImport = () => readLatestContractListImport(db, options.shopId).then(result => result.latest?.report_date ?? null);
-    const [months, planRows, contracts, latestImportDate, transactions] = await Promise.all([
+    // Дэвтрийн анхны мөнгөн орлого (бүх он): түүнээс өмнөх сар, эсвэл огт бүртгэлгүй бол орсон мөнгө тодорхойгүй.
+    const ledgerStart = async (): Promise<string | null> => {
+        const { data, error } = await db.from('finance_transactions').select('txn_date')
+            .eq('shop_id', options.shopId).eq('type', 'receipt').in('method', [...CASH_RECEIPT_METHODS])
+            .order('txn_date', { ascending: true }).limit(1);
+        if (error) throw error;
+        return (data as Array<{ txn_date: string | null }> | null)?.[0]?.txn_date?.slice(0, 10) ?? null;
+    };
+    const [months, planRows, contracts, latestImportDate, transactions, ledgerSince] = await Promise.all([
         getTeamMonthlySales(db, options.shopId, year),
         fetchAllRows<{ year: number }>((from, to) => db.from('team_sales_targets').select('year')
             .eq('shop_id', options.shopId).order('year').order('month').range(from, to)),
@@ -68,10 +76,12 @@ export async function loadPlanPerformance(db: SupabaseClient, options: {
             .select('txn_date, type, amount, method, contract_id')
             .eq('shop_id', options.shopId).gte('txn_date', `${year}-01-01`).lte('txn_date', `${year}-12-31`)
             .order('id').range(from, to)) : Promise.resolve(null),
+        options.canReadFinance ? ledgerStart() : Promise.resolve(null),
     ]);
     return buildPlanPerformance({
         year, now, months, planYears: [...new Set(planRows.map(row => Number(row.year)))],
         contracts, receipts: transactions === null ? null : ledgerReceipts(transactions, year),
+        ...(transactions === null ? {} : { ledgerSince }),
         latestImportDate, overdueAvailable,
     });
 }

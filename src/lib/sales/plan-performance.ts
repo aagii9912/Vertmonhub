@@ -15,6 +15,7 @@
  *  • Ирээдүйн сарын гүйцэтгэл null, энэ сар «явцын» (хувааж таамаглахгүй).
  *  • Орсон мөнгө: гар дүн, эс бөгөөс огноотой бүртгэсэн төлбөр (бэлэн, банк, ипотек; бартер орохгүй) —
  *    амьд гэрээний төлсөн дүн бүгд мэдэгдэж байвал л бүтэн; заримынх нь NULL бол доод хязгаар; бүгд NULL бол «—».
+ *    Дэвтэрт мөнгөн орлого огт бүртгэгдээгүй бол «—» (Бүртгэл алга), анхны орлогоос өмнөх сар «—» — хэзээ ч 0₮ биш.
  *    Урьдчилгааны нөхцлийн дүн, хоцролт, нийт − урьдчилгааг хэзээ ч орсон мөнгө гэж тооцохгүй.
  */
 import {
@@ -90,6 +91,11 @@ export interface PlanPerformanceInput {
     contracts: PlanContract[];
     /** null = орсон мөнгө харах эрхгүй (хэсгийг бүхэлд нь нууна). */
     receipts: PlanReceipt[] | null;
+    /**
+     * Дэвтрийн анхны бүртгэсэн мөнгөн орлогын огноо (бүх он, YYYY-MM-DD); null = дэвтэрт орлого огт алга
+     * (импортоор paid_amount мэдэгдэж байсан ч сарын орсон мөнгө тодорхойгүй). Өгөөгүй бол `receipts`-ийн хамгийн эртнийх.
+     */
+    ledgerSince?: string | null;
     /** Сүүлийн HUB импортын файлын огноо (хоцролтын snapshot). */
     latestImportDate: string | null;
     /** overdue_amount багана (migration 20261022140000) байхгүй бол false. */
@@ -171,8 +177,11 @@ export interface PlanPerformance {
     };
     cancelled: { count: number; amount: number };
     transferred: number;
-    /** null = санхүүгийн эрхгүй (cashHidden). */
-    cash: null | { availability: 'full' | 'partial' | 'none'; unknownPaid: number; liveContracts: number };
+    /**
+     * null = санхүүгийн эрхгүй (cashHidden). none = амьд гэрээний төлсөн дүн бүгд тодорхойгүй; no_ledger = дэвтэрт
+     * мөнгөн орлого бүртгэгдээгүй («Бүртгэл алга»); ledgerSince-ээс өмнөх сар тодорхойгүй.
+     */
+    cash: null | { availability: 'full' | 'partial' | 'none' | 'no_ledger'; unknownPaid: number; liveContracts: number; ledgerSince: string | null };
 }
 
 const UNDATED_LIST_LIMIT = 100;
@@ -303,9 +312,14 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
         }
     }
 
-    // Орсон мөнгө: амьд гэрээний төлсөн дүн мэдэгдэх эсэх.
+    // Орсон мөнгө: амьд гэрээний төлсөн дүн мэдэгдэх эсэх, дэвтэрт орлого бүртгэгдсэн эсэх (paid_amount-ийг импорт
+    // шууд бичдэг — хоосон дэвтэр нь «сард 0₮» биш, тодорхойгүй).
     const unknownPaid = live.filter(contract => toNumber(contract.paid_amount) === null).length;
-    const availability: 'full' | 'partial' | 'none' = live.length > 0 && unknownPaid === live.length ? 'none' : unknownPaid > 0 ? 'partial' : 'full';
+    const earliestReceipt = (input.receipts ?? []).reduce<string | null>((min, receipt) => (!min || receipt.month < min ? receipt.month : min), null);
+    const ledgerSince = input.ledgerSince !== undefined ? input.ledgerSince : earliestReceipt ? `${earliestReceipt}-01` : null;
+    const ledgerMonth = ledgerSince?.slice(0, 7) ?? null;
+    const availability: 'full' | 'partial' | 'none' | 'no_ledger' = live.length > 0 && unknownPaid === live.length ? 'none'
+        : ledgerSince === null ? 'no_ledger' : unknownPaid > 0 ? 'partial' : 'full';
     const cashAgg = new Map<string, number>(); // `${month}|${scope|outside|unassigned}` → cents
     for (const receipt of input.receipts ?? []) {
         if (!receipt.month.startsWith(prefix)) continue;
@@ -325,7 +339,9 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
             : { value: fromCents(row.amountCents), lowerBound: undated > 0 || row.missingAmounts > 0 };
     };
     const cashAuto = (month: number, scope: string): PlanValue => {
-        if (availability === 'none') return { value: null, lowerBound: false };
+        if (availability === 'none' || availability === 'no_ledger') return { value: null, lowerBound: false };
+        // Дэвтрийн анхны орлогоос өмнөх сарын орлого бүртгэгдээгүй — тодорхойгүй.
+        if (ledgerMonth && `${year}-${String(month).padStart(2, '0')}` < ledgerMonth) return { value: null, lowerBound: false };
         const value = fromCents(cashAgg.get(`${month}|${scope}`) ?? 0);
         if (availability === 'partial') return value ? { value, lowerBound: true } : { value: null, lowerBound: true };
         return { value, lowerBound: false };
@@ -430,7 +446,7 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
         },
         cancelled: { count: cancelledTotal.count, amount: fromCents(cancelledTotal.amountCents) },
         transferred: [...transferred.values()].reduce((sum, value) => sum + value, 0),
-        cash: cashVisible ? { availability, unknownPaid, liveContracts: live.length } : null,
+        cash: cashVisible ? { availability, unknownPaid, liveContracts: live.length, ledgerSince } : null,
     };
 }
 

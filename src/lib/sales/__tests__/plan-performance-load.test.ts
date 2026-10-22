@@ -23,6 +23,7 @@ function database(rows: Record<string, Row[]> = {}, options: { failure?: string;
             eq: (key: string, value: unknown) => { filters.push([key, value]); return query; },
             is: (key: string, value: unknown) => { filters.push([`is:${key}`, value]); return query; },
             gte: (key: string, value: unknown) => { filters.push([`gte:${key}`, value]); return query; },
+            in: (key: string, value: unknown) => { filters.push([`in:${key}`, value]); return query; },
             lte: (key: string, value: unknown) => { filters.push([`lte:${key}`, value]); return query; },
             order: () => query,
             limit: () => query,
@@ -76,8 +77,28 @@ describe('plan performance loading', () => {
         });
         const report = await loadPlanPerformance(db, options);
         expect(report.months[8].blocks.b1.metrics.cashflow).toMatchObject({ actual: 40, lowerBound: false });
-        const ledger = calls.find(call => call.table === 'finance_transactions')!;
+        const ledger = calls.find(call => call.table === 'finance_transactions' && call.columns.includes('amount'))!;
         expect(ledger.filters).toEqual(expect.arrayContaining([['gte:txn_date', '2026-01-01'], ['lte:txn_date', '2026-12-31']]));
+    });
+
+    it('reads the first cash receipt of all years and reports an empty ledger as unknown cash', async () => {
+        const empty = database({ property_contracts: [contract()] });
+        const report = await loadPlanPerformance(empty.db, options);
+        expect(report.cash).toMatchObject({ availability: 'no_ledger', ledgerSince: null, unknownPaid: 0 });
+        expect(report.months[8].total.metrics.cashflow).toMatchObject({ actual: null });
+        const first = empty.calls.find(call => call.table === 'finance_transactions' && call.columns === 'txn_date')!;
+        expect(first.filters).toEqual([['shop_id', 'shop-a'], ['type', 'receipt'], ['in:method', ['cash', 'bank', 'bank_transfer', 'mortgage']]]);
+
+        const { db } = database({
+            property_contracts: [contract()],
+            finance_transactions: [
+                { txn_date: '2025-11-02', type: 'receipt', amount: 10, method: 'cash', contract_id: 'c1' },
+                { txn_date: '2026-09-04', type: 'receipt', amount: 40, method: 'bank', contract_id: 'c1' },
+            ],
+        });
+        const recorded = await loadPlanPerformance(db, options);
+        expect(recorded.cash).toMatchObject({ availability: 'full', ledgerSince: '2025-11-02' });
+        expect(recorded.months[7].total.metrics.cashflow).toMatchObject({ actual: 0, lowerBound: false });
     });
 
     it('keeps the report when only the new overdue columns or import table are missing', async () => {

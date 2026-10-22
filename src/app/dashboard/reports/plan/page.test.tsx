@@ -106,6 +106,19 @@ describe('plan fulfilment page', () => {
         cache.clear();
     });
 
+    it('says «Бүртгэл алга» instead of 0₮ when paid amounts are known but no payment was recorded', async () => {
+        const built = buildPlanPerformance({
+            year: 2026, now: new Date('2026-10-22T04:00:00Z'), months: emptyMonthlySales(), planYears: [2026], latestImportDate: null,
+            receipts: [], ledgerSince: null, contracts: [contract('1', { paid_amount: 300 })],
+        });
+        const cache = open({ ...built, shopName: 'Mandala Garden' });
+        expect(await screen.findByText('Системд төлбөр бүртгэгдээгүй (Бүртгэл алга)')).toBeInTheDocument();
+        expect(screen.getByText('Бүртгэл алга')).toBeInTheDocument();
+        expect(screen.queryByText('Орсон мөнгө бүртгэгдээгүй')).not.toBeInTheDocument();
+        expect(screen.queryByText('0₮')).not.toBeInTheDocument();
+        cache.clear();
+    });
+
     it('tells a restricted manager the team plan is for management, without a danger alert or a retry', async () => {
         transport.json.mockRejectedValue(new DashboardApiError('Багийн төлөвлөгөө удирдлагад харагдана', 403));
         const cache = new QueryClient();
