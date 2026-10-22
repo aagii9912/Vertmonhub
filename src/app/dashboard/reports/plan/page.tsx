@@ -117,7 +117,11 @@ function PlanReport({ data, segment, segmentLabel }: { data: PlanResponse; segme
     const ytdAmount = yearCellOf(data, segment, 'contract');
     const ytdCash = yearCellOf(data, segment, 'cashflow');
     const overdue = segment === 'total' ? { amount: data.overdue.amount, count: data.overdue.count } : data.overdue.byBlock[segment];
-    const undatedInScope = segment === 'total' ? data.undated.byScope.b1 + data.undated.byScope.b2 + data.undated.byScope.parking : data.undated.byScope[segment];
+    // Блокоор задлаагүй төлөвлөгөөтэй (гүйцэтгэлтэй) сард бусад блокийн орон сууц «Нийт»-д орно (`countsTowardPlan`).
+    const otherInTotal = data.months.some(row => row.status !== 'future' && !row.blockPlanned);
+    const undatedInScope = segment === 'total'
+        ? data.undated.byScope.b1 + data.undated.byScope.b2 + data.undated.byScope.parking + (otherInTotal ? data.undated.byScope.residential_other : 0)
+        : data.undated.byScope[segment];
     const outside = data.months.reduce((sum, row) => ({ count: sum.count + row.outside.count, amount: sum.amount + row.outside.amount }), { count: 0, amount: 0 });
     const outsideTypes = new Map<string, { count: number; amount: number }>();
     for (const row of data.months) for (const type of row.outside.byType) {

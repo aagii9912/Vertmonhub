@@ -73,6 +73,20 @@ describe('plan fulfilment page', () => {
         cache.clear();
     });
 
+    it('counts undated other-block residential contracts in «Нийт» when the plan has no block breakdown', async () => {
+        const months = emptyMonthlySales();
+        for (let index = 0; index < 12; index++) months[index] = { ...months[index], target_amount: 1_000 };
+        const built = buildPlanPerformance({
+            year: 2026, now: new Date('2026-10-22T04:00:00Z'), months, planYears: [2026], latestImportDate: null, receipts: null,
+            contracts: [contract('1', { block_name: 'Г1485', unit_label: 'Г1485-1' }), contract('2', { block_name: 'Г1485', unit_label: 'Г1485-2', contract_date: null })],
+        });
+        const cache = open({ ...built, shopName: 'Mandala Garden', cashHidden: true });
+        expect(await screen.findByText('Огноогүй 1 гэрээ сарын гүйцэтгэлд ороогүй')).toBeInTheDocument();
+        expect(screen.getByText(/Энэ хэсэгт 1 нь хамаарна/)).toBeInTheDocument();
+        expect(screen.queryByText(/Энэ хэсгийн хувьд бүрэн/)).not.toBeInTheDocument();
+        cache.clear();
+    });
+
     it('explains an empty cash ledger instead of showing 0 to finance users', async () => {
         const cache = open(report([]));
         expect(await screen.findByText('Орсон мөнгө бүртгэгдээгүй')).toBeInTheDocument();
