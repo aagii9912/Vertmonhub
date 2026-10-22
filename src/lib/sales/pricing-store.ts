@@ -10,6 +10,7 @@ import {
     PricingDraftSchema, PricingSaveSchema, PricingSelectionSchema, calculatePricing, inventoryArea, inventoryFloor, pricingKey,
     type PricingConfig, type PricingSaveInput, type PricingSelection, type PricingResult,
 } from './pricing';
+import { diffPricingRules, pricingValidity, withArchiveTimes, type PricingSheet, type PricingVersionSummary } from './pricing-history';
 
 export class PricingSelectionError extends ProjectScopeError {
     constructor(message: string, status = 400) { super(status, message); }
@@ -57,6 +58,70 @@ export async function loadPricingOverview(db: SupabaseClient, shopId: string) {
     ]);
     if (error) throw new PricingSelectionError('Үнийн тохиргоо уншиж чадсангүй', 503);
     return { latest: data ? configRow(data) : null, active };
+}
+
+/** Same rule as the meeting conditions: a restricted manager sees only a project they are registered for. */
+export async function assertPricingProjectAccess(db: SupabaseClient, shopId: string, scope: SalesProjectScope): Promise<void> {
+    if (scope.projectIds === null) return;
+    if (!scope.projectIds.length) throw new PricingSelectionError('Төсөлд бүртгэлгүй байна', 403);
+    let projectId: string | null;
+    try { projectId = await soleShopProjectId(db, shopId); }
+    catch { throw new PricingSelectionError('Төслийн эрхийг шалгаж чадсангүй. Дахин оролдоно уу', 503); }
+    if (!projectId || !canAccessProject(scope, projectId)) throw new PricingSelectionError('Энэ төслийн үнийг харах эрхгүй', 403);
+}
+
+type HistoryRow = {
+    id: string; version: number; status: 'active' | 'archived'; created_at: string; created_by: string;
+    source: string | null; valid_from: string | null; valid_until: string | null;
+};
+
+/** Activated versions only, newest first. Archive time = the next activation, which archived it in the same RPC. */
+export async function loadPricingHistory(db: SupabaseClient, shopId: string): Promise<PricingVersionSummary[]> {
+    let rows: HistoryRow[];
+    try {
+        rows = await fetchAllRows<HistoryRow>((from, to) => db.from('project_pricing_configs')
+            .select('id,version,status,created_at,created_by,source:config->>source,valid_from:config->>valid_from,valid_until:config->>valid_until')
+            .eq('shop_id', shopId).in('status', ['active', 'archived']).order('version', { ascending: false }).range(from, to));
+    } catch { throw new PricingSelectionError('Үнийн түүх уншиж чадсангүй. Дахин оролдоно уу', 503); }
+    const actorIds = [...new Set(rows.map(row => row.created_by))];
+    const names = new Map<string, string>();
+    if (actorIds.length) {
+        const { data, error } = await db.from('user_profiles').select('id,full_name').in('id', actorIds);
+        if (error) throw new PricingSelectionError('Үнийн түүх уншиж чадсангүй. Дахин оролдоно уу', 503);
+        for (const profile of data ?? []) if (profile.full_name) names.set(profile.id, profile.full_name);
+    }
+    return withArchiveTimes(rows).map(row => ({
+        id: row.id, version: row.version, status: row.status,
+        source: row.source ?? '', valid_from: row.valid_from, valid_until: row.valid_until,
+        activated_at: row.created_at, activated_by: names.get(row.created_by) ?? null, archived_at: row.archived_at,
+    }));
+}
+
+async function loadActivatedVersion(db: SupabaseClient, shopId: string, version: number): Promise<PricingConfig> {
+    const { data, error } = await db.from('project_pricing_configs').select('id,shop_id,version,status,config')
+        .eq('shop_id', shopId).eq('version', version).in('status', ['active', 'archived']).maybeSingle();
+    if (error) throw new PricingSelectionError('Үнийн хувилбар уншиж чадсангүй. Дахин оролдоно уу', 503);
+    if (!data) throw new PricingSelectionError('Үнийн хувилбар олдсонгүй', 404);
+    return configRow(data);
+}
+
+/** Read only. Without a version the active one is shown; each version is compared with the one it replaced. */
+export async function loadPricingSheet(db: SupabaseClient, shopId: string, options: { version?: number | null; asOf?: string } = {}): Promise<PricingSheet> {
+    const asOf = options.asOf ?? ubDateStr();
+    const history = await loadPricingHistory(db, shopId);
+    const index = options.version ? history.findIndex(row => row.version === options.version) : history.findIndex(row => row.status === 'active');
+    if (options.version && index < 0) throw new PricingSelectionError('Үнийн хувилбар олдсонгүй', 404);
+    if (index < 0) return { as_of: asOf, history, selected: null };
+    const summary = history[index], earlier = history[index + 1] ?? null;
+    const [config, previous] = await Promise.all([
+        loadActivatedVersion(db, shopId, summary.version),
+        earlier ? loadActivatedVersion(db, shopId, earlier.version) : Promise.resolve(null),
+    ]);
+    const diff = diffPricingRules(config.rules, previous?.rules ?? null);
+    return { as_of: asOf, history, selected: {
+        ...summary, source: config.source, valid_from: config.valid_from, valid_until: config.valid_until,
+        validity: pricingValidity(config, asOf), previous_version: earlier?.version ?? null, ...diff,
+    } };
 }
 
 export async function savePricingConfig(db: SupabaseClient, shopId: string, actorId: string, input: PricingSaveInput): Promise<PricingConfig> {

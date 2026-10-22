@@ -20,6 +20,7 @@ describe('nav v3 — бүтэц', () => {
         expect(getRouteModule('/dashboard/marketing-roi')).toBe('marketing-roi');
         expect(getRouteModule('/dashboard/competitor-research')).toBe('marketing-roi');
         expect(getRouteModule('/dashboard/properties/fixture-id')).toBe('properties');
+        expect(getRouteModule('/dashboard/pricing')).toBe('properties');
         expect(getRouteModule('/dashboard/customer-service')).toBe('customer-service');
         expect(getRouteModule('/dashboard/customers')).toBe('customers');
         expect(getRouteModule('/dashboard/tasks')).toBe('dashboard');
@@ -34,7 +35,7 @@ describe('nav v3 — бүтэц', () => {
     it('sidebar бүлгүүд: Өнөөдөр · Борлуулалт · Үр дүн · Удирдлага (super_admin)', () => {
         expect(NAV_SECTIONS.map((s) => [s.label, s.items.map((i) => i.name)])).toEqual([
             [null, ['Өнөөдөр']],
-            ['Борлуулалт', ['Лид', 'Уулзалт', 'Гэрээ', 'Харилцагч', 'Мессеж', 'Байр']],
+            ['Борлуулалт', ['Лид', 'Уулзалт', 'Гэрээ', 'Харилцагч', 'Мессеж', 'Байр', 'Үнэ, нөхцөл']],
             ['Үр дүн', ['Өдрийн тайлан', 'Хурлын бэлтгэл', 'Тайлан', 'Маркетинг']],
             ['Удирдлага', ['Тойм', 'Хэрэглэгчид', 'Төслүүд', 'Төлөвлөгөө ба баг', 'Дүрүүд', 'Импорт', 'Холболтууд', 'Өөрчлөлтийн түүх', 'Систем']],
         ]);
