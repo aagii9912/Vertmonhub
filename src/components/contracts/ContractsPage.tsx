@@ -272,10 +272,12 @@ function ContractTiles({ stats, loading }: { stats?: ContractStats; loading: boo
     const overdueAmount = stats?.overdue_amount ?? null;
     const overdueDays = stats?.overdue_days_count ?? 0;
     const stale = stats?.overdue_stale ?? 0;
+    const staleNote = stale ? `${stale} гэрээний хоцролт өмнөх файлынх` : null;
+    // Сүүлийн файлд ₮ дүнгүй ч өмнөх файлын дүн байвал «Бүртгээгүй» гэж нуухгүй.
     const overdueSub = !stats ? undefined
         : overdueAmount !== null
-            ? [`${stats.overdue_count} гэрээ`, stats.overdue_as_of ? `${stats.overdue_as_of}-ны файлаар` : null, stale ? `${stale} гэрээний хоцролт өмнөх файлынх` : null].filter(Boolean).join(' · ')
-            : overdueDays > 0 ? `₮ дүн бүртгээгүй · ${overdueDays} гэрээ хоногоор хоцорсон*` : 'Бүртгээгүй';
+            ? [`${stats.overdue_count} гэрээ`, stats.overdue_as_of ? `${stats.overdue_as_of}-ны файлаар` : null, staleNote].filter(Boolean).join(' · ')
+            : [overdueDays > 0 ? `₮ дүн бүртгээгүй · ${overdueDays} гэрээ хоногоор хоцорсон*` : 'Бүртгээгүй', staleNote].filter(Boolean).join(' · ');
 
     return (<>
         <StatBar className="mb-0" columns={showPaid ? 3 : 4}>

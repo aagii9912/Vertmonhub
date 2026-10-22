@@ -217,9 +217,30 @@ describe('ContractDetail HUB fields', () => {
 
     it('does not offer the order-date entry to a read-only user', () => {
         mocks.user = reader;
-        mocks.contract = loaded({ contract: { ...hub, order_date: null } });
+        mocks.contract = loaded({ contract: { ...hub, order_date: null, contract_date: null } });
         render(<ContractDetail id="contract-1" />);
         expect(field('Захиалга өгсөн огноо')).toHaveTextContent(/^—$/);
         expect(screen.queryByRole('button', { name: /Огноо оруулах/ })).not.toBeInTheDocument();
+    });
+
+    it('shows the contract date like the list does when only the order date is missing, and says it stays the reporting date', async () => {
+        mocks.user = reader;
+        mocks.contract = loaded({ contract: { ...hub, order_date: null, contract_date: '2026-10-05' } });
+        const { unmount } = render(<ContractDetail id="contract-1" />);
+        expect(field('Захиалга өгсөн огноо')).toHaveTextContent(/^2026-10-05$/);
+        unmount();
+
+        mocks.user = writer;
+        render(<ContractDetail id="contract-1" />);
+        expect(field('Захиалга өгсөн огноо')).toHaveTextContent('2026-10-05');
+        fireEvent.click(screen.getByRole('button', { name: /Огноо оруулах/ }));
+        // Гэрээний огноогоор урьдчилан бөглөнө — санамсаргүй өөр огноо оруулж зөрүүлэхгүй.
+        expect(screen.getByLabelText('Захиалга өгсөн огноо')).toHaveValue('2026-10-05');
+        mocks.confirm.mockResolvedValueOnce(false);
+        fireEvent.click(screen.getByRole('button', { name: 'Огноо хадгалах' }));
+        await waitFor(() => expect(mocks.confirm).toHaveBeenCalledOnce());
+        const [options] = mocks.confirm.mock.calls[0] as [{ description: string }];
+        expect(options.description).toContain('Гэрээний огноо 2026-10-05 хэвээр');
+        expect(mocks.setOrderDate).not.toHaveBeenCalled();
     });
 });

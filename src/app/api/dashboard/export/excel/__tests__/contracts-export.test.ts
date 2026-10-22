@@ -147,6 +147,26 @@ describe('contracts HUB export (16 багана)', () => {
         expect(flat['Тоот']).toBe(19);
     });
 
+    it('writes the stored order day on a UTC (Vercel) or western server too, never the day before', async () => {
+        const original = process.env.TZ;
+        try {
+            for (const tz of ['UTC', 'America/New_York', 'Asia/Ulaanbaatar']) {
+                process.env.TZ = tz;
+                const { buffer } = await exportType('contracts_hub');
+                const workbook = new ExcelJS.Workbook();
+                await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+                const sheet = workbook.worksheets[0];
+                const col = CONTRACT_LIST_COLUMNS.indexOf('Захиалга өгсөн огноо') + 1;
+                // exceljs огнооны серийг UTC шөнө дундаар уншина — тэр өдөр нь хадгалсан DATE-тэй ижил байх ёстой.
+                const days = [2, 3, 4].map((r) => (sheet.getRow(r).getCell(col).value as Date).toISOString().slice(0, 10));
+                expect(days, tz).toEqual(['2026-10-05', '2026-09-12', '2025-12-20']);
+            }
+        } finally {
+            if (original === undefined) delete process.env.TZ;
+            else process.env.TZ = original;
+        }
+    });
+
     it('still writes the header row for a project without contracts', async () => {
         state.db.tables.property_contracts = [];
         const { buffer } = await exportType('contracts_hub');

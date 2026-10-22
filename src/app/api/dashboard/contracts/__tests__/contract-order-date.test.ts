@@ -59,6 +59,35 @@ describe('PATCH /api/dashboard/contracts/[id] — «Огноо оруулах»'
         expect(state.db.tables.data_audit_log).toEqual([]);
     });
 
+    it('treats a retry of the same date as done (no second write, no second audit row)', async () => {
+        expect((await patch({ order_date: '2026-09-15' })).status).toBe(200);
+        const writes = contractWrites().length;
+        const retry = await patch({ order_date: '2026-09-15' });
+        expect(retry.status).toBe(200);
+        expect(await retry.json()).toMatchObject({ replayed: true, contract: { id: 'c-1', order_date: '2026-09-15' } });
+        expect(contractWrites()).toHaveLength(writes);
+        expect(state.db.tables.data_audit_log).toHaveLength(1);
+        // Өөр огноо эсвэл өөр талбартай бол давталт биш.
+        expect((await patch({ order_date: '2026-09-16' })).status).toBe(409);
+        expect((await patch({ order_date: '2026-09-15', overdue_days: 3 })).status).toBe(409);
+        expect(stored().order_date).toBe('2026-09-15');
+        expect(stored().overdue_days ?? null).toBeNull();
+    });
+
+    it('checks «not in the future» against the Ulaanbaatar day even on a UTC server', async () => {
+        const original = process.env.TZ;
+        process.env.TZ = 'UTC';
+        vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-22T17:30:00Z') }); // УБ 2026-10-23 01:30
+        try {
+            expect((await patch({ order_date: '2026-10-24' })).status).toBe(400);
+            expect((await patch({ order_date: '2026-10-23' })).status).toBe(200);
+        } finally {
+            vi.useRealTimers();
+            if (original === undefined) delete process.env.TZ;
+            else process.env.TZ = original;
+        }
+    });
+
     it('answers 409 when a colleague set the date between the read and the write', async () => {
         const from = state.db.from;
         let reads = 0;

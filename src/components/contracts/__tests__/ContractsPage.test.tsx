@@ -148,6 +148,12 @@ describe('ContractsPage — tiles and header', () => {
         expect(screen.getByText(/Сүүлийн HUB файл:/)).toHaveTextContent('Сүүлийн HUB файл: 2026-10-22 · 83 мөр · 10 гэрээ файлд байхгүй');
     });
 
+    it('does not call overdue «not recorded» when only an older file\'s amounts exist', () => {
+        setData({ stats: stats({ overdue_amount: null, overdue_count: 0, overdue_stale: 3, overdue_days_count: 0 }) });
+        render(<ContractsPage />);
+        expect(screen.getByText('Бүртгээгүй · 3 гэрээний хоцролт өмнөх файлынх')).toBeInTheDocument();
+    });
+
     it('hides the paid/balance tiles when every live contract\'s paid amount is unknown, never showing 0₮', () => {
         render(<ContractsPage />);
         expect(screen.queryByText('Гэрээнд бүртгэсэн төлөлт')).not.toBeInTheDocument();

@@ -283,12 +283,16 @@ function OrderDateField({ contract: c, canWrite }: { contract: ContractRow; canW
     const [editing, setEditing] = useState(false);
     const [value, setValue] = useState('');
     if (c.order_date) return <span className="num">{formatShortDate(c.order_date)}</span>;
-    if (!canWrite) return <span className="text-muted-foreground">—</span>;
+    // Жагсаалт, HUB экспорттой адил: захиалга өгсөн огноо хоосон бол гэрээний огноо (бүдэг) — «—» гэж зөрүүлэхгүй.
+    const fallback = c.contract_date
+        ? <span className="num text-muted-foreground" title="Захиалга өгсөн огноо бүртгээгүй — гэрээний огноо">{formatShortDate(c.contract_date)}</span>
+        : <span className="text-muted-foreground">—</span>;
+    if (!canWrite) return fallback;
     if (!editing) {
         return (
             <span className="inline-flex flex-wrap items-center gap-1.5">
-                <span className="text-muted-foreground">—</span>
-                <GhostButton onClick={() => { setValue(''); setEditing(true); }} className="text-brand-strong hover:bg-brand-soft"><CalendarPlus className="h-3.5 w-3.5" /> Огноо оруулах</GhostButton>
+                {fallback}
+                <GhostButton onClick={() => { setValue(c.contract_date ?? ''); setEditing(true); }} className="text-brand-strong hover:bg-brand-soft"><CalendarPlus className="h-3.5 w-3.5" /> Огноо оруулах</GhostButton>
             </span>
         );
     }
@@ -299,7 +303,7 @@ function OrderDateField({ contract: c, canWrite }: { contract: ContractRow; canW
         const ok = await confirmToast({
             title: `Захиалга өгсөн огноо ${value} гэж хадгалах уу?`,
             description: c.contract_date
-                ? 'Хадгалсны дараа энд солихгүй.'
+                ? `Гэрээний огноо ${c.contract_date} хэвээр үлдэж, сарын гүйцэтгэл түүгээр тооцогдоно. Хадгалсны дараа энд солихгүй.`
                 : 'Гэрээний огноо мөн энэ өдөр болж, сарын гүйцэтгэл ба төлөвлөгөөний биелэлтэд орно. Хадгалсны дараа энд солихгүй.',
             confirmLabel: 'Хадгалах',
             cancelLabel: 'Болих',

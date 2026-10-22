@@ -128,6 +128,18 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
     const payload: Record<string, unknown> = { ...updateData };
     if (settingOrderDate) {
         if (previous.order_date) {
+            // Ижил огноог дахин илгээсэн (хариу тасарсны дараах давталт) — өөрчлөлтгүй, аудитгүй амжилт.
+            if (String(previous.order_date) === updateData.order_date && Object.keys(updateData).length === 1) {
+                const { data: current, error: currentError } = await ownContract(supabase
+                    .from('property_contracts')
+                    .select('*')
+                    .eq('id', id)
+                    .eq('shop_id', authShop.id))
+                    .is('deleted_at', null)
+                    .maybeSingle();
+                if (currentError) throw currentError;
+                if (current) return NextResponse.json({ contract: current, replayed: true });
+            }
             return NextResponse.json({ error: 'Захиалга өгсөн огноо бүртгэгдсэн байна — энд солихгүй.' }, { status: 409 });
         }
         if (!previous.contract_date) payload.contract_date = updateData.order_date;
