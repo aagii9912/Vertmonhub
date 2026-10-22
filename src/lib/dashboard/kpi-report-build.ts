@@ -43,6 +43,11 @@ async function safeCount(
     return res.count || 0;
 }
 
+/** View-ийн тоо алга үеийн нөөц тоо: цуцалсан гэрээг тоолохгүй (manager_monthly_sales-тэй нэг дүрэм). */
+export function liveContractCount(contracts: readonly KpiContractRow[]): number {
+    return contracts.filter((c) => c.contract_status !== 'cancelled').length;
+}
+
 export interface KpiReportInput {
     scope?: SalesProjectScope;
     shopId: string;
@@ -189,7 +194,7 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
     // Борлуулалт (канон: manager_monthly_sales view — самбартай ижил эх сурвалж)
     const mine = byManager.get(targetName);
     const revenue = mine?.actuals[month - 1] || 0;
-    const contractCount = mine?.counts[month - 1] || contracts.length;
+    const contractCount = mine?.counts[month - 1] || liveContractCount(contracts);
     const prevSource = prev.year !== year ? prevYearByManager : byManager;
     const prevMine = prevSource?.get(targetName);
     const prevRevenue = prevMine?.actuals[prev.month - 1] || 0;

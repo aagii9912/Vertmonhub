@@ -65,7 +65,7 @@ const readDefinitions: ToolDefinition[] = [
     },
     {
         name: 'get_dashboard_stats',
-        description: 'Самбарын статистик: гэрээний тоо ба нийт үнэ (бодит мөнгөн орлого биш), харилцагч, лийд, орон сууцны нэгжийн нөөц. inventory нь property_units сангийн зөвхөн residential ангиллын нийт/боломжтой/зарагдсан/хүлээгдэж буй тоо, statusCounts-ийг өгнө; зарагдсанд handed_over орно. Хугацаа зөвхөн гэрээ, лийдэд үйлчилнэ; нөөц ба харилцагч нь одоогийн нийт тоо.',
+        description: 'Самбарын статистик: гэрээний тоо ба нийт үнэ (гэрээний огноогоор, цуцалсан/устгасан гэрээ ороогүй; бодит мөнгөн орлого биш; contractsNote байвал огноогүй гэрээтэй тул доод хэмжээ — түүгээр хэл), харилцагч, лийд, орон сууцны нэгжийн нөөц. inventory нь property_units сангийн зөвхөн residential ангиллын нийт/боломжтой/зарагдсан/хүлээгдэж буй тоо, statusCounts-ийг өгнө; зарагдсанд handed_over орно. Хугацаа зөвхөн гэрээ, лийдэд үйлчилнэ; нөөц ба харилцагч нь одоогийн нийт тоо.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -138,17 +138,17 @@ const readDefinitions: ToolDefinition[] = [
     },
     {
         name: 'list_contracts',
-        description: 'Үл хөдлөхийн гэрээний (property_contracts) жагсаалт авах. Статус, харилцагч, борлуулагч менежер, төсөл, гэрээний дугаараар шүүж болно. Хугацаа хэтэрсэн (overdue_only) болон үлдэгдэлтэй (has_balance) гэрээг тусгайлан хайх боломжтой.',
+        description: 'Үл хөдлөхийн гэрээний (property_contracts) жагсаалт авах. Статус, харилцагч, борлуулагч менежер, төсөл, гэрээний дугаараар шүүж болно. Хугацаа хэтэрсэн (overdue_only) болон үлдэгдэлтэй (has_balance) гэрээг тусгайлан хайх боломжтой. HUB загварын талбар: order_date = Захиалга өгсөн огноо, payment_condition = Захиалгын нөхцөл, prepayment_due = Урьдчилгааны дүн (нөхцөл, орсон мөнгө биш), overdue_amount = Төлбөр хоцролт ₮ (overdue_as_of огнооны файлын байдлаар), customer_first_name/customer_last_name = Нэр/Овог. paid_amount null бол төлсөн дүн тодорхойгүй — 0 гэж бүү хэл.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
-                status: { type: SchemaType.STRING, enum: ['active', 'closed'], description: 'Гэрээний төлөв (active=идэвхтэй, closed=хаагдсан)' },
+                status: { type: SchemaType.STRING, enum: ['active', 'closed', 'cancelled', 'transferred'], description: 'Гэрээний төлөв (active=идэвхтэй, closed=хаагдсан, cancelled=цуцалсан, transferred=тоот шилжсэн); орхивол бүх төлөв' },
                 customer_search: { type: SchemaType.STRING, description: 'Харилцагчийн нэр/утас/регистер дугаараар хайх (шилжүүлсэн гэрээний өмнөх эзэмшигч ч орно)' },
                 contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
                 sales_manager: { type: SchemaType.STRING, description: 'Борлуулагч менежерийн нэр' },
                 sales_channel: { type: SchemaType.STRING, description: 'Борлуулалтын суваг (ПРОПЕРТИС, БАРТЕР, ТҮРЭЭС гэх мэт)' },
                 block_name: { type: SchemaType.STRING, description: 'Төсөл/блокийн нэр (Mandala Garden, Elysium Б1 г.м.)' },
-                overdue_only: { type: SchemaType.BOOLEAN, description: 'Зөвхөн хугацаа хэтэрсэн гэрээ' },
+                overdue_only: { type: SchemaType.BOOLEAN, description: 'Зөвхөн хоцролттой гэрээ (Төлбөр хоцролт ₮ > 0 эсвэл хуваарийн хоцролтын хоног > 0)' },
                 has_balance: { type: SchemaType.BOOLEAN, description: 'Зөвхөн үлдэгдэл төлбөртэй гэрээ' },
                 limit: { type: SchemaType.NUMBER, description: 'Хэдэн гэрээ авах (default: 20, max: 100)' }
             }
@@ -156,7 +156,7 @@ const readDefinitions: ToolDefinition[] = [
     },
     {
         name: 'get_contract_details',
-        description: 'Нэг гэрээний бүх мэдээлэл авах: үнийн задаргаа (1-р үнэ, м²-ийн үнэ, нийт, төлсөн, үлдэгдэл), төлбөрийн нөхцөл, урьдчилгаа, гарын үсэг/ашиглалтын огноо, борлуулагч менежер, банкны/бартерын төлөв, эзэмшигчийн түүх (шилжүүлэг/нэр засвар, transfers).',
+        description: 'Нэг гэрээний бүх мэдээлэл авах: үнийн задаргаа (1-р үнэ, м²-ийн үнэ, нийт, төлсөн, үлдэгдэл), төлбөрийн нөхцөл, урьдчилгаа, захиалга өгсөн огноо (order_date), захиалгын нөхцөл (payment_condition), Төлбөр хоцролт ₮ (overdue_amount, overdue_as_of огнооны HUB файлаар), Нэр/Овог, гарын үсэг/ашиглалтын огноо, борлуулагч менежер, банкны/бартерын төлөв, эзэмшигчийн түүх (шилжүүлэг/нэр засвар, transfers). paid_note байвал төлсөн дүн тодорхойгүй — 0 гэж бүү хэл.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -168,7 +168,7 @@ const readDefinitions: ToolDefinition[] = [
     },
     {
         name: 'get_contracts_summary',
-        description: 'Бүх гэрээний нэгтгэсэн статистик: нийт гэрээ тоо, идэвхтэй/хаагдсан, нийт үнийн дүн, нийт цуглуулсан, үлдэгдэл, цуглуулалтын хувь, хугацаа хэтэрсэн гэрээ тоо, ТОП-5 менежер, суваг ба төслөөр задаргаа.',
+        description: 'Бүх гэрээний нэгтгэсэн статистик: нийт гэрээ тоо (цуцалсан орно), идэвхтэй/хаагдсан/цуцалсан, нийт үнийн дүн ба нөхцлөөр төлөх урьдчилгаа (цуцалсныг хассан, орсон мөнгө биш), цуглуулсан, үлдэгдэл, цуглуулалтын хувь, Төлбөр хоцролт ₮ (сүүлийн HUB файлын огноогоор), хуваарийн хоцролттой гэрээ, ТОП-5 менежер, суваг ба төслөөр задаргаа. Төлсөн дүн тодорхойгүй гэрээ байвал total_collected/collection_rate_pct нь null эсвэл «+» (доод хэмжээ) — 0 гэж бүү хэл, paid_note-ыг дамжуул.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {

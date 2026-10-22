@@ -32,6 +32,9 @@ import { formatMNT } from '@/lib/utils/currency';
 import { contractIdsByPreviousHolder, listContractTransfers } from '@/lib/services/ContractService';
 import { propertyStatusLabel, unitStatusLabel, type InventoryStatus } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
+import { loadLatestContractListImport, NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
+import { summarizeContracts, type ContractSummaryRow } from '@/lib/contracts/summary';
+import { periodContractAmount, periodContractCount, undatedContractsHint } from '@/lib/dashboard/contract-dates';
 import { loadLatestErpProducts } from '@/lib/erp/snapshots';
 import { parseUnitUpdate, unitFieldLabel, updateInventoryUnit } from '@/lib/inventory/unit-update';
 import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
@@ -81,10 +84,14 @@ function getDateFilter(timeRange: string): string {
 export async function fetchDashboardStats(shopId: string, timeRange: string = 'month', scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     const isoDate = getDateFilter(timeRange);
     const dateOnly = ubDateStr(new Date(isoDate));
-    const [contracts, customersRes, leadsAll, units] = await Promise.all([
+    const [contracts, undatedRes, customersRes, leadsAll, units] = await Promise.all([
+        // Цуцалсан, устгасан гэрээ борлуулалтад орохгүй (manager_monthly_sales-тэй нэг дүрэм).
         fetchAllRows<{ total_price: number | string | null }>((from, to) => supabaseAdmin
             .from('property_contracts').select('total_price').eq('shop_id', shopId)
-            .is('deleted_at', null).gte('contract_date', dateOnly).order('id').range(from, to)),
+            .is('deleted_at', null).or(NOT_CANCELLED_CONTRACT).gte('contract_date', dateOnly).order('id').range(from, to)),
+        // Огноогүй амьд гэрээ хугацаанд орохгүй — байвал тоо, дүн доод хэмжээ (lib/dashboard/contract-dates.ts).
+        supabaseAdmin.from('property_contracts').select('id', { count: 'exact', head: true }).eq('shop_id', shopId)
+            .is('deleted_at', null).is('contract_date', null).or(NOT_CANCELLED_CONTRACT),
         supabaseAdmin.from('customers').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).is('deleted_at', null),
         fetchAllRows<{ status: string | null }>((from, to) => applyLeadScope(supabaseAdmin
             .from('leads').select('status').eq('shop_id', shopId)
@@ -94,10 +101,12 @@ export async function fetchDashboardStats(shopId: string, timeRange: string = 'm
             .from('property_units').select('status').eq('shop_id', shopId)
             .eq('category', 'residential').order('id').range(from, to)),
     ]);
+    if (undatedRes.error) throw new Error(undatedRes.error.message);
     if (customersRes.error) throw new Error(customersRes.error.message);
 
     // Гэрээний нийт үнэ нь кассад бодитоор орсон мөнгө биш.
     const totalContractValue = contracts.reduce((sum, c) => sum + (Number(c.total_price) || 0), 0);
+    const undatedContracts = undatedRes.count || 0;
     const leadsByStatus = {
         new: leadsAll.filter(l => l.status === 'new').length,
         contacted: leadsAll.filter(l => l.status === 'contacted').length,
@@ -115,7 +124,12 @@ export async function fetchDashboardStats(shopId: string, timeRange: string = 'm
     }
     return {
         timeRange, totalContracts: contracts.length, totalContractValue,
-        contractValueBasis: 'Гэрээний нийт үнийн нийлбэр (MNT); бодитоор хүлээн авсан мөнгөн орлого биш.',
+        contractValueBasis: 'Гэрээний нийт үнийн нийлбэр (MNT, цуцалсан гэрээ ороогүй, гэрээний огноогоор); бодитоор хүлээн авсан мөнгөн орлого биш.',
+        ...(undatedContracts ? {
+            undatedContracts,
+            contractsNote: `${undatedContractsHint(undatedContracts)} Гэрээний тоог «${periodContractCount(contracts.length, undatedContracts)}», `
+                + `дүнг «${periodContractAmount(totalContractValue, contracts.length, undatedContracts, formatMNT)}» гэж хэл — 0 гэж бүү хэл.`,
+        } : {}),
         totalCustomers: customersRes.count || 0, totalLeads: leadsAll.length, leadsByStatus,
         totalProperties: units.length,
         inventory: {
@@ -421,12 +435,17 @@ export async function fetchCustomerInsights(shopId: string, args: any, scope: Sa
             .order('created_at', { ascending: false }), scope);
 
         // Contracts are denormalized — join by phone (no FK).
-        const { data: contracts } = customer.phone ? await supabaseAdmin.from('property_contracts')
-            .select('id, contract_number, contract_status, unit_label, block_name, total_price, paid_amount, balance, paid_percent, overdue_days, sales_manager, sales_channel, contract_date')
-            .eq('shop_id', shopId).eq('customer_phone', customer.phone)
-            .order('contract_date', { ascending: false }) : { data: [] };
+        const contractsRes = customer.phone ? await supabaseAdmin.from('property_contracts')
+            .select('id, contract_number, contract_status, unit_label, block_name, total_price, paid_amount, balance, paid_percent, overdue_amount, overdue_as_of, overdue_days, sales_manager, sales_channel, order_date, contract_date')
+            .eq('shop_id', shopId).eq('customer_phone', customer.phone).is('deleted_at', null)
+            .order('contract_date', { ascending: false }) : { data: [], error: null };
+        if (contractsRes.error) logger.warn('[AI get_customer_insights] contracts read failed', { error: contractsRes.error });
 
-        return { customer, leads: leads || [], contracts: contracts || [] };
+        return {
+            customer, leads: leads || [], contracts: contractsRes.data || [],
+            // Уншилтын алдааг «гэрээгүй» гэж харуулахгүй.
+            ...(contractsRes.error ? { contracts_error: 'Гэрээ уншигдсангүй. Гэрээгүй гэж бүү дүгнэ.' } : {}),
+        };
     }
 
     // ---- Customer list ----
@@ -448,10 +467,17 @@ export async function fetchCustomerInsights(shopId: string, args: any, scope: Sa
 // PROPERTY CONTRACTS
 // ============================================
 
-const CONTRACT_LIST_FIELDS = 'id, contract_number, contract_status, unit_label, block_name, floor, model, customer_name, customer_phone, total_price, paid_amount, balance, paid_percent, overdue_days, sales_manager, sales_channel, contract_date';
-const CONTRACT_DETAIL_FIELDS = `${CONTRACT_LIST_FIELDS}, customer_first_name, customer_last_name, customer_registration, customer_mobile, product_type, unit_number, unit_type, rooms, contracted_area, price_per_sqm, first_price, payment_condition, prepayment_condition, prepayment_percent, prepayment_due, prepayment_paid, prepayment_paid_cash, prepayment_paid_barter, balance_payment_method, bank_status, barter_status, barter_type, order_date, commissioning_date, hubspot_contact_id, created_at, updated_at`;
+// HUB загварын талбарууд: order_date = «Захиалга өгсөн огноо», payment_condition = «Захиалгын нөхцөл»,
+// overdue_amount = «Төлбөр хоцролт» (overdue_as_of-ны файлын байдлаар), customer_first_name/last_name = «Нэр»/«Овог».
+const CONTRACT_LIST_FIELDS = 'id, contract_number, contract_status, product_type, unit_label, block_name, floor, model, customer_name, customer_first_name, customer_last_name, customer_phone, total_price, prepayment_due, paid_amount, balance, paid_percent, overdue_amount, overdue_as_of, overdue_days, payment_condition, sales_manager, sales_channel, order_date, contract_date';
+const CONTRACT_DETAIL_FIELDS = `${CONTRACT_LIST_FIELDS}, customer_registration, customer_mobile, unit_number, legacy_unit_number, unit_type, rooms, contracted_area, price_per_sqm, first_price, prepayment_condition, prepayment_percent, prepayment_paid, prepayment_paid_cash, prepayment_paid_barter, balance_payment_method, bank_status, barter_status, barter_type, commissioning_date, hubspot_contact_id, notes, created_at, updated_at`;
+const CONTRACT_LIST_STATUSES = new Set(['active', 'closed', 'cancelled', 'transferred']);
+const PAID_UNKNOWN_NOTE = 'Төлсөн дүн, үлдэгдэл тодорхойгүй (ERP-ийн төлбөрийн экспорт ороогүй) — 0 гэж тооцохгүй.';
+
+const fmtMoney = (value: unknown) => value != null ? formatMNT(value as number) : '-';
 
 export async function fetchContracts(shopId: string, args: any) {
+    if (args.status && !CONTRACT_LIST_STATUSES.has(args.status)) return { error: 'status нь active, closed, cancelled эсвэл transferred байна' };
     const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
     // Шилжүүлсэн гэрээ өмнөх эзэмшигчийн нэр/утас/регистрээр ч олдоно.
     let previousHolderIds: string[] = [];
@@ -472,7 +498,8 @@ export async function fetchContracts(shopId: string, args: any) {
         if (args.sales_channel) query = query.eq('sales_channel', args.sales_channel);
         if (args.block_name) query = query.ilike('block_name', `%${args.block_name}%`);
         if (args.contract_number) query = query.ilike('contract_number', `%${args.contract_number}%`);
-        if (args.overdue_only) query = query.gt('overdue_days', 0);
+        // Жагсаалтын «Хоцролттой» шүүлттэй ижил: HUB-ийн Төлбөр хоцролт ₮ эсвэл хуваарийн хоцролтын хоног.
+        if (args.overdue_only) query = query.or('overdue_amount.gt.0,overdue_days.gt.0');
         if (args.has_balance) query = query.gt('balance', 0);
         return query;
     });
@@ -481,9 +508,11 @@ export async function fetchContracts(shopId: string, args: any) {
     return {
         contracts: (data || []).map((c: any) => ({
             ...c,
-            total_price_fmt: c.total_price != null ? formatMNT(c.total_price) : '-',
-            paid_amount_fmt: c.paid_amount != null ? formatMNT(c.paid_amount) : '-',
-            balance_fmt: c.balance != null ? formatMNT(c.balance) : '-',
+            total_price_fmt: fmtMoney(c.total_price),
+            prepayment_due_fmt: fmtMoney(c.prepayment_due),
+            paid_amount_fmt: fmtMoney(c.paid_amount),
+            balance_fmt: fmtMoney(c.balance),
+            overdue_amount_fmt: fmtMoney(c.overdue_amount),
         })),
         count: data?.length || 0,
     };
@@ -527,12 +556,15 @@ export async function fetchContractDetails(shopId: string, args: any) {
     return {
         contract: {
             ...contract,
-            total_price_fmt: contract.total_price != null ? formatMNT(contract.total_price) : '-',
-            paid_amount_fmt: contract.paid_amount != null ? formatMNT(contract.paid_amount) : '-',
-            balance_fmt: contract.balance != null ? formatMNT(contract.balance) : '-',
-            first_price_fmt: contract.first_price != null ? formatMNT(contract.first_price) : '-',
-            prepayment_due_fmt: contract.prepayment_due != null ? formatMNT(contract.prepayment_due) : '-',
-            prepayment_paid_fmt: contract.prepayment_paid != null ? formatMNT(contract.prepayment_paid) : '-',
+            total_price_fmt: fmtMoney(contract.total_price),
+            paid_amount_fmt: fmtMoney(contract.paid_amount),
+            balance_fmt: fmtMoney(contract.balance),
+            first_price_fmt: fmtMoney(contract.first_price),
+            prepayment_due_fmt: fmtMoney(contract.prepayment_due),
+            prepayment_paid_fmt: fmtMoney(contract.prepayment_paid),
+            overdue_amount_fmt: fmtMoney(contract.overdue_amount),
+            ...(contract.overdue_amount != null && contract.overdue_as_of ? { overdue_note: `Төлбөр хоцролт ${contract.overdue_as_of}-ны HUB файлын байдлаар.` } : {}),
+            ...(contract.paid_amount == null ? { paid_note: PAID_UNKNOWN_NOTE } : {}),
         },
         ...(matchedPreviousHolder ? { note: 'Утас нь гэрээний өмнөх эзэмшигчийнх. Гэрээ одоо өөр хүний нэр дээр байна.' } : {}),
         ...('error' in history ? { transfers_error: history.error } : {
@@ -544,66 +576,92 @@ export async function fetchContractDetails(shopId: string, args: any) {
     };
 }
 
+type ContractsSummaryRow = ContractSummaryRow & { sales_manager: string | null; sales_channel: string | null; block_name: string | null };
+
+/** Мэдэгдэж буй төлсөн дүн/үлдэгдэл: бүгд тодорхойгүй бол null («—»), зарим нь бол доод хэмжээ («…₮+»). */
+function knownPaidMoney(sum: number, unknown: number, live: number): string | null {
+    if (unknown === 0) return formatMNT(sum);
+    if (unknown >= live) return null;
+    return `${formatMNT(sum)}+`;
+}
+
 export async function fetchContractsSummary(shopId: string, args: any) {
-    // Бүх гэрээг татна — энгийн .select() нь ~1000 мөрөнд тасардаг тул AI
-    // нэгтгэсэн тоо (нийт борлуулалт/үлдэгдэл)-г бодитоос бага мэдээлж байсан.
-    let data: Array<{
-        contract_status: string | null; total_price: number | null; paid_amount: number | null;
-        balance: number | null; overdue_days: number | null; sales_manager: string | null;
-        sales_channel: string | null; block_name: string | null; product_type: string | null;
-    }>;
+    // Бүх гэрээг татна — энгийн .select() нь ~1000 мөрөнд тасардаг. Цуцалсан гэрээг тоонд оруулахын тулд
+    // уншина; мөнгөн дүн, задаргаанаас summarizeContracts (жагсаалтын статистиктай нэг дүрэм) хасна.
+    let rows: ContractsSummaryRow[];
+    let latestImportDate: string | null;
     try {
-        data = await fetchAllRows((from, to) => {
-            let query = supabaseAdmin.from('property_contracts')
-                .select('contract_status, total_price, paid_amount, balance, overdue_days, sales_manager, sales_channel, block_name, product_type')
-                .eq('shop_id', shopId)
-                .is('deleted_at', null); // устгасан гэрээ нийт дүнд орохгүй (dashboards-тай нэг тоо)
-            if (args.block_name) query = query.ilike('block_name', `%${args.block_name}%`);
-            if (args.sales_channel) query = query.eq('sales_channel', args.sales_channel);
-            return query.range(from, to);
-        });
+        [rows, latestImportDate] = await Promise.all([
+            fetchAllRows<ContractsSummaryRow>((from, to) => {
+                let query = supabaseAdmin.from('property_contracts')
+                    .select('contract_status, total_price, prepayment_due, paid_amount, balance, contracted_area, overdue_amount, overdue_as_of, overdue_days, sales_manager, sales_channel, block_name')
+                    .eq('shop_id', shopId)
+                    .is('deleted_at', null); // устгасан гэрээ нийт дүнд орохгүй (dashboards-тай нэг тоо)
+                if (args.block_name) query = query.ilike('block_name', `%${args.block_name}%`);
+                if (args.sales_channel) query = query.eq('sales_channel', args.sales_channel);
+                return query.order('id').range(from, to);
+            }),
+            loadLatestContractListImport(supabaseAdmin, shopId).then(latest => latest?.report_date ?? null),
+        ]);
     } catch (e: any) {
         return { error: `Алдаа: ${e?.message || e}` };
     }
-    if (!data || data.length === 0) return { error: 'Гэрээ олдсонгүй' };
+    if (rows.length === 0) return { error: 'Гэрээ олдсонгүй' };
 
-    const totals = data.reduce((acc, c) => {
-        acc.total_price += Number(c.total_price) || 0;
-        acc.paid_amount += Number(c.paid_amount) || 0;
-        acc.balance += Number(c.balance) || 0;
-        if ((Number(c.overdue_days) || 0) > 0) acc.overdue_count++;
-        if (c.contract_status === 'active') acc.active++;
-        if (c.contract_status === 'closed') acc.closed++;
-        return acc;
-    }, { total_price: 0, paid_amount: 0, balance: 0, overdue_count: 0, active: 0, closed: 0 });
-
-    const byManager: Record<string, { count: number; total: number; balance: number }> = {};
+    const summary = summarizeContracts(rows, { latestImportDate });
+    const live = summary.total - summary.cancelled;
+    const liveRows = rows.filter(c => c.contract_status !== 'cancelled');
+    const byManager = new Map<string, ContractsSummaryRow[]>();
     const byChannel: Record<string, number> = {};
     const byBlock: Record<string, number> = {};
-    for (const c of data) {
+    for (const c of liveRows) {
         if (c.sales_manager) {
-            if (!byManager[c.sales_manager]) byManager[c.sales_manager] = { count: 0, total: 0, balance: 0 };
-            byManager[c.sales_manager].count++;
-            byManager[c.sales_manager].total += Number(c.total_price) || 0;
-            byManager[c.sales_manager].balance += Number(c.balance) || 0;
+            const managerRows = byManager.get(c.sales_manager);
+            if (managerRows) managerRows.push(c);
+            else byManager.set(c.sales_manager, [c]);
         }
         if (c.sales_channel) byChannel[c.sales_channel] = (byChannel[c.sales_channel] || 0) + 1;
         if (c.block_name) byBlock[c.block_name] = (byBlock[c.block_name] || 0) + 1;
     }
+    const managerSummaries = [...byManager].map(([name, managerRows]) => ({ name, summary: summarizeContracts(managerRows) }));
 
     return {
-        count: data.length,
-        active: totals.active,
-        closed: totals.closed,
-        overdue_count: totals.overdue_count,
-        total_contract_value: formatMNT(totals.total_price),
-        total_collected: formatMNT(totals.paid_amount),
-        total_outstanding: formatMNT(totals.balance),
-        collection_rate_pct: totals.total_price > 0 ? Math.round((totals.paid_amount / totals.total_price) * 1000) / 10 : 0,
-        topManagers: Object.entries(byManager)
-            .sort((a, b) => b[1].total - a[1].total)
+        count: summary.total,
+        live_count: live,
+        active: summary.active,
+        closed: summary.closed,
+        cancelled: summary.cancelled,
+        transferred: summary.transferred,
+        basis: 'count-д цуцалсан гэрээ орно; мөнгөн дүн, задаргаа, менежерийн дүнд цуцалсан гэрээ ОРООГҮЙ. Гэрээний дүн, урьдчилгаа нь орсон мөнгө биш.',
+        total_contract_value: formatMNT(summary.total_sales),
+        prepayment_due: formatMNT(summary.prepayment_due),
+        prepayment_due_basis: 'Гэрээний нөхцлөөр төлөх урьдчилгааны нийлбэр — орсон мөнгө биш.',
+        total_collected: knownPaidMoney(summary.total_paid, summary.unknown_paid, live),
+        total_outstanding: knownPaidMoney(summary.total_balance, summary.unknown_paid, live),
+        unknown_paid: summary.unknown_paid,
+        ...(summary.unknown_paid > 0 ? {
+            paid_note: `${summary.unknown_paid} гэрээний төлсөн дүн тодорхойгүй (ERP-ийн төлбөрийн экспорт ороогүй) — 0 гэж тооцохгүй. `
+                + (summary.unknown_paid >= live ? 'Цуглуулсан дүн, хувь мэдэгдэхгүй.' : '«+» нь зөвхөн мэдэгдэж буй гэрээний нийлбэр (доод хэмжээ).'),
+        } : {}),
+        // Төлсөн дүн тодорхойгүй гэрээ байвал хувь тооцохгүй (0% биш).
+        collection_rate_pct: summary.unknown_paid === 0 && summary.total_sales > 0 ? Math.round((summary.total_paid / summary.total_sales) * 1000) / 10 : null,
+        overdue_amount: summary.overdue_amount === null ? null : formatMNT(summary.overdue_amount),
+        overdue_as_of: summary.overdue_as_of,
+        overdue_amount_contracts: summary.overdue_count,
+        overdue_stale_contracts: summary.overdue_stale,
+        overdue_days_contracts: summary.overdue_days_count,
+        overdue_note: summary.overdue_amount === null
+            ? 'Төлбөр хоцролтын дүн (HUB файл) бүртгэгдээгүй. overdue_days_contracts нь төлбөрийн хуваарийн хугацаа хэтэрсэн гэрээ.'
+            : `Төлбөр хоцролт ₮ ${summary.overdue_as_of ? `${summary.overdue_as_of}-ны HUB файлын байдлаар` : 'хадгалсан утгаар'}`
+                + `${summary.overdue_stale ? `; ${summary.overdue_stale} гэрээний утга өмнөх файлынх тул нийлбэрт ороогүй` : ''}. overdue_days_contracts нь төлбөрийн хуваарийн хугацаа хэтэрсэн гэрээ.`,
+        topManagers: managerSummaries
+            .sort((a, b) => b.summary.total_sales - a.summary.total_sales)
             .slice(0, 5)
-            .map(([name, v]) => ({ name, contracts: v.count, total: formatMNT(v.total), balance: formatMNT(v.balance) })),
+            .map(({ name, summary: m }) => ({
+                name, contracts: m.total, total: formatMNT(m.total_sales),
+                balance: knownPaidMoney(m.total_balance, m.unknown_paid, m.total),
+                ...(m.unknown_paid ? { unknown_paid: m.unknown_paid } : {}),
+            })),
         byChannel,
         byBlock,
     };
