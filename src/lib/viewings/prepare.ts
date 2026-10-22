@@ -28,7 +28,9 @@ export async function prepareViewingInterests(db: SupabaseClient, shopId: string
                 .eq('id', selection.unit_id).eq('shop_id', shopId).eq('project_id', projectId).maybeSingle();
             if (unit.error) throw new PricingSelectionError('Тоотын мэдээллийг шалгаж чадсангүй', 503);
             if (!unit.data) throw new PricingSelectionError('Тоот олдсонгүй', 404);
-            unitLabel = unit.data.unit_number || unit.data.code || null;
+            // Elysium-ийн орон сууцны unit_number нь '0' (ERP-д тоотгүй) — тэр үед кодыг (Б1-53) харуулна.
+            const number = unit.data.unit_number?.trim();
+            unitLabel = (number && number !== '0' ? number : null) || unit.data.code || null;
         }
         result.push({ ...selection, ...(selection.unit_id ? { unit_label: unitLabel } : {}), quote: quote.available ? quote.quote : null, quote_unavailable_reason: quote.available ? null : quote.reason });
     }
