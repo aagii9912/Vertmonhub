@@ -195,6 +195,7 @@ export async function GET(request: NextRequest) {
                 unitsByType: countByUnitType(liveContracts),
                 trendActual: Array.from({ length: 12 }, (_, index) => monthCells[index]?.actual ?? null),
                 trendTarget: Array.from({ length: 12 }, (_, index) => monthCells[index]?.plan ?? null),
+                trendLowerBound: Array.from({ length: 12 }, (_, index) => !!monthCells[index]?.lowerBound),
                 yearActual: ytd?.actual ?? null,
                 yearTarget: ytd?.yearPlan ?? null,
                 undated: plan?.undated.count ?? 0,

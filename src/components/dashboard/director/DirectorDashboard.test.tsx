@@ -17,7 +17,7 @@ function payload(sales: Partial<DirectorPayload['sales']>, missing: string[] = [
         year: 2026, month: 10, missing, leaderboard: [], funnel: { rows: [], totals: {} },
         sales: {
             actual: null, target: null, attainmentPct: null, lowerBound: false, momDeltaPct: null, units: 0, unitsByType: [],
-            trendActual: Array(12).fill(null), trendTarget: Array(12).fill(null), yearActual: null, yearTarget: null, undated: 0, ...sales,
+            trendActual: Array(12).fill(null), trendTarget: Array(12).fill(null), trendLowerBound: Array(12).fill(false), yearActual: null, yearTarget: null, undated: 0, ...sales,
         },
     } as unknown as DirectorPayload;
 }
@@ -34,6 +34,21 @@ describe('director sales vs plan card', () => {
         expect(screen.getByText('43%+')).toBeInTheDocument();
         expect(screen.getByText(/Огноогүй 10 гэрээ сарын дүнд ороогүй/)).toBeInTheDocument();
         expect(screen.queryByText('0%')).not.toBeInTheDocument();
+    });
+
+    it('draws an unknown month as «—» and the current lower-bound month with «+», never as a zero bar', () => {
+        const trendActual: Array<number | null> = Array(12).fill(null);
+        const trendLowerBound: boolean[] = Array(12).fill(false);
+        trendActual[6] = 0; // 7-р сар: огноотой гэрээгүй, огноогүй гэрээ ч алга → 0, «—» биш
+        trendLowerBound[7] = true; // 8-р сар: огноогүй гэрээтэй, дүнгүй → тодорхойгүй
+        trendActual[9] = 2_281_995_000; trendLowerBound[9] = true;
+        state.data = payload({ actual: 2_281_995_000, target: 5_352_996_000, attainmentPct: 43, lowerBound: true, trendActual, trendLowerBound,
+            trendTarget: Array(12).fill(5_352_996_000) });
+        const { container } = render(<DirectorDashboard />);
+        const chart = container.querySelector('svg[aria-label="12 сарын борлуулалт ба зорилт"]')!;
+        expect(chart.querySelector('[data-unknown-month="8"]')?.textContent).toBe('—');
+        expect(chart.querySelectorAll('[data-unknown-month]')).toHaveLength(1);
+        expect(screen.getByText('2.3+')).toBeInTheDocument();
     });
 
     it('says the plan could not be read instead of offering to set a missing target', () => {

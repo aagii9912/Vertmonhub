@@ -63,6 +63,7 @@ describe('director sales vs plan', () => {
         expect(missing).toEqual([]);
         expect(sales).toMatchObject({ actual: 600, target: 1_000, attainmentPct: 60, lowerBound: false, momDeltaPct: 200, units: 1, undated: 0, yearActual: 800, yearTarget: null });
         expect(sales.trendActual.slice(7, 12)).toEqual([200, 600, 0, null, null]);
+        expect(sales.trendLowerBound).toEqual(Array(12).fill(false));
         expect(sales.trendTarget[8]).toBe(1_000);
         expect(sales.trendTarget[0]).toBeNull();
         expect(leaderboard.map((row: { name: string }) => row.name)).toEqual(['Номин']);
@@ -73,6 +74,8 @@ describe('director sales vs plan', () => {
         let { sales } = await (await get()).json();
         expect(sales).toMatchObject({ actual: 300, attainmentPct: 30, lowerBound: true, undated: 1, momDeltaPct: null });
         expect(sales.trendActual[7]).toBeNull();
+        expect(sales.trendLowerBound[7]).toBe(true);
+        expect(sales.trendLowerBound.slice(10)).toEqual([false, false]);
 
         state.plan = plan([contract('u', { contract_date: null })]);
         ({ sales } = await (await get()).json());

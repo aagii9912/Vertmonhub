@@ -283,6 +283,8 @@ export interface DirectorPayload {
         /** [12] тухайн жилийн сар бүрийн бодит / зорилт (₮); тодорхойгүй сар null */
         trendActual: (number | null)[];
         trendTarget: (number | null)[];
+        /** [12] true = огноогүй гэрээ байгаа тул тухайн сарын бодит дүн доод хязгаар («+»), null бол тодорхойгүй («—»). */
+        trendLowerBound: boolean[];
         /** Он эхнээс (энэ сар хүртэл) гүйцэтгэл ба бүтэн жилийн төлөвлөгөө. */
         yearActual: number | null;
         yearTarget: number | null;
