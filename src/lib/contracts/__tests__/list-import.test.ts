@@ -214,6 +214,39 @@ describe('planContractListImport', () => {
         expect(again.ops).toEqual([]);
     });
 
+    it('a dated contract cancelled and its unit resold between imports: the cancelled row cancels it, the live row is a new contract', () => {
+        // Өмнөх импортоор огноотой болсон гэрээ; дараагийн файлд тэр огноогоор «Цуцлагдсан» + шинэ худалдаа.
+        const contracts = [contract(1, { order_date: '2026-07-29', contract_date: '2026-07-29', payment_condition: 'Энгийн', overdue_amount: 0, overdue_as_of: '2026-09-30',
+            customer_first_name: 'Тэмүүлэн', customer_last_name: 'Болд' })];
+        const rows = [
+            hub({ row: 2, orderDate: '2026-10-15', firstName: 'Сараа', lastName: 'Дорж', total: 460000000, pricePerSqm: null }),
+            hub({ row: 3, orderDate: '2026-07-29', status: 'cancelled' }),
+        ];
+        const result = plan({ rows, contracts, latestImportDate: '2026-09-30' });
+        expect(result.blocking).toEqual([]);
+        expect(result.info).toEqual([]);
+        expect(result.counts).toMatchObject({ insert: 1, insertCancelled: 0, update: 1, review: 1 });
+        const cancel = updateOf(result.ops, id(1))!;
+        expect(cancel.set).toMatchObject({ contract_status: 'cancelled' });
+        expect(cancel.set).not.toHaveProperty('order_date');
+        expect(cancel.set).not.toHaveProperty('total_price');
+        expect(inserts(result.ops).map(op => op.fields)).toEqual([expect.objectContaining({ contract_status: 'active', order_date: '2026-10-15',
+            total_price: 460000000, customer_name: 'Сараа.Дорж' })]);
+        expect(plan({ rows, contracts: applyOps(contracts, result.ops), latestImportDate: '2026-10-22' }).ops).toEqual([]);
+
+        // Төлбөртэй бол цуцлахгүй (батлахыг хаана) — гэхдээ шинэ худалдааг хуучин гэрээнд оноохгүй.
+        const paid = plan({ rows, contracts, paymentContractIds: new Set([id(1)]) });
+        expect(paid.blocking.map(item => item.code)).toEqual(['has_payments']);
+        expect(updateOf(paid.ops, id(1))?.set).not.toHaveProperty('order_date');
+
+        // Өөр огноотой хуучин цуцлалт (одоогийн худалдаа файлд алга): огноотой амьд гэрээг цуцлахгүй, цуцлалтыг түүх болгоно.
+        const unrelated = plan({ rows: [hub({ row: 3, orderDate: '2026-05-01', status: 'cancelled' })], contracts });
+        expect(updateOf(unrelated.ops, id(1))).toBeUndefined();
+        expect(inserts(unrelated.ops).map(op => [op.fields.contract_status, op.fields.order_date])).toEqual([['cancelled', '2026-05-01']]);
+        expect(unrelated.missing.map(item => item.contractId)).toEqual([id(1)]);
+        expect(unrelated.counts).toMatchObject({ review: 0, insertCancelled: 1 });
+    });
+
     it('inserts new contracts with unit columns, NULL paid never sent, and lists unit status mismatches', () => {
         const result = plan({ rows: [
             hub({ block: 'Б2', unitNumber: '231', floor: '22', model: 'A' }),

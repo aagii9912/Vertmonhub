@@ -11,7 +11,8 @@
  *  • Байрны төлөв (property_units) өөрчлөгдөхгүй — зөрүүг жагсаана. Файлд байхгүй гэрээ хэвээр, жагсаана.
  *
  * Тулгалт байраар (`${product_type}|${unit_label}`): идэвхтэй/хаасан мөр ↔ амьд гэрээ (ижил огноо эхэлж,
- * дараа нь шинэ ↔ шинэ); цуцалсан мөр ↔ цуцалсан гэрээ огноогоор; байранд амьд мөр байхгүй бол үлдсэн
+ * дараа нь шинэ ↔ шинэ); цуцалсан мөр ↔ цуцалсан гэрээ огноогоор; цуцалсан мөртэй ижил огноотой амьд гэрээ
+ * цуцлагдана (шалгах; байр дахин зарагдсан бол шинэ мөр шинэ гэрээ болно); байранд амьд мөр байхгүй бол үлдсэн
  * цуцалсан мөр амьд гэрээг цуцална (шалгах). Нэг байранд хоёр амьд гэрээ үүсгэхгүй.
  */
 import { CONTRACT_LIST_COLUMNS, HUB_STATUS_LABEL, HUB_TYPE_LABEL, dbFloor, hubContractStatus, hubProductType } from '@/lib/contracts/list-format';
@@ -559,18 +560,31 @@ export function planContractListImport(input: ContractListPlanInput): ContractLi
             .sort((a, b) => byDateDesc(effectiveDate(a), effectiveDate(b)) || a.id.localeCompare(b.id));
         const free = (list: ContractListContract[]) => list.filter(contract => !pairedIds.has(contract.id));
 
-        // Амьд мөр ↔ амьд гэрээ: ижил огноо, дараа нь шинэ ↔ шинэ.
+        // Ижил огноогоор эхэлж: амьд мөр ↔ амьд гэрээ, цуцалсан мөр ↔ цуцалсан гэрээ.
         const liveLeft: HubRow[] = [];
         for (const row of liveRows) {
             const match = free(liveDb).find(contract => effectiveDate(contract) === row.orderDate);
             if (match) take(row, match); else liveLeft.push(row);
         }
+        const cancelledLeft: HubRow[] = [];
+        for (const row of cancelledRows) {
+            const match = free(cancelledDb).find(contract => effectiveDate(contract) === row.orderDate);
+            if (match) take(row, match); else cancelledLeft.push(row);
+        }
+        // Цуцалсан мөртэй ижил огноотой амьд гэрээ = тэр гэрээ цуцлагдаж байр дахин зарагдсан: цуцална (шалгах),
+        // шинэ мөрийг түүнд оноохгүй (оновол хуучин эзэмшигчийн гэрээ шинэ худалдааны огноо, дүнг авна).
+        const cancelledUnmatched: HubRow[] = [];
+        for (const row of cancelledLeft) {
+            const match = free(liveDb).find(contract => contract.contract_status !== 'transferred' && effectiveDate(contract) === row.orderDate);
+            if (match) take(row, match); else cancelledUnmatched.push(row);
+        }
+        // Үлдсэн амьд мөр ↔ үлдсэн амьд гэрээ: шинэ ↔ шинэ.
+        let liveOnUnit = liveRows.length > liveLeft.length;
         const liveExtra: HubRow[] = [];
         for (const row of liveLeft) {
             const next = free(liveDb)[0];
-            if (next) take(row, next); else liveExtra.push(row);
+            if (next) { take(row, next); liveOnUnit = true; } else liveExtra.push(row);
         }
-        let liveOnUnit = pairs.length > 0;
         const insertRows: HubRow[] = [];
         for (const row of liveExtra) {
             if (liveOnUnit) {
@@ -584,21 +598,17 @@ export function planContractListImport(input: ContractListPlanInput): ContractLi
             liveOnUnit = true;
         }
 
-        // Цуцалсан мөр ↔ цуцалсан гэрээ огноогоор; огноогүй цуцалсан гэрээ дарааллаар.
-        const cancelledLeft: HubRow[] = [];
-        for (const row of cancelledRows) {
-            const match = free(cancelledDb).find(contract => effectiveDate(contract) === row.orderDate);
-            if (match) take(row, match); else cancelledLeft.push(row);
-        }
+        // Үлдсэн цуцалсан мөр ↔ огноогүй цуцалсан гэрээ дарааллаар.
         const cancelledExtra: HubRow[] = [];
-        for (const row of cancelledLeft) {
+        for (const row of cancelledUnmatched) {
             const undated = free(cancelledDb).find(contract => effectiveDate(contract) === null);
             if (undated) take(row, undated); else cancelledExtra.push(row);
         }
-        // Байранд амьд мөр алга: үлдсэн цуцалсан мөр амьд гэрээг цуцална (ERP «Тоот шилжсэн» гэрээг биш).
+        // Байранд амьд мөр алга: үлдсэн цуцалсан мөр огноогүй амьд гэрээг цуцална (ERP «Тоот шилжсэн» гэрээг биш).
+        // Өөр огноотой амьд гэрээ өөр худалдаа — цуцлахгүй, «Файлд байхгүй»-д үлдэнэ (ижил огноотойг дээр тулгасан).
         for (const row of cancelledExtra) {
-            const candidates = liveRows.length ? [] : free(liveDb).filter(contract => contract.contract_status !== 'transferred');
-            const target = candidates.find(contract => effectiveDate(contract) === row.orderDate) ?? candidates[0];
+            const target = liveRows.length ? undefined
+                : free(liveDb).find(contract => contract.contract_status !== 'transferred' && effectiveDate(contract) === null);
             if (target) take(row, target); else insertRows.push(row);
         }
 
