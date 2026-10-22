@@ -233,7 +233,8 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const ratio = (actual: number | null | undefined, target: number | null | undefined) => actual === null || actual === undefined || !target ? '—' : `${Math.round(actual / target * 100)}%`;
     const contractActual = month?.manual_contract_actual_amount ?? null;
     const cashActual = month?.manual_cashflow_actual_amount ?? null;
-    const undated = weekly?.sources.undatedContracts ?? 0;
+    // Төлөвлөгөөнд хамаарах огноогүй гэрээ л төлөвлөгөөтэй харьцуулсан дүнг бүрэн бус болгоно (Агуулах г.м. биш).
+    const undated = weekly?.sources.undatedPlanContracts ?? 0;
     // Удирдлагын баталгаажуулсан дүн байхгүй бол гэрээний бүртгэл — зөвхөн төлөвлөгөөнд хамаарах (Б1/Б2/Зогсоол) гэрээ;
     // огноогүй гэрээтэй бол бүрэн биш («N+» эсвэл «—»).
     const planCount = weekly ? weekly.month.planCount ?? weekly.month.count : 0;
@@ -316,10 +317,11 @@ function contractSlides(pres: PptxGenJS, report: WeeklySalesReport) {
 function monthSlide(pres: PptxGenJS, report: WeeklySalesReport) {
     const m = report.month;
     const undated = report.sources.undatedContracts;
+    const undatedPlan = report.sources.undatedPlanContracts;
     const total = periodContractAmount(m.total, m.count, undated, short);
     // Төлөвлөгөөтэй харьцуулах дүн — зөвхөн төлөвлөгөөнд хамаарах гэрээ (хувьтай нэг суурь).
-    const planned = periodContractAmount(m.planTotal ?? m.total, m.planCount ?? m.count, undated, short);
-    const subtitle = m.target ? `${planned} / төлөвлөгөө ${short(m.target)} · ${m.attainmentPct === null ? '—' : `${m.attainmentPct}%${undated ? '+' : ''}`}${m.outsidePlanCount ? ` · төлөвлөгөөгүй ${m.outsidePlanCount} гэрээ хассан` : ''}` : `${total} · сарын төлөвлөгөө тохируулаагүй`;
+    const planned = periodContractAmount(m.planTotal ?? m.total, m.planCount ?? m.count, undatedPlan, short);
+    const subtitle = m.target ? `${planned} / төлөвлөгөө ${short(m.target)} · ${m.attainmentPct === null ? '—' : `${m.attainmentPct}%${undatedPlan ? '+' : ''}`}${m.outsidePlanCount ? ` · төлөвлөгөөгүй ${m.outsidePlanCount} гэрээ хассан` : ''}` : `${total} · сарын төлөвлөгөө тохируулаагүй`;
     const slide = content(pres, 'Борлуулалт', `${Number(m.month.slice(5))}-р сарын гэрээ долоо хоногоор`, subtitle);
     if (!m.byWeek.length) {
         slide.addText(undated ? `Сарын гэрээний тоо тодорхойгүй. ${undatedContractsHint(undated)}` : 'Энэ сард гэрээ бүртгэгдээгүй.', { x: M, y: TOP, w: CW, h: 0.9, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, valign: 'top', isTextBox: true });

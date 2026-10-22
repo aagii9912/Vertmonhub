@@ -87,6 +87,26 @@ describe('buildWeeklySales', () => {
         expect(totalPlan.month).toMatchObject({ planCount: 2, attainmentPct: 50 });
     });
 
+    it('lets only in-plan undated contracts make the plan figures a lower bound', () => {
+        const info = { date: '2026-09-22', source: 'ERP' };
+        // ERP: огноотой Б1 + огноогүй Агуулах → хувь яг (50%), «+» биш.
+        const erp = buildWeeklySales({ range, sales: { info, rows: [sale('A|1'), sale('S|1', { kind: 'industry', orderDate: null })] },
+            previousSales: null, crmContracts: null, inventory: null, monthTarget: 200 });
+        expect(erp.sources).toMatchObject({ undatedContracts: 1, undatedPlanContracts: 0 });
+        expect(erp.month).toMatchObject({ planTotal: 100, attainmentPct: 50 });
+
+        // CRM: огноогүй Агуулах л байвал төлөвлөгөөнд хамаарах гэрээгүй сар 0%, «—» биш; огноогүй Б1 байвал тодорхойгүй.
+        const crm = (undated: Array<{ kind: 'residential' | 'industry'; block: string | null }>) => buildWeeklySales({
+            range, sales: null, previousSales: null, crmContracts: [], crmUndated: undated.length, crmUndatedLines: undated, inventory: null, monthTarget: 200 });
+        expect(crm([{ kind: 'industry', block: 'Б1' }]).month).toMatchObject({ planCount: 0, attainmentPct: 0 });
+        expect(crm([{ kind: 'industry', block: 'Б1' }]).sources).toMatchObject({ undatedContracts: 1, undatedPlanContracts: 0 });
+        expect(crm([{ kind: 'residential', block: 'Б1' }]).month).toMatchObject({ attainmentPct: null });
+        // Задалсан төлөвлөгөөтэй сард бусад блокийн орон сууц хамаарахгүй.
+        const other = buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [], crmUndated: 1,
+            crmUndatedLines: [{ kind: 'residential', block: '202' }], inventory: null, monthTarget: 200, monthBlockPlanned: true });
+        expect(other.sources.undatedPlanContracts).toBe(0);
+    });
+
     it('computes cash from paid differences between two snapshots and attributes it to managers', () => {
         const report = buildWeeklySales({
             range,

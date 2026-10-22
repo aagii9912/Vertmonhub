@@ -36,11 +36,13 @@ export function WeeklySalesDetails({ query, canOpenErp }: { query: ReturnType<ty
     const maps = report.inventory?.floorMaps ?? [];
     const activeMap = maps.find(map => map.block === block) ?? maps[0];
     const undated = report.sources.undatedContracts;
+    // Төлөвлөгөөтэй харьцуулах дүн, хувь — зөвхөн төлөвлөгөөнд хамаарах огноогүй гэрээ «+» болгоно.
+    const undatedPlan = report.sources.undatedPlanContracts;
     const monthTotal = periodContractAmount(report.month.total, report.month.count, undated, formatMNTShort);
-    const monthPct = report.month.attainmentPct === null ? '—' : `${report.month.attainmentPct}%${undated ? '+' : ''}`;
+    const monthPct = report.month.attainmentPct === null ? '—' : `${report.month.attainmentPct}%${undatedPlan ? '+' : ''}`;
     // Хувь нь зөвхөн төлөвлөгөөнд хамаарах гэрээгээр — хажууд нь тэр дүнг (Агуулах г.м.-ийг хассан) харуулна.
     const outsidePlan = report.month.outsidePlanCount ?? 0;
-    const plannedTotal = outsidePlan ? periodContractAmount(report.month.planTotal, report.month.planCount, undated, formatMNTShort) : monthTotal;
+    const plannedTotal = periodContractAmount(report.month.planTotal, report.month.planCount, undatedPlan, formatMNTShort);
 
     return (
         <div className="space-y-6">

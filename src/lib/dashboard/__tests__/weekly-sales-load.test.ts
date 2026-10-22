@@ -51,7 +51,7 @@ describe('loadWeeklySales', () => {
             team_sales_targets: [{ shop_id: 's', year: 2026, month: 9, target_amount: '200' }],
         });
         const report = await loadWeeklySales(db, { shopId: 's', meetingDate: '2026-09-23', canSeeCustomers: false });
-        expect(report.sources).toEqual({ sales: { date: '2026-09-22', source: 'ERP гэрээ' }, previousSales: { date: '2026-09-15', source: 'ERP гэрээ' }, contracts: 'erp', undatedContracts: 0 });
+        expect(report.sources).toEqual({ sales: { date: '2026-09-22', source: 'ERP гэрээ' }, previousSales: { date: '2026-09-15', source: 'ERP гэрээ' }, contracts: 'erp', undatedContracts: 0, undatedPlanContracts: 0 });
         expect(report.cash).toMatchObject({ delta: 30 });
         expect(report.week.lines).toEqual([expect.objectContaining({ contractNumber: 'EL-1', customer: null })]);
         expect(report.month).toMatchObject({ total: 100, target: 200, attainmentPct: 50 });
@@ -90,19 +90,21 @@ describe('loadWeeklySales', () => {
         const db = fakeDb({
             erp_imports: [],
             property_contracts: [
-                { id: 'e1', shop_id: 's', contract_date: null, total_price: null, contract_status: 'active' },
-                { id: 'e2', shop_id: 's', contract_date: null, total_price: null, contract_status: null },
-                { id: 'e3', shop_id: 's', contract_date: null, total_price: null, contract_status: 'cancelled' },
-                { id: 'e4', shop_id: 's', contract_date: null, deleted_at: '2026-09-01', contract_status: 'active' },
+                { id: 'e1', shop_id: 's', contract_date: null, total_price: null, contract_status: 'active', product_type: 'residential', block_name: 'Б1' },
+                { id: 'e2', shop_id: 's', contract_date: null, total_price: null, contract_status: null, product_type: 'parking', block_name: 'Б1' },
+                { id: 'e3', shop_id: 's', contract_date: null, total_price: null, contract_status: 'cancelled', product_type: 'residential', block_name: 'Б1' },
+                { id: 'e4', shop_id: 's', contract_date: null, deleted_at: '2026-09-01', contract_status: 'active', product_type: 'residential', block_name: 'Б1' },
+                { id: 'e5', shop_id: 's', contract_date: null, total_price: null, contract_status: 'active', product_type: 'industry', block_name: 'Б1' },
             ],
             team_sales_targets: [{ shop_id: 's', year: 2026, month: 9, target_amount: '5350000000' }],
         });
         const report = await loadWeeklySales(db, { shopId: 's', meetingDate: '2026-09-23', canSeeCustomers: true });
-        expect(report.sources).toMatchObject({ contracts: 'crm', undatedContracts: 2 });
+        // Агуулах (e5) огноогүй ч төлөвлөгөөнд хамаарахгүй — хувийг «+» болгох нь зөвхөн e1, e2.
+        expect(report.sources).toMatchObject({ contracts: 'crm', undatedContracts: 3, undatedPlanContracts: 2 });
         expect(report.week.count).toBe(0);
         // Төлөвлөгөө байгаа ч гүйцэтгэлийн хувь 0% биш — тодорхойгүй.
         expect(report.month).toMatchObject({ count: 0, target: 5350000000, attainmentPct: null });
-        expect(report.notes.join(' ')).toContain('2 гэрээ захиалга өгсөн огноогүй');
+        expect(report.notes.join(' ')).toContain('3 гэрээ захиалга өгсөн огноогүй');
         // CRM-ийн нөөц замд ERP-ийн борлуулалтын экспорт мөн долоо хоногийг тооцуулна.
         expect(report.notes.join(' ')).toContain('ERP-ийн борлуулалтын экспортыг оруулбал');
     });

@@ -187,7 +187,7 @@ export function formatWeeklyReview(input: {
 function plannedMonthText(report: WeeklySalesReport, money: (value: number) => string): string {
     const m = report.month;
     if (!m.outsidePlanCount) return '';
-    return ` · төлөвлөгөөнд хамаарах ${periodContractAmount(m.planTotal, m.planCount, report.sources.undatedContracts, money)} (төлөвлөгөөгүй ${m.outsidePlanCount} гэрээ хассан)`;
+    return ` · төлөвлөгөөнд хамаарах ${periodContractAmount(m.planTotal, m.planCount, report.sources.undatedPlanContracts, money)} (төлөвлөгөөгүй ${m.outsidePlanCount} гэрээ хассан)`;
 }
 
 /** Хурлын текстэд орох гэрээ, мөнгөн орлого, үлдэгдлийн товч. */
@@ -200,7 +200,7 @@ export function formatWeeklySalesText(report: WeeklySalesReport): string[] {
             ? `Энэ долоо хоног: ${periodContractCount(report.week.count, report.sources.undatedContracts)} гэрээ · ${periodContractAmount(report.week.total, report.week.count, report.sources.undatedContracts, money)} (огноогүй ${report.sources.undatedContracts} гэрээ ороогүй)`
             : `Энэ долоо хоног: ${report.week.count} гэрээ · ${money(report.week.total)} (өмнөх ${report.previousWeek.count} · ${money(report.previousWeek.total)})`,
         ...report.week.byKind.map(kind => `  ${kind.label}: ${kind.count} · ${money(kind.total)}`),
-        `${report.month.month} сар: ${periodContractCount(report.month.count, report.sources.undatedContracts)} гэрээ · ${periodContractAmount(report.month.total, report.month.count, report.sources.undatedContracts, money)}${report.month.target ? `${plannedMonthText(report, money)} / төлөвлөгөө ${money(report.month.target)} (${report.month.attainmentPct === null ? '—' : `${report.month.attainmentPct}%${report.sources.undatedContracts ? '+' : ''}`})` : ' · сарын төлөвлөгөө тохируулаагүй'}`,
+        `${report.month.month} сар: ${periodContractCount(report.month.count, report.sources.undatedContracts)} гэрээ · ${periodContractAmount(report.month.total, report.month.count, report.sources.undatedContracts, money)}${report.month.target ? `${plannedMonthText(report, money)} / төлөвлөгөө ${money(report.month.target)} (${report.month.attainmentPct === null ? '—' : `${report.month.attainmentPct}%${report.sources.undatedPlanContracts ? '+' : ''}`})` : ' · сарын төлөвлөгөө тохируулаагүй'}`,
         report.cash ? `Мөнгөн орлого (ERP ${report.cash.from} → ${report.cash.to}): ${money(report.cash.delta)}` : 'Мөнгөн орлого: хоёр долоо хоногийн ERP экспорт хэрэгтэй',
         ...(report.receivables ? [`Төлбөрийн хоцролт: ${money(report.receivables.overdue)} · ${report.receivables.overdueContracts} гэрээ · нийт үлдэгдэл ${money(report.receivables.balance)}`] : []),
         ...report.byManager.map(row => `  ${row.manager}: 7 хоногт ${row.weekCount} (${money(row.weekTotal)}), сард ${row.monthCount} (${money(row.monthTotal)})${row.cash !== null ? `, мөнгө ${money(row.cash)}` : ''}`),
