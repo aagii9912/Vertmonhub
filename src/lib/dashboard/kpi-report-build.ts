@@ -6,7 +6,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ManagerIdentity } from '@/lib/sales/manager-identity';
 import { applyLeadScope, type SalesProjectScope } from '@/lib/sales/project-scope';
-import { getTeamTargets, getMonthlyActualsByManager } from '@/lib/sales/targets';
+import { getMonthlyActualsByManager } from '@/lib/sales/targets';
+import { loadPlanPerformance } from '@/lib/sales/plan-performance-load';
+import { logger } from '@/lib/utils/logger';
 import { isAnonymousLead } from '@/lib/leads/labels';
 import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 import {
@@ -41,6 +43,11 @@ async function safeCount(
     }
     if (res.error) return 0;
     return res.count || 0;
+}
+
+/** View-ийн тоо алга үеийн нөөц тоо: цуцалсан гэрээг тоолохгүй (manager_monthly_sales-тэй нэг дүрэм). */
+export function liveContractCount(contracts: readonly KpiContractRow[]): number {
+    return contracts.filter((c) => c.contract_status !== 'cancelled').length;
 }
 
 export interface KpiReportInput {
@@ -79,7 +86,7 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
         taskRows,
         prevLeads,
         prevViewings,
-        targets,
+        plan,
         byManager,
         prevYearByManager,
     ] = await Promise.all([
@@ -161,7 +168,11 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
             if (excludeDeleted) q = q.is('deleted_at', null);
             return applyLeadScope(q, scope, 'leads.project_id', 'leads.sales_manager_name');
         }),
-        getTeamTargets(db, shopId, year),
+        // Багийн төлөвлөгөө ба гүйцэтгэл төслийн хэмжээнд (Director, «Төлөвлөгөөний биелэлт»-тэй нэг ачаалагч); алдаанд хэсгийг нууна.
+        loadPlanPerformance(db, { shopId, year, canReadFinance: false }).catch((error: unknown) => {
+            logger.warn('[kpi-report] plan performance unavailable', { message: error instanceof Error ? error.message : String(error) });
+            return null;
+        }),
         getMonthlyActualsByManager(db, shopId, year),
         // Он дамнасан харьцуулалт (1-р сар → өмнөх оны 12-р сар)
         prev.year !== year
@@ -189,7 +200,7 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
     // Борлуулалт (канон: manager_monthly_sales view — самбартай ижил эх сурвалж)
     const mine = byManager.get(targetName);
     const revenue = mine?.actuals[month - 1] || 0;
-    const contractCount = mine?.counts[month - 1] || contracts.length;
+    const contractCount = mine?.counts[month - 1] || liveContractCount(contracts);
     const prevSource = prev.year !== year ? prevYearByManager : byManager;
     const prevMine = prevSource?.get(targetName);
     const prevRevenue = prevMine?.actuals[prev.month - 1] || 0;
@@ -204,22 +215,20 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
         prev: { leads: prevLeads, viewings: prevViewings, contracts: prevContracts, revenue: prevRevenue },
     });
 
-    // Багийн сарын зорилт + гүйцэтгэл (идэвхтэй менежерүүд)
-    const teamTarget = targets[month - 1] || 0;
+    // Багийн сарын зорилт + гүйцэтгэл: төслийн төлөвлөгөөнд хамаарах бүх гэрээ (менежерээр шүүхгүй, гар нүд давамгайлна;
+    // огноогүй гэрээтэй бол доод хязгаар, тодорхойгүй бол null — хэзээ ч 0 гэж таамаглахгүй).
+    const cell = plan?.months[month - 1]?.total.metrics.contract;
     let target = null;
-    if (teamTarget > 0) {
-        const activeNames = identity.rosterEmpty
-            ? new Set(byManager.keys())
-            : new Set(identity.roster.filter((r) => r.is_active).map((r) => r.name));
-        let teamActual = 0;
-        for (const [name, m] of byManager) {
-            if (!activeNames.has(name)) continue;
-            teamActual += m.actuals[month - 1] || 0;
-        }
+    if (cell && cell.plan !== null && cell.plan > 0) {
+        // «Миний хувь» нэг суурьтай: өөрийн manager_monthly_sales / тухайн сарын бүх нэрийн нийлбэр (төлөвлөгөөнд хамаарах дүнд хуваахгүй).
+        let allNames = 0;
+        for (const m of byManager.values()) allNames += m.actuals[month - 1] || 0;
         target = {
-            teamTarget,
-            teamActual,
-            myShare: teamActual > 0 ? Math.round((revenue / teamActual) * 100) : null,
+            teamTarget: cell.plan,
+            teamActual: cell.actual,
+            lowerBound: cell.lowerBound,
+            pct: cell.pct,
+            myShare: cell.actual !== null && cell.actual > 0 && allNames > 0 ? Math.round((revenue / allNames) * 100) : null,
         };
     }
 

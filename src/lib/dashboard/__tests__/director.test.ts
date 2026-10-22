@@ -113,7 +113,13 @@ describe('жижиг туслахууд', () => {
     });
     it('attainmentPct / momDeltaPct', () => {
         expect(attainmentPct(1_240, 1_500)).toBe(83);
-        expect(attainmentPct(10, 0)).toBe(0);
+        // Зорилтгүй эсвэл гүйцэтгэл тодорхойгүй бол хувь null — хэзээ ч 0 биш.
+        expect(attainmentPct(10, 0)).toBeNull();
+        expect(attainmentPct(10, null)).toBeNull();
+        expect(attainmentPct(null, 1_500)).toBeNull();
+        expect(attainmentPct(0, 1_500)).toBe(0);
+        expect(momDeltaPct(null, 100)).toBeNull();
+        expect(momDeltaPct(120, null)).toBeNull();
         expect(momDeltaPct(1_240, 1_105)).toBe(12);
         expect(momDeltaPct(5, 0)).toBeNull();
     });

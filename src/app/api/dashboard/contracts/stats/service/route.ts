@@ -3,6 +3,30 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { fetchAllRows } from '@/lib/utils/pagination';
+import { NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
+import { summarizeContracts } from '@/lib/contracts/summary';
+
+interface ServiceContractRow {
+    id: string;
+    contract_status: string | null;
+    balance: number | string | null;
+    overdue_days: number | null;
+    total_price: number | string | null;
+    paid_amount: number | string | null;
+}
+
+/** Бүх утга мэдэгдэж байвал нийлбэр, нэг нь ч тодорхойгүй (NULL) бол null — 0 гэж нэмэхгүй. */
+function knownSum(values: Array<number | string | null>): number | null {
+    let cents = 0;
+    for (const value of values) {
+        if (value === null || value === undefined || value === '') return null;
+        const n = Number(value);
+        if (!Number.isFinite(n)) return null;
+        cents += Math.round(n * 100);
+    }
+    return cents / 100;
+}
 
 // ============================================
 // GET /api/dashboard/contracts/stats/service
@@ -20,19 +44,23 @@ export async function GET() {
         const supabase = supabaseAdmin();
         const shopId = authShop.id;
 
-        // 1. Гэрээний ерөнхий тоо
-        const { data: contracts } = await supabase
+        // 1. Гэрээний ерөнхий тоо — устгасан, цуцалсан гэрээ орохгүй; 1000-аас олон мөрийг бүгдийг нь уншина.
+        //    Төлсөн дүн NULL (ERP-ээс ирээгүй) бол 0 гэж тооцохгүй: цуглуулсан дүн, хувь нь null («—»).
+        const c = await fetchAllRows<ServiceContractRow>((from, to) => supabase
             .from('property_contracts')
             .select('id, contract_status, balance, overdue_days, total_price, paid_amount')
-            .eq('shop_id', shopId);
-
-        const c = contracts || [];
-        const activeContracts = c.filter(x => x.contract_status === 'active').length;
-        const closedContracts = c.filter(x => x.contract_status === 'closed').length;
-        const overdueContracts = c.filter(x => (x.overdue_days || 0) > 0);
-        const totalOverdueAmount = overdueContracts.reduce((s, x) => s + (Number(x.balance) || 0), 0);
-        const totalSales = c.reduce((s, x) => s + (Number(x.total_price) || 0), 0);
-        const totalCollected = c.reduce((s, x) => s + (Number(x.paid_amount) || 0), 0);
+            .eq('shop_id', shopId)
+            .is('deleted_at', null)
+            .or(NOT_CANCELLED_CONTRACT)
+            .order('id')
+            .range(from, to));
+        const contractSummary = summarizeContracts(c);
+        const overdueContracts = c.filter(x => (Number(x.overdue_days) || 0) > 0);
+        // «Хоцролтын дүн» = хуваарийн хоцролттой гэрээний үлдэгдэл; үлдэгдэл тодорхойгүй бол null.
+        const totalOverdueAmount = knownSum(overdueContracts.map(x => x.balance));
+        const totalSales = contractSummary.total_sales;
+        const paidKnown = contractSummary.unknown_paid === 0;
+        const totalCollected = paidKnown ? contractSummary.total_paid : null;
 
         // 2. Үйлчилгээний хүсэлтүүд
         const { data: serviceLogs } = await supabase
@@ -117,12 +145,13 @@ export async function GET() {
         return NextResponse.json({
             stats: {
                 // Гэрээ
-                total_contracts: c.length,
-                active_contracts: activeContracts,
-                closed_contracts: closedContracts,
+                total_contracts: contractSummary.total,
+                active_contracts: contractSummary.active,
+                closed_contracts: contractSummary.closed,
                 total_sales: totalSales,
                 total_collected: totalCollected,
-                collection_rate: totalSales > 0 ? Math.round((totalCollected / totalSales) * 100) : 0,
+                collection_rate: totalCollected !== null && totalSales > 0 ? Math.round((totalCollected / totalSales) * 100) : null,
+                unknown_paid: contractSummary.unknown_paid,
 
                 // Хоцрогдол
                 overdue_contract_count: overdueContracts.length,
@@ -159,7 +188,7 @@ export async function GET() {
 function emptyKPI() {
     return {
         total_contracts: 0, active_contracts: 0, closed_contracts: 0,
-        total_sales: 0, total_collected: 0, collection_rate: 0,
+        total_sales: 0, total_collected: 0, collection_rate: 0, unknown_paid: 0,
         overdue_contract_count: 0, total_overdue_amount: 0,
         open_requests: 0, resolved_requests: 0, total_requests: 0,
         open_complaints: 0, suggestions_count: 0,

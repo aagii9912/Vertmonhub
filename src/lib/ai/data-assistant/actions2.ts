@@ -28,6 +28,7 @@ import { logMarketingSpend, upsertMarketingBudget, addMarketIndicator, listMarke
 import { SPEND_CHANNELS } from '@/lib/marketing/budget';
 import type { AssistantPerms } from './index';
 import { formatMNT } from '@/lib/utils/currency';
+import { planPctText } from '@/lib/sales/plan-performance';
 
 type Args = Record<string, any>;
 const db = () => adminClient();
@@ -165,7 +166,14 @@ export async function getDailyReportTool(shopId: string, args: Args, userId: str
 }
 
 export async function getManagerPerformanceTool(shopId: string) {
-    return getManagerPerformance(db(), shopId);
+    const report = await getManagerPerformance(db(), shopId);
+    const { teamAttainmentPct, teamYearPct, teamLowerBound } = report.totals;
+    return {
+        ...report,
+        // Багийн биелэлт төслийн хэмжээнд (менежерийн жагсаалт роостероор) — тодорхойгүйг 0% гэж хэлэхгүй.
+        teamNote: `Багийн төлөвлөгөөний биелэлт (төслийн бүх гэрээ): он эхнээс ${planPctText(teamAttainmentPct, teamLowerBound)}, `
+            + `жилийн төлөвлөгөөнөөс ${planPctText(teamYearPct, teamLowerBound)}. «—» = тодорхойгүй (0% гэж бүү хэл); «+» = огноогүй гэрээтэй тул доод хязгаар.`,
+    };
 }
 
 export async function getExportLink(_shopId: string, args: Args) {

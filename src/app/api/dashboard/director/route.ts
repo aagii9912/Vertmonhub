@@ -5,7 +5,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
-import { getTeamTargets, getMonthlyActualsByManager, sumYear } from '@/lib/sales/targets';
+import { loadPlanPerformance } from '@/lib/sales/plan-performance-load';
 import {
     buildFunnel,
     buildLeaderboard,
@@ -21,7 +21,8 @@ import {
  * GET /api/dashboard/director?year=2026&month=9
  *
  * Захирлын самбарын бүх өгөгдөл НЭГ дуудлагаар:
- *   sales        — сарын борлуулалт vs зорилт (₮ + байр), 12 сарын trend
+ *   sales        — сарын борлуулалт vs зорилт (₮ + байр), 12 сарын trend — төлөвлөгөөний биелэлтийн
+ *                  ачаалагчаас (төслийн төлөвлөгөөнд хамаарах бүх гэрээ, менежерээр шүүхгүй, огноогүй бол «+»)
  *   leaderboard  — менежер бүрийн сарын гэрээ / борлуулалт / уулзалт / лид
  *   funnel       — эх үүсвэр бүрээр лид → уулзалт → гэрээ
  *   receivables  — хугацаа хэтэрсэн төлбөр (payment_schedules) + нийт үлдэгдэл
@@ -62,9 +63,8 @@ export async function GET(request: NextRequest) {
         const shopId = authShop.id;
         const missing: string[] = [];
 
-        const [targets, byManager, roster, contracts, viewings, leads, schedules, blocks, outstanding] = await Promise.all([
-            getTeamTargets(db, shopId, year),
-            getMonthlyActualsByManager(db, shopId, year),
+        const [plan, roster, contracts, viewings, leads, schedules, blocks, outstanding] = await Promise.all([
+            safe('sales', missing, () => loadPlanPerformance(db, { shopId, year, canReadFinance: false, now }), null),
             safe('roster', missing, async () => {
                 const { data, error } = await db.from('sales_managers').select('name, is_active').eq('shop_id', shopId);
                 if (error) throw error;
@@ -141,16 +141,14 @@ export async function GET(request: NextRequest) {
         ]);
 
         /* ---------- sales vs target ---------- */
+        // Багийн гүйцэтгэл төслийн хэмжээнд (эзэмшигч 2026-10-22); leaderboard л идэвхтэй менежерээр.
         const activeNames = roster.filter((r) => r.is_active).map((r) => r.name);
-        const allow = new Set(activeNames);
-        const trendActual = Array(12).fill(0) as number[];
-        for (const [name, m] of byManager) {
-            if (!allow.has(name)) continue;
-            for (let i = 0; i < 12; i++) trendActual[i] += m.actuals[i];
-        }
-        const actual = trendActual[monthIdx];
-        const target = targets[monthIdx];
-        const prevActual = monthIdx > 0 ? trendActual[monthIdx - 1] : 0;
+        const monthCells = plan?.months.map((row) => row.total.metrics.contract) ?? [];
+        const current = monthCells[monthIdx];
+        const previous = monthIdx > 0 ? monthCells[monthIdx - 1] : undefined;
+        const actual = current?.actual ?? null;
+        const target = current?.plan ?? null;
+        const ytd = plan?.ytd.total.metrics.contract;
         const liveContracts = contracts.filter((c) => c.contract_status !== 'cancelled');
 
         /* ---------- receivables ---------- */
@@ -191,20 +189,23 @@ export async function GET(request: NextRequest) {
                 actual,
                 target,
                 attainmentPct: attainmentPct(actual, target),
-                momDeltaPct: momDeltaPct(actual, prevActual),
+                lowerBound: !!current?.lowerBound,
+                momDeltaPct: current?.lowerBound || previous?.lowerBound ? null : momDeltaPct(actual, previous?.actual ?? null),
                 units: liveContracts.length,
                 unitsByType: countByUnitType(liveContracts),
-                trendActual,
-                trendTarget: targets,
-                yearActual: sumYear(trendActual),
-                yearTarget: sumYear(targets),
+                trendActual: Array.from({ length: 12 }, (_, index) => monthCells[index]?.actual ?? null),
+                trendTarget: Array.from({ length: 12 }, (_, index) => monthCells[index]?.plan ?? null),
+                trendLowerBound: Array.from({ length: 12 }, (_, index) => !!monthCells[index]?.lowerBound),
+                yearActual: ytd?.actual ?? null,
+                yearTarget: ytd?.yearPlan ?? null,
+                undated: plan?.undated.count ?? 0,
             },
             leaderboard: buildLeaderboard({
                 rosterNames: activeNames,
                 contracts: liveContracts,
                 viewings,
                 leads,
-                teamTargetMonth: target,
+                teamTargetMonth: target ?? 0,
             }),
             funnel: buildFunnel(
                 leads,

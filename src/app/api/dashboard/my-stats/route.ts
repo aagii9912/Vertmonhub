@@ -10,12 +10,15 @@ import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { isAnonymousLead } from '@/lib/leads/labels';
 import {
-    getTeamTargets,
     getMonthlyActualsByManager,
     quarterOfMonth,
     sumQuarter,
     sumYear,
 } from '@/lib/sales/targets';
+import { loadPlanPerformance } from '@/lib/sales/plan-performance-load';
+import { sumPlanValues, type PlanPerformance } from '@/lib/sales/plan-performance';
+import { monthlySalesAttainment } from '@/lib/sales/monthly';
+import { logger } from '@/lib/utils/logger';
 import {
     groupLeadsByStatus,
     countActiveLeads,
@@ -91,6 +94,31 @@ function emptyPayload(period: Period, name: string | null, onboarding: boolean) 
     };
 }
 
+/**
+ * Багийн сар / улирал / оны төлөвлөгөө ба гүйцэтгэл — `loadPlanPerformance`-ийн «Нийт» гэрээний дүн. Төлөвлөгөө огт
+ * тохируулаагүй бол null. Улирлын гүйцэтгэл = улирлын өнгөрсөн, энэ сарын нийлбэр (ирээдүйн сар орохгүй), төлөвлөгөө нь
+ * улирлын бүх сарынх; оны гүйцэтгэл он эхнээс, төлөвлөгөө бүтэн жилийн (`ytdTarget`, `ytdPct` — он эхнээс).
+ */
+function planPeriods(plan: PlanPerformance, monthIdx: number, quarter: number) {
+    const cells = plan.months.map((row) => row.total.metrics.contract);
+    if (!cells.some((cell) => (cell?.plan ?? 0) > 0)) return null;
+    const month = cells[monthIdx];
+    const quarterCells = cells.slice((quarter - 1) * 3, quarter * 3);
+    const quarterPlan = quarterCells.every((cell) => cell?.plan !== null && cell?.plan !== undefined)
+        ? quarterCells.reduce((sum, cell) => sum + Math.round((cell!.plan ?? 0) * 100), 0) / 100 : null;
+    const quarterActual = sumPlanValues(quarterCells.filter((_, index) => (quarter - 1) * 3 + index <= monthIdx)
+        .map((cell) => ({ value: cell?.actual ?? null, lowerBound: !!cell?.lowerBound })));
+    const ytd = plan.ytd.total.metrics.contract;
+    return {
+        month: { target: month?.plan ?? null, actual: month?.actual ?? null, lowerBound: !!month?.lowerBound, pct: month?.pct ?? null },
+        quarter: { target: quarterPlan, actual: quarterActual.value, lowerBound: quarterActual.lowerBound, pct: monthlySalesAttainment(quarterActual.value, quarterPlan) },
+        year: {
+            target: ytd?.yearPlan ?? null, actual: ytd?.actual ?? null, lowerBound: !!ytd?.lowerBound, pct: ytd?.yearPct ?? null,
+            ytdTarget: ytd?.plan ?? null, ytdPct: ytd?.pct ?? null,
+        },
+    };
+}
+
 export async function GET(request: NextRequest) {
     try {
         const authShop = await getUserShop();
@@ -147,7 +175,7 @@ export async function GET(request: NextRequest) {
         const quarter = quarterOfMonth(monthIdx + 1);
 
         const missing: string[] = [];
-        const [leadRowsRaw, viewingRowsRaw, contractRows, targets, byManager, personalTaskRows] = await Promise.all([
+        const [leadRowsRaw, viewingRowsRaw, contractRows, plan, byManager, personalTaskRows] = await Promise.all([
             // Миний лидүүд (сүүлийн 500 — KPI/таск/жагсаалт бүгд эндээс)
             safeManagerRows('leads', missing, ({ excludeDeleted }) => {
                 let q = db
@@ -184,7 +212,12 @@ export async function GET(request: NextRequest) {
                 if (excludeDeleted) q = q.is('deleted_at', null);
                 return q;
             }),
-            getTeamTargets(db, authShop.id, year, () => { missing.push('targets'); }),
+            // Багийн төлөвлөгөө ба гүйцэтгэл төслийн хэмжээнд (Director, «Төлөвлөгөөний биелэлт»-тэй нэг ачаалагч).
+            loadPlanPerformance(db, { shopId: authShop.id, year, canReadFinance: false, now }).catch((error: unknown) => {
+                logger.warn('[my-stats] plan performance unavailable', { message: error instanceof Error ? error.message : String(error) });
+                missing.push('targets');
+                return null;
+            }),
             getMonthlyActualsByManager(db, authShop.id, year, () => { missing.push('sales'); }),
             // Хувийн ажлууд (user_tasks) — зөвхөн ӨӨРИЙН самбарт «Хийх ажлууд»-д
             // нэгтгэгдэнэ; миграци ороогүй орчинд хоосон (safeManagerRows)
@@ -227,34 +260,20 @@ export async function GET(request: NextRequest) {
         const contractCountThisYear = mine ? mine.counts.reduce((a, b) => a + b, 0) : 0;
         const revenueTrend = mine ? mine.actuals : Array(12).fill(0);
 
-        // Зорилт: багийн төлөвлөгөө vs идэвхтэй менежерүүдийн гүйцэтгэл + миний хувь нэмэр
-        const hasTeamTarget = sumYear(targets) > 0;
-        let target = null;
-        if (hasTeamTarget) {
-            const activeNames = identity.rosterEmpty
-                ? new Set(byManager.keys())
-                : new Set(identity.roster.filter((r) => r.is_active).map((r) => r.name));
-            const teamActuals = Array(12).fill(0);
-            for (const [name, m] of byManager) {
-                if (!activeNames.has(name)) continue;
-                for (let i = 0; i < 12; i++) teamActuals[i] += m.actuals[i];
-            }
-            target = {
-                year,
-                month: monthIdx + 1,
-                quarter,
-                periods: {
-                    month: { target: targets[monthIdx] || 0, actual: teamActuals[monthIdx] || 0 },
-                    quarter: { target: sumQuarter(targets, quarter), actual: sumQuarter(teamActuals, quarter) },
-                    year: { target: sumYear(targets), actual: sumYear(teamActuals) },
-                },
-                mine: {
-                    month: salesThisMonth,
-                    quarter: mine ? sumQuarter(mine.actuals, quarter) : 0,
-                    year: salesThisYear,
-                },
-            };
-        }
+        // Зорилт: багийн төлөвлөгөө vs төслийн төлөвлөгөөнд хамаарах гүйцэтгэл (менежерээр шүүхгүй, гар нүд давамгайлна,
+        // огноогүй гэрээтэй бол «+», тодорхойгүй бол null) + миний хувь нэмэр (роостер/нэрээр).
+        const teamPeriods = plan ? planPeriods(plan, monthIdx, quarter) : null;
+        const target = teamPeriods ? {
+            year,
+            month: monthIdx + 1,
+            quarter,
+            periods: teamPeriods,
+            mine: {
+                month: salesThisMonth,
+                quarter: mine ? sumQuarter(mine.actuals, quarter) : 0,
+                year: salesThisYear,
+            },
+        } : null;
 
         const contracts = contractRows as { contract_status?: string; overdue_days?: number }[];
         const activeContracts = contracts.filter((c) => c.contract_status === 'active').length;

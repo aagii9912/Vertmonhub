@@ -4,10 +4,13 @@ import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { Users, Building2, UserCheck, CalendarClock, FileBarChart, ArrowUpRight, type LucideIcon } from 'lucide-react';
 
 interface ReportTile {
     module?: string;
+    /** Багийн тайлан: хувийн горимгүй, `reports` эрхтэй хэрэглэгчид л (серверийн `canViewTeam`). */
+    teamOnly?: boolean;
     href: string;
     title: string;
     description: string;
@@ -32,6 +35,14 @@ const REPORTS: ReportTile[] = [
         href: '/dashboard/reports/operations',
         title: 'Үйл ажиллагааны тайлан',
         description: 'Гэрээний зорилт, мөнгөн урсгал, урьдчилгаа болон анхаарах лидийг нэг дор автоматаар нэгтгэнэ',
+        icon: FileBarChart,
+        accent: 'brand',
+    },
+    {
+        href: '/dashboard/reports/plan',
+        teamOnly: true,
+        title: 'Төлөвлөгөөний биелэлт',
+        description: 'Сар, блок (Б1 · Б2 · Зогсоол) тус бүрийн гэрээний тоо, дүн, мөнгөн урсгалын төлөвлөгөө ба гүйцэтгэл',
         icon: FileBarChart,
         accent: 'brand',
     },
@@ -74,6 +85,7 @@ const REPORTS: ReportTile[] = [
 
 export default function ReportsPage() {
     const { user } = useAuth();
+    const { data: mode } = useDashboardMode();
     return (
         <div>
             <PageHeader
@@ -83,7 +95,8 @@ export default function ReportsPage() {
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-5">
-                {REPORTS.filter(report => !report.module || user?.role === 'super_admin' || user?.permissions?.modules.includes(report.module)).map((report) => {
+                {REPORTS.filter(report => (!report.module || user?.role === 'super_admin' || user?.permissions?.modules.includes(report.module))
+                    && (!report.teamOnly || !!mode?.canViewTeam)).map((report) => {
                     const Icon = report.icon;
                     return (
                         <Link key={report.href} href={report.href} className="group">

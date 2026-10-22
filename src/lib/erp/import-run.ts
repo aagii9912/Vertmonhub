@@ -4,6 +4,10 @@ import { z } from 'zod';
 import { readWorkbookSheets } from '@/lib/utils/xlsx';
 import { ubDateStr } from '@/lib/utils/date';
 import { compareErp, normalizeErpSheets, ErpOptionsSchema, ERP_LIMITS, type ErpImport } from './import';
+import { isContractListSheet } from '@/lib/contracts/list-import';
+
+/** HUB гэрээний жагсаалт snapshot биш — гэрээний импортоор (`/dashboard/contracts/import`) орно. */
+export const CONTRACT_LIST_REDIRECT = 'Энэ бол гэрээний HUB жагсаалт — «Гэрээ» → «Excel импорт»-оор оруулна уу';
 
 export type ErpImportAction = 'inspect' | 'preview' | 'commit';
 export type ErpImportRun = { ok: true; body: Record<string, unknown> } | { ok: false; status: number; error: string };
@@ -32,8 +36,9 @@ export async function runErpImport(db: SupabaseClient, input: {
         if (!sheets.length) throw new Error('Файлд толгой мөртэй мэдээлэл алга');
         if (input.action === 'inspect') {
             return { ok: true, body: { previousId: previous?.id ?? null, previousDate: previous?.report_date ?? null,
-                sheets: sheets.map(s => ({ name: s.name, columns: s.columns, count: s.rows.length, sample: s.rows.slice(0, 2), keyColumns: previous?.datasets.find(d => d.name === s.name)?.keyColumns ?? [] })) } };
+                sheets: sheets.map(s => ({ name: s.name, columns: s.columns, count: s.rows.length, sample: s.rows.slice(0, 2), keyColumns: previous?.datasets.find(d => d.name === s.name)?.keyColumns ?? [], contractList: isContractListSheet(s.columns) })) } };
         }
+        if (sheets.some(s => isContractListSheet(s.columns))) return { ok: false, status: 400, error: CONTRACT_LIST_REDIRECT };
         const raw = typeof input.options === 'string' || input.options === undefined ? JSON.parse(String(input.options)) : input.options;
         const options = ErpOptionsSchema.parse({ source, ...(raw && typeof raw === 'object' ? raw : {}) });
         if (options.source !== source) throw new Error('Импортын эх үүсвэр өөрчлөгдсөн байна');

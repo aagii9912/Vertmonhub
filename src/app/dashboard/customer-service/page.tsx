@@ -49,10 +49,12 @@ interface KPI {
     active_contracts: number;
     closed_contracts: number;
     total_sales: number;
-    total_collected: number;
-    collection_rate: number;
+    /** Төлсөн дүн тодорхойгүй (NULL) гэрээ байвал null — 0 биш. */
+    total_collected: number | null;
+    collection_rate: number | null;
+    unknown_paid?: number;
     overdue_contract_count: number;
-    total_overdue_amount: number;
+    total_overdue_amount: number | null;
     open_requests: number;
     resolved_requests: number;
     total_requests: number;

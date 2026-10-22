@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { knownPeriodAmount, periodContractAmount, periodContractCount } from '../contract-dates';
+import { knownPeriodAmount, periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from '../contract-dates';
 
 const fmt = (value: number) => `${value}₮`;
 
@@ -21,5 +21,14 @@ describe('period contract counts with undated contracts', () => {
         expect(periodContractCount(3, 5)).toBe('3+');
         expect(periodContractAmount(450, 3, 5, fmt)).toBe('450₮+');
         expect(knownPeriodAmount(450, 3, 5)).toBe(450);
+    });
+
+    it('tells users to date the contract (or import the HUB file), never that an ERP export fixes it', () => {
+        expect(undatedContractsShort(10)).toBe('Огноогүй 10 гэрээ · «Захиалга өгсөн огноо» оруулах');
+        expect(undatedContractsHint(10)).toMatch(/«Огноо оруулах».*HUB файл/);
+        for (const text of [undatedContractsShort(10), undatedContractsHint(10)]) {
+            expect(text).not.toMatch(/ERP/);
+            expect(text).not.toMatch(/орсон мөнгө/);
+        }
     });
 });

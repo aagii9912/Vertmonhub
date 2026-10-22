@@ -3,6 +3,9 @@ import {
     buildOperationsReport, buildMonthlyPerformance, formatOperationsReportText, OperationsRangeSchema, targetMonths,
     type OperationsContract, type OperationsLead, type OperationsTransaction, type OperationsViewing,
 } from '../operations-report';
+import { attainmentPct as directorPct } from '../director';
+import { emptyMonthlySales } from '@/lib/sales/monthly';
+import { buildPlanPerformance, type PlanContract } from '@/lib/sales/plan-performance';
 
 const range = { from: '2026-09-01', to: '2026-09-30' };
 const now = '2026-09-13T04:00:00.000Z';
@@ -23,34 +26,34 @@ describe('manual monthly performance report', () => {
     it('preserves unknown versus zero across years and keeps computed contract/cash values separate', () => {
         const targets = [{ year: 2026, month: 9, target_amount: 100, manual_contract_actual_amount: 70,
             cashflow_target_amount: 40, manual_cashflow_actual_amount: 0 }];
-        const monthlyPerformance = buildMonthlyPerformance(targets, range, true);
+        const monthlyPerformance = buildMonthlyPerformance(targets, range, true, [contract()]);
         const report = { ...buildOperationsReport({ ...base, contracts: [contract()], transactions: [transaction()], targets }), shopName: 'Тест', monthlyPerformance };
         expect(report.contracts.value).toBe(200_000_000);
         expect(report.cash?.receipts).toBe(10_000_000);
         expect(monthlyPerformance.months[0]).toMatchObject({ manual_contract_actual_amount: 70, manual_cashflow_actual_amount: 0 });
-        const crossYear = buildMonthlyPerformance([], { from: '2026-12-01', to: '2027-01-31' }, true);
+        const crossYear = buildMonthlyPerformance([], { from: '2026-12-01', to: '2027-01-31' }, true, []);
         expect(crossYear.months.map(row => [row.year, row.month, row.target_amount])).toEqual([[2026, 12, null], [2027, 1, null]]);
         expect(formatOperationsReportText(report)).toContain('гараар оруулсан гүйцэтгэл');
     });
 
     it('masks monetary management input without finance permission and never prorates partial months', () => {
         const targets = [{ year: 2026, month: 9, target_amount: 100, cashflow_target_amount: 12345, manual_cashflow_actual_amount: 98765 }];
-        const monthlyPerformance = buildMonthlyPerformance(targets, range, false);
+        const monthlyPerformance = buildMonthlyPerformance(targets, range, false, []);
         expect(monthlyPerformance.months[0]).toMatchObject({ target_amount: 100, cashflow_target_amount: null, manual_cashflow_actual_amount: null });
         const text = formatOperationsReportText({ ...buildOperationsReport({ ...base, targets }), shopName: 'Тест', monthlyPerformance });
         expect(text).not.toContain('12,345');
         expect(text).not.toContain('98,765');
-        expect(buildMonthlyPerformance(targets, { from: '2026-09-02', to: '2026-09-30' }, true)).toMatchObject({ completeMonths: false, months: [] });
+        expect(buildMonthlyPerformance(targets, { from: '2026-09-02', to: '2026-09-30' }, true, [])).toMatchObject({ completeMonths: false, months: [] });
     });
 
     it('shows the contract count plan and actual as whole contracts with attainment, also without finance permission', () => {
         const targets = [{ year: 2026, month: 9, target_amount: 100, contract_count_target: 40, manual_contract_count_actual: 30 }];
-        const monthlyPerformance = buildMonthlyPerformance(targets, range, false);
+        const monthlyPerformance = buildMonthlyPerformance(targets, range, false, []);
         expect(monthlyPerformance.months[0]).toMatchObject({ contract_count_target: 40, manual_contract_count_actual: 30 });
         const text = formatOperationsReportText({ ...buildOperationsReport({ ...base, targets }), shopName: 'Тест', monthlyPerformance });
         expect(text).toContain('Гэрээний тооны төлөвлөгөө 40 гэрээ · Гэрээний тооны гүйцэтгэл 30 гэрээ (75%)');
         expect(text).not.toContain('40₮');
-        expect(buildMonthlyPerformance([], range, true).months[0]).toMatchObject({ contract_count_target: null, manual_contract_count_actual: null });
+        expect(buildMonthlyPerformance([], range, true, []).months[0]).toMatchObject({ contract_count_target: null, manual_contract_count_actual: null });
     });
 });
 
@@ -79,7 +82,8 @@ describe('operations report financial meaning', () => {
         });
         expect(report.contracts).toEqual({ count: 2, value: 200_000_000, missingAmounts: 1, undatedCount: 1,
             byProduct: [{ productType: 'residential', label: 'Орон сууц', count: 2, value: 200_000_000, missingAmounts: 1 }] });
-        expect(report.target.attainmentPct).toBeNull();
+        // Дүн дутуу, огноогүй гэрээ — «Төлөвлөгөөний биелэлт»-тэй адил мэдэгдэх дүнгийн доод хязгаар (50%+), 0 эсвэл бүтэн биш.
+        expect(report.target).toMatchObject({ attainmentPct: 50, attainmentPartial: true, actual: { value: 200_000_000, lowerBound: true } });
         expect(report.advanceSnapshot).toEqual({ amount: 50_000_000, recordedContracts: 1, totalContracts: 3 });
     });
 
@@ -113,6 +117,66 @@ describe('operations report financial meaning', () => {
         const report = buildOperationsReport({ ...base, contracts: [contract()], targets: [{ year: 2026, month: 9, target_amount: 400_000_000 }] });
         expect(report.target.attainmentPct).toBe(50);
         expect(buildOperationsReport({ ...base, range: { from: '2026-08-01', to: '2026-09-30' }, targets: [{ year: 2026, month: 9, target_amount: 400_000_000 }] }).target.amount).toBeNull();
+    });
+
+    it('compares only in-plan contracts with the plan and marks a lower bound while undated contracts exist', () => {
+        const targets = [{ year: 2026, month: 9, target_amount: 400_000_000, block_amounts: { b1: { target_amount: 300_000_000 }, parking: { target_amount: 100_000_000 } } }];
+        const report = buildOperationsReport({ ...base, targets, contracts: [
+            contract({ block_name: 'Б1' }),
+            contract({ id: 'storage', product_type: 'industry', total_price: 50_000_000 }),
+            contract({ id: 'other-block', block_name: '202', total_price: 70_000_000 }),
+            contract({ id: 'undated', contract_date: null, product_type: 'parking' }),
+        ] });
+        expect(report.contracts).toMatchObject({ count: 3, value: 320_000_000, undatedCount: 1 });
+        expect(report.target).toMatchObject({ amount: 400_000_000, attainmentPct: 50, attainmentPartial: true,
+            planContracts: { count: 1, value: 200_000_000, outsideCount: 2 } });
+        expect(formatOperationsReportText({ ...report, shopName: 'Тест' })).toContain('биелэлт 50%+ (төлөвлөгөөнд хамаарахгүй 2 гэрээг хассан)');
+
+        // Хугацаанд төлөвлөгөөнд хамаарах гэрээ алга, огноогүй нь байгаа бол хувь тодорхойгүй — 0% биш.
+        const unknown = buildOperationsReport({ ...base, targets, contracts: [contract({ id: 'undated', contract_date: null, product_type: 'parking' })] });
+        expect(unknown.target.attainmentPct).toBeNull();
+        expect(buildOperationsReport({ ...base, targets, contracts: [] }).target.attainmentPct).toBe(0);
+
+        // Блокоор задлаагүй төлөвлөгөөнд бусад блокийн орон сууц орно, агуулах орохгүй.
+        const total = buildOperationsReport({ ...base, targets: [{ year: 2026, month: 9, target_amount: 400_000_000 }],
+            contracts: [contract({ block_name: '202' }), contract({ id: 'storage', product_type: 'industry' })] });
+        expect(total.target).toMatchObject({ attainmentPct: 50, attainmentPartial: false });
+    });
+});
+
+describe('manual block precedence shared with the plan page (M1)', () => {
+    // 10-р сар: зөвхөн Б2-ийн гүйцэтгэлийг гараар 2,000,000,000 оруулсан (мөрийн нийт = оруулсан блокуудын нийлбэр).
+    const october = { from: '2026-10-01', to: '2026-10-31' };
+    const target = { year: 2026, month: 10, target_amount: 5_352_996_000, manual_contract_actual_amount: 2_000_000_000, block_amounts: {
+        b1: { target_amount: 2_807_220_000 }, b2: { target_amount: 2_245_776_000, manual_contract_actual_amount: 2_000_000_000 }, parking: { target_amount: 300_000_000 },
+    } };
+    const contracts: OperationsContract[] = [
+        ...[0, 1, 2, 3].map(index => contract({ id: `b2-${index}`, contract_date: `2026-10-1${index}`, block_name: 'Б2', total_price: 548_848_750 })),
+        contract({ id: 'p-1', contract_date: '2026-10-15', product_type: 'parking', block_name: 'Б1', total_price: 86_600_000 }),
+        contract({ id: 'u-b1', contract_date: null, block_name: 'Б1' }), contract({ id: 'u-p', contract_date: null, product_type: 'parking', block_name: 'Б1' }),
+        contract({ id: 'u-s', contract_date: null, product_type: 'industry', block_name: 'Б1' }),
+    ];
+
+    it('gives the operations %, the monthly table and the plan page / Director the same 2,086,600,000+ and 39%+', () => {
+        const report = buildOperationsReport({ ...base, range: october, now: '2026-10-22T04:00:00.000Z', contracts, targets: [target] });
+        expect(report.target).toMatchObject({ amount: 5_352_996_000, attainmentPct: 39, attainmentPartial: true, actual: { value: 2_086_600_000, lowerBound: true } });
+        const monthly = buildMonthlyPerformance([target], october, false, contracts);
+        expect(monthly.months[0].resolved.contract).toEqual({ value: 2_086_600_000, lowerBound: true, source: 'mixed' });
+        expect(monthly.months[0].resolved.count).toEqual({ value: 5, lowerBound: true, source: 'auto' });
+
+        const months = emptyMonthlySales();
+        months[9] = { ...months[9], target_amount: target.target_amount, manual_contract_actual_amount: target.manual_contract_actual_amount, block_amounts: target.block_amounts };
+        const plan = buildPlanPerformance({ year: 2026, now: new Date('2026-10-22T04:00:00Z'), months, planYears: [2026], receipts: null, latestImportDate: null,
+            contracts: contracts.map(row => ({ ...row, unit_label: row.id }) as PlanContract) });
+        const cell = plan.months[9].total.metrics.contract!;
+        expect(cell).toMatchObject({ actual: 2_086_600_000, lowerBound: true, source: 'mixed', pct: 39 });
+        expect(directorPct(cell.actual, cell.plan)).toBe(39);
+    });
+
+    it('lets a whole-month manual total win when the month has no block breakdown', () => {
+        const report = buildOperationsReport({ ...base, range: october, now: '2026-10-22T04:00:00.000Z', contracts,
+            targets: [{ year: 2026, month: 10, target_amount: 5_000_000_000, manual_contract_actual_amount: 4_000_000_000 }] });
+        expect(report.target).toMatchObject({ attainmentPct: 80, attainmentPartial: false });
     });
 });
 

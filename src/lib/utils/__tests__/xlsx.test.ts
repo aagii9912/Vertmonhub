@@ -179,6 +179,49 @@ describe('xlsx helper — round trip (SheetJS семантик)', () => {
         expect(await readSheetRows(buf, 2)).toEqual([]);
     });
 
+    it('баганын формат, тод толгой, огнооны нүд; мөргүй лист толгойгоо бичнэ', async () => {
+        const money = '_(* #,##0_);_(* (#,##0);_(* "-"??_);_(@_)';
+        const buf = await buildWorkbookBuffer([
+            {
+                name: 'Гэрээ', headerStyle: 'bold', numFmts: [undefined, money, 'yyyy-mm-dd'], colWidths: [12, 16, 14],
+                aoa: [['Тоот', 'Нийт дүн', 'Огноо'], [19, 403416000, new Date(2026, 8, 3)], [20, null, null], ['A-3', 0, new Date(2026, 9, 1)]],
+            },
+            { name: 'Хоосон', headerStyle: 'bold', aoa: [['Тоот', 'Нийт дүн']] },
+            { name: 'Тогтмол', columns: ['Б', 'А'], rows: [] },
+            { name: 'Тогтмол мөр', columns: ['Б', 'А'], rows: [{ А: 1, В: 'орохгүй', Б: 2 }] },
+            { name: 'Огноо', rows: [{ 'Өдөр': new Date(2026, 0, 15), 'Цаг': new Date(2026, 5, 3, 14, 30) }] },
+        ]);
+        const wb = new ExcelJS.Workbook();
+        await wb.xlsx.load(buf as unknown as ArrayBuffer);
+        const [sheet, empty, fixed, fixedRows, dates] = wb.worksheets;
+        const header = sheet.getCell('A1');
+        expect(header.font?.bold).toBe(true);
+        expect(header.alignment).toMatchObject({ horizontal: 'center', vertical: 'middle', wrapText: true });
+        expect(sheet.getCell('B1').numFmt).toBeUndefined();
+        expect(sheet.getCell('B2').numFmt).toBe(money);
+        expect(sheet.getCell('B2').value).toBe(403416000);
+        expect(sheet.getCell('B4').value).toBe(0);
+        expect(sheet.getCell('B3').value).toBeNull();
+        expect(sheet.getCell('C2').numFmt).toBe('yyyy-mm-dd');
+        expect(sheet.getCell('A2').numFmt).toBeUndefined();
+        expect(sheet.getColumn(2).width).toBe(16);
+        const rows = await readSheetRows(buf);
+        expect(rows[0]).toMatchObject({ 'Тоот': 19, 'Нийт дүн': 403416000 });
+        expect(toDateStr(rows[0]['Огноо'])).toBe('2026-09-03');
+        expect(rows[1]).toEqual({ 'Тоот': 20 });
+        expect(rows[2]).toMatchObject({ 'Тоот': 'A-3', 'Нийт дүн': 0 });
+
+        expect((empty.getRow(1).values as unknown[]).slice(1)).toEqual(['Тоот', 'Нийт дүн']);
+        expect(empty.getCell('A1').font?.bold).toBe(true);
+        expect(await readSheetRows(buf, 'Хоосон')).toEqual([]);
+        expect((fixed.getRow(1).values as unknown[]).slice(1)).toEqual(['Б', 'А']);
+        expect((fixedRows.getRow(1).values as unknown[]).slice(1)).toEqual(['Б', 'А']);
+        expect(await readSheetRows(buf, 'Тогтмол мөр')).toEqual([{ Б: 2, А: 1 }]);
+        // Формат өгөөгүй огноо ч YYYY-MM-DD (цагтай бол цагтай) — Excel-ийн m/d/yy биш.
+        expect(dates.getCell('A2').numFmt).toBe('yyyy-mm-dd');
+        expect(dates.getCell('B2').numFmt).toBe('yyyy-mm-dd hh:mm');
+    });
+
     it('листийн нэр: хориотой тэмдэгт → _, 31 тэмдэгтээр таслана, давхардвал дугаарлана', async () => {
         const long = 'Менежерийн гүйцэтгэлийн дэлгэрэнгүй тайлан 2026';
         const buf = await buildWorkbookBuffer([

@@ -2,6 +2,7 @@ import { ubMonthRange } from '@/lib/utils/date';
 import { STATUS_META, SOURCE_LABEL } from '@/lib/leads/labels';
 import { VIEWING_STATUS_META } from '@/lib/viewings/labels';
 import { formatMNT } from '@/lib/utils/currency';
+import { planPctText } from '@/lib/sales/plan-performance';
 
 /**
  * Сарын KPI тайлангийн PURE туслахууд — DB-гүй, unit-тестэд шууд ордог.
@@ -148,6 +149,18 @@ function fmtDay(date: string | null | undefined): string {
  * Тайланг цэвэр текст болгоно — хэрэглэгч сарын KPI тайлангаа
  * имэйл/чат/Excel-дээ шууд хуулж тавихад зориулав.
  */
+/**
+ * Багийн сарын зорилт ба төслийн хэмжээний гүйцэтгэл («Төлөвлөгөөний биелэлт»-ийн «Нийт» гэрээний дүн): тодорхойгүй бол
+ * null, огноогүй гэрээтэй бол доод хязгаар («+»). myShare — өөрийн борлуулалт / тухайн сарын бүх менежерийн нийлбэр.
+ */
+export interface KpiTeamTarget {
+    teamTarget: number;
+    teamActual: number | null;
+    lowerBound: boolean;
+    pct: number | null;
+    myShare: number | null;
+}
+
 export function formatKpiReportText(input: {
     managerName: string;
     shopName?: string | null;
@@ -159,7 +172,7 @@ export function formatKpiReportText(input: {
     viewingsByStatus: Record<string, number>;
     contracts: KpiContractRow[];
     tasksDone: KpiTaskRow[];
-    target?: { teamTarget: number; teamActual: number; myShare: number | null } | null;
+    target?: KpiTeamTarget | null;
 }): string {
     const { summary } = input;
     const lines: string[] = [];
@@ -175,12 +188,10 @@ export function formatKpiReportText(input: {
     lines.push(`• Дуусгасан ажил: ${summary.tasksDone}`);
 
     if (input.target && input.target.teamTarget > 0) {
-        const pct = input.target.teamActual > 0
-            ? Math.round((input.target.teamActual / input.target.teamTarget) * 100)
-            : 0;
+        const { teamActual, lowerBound } = input.target;
         lines.push('');
         lines.push('ЗОРИЛТ');
-        lines.push(`• Багийн сарын зорилт: ${formatMNT(input.target.teamTarget)} · Гүйцэтгэл: ${formatMNT(input.target.teamActual)} (${pct}%)`);
+        lines.push(`• Багийн сарын зорилт: ${formatMNT(input.target.teamTarget)} · Гүйцэтгэл: ${teamActual === null ? '—' : `${formatMNT(teamActual)}${lowerBound ? '+' : ''}`} (${planPctText(input.target.pct, lowerBound)})`);
         if (input.target.myShare !== null) {
             lines.push(`• Багийн гүйцэтгэлд миний хувь: ${input.target.myShare}%`);
         }

@@ -1,5 +1,6 @@
 import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { NextRequest, NextResponse } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -10,6 +11,7 @@ import { fetchAllRows } from '@/lib/utils/pagination';
 import { leadCategoryLabel, leadDisplayName, sourceLabel, statusLabel } from '@/lib/leads/labels';
 import { UNIT_STATUS_LABEL, unitCategoryLabel } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
+import { CONTRACT_LIST_COLUMNS, CONTRACT_LIST_COL_WIDTHS, CONTRACT_LIST_NUMFMT, contractListRow, contractUnitNumber } from '@/lib/contracts/list-format';
 import { leadsReportInstants, resolveLeadsReportRange } from '@/lib/reports/leads-summary';
 import { loadContractTransferSummaries } from '@/lib/services/ContractService';
 import { listLeadCategories } from '@/lib/services/LeadCategoryService';
@@ -20,13 +22,41 @@ const EXPORT_MODULE: Record<string, string> = {
     leads: 'leads',
     customers: 'customers',
     contracts: 'contracts',
+    contracts_hub: 'contracts',
     manager: 'reports',
 };
+
+/** Хадгалсан дүн (numeric нь тоо эсвэл текстээр ирж болно); NULL/хоосон бол null — Excel-д хоосон нүд, 0 биш. */
+function amountOrNull(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+}
+
+/** Файлын нэрийн төсөл: shop-ийн ганц төслийн нэр, эс бөгөөс shop-ийн нэр (shop = төсөл). */
+async function projectFileLabel(supabase: SupabaseClient, shop: { id: string; name?: string | null }): Promise<string> {
+    const { data, error } = await supabase.from('projects').select('name').eq('shop_id', shop.id).order('id').limit(2);
+    if (error) throw error;
+    const name = data?.length === 1 && typeof data[0].name === 'string' ? data[0].name : shop.name;
+    return (name || '').replace(/[\\/:*?"<>|]+/g, ' ').trim().replace(/\s+/g, '_') || 'Төсөл';
+}
+
+const HUB_UNIT_COLLATOR = new Intl.Collator('mn', { numeric: true, sensitivity: 'base' });
+
+/** HUB файлын дараалал: захиалга өгсөн огноо (шинэ нь эхэнд, огноогүй нь сүүлд), дараа нь байр. */
+function compareHubRows(a: Record<string, unknown>, b: Record<string, unknown>): number {
+    const dateOf = (row: Record<string, unknown>) => String(row.order_date ?? row.contract_date ?? '');
+    const da = dateOf(a);
+    const db = dateOf(b);
+    if (da !== db) return !da ? 1 : !db ? -1 : db.localeCompare(da);
+    const unit = (row: Record<string, unknown>) => [row.product_type, row.block_name, contractUnitNumber(row), row.floor].map(v => String(v ?? '')).join('\u0000');
+    return HUB_UNIT_COLLATOR.compare(unit(a), unit(b)) || String(a.id).localeCompare(String(b.id));
+}
 
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
-        const type = searchParams.get('type') || 'properties'; // properties | leads | customers | contracts | manager
+        const type = searchParams.get('type') || 'properties'; // properties | leads | customers | contracts | contracts_hub | manager
 
         const denied = await requireModule(EXPORT_MODULE[type] || 'reports');
         if (denied) return denied;
@@ -161,10 +191,11 @@ export async function GET(request: NextRequest) {
                     'Загвар': c.model || '-',
                     'Өрөө': c.rooms || '-',
                     'Талбай (м²)': c.contracted_area || '-',
-                    'М.кв үнэ': Number(c.price_per_sqm) || 0,
-                    'Нийт дүн': Number(c.total_price) || 0,
-                    'Төлсөн': Number(c.paid_amount) || 0,
-                    'Үлдэгдэл': Number(c.balance) || 0,
+                    // NULL (ERP-ээс ирсэн, мэдэгдэхгүй) → хоосон нүд; 0 гэж бичихгүй.
+                    'М.кв үнэ': amountOrNull(c.price_per_sqm),
+                    'Нийт дүн': amountOrNull(c.total_price),
+                    'Төлсөн': amountOrNull(c.paid_amount),
+                    'Үлдэгдэл': amountOrNull(c.balance),
                     'Төлөв': contractStatusLabel(c.contract_status as string | null),
                     'Менежер': c.sales_manager || '-',
                     'Худалдан авагч': c.customer_name || '-',
@@ -176,7 +207,30 @@ export async function GET(request: NextRequest) {
             });
 
             sheet = { name: 'Гэрээнүүд', rows: exportData };
-            filename = `гэрээнүүд_${ubDateStr()}.xlsx`;
+            filename = `${await projectFileLabel(supabase, authShop)}_гэрээ_дэлгэрэнгүй_${ubDateStr()}.xlsx`;
+
+        } else if (type === 'contracts_hub') {
+            // ERP-ийн HUB загвар: яг 16 багана, мөнгө/огноо/талбайн формат, тод толгой. Цуцалсан гэрээ ч орно
+            // (файлтай мөр бүрээр тулгана). Дахин импортлоход өөрчлөлтгүй байх ёстой (list-format-ийн нэр томьёо).
+            const [rows, label] = await Promise.all([
+                fetchAllRows<Record<string, unknown>>((from, to) => supabase
+                    .from('property_contracts')
+                    .select('id, product_type, block_name, floor, unit_number, legacy_unit_number, unit_label, model, contracted_area, prepayment_condition, price_per_sqm, total_price, prepayment_due, overdue_amount, order_date, contract_date, contract_status, customer_name, customer_first_name, customer_last_name, payment_condition')
+                    .eq('shop_id', shopId)
+                    .is('deleted_at', null)
+                    .order('id')
+                    .range(from, to)),
+                projectFileLabel(supabase, authShop),
+            ]);
+            sheet = {
+                name: 'Гэрээ',
+                columns: CONTRACT_LIST_COLUMNS,
+                rows: [...rows].sort(compareHubRows).map(contractListRow),
+                numFmts: CONTRACT_LIST_NUMFMT,
+                colWidths: CONTRACT_LIST_COL_WIDTHS,
+                headerStyle: 'bold',
+            };
+            filename = `${label}_гэрээ_${ubDateStr()}.xlsx`;
 
         } else if (type === 'manager') {
             const { managers } = await getManagerPerformance(supabase, shopId);
@@ -204,7 +258,8 @@ export async function GET(request: NextRequest) {
         return new NextResponse(buffer, {
             headers: {
                 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
+                // filename* (RFC 5987) — хөтөч кирилл нэрийг зөв харуулна; dashboardDownload ч эндээс авна.
+                'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
             },
         });
 

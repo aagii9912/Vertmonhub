@@ -1,11 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-    blockOfCode, erpNumber, parseErpProduct, parseErpSale, PRODUCT_KIND_LABEL, productKind, type ErpProduct,
+    blockOfCode, erpNumber, parseErpProduct, parseErpSale, PRODUCT_KIND_LABEL, productKind, type ErpProduct, type ProductKind,
 } from '@/lib/erp/records';
 import { listErpSnapshots, loadErpDatasets, snapshotRecords } from '@/lib/erp/snapshots';
 import { inventoryStatusOf } from '@/lib/admin/import/units';
 import type { InventoryStatus } from '@/lib/inventory/labels';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { hasBlockPlan } from '@/lib/sales/plan-performance';
 import { buildWeeklySales, type ContractLine } from './weekly-sales';
 import { shiftReviewDate, weeklyReviewRange } from './weekly-review';
 
@@ -23,6 +24,9 @@ type CrmUnit = {
 
 const money = (value: number | string | null) => value === null || value === '' ? null : erpNumber(String(value));
 const INVENTORY_STATUSES = new Set<string>(['available', 'reserved', 'ordered', 'sold', 'handed_over']);
+/** CRM-ийн `product_type` → ERP-ийн бүтээгдэхүүний төрөл (огноотой, огноогүй гэрээнд нэг дүрэм). */
+const crmKind = (productType: string | null): ProductKind => productKind(productType === 'industry' ? 'Агуулах' : productType === 'parking' ? 'Зогсоол'
+    : productType === 'commercial' ? 'Үйлчилгээ' : productType === 'residential' ? 'Орон сууц' : productType);
 
 /**
  * Хурлын долоо хоногийн борлуулалтын тайлангийн эх өгөгдлийг уншина (нэг shop = нэг төсөл).
@@ -51,20 +55,23 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
     // ERP гэрээ алга бол CRM-ийн гэрээ (сар болон өмнөх долоо хоногийг хамруулна).
     let crmContracts: ContractLine[] | null = null;
     let crmUndated = 0;
+    let crmUndatedLines: Array<{ kind: ProductKind; block: string | null }> = [];
     if (!sales) {
-        // Огноогүй гэрээ (ERP байрны экспортоос үүссэн) хугацааны асуулгад орохгүй — тоог нь тусад нь авч, тайланд «тодорхойгүй» гэнэ.
-        const { count, error } = await db.from('property_contracts').select('id', { count: 'exact', head: true })
-            .eq('shop_id', shopId).is('deleted_at', null).is('contract_date', null).or('contract_status.is.null,contract_status.neq.cancelled');
-        if (error) throw error;
-        crmUndated = count ?? 0;
+        // Огноогүй гэрээ (ERP байрны экспортоос үүссэн) хугацааны асуулгад орохгүй — тусад нь авч, тайланд «тодорхойгүй» гэнэ;
+        // төрөл, блокоор нь төлөвлөгөөнд хамаарахыг ялгана.
+        const undatedRows = await fetchAllRows<{ id: string; product_type: string | null; block_name: string | null }>((from, to) => db.from('property_contracts')
+            .select('id, product_type, block_name')
+            .eq('shop_id', shopId).is('deleted_at', null).is('contract_date', null).or('contract_status.is.null,contract_status.neq.cancelled')
+            .order('id').range(from, to));
+        crmUndated = undatedRows.length;
+        crmUndatedLines = undatedRows.map(row => ({ kind: crmKind(row.product_type), block: row.block_name }));
         const earliest = [`${month}-01`, shiftReviewDate(range.from, -7)].sort()[0];
         const rows = await fetchAllRows<CrmContract>((from, to) => db.from('property_contracts')
             .select('id, contract_number, contract_date, product_type, block_name, unit_label, unit_number, contracted_area, price_per_sqm, prepayment_condition, total_price, prepayment_due, paid_amount, sales_manager, sales_channel, contract_status, customer_name')
             .eq('shop_id', shopId).is('deleted_at', null).gte('contract_date', earliest).lte('contract_date', range.to)
             .order('contract_date').order('id').range(from, to));
         crmContracts = rows.filter(row => row.contract_status !== 'cancelled').map(row => {
-            const kind = productKind(row.product_type === 'industry' ? 'Агуулах' : row.product_type === 'parking' ? 'Зогсоол'
-                : row.product_type === 'commercial' ? 'Үйлчилгээ' : row.product_type === 'residential' ? 'Орон сууц' : row.product_type);
+            const kind = crmKind(row.product_type);
             return {
                 key: row.id, contractNumber: row.contract_number, date: row.contract_date, kind, kindLabel: PRODUCT_KIND_LABEL[kind],
                 block: row.block_name, unit: row.unit_label ?? row.unit_number, customer: row.customer_name,
@@ -102,12 +109,13 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
     }
 
     const { data: target, error: targetError } = await db.from('team_sales_targets')
-        .select('target_amount').eq('shop_id', shopId).eq('year', year).eq('month', monthNumber).maybeSingle();
+        .select('target_amount, block_amounts').eq('shop_id', shopId).eq('year', year).eq('month', monthNumber).maybeSingle();
     if (targetError) throw targetError;
 
     const report = buildWeeklySales({
-        range, sales, previousSales, crmContracts, crmUndated, inventory,
+        range, sales, previousSales, crmContracts, crmUndated, crmUndatedLines, inventory,
         monthTarget: target?.target_amount ? money(target.target_amount) : null,
+        monthBlockPlanned: hasBlockPlan(target?.block_amounts),
     });
     // Захиалагчийн нэрийг зөвхөн гэрээ харах эрхтэй хүнд харуулна.
     if (!options.canSeeCustomers) report.week.lines = report.week.lines.map(line => ({ ...line, customer: null }));

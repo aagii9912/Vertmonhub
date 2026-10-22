@@ -30,8 +30,10 @@ import {
     type KpiContractRow,
     type KpiSummary,
     type KpiTaskRow,
+    type KpiTeamTarget,
     type KpiViewingRow,
 } from '@/lib/dashboard/kpi-report';
+import { planPctText } from '@/lib/sales/plan-performance';
 import { formatShortDate } from '@/lib/utils/date';
 import { meetingCustomerName } from '@/lib/leads/labels';
 import { SalesKpiCard } from '@/components/reports/SalesKpiCard';
@@ -66,7 +68,7 @@ interface KpiReportData {
     contracts?: KpiContractRow[];
     viewings?: KpiViewingRow[];
     tasksDone?: KpiTaskRow[];
-    target?: { teamTarget: number; teamActual: number; myShare: number | null } | null;
+    target?: KpiTeamTarget | null;
 }
 
 interface ManagerOption { name: string }
@@ -164,10 +166,9 @@ export default function KpiReportPage() {
     };
 
     const summary = data?.summary;
-    const targetPct =
-        data?.target && data.target.teamTarget > 0
-            ? Math.min(100, Math.round((data.target.teamActual / data.target.teamTarget) * 100))
-            : null;
+    // Серверийн хувь (1 орон): тодорхойгүй бол «—», доод хязгаартай бол «+» — тодорхойгүйг 0% болгохгүй.
+    const targetPct = data?.target && data.target.teamTarget > 0 ? data.target.pct : null;
+    const targetPctLabel = data?.target ? planPctText(data.target.pct, data.target.lowerBound) : '—';
 
     return (
         <div className="mx-auto max-w-4xl">
@@ -300,24 +301,25 @@ export default function KpiReportPage() {
                     </div>
 
                     {/* Багийн зорилт — ring + тоонууд (Origin жишиг) */}
-                    {data.target && targetPct !== null && (
+                    {data.target && data.target.teamTarget > 0 && (
                         <Card>
                             <CardContent className="flex items-center gap-5 py-4">
                                 <ProgressRing
-                                    value={targetPct}
+                                    value={targetPct === null ? 0 : Math.min(100, targetPct)}
                                     size={84}
                                     strokeWidth={8}
-                                    tone={targetPct >= 100 ? 'success' : targetPct >= 60 ? 'brand' : 'pending'}
-                                    aria-label={`Багийн зорилтын биелэлт ${targetPct}%`}
+                                    tone={targetPct === null ? 'pending' : targetPct >= 100 ? 'success' : targetPct >= 60 ? 'brand' : 'pending'}
+                                    aria-label={`Багийн зорилтын биелэлт ${targetPctLabel}`}
                                 >
-                                    <span className="heading-display text-lg tabular-nums">{targetPct}%</span>
+                                    <span className="heading-display text-lg tabular-nums">{targetPctLabel}</span>
                                 </ProgressRing>
                                 <div className="min-w-0">
                                     <p className="text-2xs font-mono uppercase tracking-[0.14em] text-muted-foreground/80">
                                         Багийн сарын зорилт
                                     </p>
                                     <p className="text-sm text-foreground mt-1">
-                                        <Money value={data.target.teamActual} compact className="font-medium" /> /{' '}
+                                        {data.target.teamActual === null ? <span className="font-medium">—</span>
+                                            : <><Money value={data.target.teamActual} compact className="font-medium" />{data.target.lowerBound ? '+' : ''}</>} /{' '}
                                         <Money value={data.target.teamTarget} compact className="text-muted-foreground" />
                                     </p>
                                     {data.target.myShare !== null && (

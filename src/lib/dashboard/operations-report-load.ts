@@ -51,13 +51,13 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
     };
     const [contracts, leads, targets, transactions, viewings, categories] = await Promise.all([
         fetchAllRows<OperationsContract>((from, to) => db.from('property_contracts')
-            .select('id, contract_date, contract_status, total_price, prepayment_paid_cash, product_type')
+            .select('id, contract_date, contract_status, total_price, prepayment_paid_cash, product_type, block_name')
             .eq('shop_id', options.shopId).is('deleted_at', null).order('id').range(from, to)),
         fetchAllRows<OperationsLead>((from, to) => applyLeadScope(db.from('leads')
             .select('created_at, status, source, sales_manager_name, last_contact_at, next_followup_at, viewing_scheduled_at, category_id')
             .eq('shop_id', options.shopId).is('deleted_at', null).order('id').range(from, to), scope)),
         fetchAllRows<OperationsTarget>((from, to) => db.from('team_sales_targets')
-            .select('year, month, target_amount, cashflow_target_amount, manual_contract_actual_amount, manual_cashflow_actual_amount, contract_count_target, manual_contract_count_actual, revision').eq('shop_id', options.shopId)
+            .select('year, month, target_amount, cashflow_target_amount, manual_contract_actual_amount, manual_cashflow_actual_amount, contract_count_target, manual_contract_count_actual, revision, block_amounts').eq('shop_id', options.shopId)
             .gte('year', Number(range.from.slice(0, 4))).lte('year', Number(range.to.slice(0, 4)))
             .order('year').order('month').range(from, to)),
         options.canReadFinance ? fetchAllRows<OperationsTransaction>(receiptPage) : Promise.resolve(null),
@@ -67,6 +67,6 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
             .select('id, name, is_active').eq('shop_id', options.shopId).order('sort_order').order('id').range(from, to)),
     ]);
     return { ...buildOperationsReport({ range, now: now.toISOString(), contracts, leads, targets, transactions, viewings, receiptClassificationAvailable, meetingClassificationAvailable, categories }),
-        monthlyPerformance: scope.projectIds === null ? buildMonthlyPerformance(targets, range, options.canReadFinance) : null,
+        monthlyPerformance: scope.projectIds === null ? buildMonthlyPerformance(targets, range, options.canReadFinance, contracts) : null,
         shopName: options.shopName || 'Vertmon Hub' };
 }

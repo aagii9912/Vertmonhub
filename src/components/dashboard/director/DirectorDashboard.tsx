@@ -116,9 +116,11 @@ function SalesVsTarget({ data, loading, className, month }: { data?: ReturnType<
             ) : (
                 <>
                     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                        <span className="num text-[34px] font-semibold leading-none tracking-[-0.02em] text-foreground">{formatMNTShort(s.actual)}</span>
-                        {s.target > 0 ? (
-                            <span className="text-[13px] text-muted-foreground">Зорилт {formatMNTShort(s.target)} · <b className={cn('font-semibold', s.attainmentPct >= 100 ? 'text-status-success' : 'text-foreground')}>{s.attainmentPct}%</b></span>
+                        <span className="num text-[34px] font-semibold leading-none tracking-[-0.02em] text-foreground">{s.actual === null ? '—' : `${formatMNTShort(s.actual)}${s.lowerBound ? '+' : ''}`}</span>
+                        {s.target !== null && s.target > 0 ? (
+                            <span className="text-[13px] text-muted-foreground">Зорилт {formatMNTShort(s.target)}{s.attainmentPct !== null && <> · <b className={cn('font-semibold', s.attainmentPct >= 100 ? 'text-status-success' : 'text-foreground')}>{s.attainmentPct}%{s.lowerBound ? '+' : ''}</b></>}</span>
+                        ) : data?.missing?.includes('sales') ? (
+                            <span role="alert" className="text-[12.5px] text-status-pending">Борлуулалт, зорилтыг уншиж чадсангүй</span>
                         ) : (
                             <Link href="/admin/sales-targets" className="text-[12.5px] text-brand-strong hover:underline">Сарын зорилт тохируулах</Link>
                         )}
@@ -128,21 +130,29 @@ function SalesVsTarget({ data, loading, className, month }: { data?: ReturnType<
                             </span>
                         )}
                     </div>
-                    {s.target > 0 && <Progress value={s.actual} max={s.target} className="max-w-md" />}
+                    {s.target !== null && s.target > 0 && s.actual !== null && <Progress value={s.actual} max={s.target} className="max-w-md" />}
                     <div className="text-[12.5px] text-fg-2">
                         <b className="num font-semibold text-foreground">{s.units} байр</b>
                         {s.unitsByType.length > 0 && <span className="text-muted-foreground"> · {s.unitsByType.map((u) => `${u.type} ${u.count}`).join(' · ')}</span>}
                     </div>
-                    <TrendChart actual={s.trendActual} target={s.trendTarget} current={month} />
+                    <p className="text-[12px] text-muted-foreground">
+                        Төслийн төлөвлөгөөнд хамаарах гэрээ (Агуулах, Үйлчилгээг хассан; төлөвлөгөө блокоор задлаагүй сард бусад блокийн орон сууц орно), захиалга өгсөн огноогоор, цуцлагдсаныг хассан.
+                        {s.undated > 0 && ` Огноогүй ${s.undated} гэрээ сарын дүнд ороогүй («+»).`}{' '}
+                        <Link href="/dashboard/reports/plan" className="text-brand-strong hover:underline">Төлөвлөгөөний биелэлт</Link>
+                    </p>
+                    <TrendChart actual={s.trendActual} target={s.trendTarget} lowerBound={s.trendLowerBound} current={month} />
                 </>
             )}
         </Panel>
     );
 }
 
+const isNum = (value: number | null): value is number => value !== null;
+
 /** 12 сарын багана — бодит (accent) + зорилт (хоосон хүрээ). Inline SVG, санг ашиглахгүй.
- *  Өргөнийг контейнерээс хэмжинэ — текст хэзээ ч томорч/жижгэрэхгүй. */
-function TrendChart({ actual, target, current }: { actual: number[]; target: number[]; current: number }) {
+ *  Өргөнийг контейнерээс хэмжинэ — текст хэзээ ч томорч/жижгэрэхгүй.
+ *  Тодорхойгүй сар (огноогүй гэрээтэй, дүнгүй) «—»; доод хязгаартай сарын дүн «+» — хэзээ ч 0 мэт зурахгүй. */
+function TrendChart({ actual, target, lowerBound, current }: { actual: (number | null)[]; target: (number | null)[]; lowerBound: boolean[]; current: number }) {
     const ref = useRef<HTMLDivElement>(null);
     const [W, setW] = useState(760);
     useEffect(() => {
@@ -154,7 +164,7 @@ function TrendChart({ actual, target, current }: { actual: number[]; target: num
     }, []);
 
     const H = 200, padL = 52, padR = 8, padB = 24, padT = 16;
-    const max = Math.max(1, ...actual, ...target);
+    const max = Math.max(1, ...actual.filter(isNum), ...target.filter(isNum));
     const nice = niceMax(max);
     const unit = nice >= 1_000_000_000 ? 1_000_000_000 : 1_000_000;
     const unitLabel = unit === 1_000_000_000 ? 'тэрбум ₮' : 'сая ₮';
@@ -183,17 +193,23 @@ function TrendChart({ actual, target, current }: { actual: number[]; target: num
                 {Array.from({ length: 12 }).map((_, i) => {
                     const cx = padL + slot * i + slot / 2;
                     const isCur = i === current - 1;
+                    const plan = target[i] ?? null;
+                    const value = actual[i] ?? null;
+                    const partial = !!lowerBound[i];
                     return (
                         <g key={i}>
                             {isCur && <rect x={padL + slot * i + 2} y={padT - 6} width={slot - 4} height={innerH + 6} fill="var(--surface-2)" rx={4} />}
-                            {target[i] > 0 && (
-                                <rect x={cx - barW / 2 - 3} y={y(target[i])} width={barW + 6} height={Math.max(0, innerH + padT - y(target[i]))} fill="none" stroke="var(--border-strong)" strokeWidth={1} rx={2} />
+                            {plan !== null && plan > 0 && (
+                                <rect x={cx - barW / 2 - 3} y={y(plan)} width={barW + 6} height={Math.max(0, innerH + padT - y(plan))} fill="none" stroke="var(--border-strong)" strokeWidth={1} rx={2} />
                             )}
-                            {actual[i] > 0 && (
-                                <rect x={cx - barW / 2} y={y(actual[i])} width={barW} height={Math.max(1, innerH + padT - y(actual[i]))} fill="var(--brand)" rx={2} />
+                            {value !== null && value > 0 && (
+                                <rect x={cx - barW / 2} y={y(value)} width={barW} height={Math.max(1, innerH + padT - y(value))} fill="var(--brand)" fillOpacity={partial ? 0.7 : 1} rx={2} />
                             )}
-                            {isCur && actual[i] > 0 && (
-                                <text x={cx} y={y(actual[i]) - 5} textAnchor="middle" fontSize={10.5} fill="var(--fg)" fontFamily="var(--font-mono-stack)">{tick(actual[i])}</text>
+                            {value === null && partial && (
+                                <text x={cx} y={innerH + padT - 5} textAnchor="middle" fontSize={12} fill="var(--muted)" data-unknown-month={i + 1}>—</text>
+                            )}
+                            {isCur && value !== null && value > 0 && (
+                                <text x={cx} y={y(value) - 5} textAnchor="middle" fontSize={10.5} fill="var(--fg)" fontFamily="var(--font-mono-stack)">{`${tick(value)}${partial ? '+' : ''}`}</text>
                             )}
                             {(!compact || isCur || i % 2 === 0) && (
                                 <text x={cx} y={H - 7} textAnchor="middle" fontSize={10.5} fill={isCur ? 'var(--fg)' : 'var(--muted)'} fontWeight={isCur ? 600 : 400}>{compact ? `${i + 1}` : `${i + 1}-р сар`}</text>

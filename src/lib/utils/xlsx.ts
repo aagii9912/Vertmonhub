@@ -33,11 +33,26 @@ export interface ReadSheetOptions {
     defval?: unknown;
 }
 
+/** Листийн харагдац — бүх горимд. */
+export interface WorkbookSheetLayout {
+    colWidths?: readonly number[];
+    /**
+     * Баганын тоон формат (0-ээс эхэлсэн индекс): толгойн (эхний) мөрөөс бусад утгатай нүдэнд.
+     * Огнооны нүдэнд формат өгөөгүй бол `yyyy-mm-dd` (цагтай бол `yyyy-mm-dd hh:mm`).
+     */
+    numFmts?: ReadonlyArray<string | undefined>;
+    /** Эхний мөр (толгой): тод, голлуулсан, мөр шилжүүлсэн. */
+    headerStyle?: 'bold';
+}
+
 export type WorkbookSheetSpec =
-    /** `json_to_sheet`: толгой = бүх мөрийн түлхүүрийн нэгдэл, анх таарсан дарааллаар */
-    | { name: string; rows: SheetRow[]; colWidths?: number[] }
-    /** `aoa_to_sheet`: массивуудыг байгаагаар нь */
-    | { name: string; aoa: unknown[][]; colWidths?: number[] };
+    /**
+     * `json_to_sheet`: толгой = бүх мөрийн түлхүүрийн нэгдэл, анх таарсан дарааллаар.
+     * `columns` өгвөл толгой яг тэр (дараалал тогтмол, бусад түлхүүр орохгүй) — мөргүй ч толгой бичигдэнэ.
+     */
+    | ({ name: string; rows: SheetRow[]; columns?: readonly string[] } & WorkbookSheetLayout)
+    /** `aoa_to_sheet`: массивуудыг байгаагаар нь (зөвхөн толгойн мөртэй бол толгой л бичигдэнэ) */
+    | ({ name: string; aoa: unknown[][] } & WorkbookSheetLayout);
 
 export class XlsxSheetNotFoundError extends Error {
     constructor(sheet: number | string) {
@@ -311,6 +326,7 @@ function csvEscape(s: string): string {
 /**
  * Листүүдээс .xlsx буфер үүсгэнэ (SheetJS `book_new` + `json_to_sheet` / `aoa_to_sheet` + `write`).
  * Листийн нэрийг Excel-ийн дүрмээр цэвэрлэж (`\ / ? * [ ] :` → `_`), 31 тэмдэгтээр тасалж, давхардвал дугаарлана.
+ * Огноо нь огнооны нүд (Excel-д эрэмбэлэгдэж, шүүгдэнэ); толгойн загвар, баганын формат — `WorkbookSheetLayout`.
  */
 export async function buildWorkbookBuffer(sheets: WorkbookSheetSpec[]): Promise<Buffer<ArrayBuffer>> {
     const workbook = new ExcelJS.Workbook();
@@ -318,8 +334,21 @@ export async function buildWorkbookBuffer(sheets: WorkbookSheetSpec[]): Promise<
 
     for (const spec of sheets) {
         const ws = workbook.addWorksheet(uniqueSheetName(spec.name, usedNames));
-        const matrix = 'aoa' in spec ? spec.aoa : rowsToAoa(spec.rows);
-        for (const row of matrix) ws.addRow(row.map(toCellValue));
+        const matrix = 'aoa' in spec ? spec.aoa : spec.columns ? columnsToAoa(spec.rows, spec.columns) : rowsToAoa(spec.rows);
+        matrix.forEach((row, rowIndex) => {
+            const values = row.map(toCellValue);
+            const added = ws.addRow(values);
+            if (rowIndex === 0 && spec.headerStyle === 'bold') {
+                added.eachCell(cell => {
+                    cell.font = { bold: true };
+                    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+                });
+            }
+            values.forEach((value, i) => {
+                const format = (rowIndex > 0 ? spec.numFmts?.[i] : undefined) ?? (value instanceof Date ? defaultDateFormat(value) : undefined);
+                if (format && value !== null) added.getCell(i + 1).numFmt = format;
+            });
+        });
         spec.colWidths?.forEach((width, i) => {
             if (width > 0) ws.getColumn(i + 1).width = width;
         });
@@ -346,6 +375,18 @@ function rowsToAoa(rows: SheetRow[]): unknown[][] {
     }
     if (headers.length === 0) return [];
     return [headers, ...rows.map((row) => headers.map((h) => row[h]))];
+}
+
+/** Тогтмол толгой: мөр бүрийг `columns`-оор тэгшилнэ (мөргүй бол зөвхөн толгой). */
+function columnsToAoa(rows: SheetRow[], columns: readonly string[]): unknown[][] {
+    if (columns.length === 0) return [];
+    return [[...columns], ...rows.map((row) => columns.map((column) => row[column]))];
+}
+
+/** Бичих Date нь UTC-д шилжсэн wall-clock (`localWallClockToUtc`) тул UTC бүрэлдэхүүнээр цагийг шалгана. */
+function defaultDateFormat(value: Date): string {
+    const hasTime = value.getUTCHours() !== 0 || value.getUTCMinutes() !== 0 || value.getUTCSeconds() !== 0;
+    return hasTime ? 'yyyy-mm-dd hh:mm' : 'yyyy-mm-dd';
 }
 
 function toCellValue(v: unknown): CellValue {

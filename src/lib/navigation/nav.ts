@@ -134,8 +134,9 @@ const CONTRACTS: NavItem = {
     children: [
         { name: 'Жагсаалт', href: '/dashboard/contracts' },
         { name: 'Гэрээ үүсгэх', href: '/dashboard/contracts/generate' },
+        { name: 'Excel импорт', href: '/dashboard/contracts/import' },
     ],
-    keywords: ['contract', 'төлбөр'],
+    keywords: ['contract', 'төлбөр', 'hub', 'excel'],
 };
 
 const CUSTOMERS: NavItem = {
@@ -204,6 +205,7 @@ const REPORTS: NavItem = {
     children: [
         { name: 'Сарын KPI', href: '/dashboard/reports/kpi' },
         { name: 'Үйл ажиллагаа', href: '/dashboard/reports/operations' },
+        { name: 'Төлөвлөгөөний биелэлт', href: '/dashboard/reports/plan' },
         { name: 'ERP импорт, тайлан', href: '/dashboard/reports/erp' },
         { name: 'Менежерийн гүйцэтгэл', href: '/dashboard/reports/manager-performance' },
         { name: 'Лид', href: '/dashboard/reports/leads' },

@@ -6,16 +6,20 @@ import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 export type MyStatsPeriod = 'today' | 'week' | 'month';
 
+/** Багийн төлөвлөгөө ба төслийн хэмжээний гүйцэтгэл — тодорхойгүй бол null (0 биш), огноогүй гэрээтэй бол доод хязгаар. */
 export interface PeriodStat {
-    target: number;
-    actual: number;
+    target: number | null;
+    actual: number | null;
+    lowerBound: boolean;
+    pct: number | null;
 }
 
 export interface MyStatsTarget {
     year: number;
     month: number;
     quarter: number;
-    periods: { month: PeriodStat; quarter: PeriodStat; year: PeriodStat };
+    /** year: бүтэн жилийн төлөвлөгөөнөөс; ytdTarget/ytdPct — он эхнээс. */
+    periods: { month: PeriodStat; quarter: PeriodStat; year: PeriodStat & { ytdTarget: number | null; ytdPct: number | null } };
     mine: { month: number; quarter: number; year: number };
 }
 

@@ -67,6 +67,46 @@ describe('buildWeeklySales', () => {
         expect(report.sources.contracts).toBe('erp');
     });
 
+    it('never sums an unknown paid or advance as zero and compares only in-plan contracts with the plan', () => {
+        const info = { date: '2026-09-22', source: 'ERP' };
+        const report = buildWeeklySales({
+            range, sales: { info, rows: [
+                sale('A|1', { paid: null }), sale('B|1', { kind: 'parking', advanceAmount: null }), sale('S|1', { kind: 'industry' }),
+            ] }, previousSales: null, crmContracts: null, inventory: null, monthTarget: 400,
+        });
+        expect(report.week.byKind.find(kind => kind.kind === 'residential')).toMatchObject({ paid: null, advance: 30 });
+        expect(report.week.byKind.find(kind => kind.kind === 'parking')).toMatchObject({ paid: 30, advance: null });
+        expect(report.week.byKind.find(kind => kind.kind === 'industry')).toMatchObject({ paid: 30, advance: 30 });
+        // Агуулах төлөвлөгөөнд хамаарахгүй: 200 / 400 = 50% (бүх төрлөөр 300 / 400 биш).
+        expect(report.month).toMatchObject({ count: 3, total: 300, planCount: 2, planTotal: 200, outsidePlanCount: 1, attainmentPct: 50 });
+
+        const rows = [sale('A|1'), sale('O|1', { block: '202' })];
+        const blockPlanned = buildWeeklySales({ range, sales: { info, rows }, previousSales: null, crmContracts: null, inventory: null, monthTarget: 400, monthBlockPlanned: true });
+        expect(blockPlanned.month).toMatchObject({ planCount: 1, attainmentPct: 25 });
+        const totalPlan = buildWeeklySales({ range, sales: { info, rows }, previousSales: null, crmContracts: null, inventory: null, monthTarget: 400 });
+        expect(totalPlan.month).toMatchObject({ planCount: 2, attainmentPct: 50 });
+    });
+
+    it('lets only in-plan undated contracts make the plan figures a lower bound', () => {
+        const info = { date: '2026-09-22', source: 'ERP' };
+        // ERP: огноотой Б1 + огноогүй Агуулах → хувь яг (50%), «+» биш.
+        const erp = buildWeeklySales({ range, sales: { info, rows: [sale('A|1'), sale('S|1', { kind: 'industry', orderDate: null })] },
+            previousSales: null, crmContracts: null, inventory: null, monthTarget: 200 });
+        expect(erp.sources).toMatchObject({ undatedContracts: 1, undatedPlanContracts: 0 });
+        expect(erp.month).toMatchObject({ planTotal: 100, attainmentPct: 50 });
+
+        // CRM: огноогүй Агуулах л байвал төлөвлөгөөнд хамаарах гэрээгүй сар 0%, «—» биш; огноогүй Б1 байвал тодорхойгүй.
+        const crm = (undated: Array<{ kind: 'residential' | 'industry'; block: string | null }>) => buildWeeklySales({
+            range, sales: null, previousSales: null, crmContracts: [], crmUndated: undated.length, crmUndatedLines: undated, inventory: null, monthTarget: 200 });
+        expect(crm([{ kind: 'industry', block: 'Б1' }]).month).toMatchObject({ planCount: 0, attainmentPct: 0 });
+        expect(crm([{ kind: 'industry', block: 'Б1' }]).sources).toMatchObject({ undatedContracts: 1, undatedPlanContracts: 0 });
+        expect(crm([{ kind: 'residential', block: 'Б1' }]).month).toMatchObject({ attainmentPct: null });
+        // Задалсан төлөвлөгөөтэй сард бусад блокийн орон сууц хамаарахгүй.
+        const other = buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [], crmUndated: 1,
+            crmUndatedLines: [{ kind: 'residential', block: '202' }], inventory: null, monthTarget: 200, monthBlockPlanned: true });
+        expect(other.sources.undatedPlanContracts).toBe(0);
+    });
+
     it('computes cash from paid differences between two snapshots and attributes it to managers', () => {
         const report = buildWeeklySales({
             range,

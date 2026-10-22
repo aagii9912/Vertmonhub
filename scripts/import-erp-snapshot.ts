@@ -5,7 +5,8 @@
  *   SHOP_ID=<uuid> npx tsx scripts/import-erp-snapshot.ts            # урьдчилсан шалгалт (юу ч бичихгүй)
  *   SHOP_ID=<uuid> npx tsx scripts/import-erp-snapshot.ts --apply    # бичнэ
  *
- * Зөвхөн шинэ мөр нэмнэ: бүртгэлтэй байр, гэрээг өөрчлөхгүй (дахин ажиллуулахад давхардахгүй).
+ * Зөвхөн шинэ мөр нэмнэ: бүртгэлтэй байр, гэрээг өөрчлөхгүй (дахин ажиллуулахад давхардахгүй). Зөвхөн цуцалсан
+ * гэрээтэй байр чөлөөтэй тооцогдоно (дахин зарагдсан бол шинэ гэрээ нэмэгдэнэ).
  * Байрны дүрэм `mapInventoryRows`, гэрээний дүрэм `contractsFromErpProducts` (төлсөн дүн, дугаар, огноо NULL).
  * Нэг ч мөр алдаатай бол юу ч бичихгүй.
  */
@@ -70,9 +71,11 @@ async function main() {
         return;
     }
 
-    const existing = await fetchAllRows<{ product_type: string; unit_label: string | null }>((from, to) => db.from('property_contracts')
-        .select('product_type, unit_label').eq('shop_id', shopId).is('deleted_at', null).order('id').range(from, to));
-    const taken = new Set(existing.map(row => JSON.stringify([row.product_type, row.unit_label])));
+    const existing = await fetchAllRows<{ product_type: string; unit_label: string | null; contract_status: string | null }>((from, to) => db.from('property_contracts')
+        .select('product_type, unit_label, contract_status').eq('shop_id', shopId).is('deleted_at', null).order('id').range(from, to));
+    // Цуцалсан гэрээ байрыг эзэлдэггүй: дахин зарагдсан нэгжийн шинэ гэрээг алгасахгүй.
+    const taken = new Set(existing.filter(row => row.contract_status !== 'cancelled')
+        .map(row => JSON.stringify([row.product_type, row.unit_label])));
     const freshContracts = contracts.contracts.filter(row => !taken.has(JSON.stringify([row.product_type, row.unit_label])));
     const contractSummary = {
         derived: contracts.contracts.length, fresh: freshContracts.length, existing: contracts.contracts.length - freshContracts.length,

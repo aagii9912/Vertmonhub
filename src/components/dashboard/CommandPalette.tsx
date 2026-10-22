@@ -82,7 +82,7 @@ export function CommandPalette() {
     });
     const contracts = useQuery({
         queryKey: ['palette', 'contracts', shop?.id, term],
-        queryFn: () => dashboardJson<{ contracts: ContractHit[] }>(`/api/dashboard/contracts?search=${encodeURIComponent(term)}&page=1&pageSize=${RESULT_LIMIT}`),
+        queryFn: () => dashboardJson<{ contracts: ContractHit[] }>(`/api/dashboard/contracts?search=${encodeURIComponent(term)}&page=1&pageSize=${RESULT_LIMIT}&stats=0`),
         enabled: searching && !!shop?.id && can('contracts'),
         staleTime: 30_000,
         meta: { inlineError: true },

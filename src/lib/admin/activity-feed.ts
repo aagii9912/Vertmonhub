@@ -190,26 +190,38 @@ const AUDIT_FIELD_LABEL: Record<string, string> = {
     archived: 'Архив', sort_order: 'Дараалал', customer_name: 'Харилцагч', customer_phone: 'Утас', sales_manager: 'Менежер',
     sales_manager_name: 'Менежер', total_price: 'Нийт үнэ', contract_date: 'Гэрээний огноо', contract_number: 'Гэрээний дугаар',
     price: 'Үнэ', address: 'Хаяг', source: 'Эх сурвалж',
+    // Гэрээний жагсаалтын (HUB) импорт
+    order_date: 'Захиалга өгсөн огноо', payment_condition: 'Захиалгын нөхцөл', prepayment_condition: 'Урьдчилгааны нөхцөл',
+    prepayment_due: 'Урьдчилгааны дүн', price_per_sqm: 'М.кв үнэ', contracted_area: 'Гэрээлсэн талбай', overdue_amount: 'Төлбөр хоцролт',
+    overdue_as_of: 'Хоцролтын огноо', contract_status: 'Гэрээний төлөв', customer_first_name: 'Нэр', customer_last_name: 'Овог',
+    product_type: 'Төрөл', block_name: 'Блок', floor: 'Давхар', model: 'Загвар', unit_number: 'Тоот', legacy_unit_number: 'Хуучин тоот',
 };
+/** Аудитын `changes._meta` — бичилтийн эх сурвалж (талбар биш). */
+const AUDIT_META_KEY = '_meta';
+const AUDIT_SOURCE_LABEL: Record<string, string> = { contract_list_import: 'Гэрээний жагсаалтын импорт' };
 const holderName = (value: unknown) => (isRecord(value) ? text(value.customer_name) : text(value));
 
 export function auditItem(row: AuditRow, names: ReadonlyMap<string, string>): ActivityFeedItem {
     const changes = isRecord(row.changes) ? row.changes : {};
     const entity = AUDIT_ENTITY_LABEL[row.entity] ?? row.entity;
     const action = AUDIT_ACTION_LABEL[row.action] ?? row.action;
-    const name = text(changes.name);
+    const meta = isRecord(changes[AUDIT_META_KEY]) ? changes[AUDIT_META_KEY] : null;
+    // Засварт `name` нь өөрчлөгдсөн талбар; бичлэгийн нэр (ж: гэрээний байр) `_meta.label`-д.
+    const name = text(changes.name) ?? text(meta?.label);
     let detail: string | null = null;
     if (row.action === 'transfer') {
         const from = holderName(changes.from);
         const to = holderName(changes.to);
         if (from || to) detail = `${from ?? '—'} → ${to ?? '—'}`;
     } else {
-        const fields = Object.keys(changes).filter(key => key !== 'name' || row.action === 'update');
+        const fields = Object.keys(changes).filter(key => key !== AUDIT_META_KEY && (key !== 'name' || row.action === 'update'));
         if (fields.length) {
             const shown = fields.slice(0, 8).map(key => AUDIT_FIELD_LABEL[key] ?? key);
             detail = `Талбар: ${shown.join(', ')}${fields.length > 8 ? ` +${fields.length - 8}` : ''}`;
         }
     }
+    const source = typeof meta?.source === 'string' ? AUDIT_SOURCE_LABEL[meta.source] ?? null : null;
+    if (source) detail = detail ? `${detail} · ${source}` : source;
     return {
         id: `audit:${row.id}`, at: row.created_at, source: 'audit', kind: `${row.entity}.${row.action}`,
         by: row.actor_id ? names.get(row.actor_id) ?? null : 'Систем', byUserId: row.actor_id,

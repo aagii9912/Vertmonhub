@@ -125,7 +125,7 @@ describe('formatKpiReportText', () => {
                 },
             ],
             tasksDone: [{ id: 't1', title: 'Танилцуулга бэлтгэсэн', completed_at: '2026-07-10T04:00:00Z' }],
-            target: { teamTarget: 1_000_000_000, teamActual: 500_000_000, myShare: 50 },
+            target: { teamTarget: 1_000_000_000, teamActual: 500_000_000, lowerBound: false, pct: 50, myShare: 50 },
         });
 
         expect(text).toContain('САРЫН KPI ТАЙЛАН — 2026 оны 7-р сар');
@@ -141,6 +141,16 @@ describe('formatKpiReportText', () => {
         expect(text).toContain('ХИЙСЭН АЖЛУУД');
         expect(text).toContain('Танилцуулга бэлтгэсэн');
         expect(text).toContain('Vertmon Hub автоматаар нэгтгэв');
+    });
+
+    it('тодорхойгүй багийн гүйцэтгэлийг 0% биш «—», доод хязгаарыг «+» гэж бичнэ', () => {
+        const summary = buildKpiSummary({ leads: [], viewings: [], contractCount: 0, revenue: 0, tasksDone: [], prev: { leads: 0, viewings: 0, contracts: 0, revenue: 0 } });
+        const base = { managerName: 'Бат', year: 2026, month: 10, summary, leadsByStatus: {}, leadsBySource: {}, viewingsByStatus: {}, contracts: [], tasksDone: [] };
+        const unknown = formatKpiReportText({ ...base, target: { teamTarget: 5_000_000_000, teamActual: null, lowerBound: true, pct: null, myShare: null } });
+        expect(unknown).toContain('Гүйцэтгэл: — (—)');
+        expect(unknown).not.toContain('(0%)');
+        const partial = formatKpiReportText({ ...base, target: { teamTarget: 5_352_996_000, teamActual: 2_281_995_000, lowerBound: true, pct: 42.6, myShare: null } });
+        expect(partial).toMatch(/Гүйцэтгэл: 2,281,995,000.*\+ \(42\.6%\+\)/);
     });
 
     it('зорилтгүй үед ЗОРИЛТ хэсэг гарахгүй', () => {
