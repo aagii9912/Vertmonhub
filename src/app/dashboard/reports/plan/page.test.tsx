@@ -53,7 +53,7 @@ describe('plan fulfilment page', () => {
         expect(screen.getByText(/Агуулах — 1 гэрээ · 40/)).toBeInTheDocument();
         expect(screen.getByText('Огноогүй 1 гэрээ сарын гүйцэтгэлд ороогүй')).toBeInTheDocument();
         expect(screen.getByRole('link', { name: 'Б1-108 (01)' })).toHaveAttribute('href', '/dashboard/contracts/3');
-        expect(screen.getByText(/Энэ онд цуцлагдсан: 1 гэрээ · 900/)).toBeInTheDocument();
+        expect(screen.getByText(/Энэ онд цуцлагдсан: 1 гэрээ · 900 \(9-р сар 1 · 900\)/)).toBeInTheDocument();
         expect(screen.getAllByText('Мөнгөн урсгалыг санхүүгийн эрхтэй ажилтан харна.').length).toBeGreaterThan(0);
         expect(screen.queryByRole('heading', { name: /Мөнгөн урсгал/ })).not.toBeInTheDocument();
         expect(transport.json).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/dashboard\/reports\/plan-performance\?year=\d{4}$/), expect.any(Object));

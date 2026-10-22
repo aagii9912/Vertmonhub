@@ -230,7 +230,8 @@ function PlanReport({ data, segment, segmentLabel }: { data: PlanResponse; segme
             <div className="space-y-1 border-t border-border px-3.5 py-2.5 text-xs text-muted-foreground">
                 <p>{LOWER_BOUND_NOTE} Гараар оруулсан гүйцэтгэл одгүй, «+»-гүй; системийн дүнтэй нэмж нийлбэрлэхгүй.</p>
                 {otherResidential > 0 && segment === 'total' && <p>Блокоор задлаагүй төлөвлөгөөтэй сард бусад блокийн орон сууцны {otherResidential} гэрээ «Нийт»-д орсон.</p>}
-                {data.cancelled.count > 0 && <p>{PLAN_CANCELLED_NOTE} Энэ онд цуцлагдсан: {data.cancelled.count} гэрээ · {whole(data.cancelled.amount)}.</p>}
+                {data.cancelled.count > 0 && <p>{PLAN_CANCELLED_NOTE} Энэ онд цуцлагдсан: {data.cancelled.count} гэрээ · {whole(data.cancelled.amount)}
+                    {' '}({data.months.filter(row => row.cancelled.count > 0).map(row => `${row.month}-р сар ${row.cancelled.count} · ${whole(row.cancelled.amount)}`).join('; ')}).</p>}
                 {data.transferred > 0 && <p>«Тоот шилжсэн» {data.transferred} гэрээ гүйцэтгэлд орсон — байр сольсон бол шинэ гэрээтэйгээ давхар тоологдож болно.</p>}
             </div>
         </section>
