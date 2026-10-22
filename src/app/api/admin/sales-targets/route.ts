@@ -8,6 +8,9 @@ import { fetchAllRows } from '@/lib/utils/pagination';
 import { z } from 'zod';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { ubParts } from '@/lib/utils/date';
+import { logger } from '@/lib/utils/logger';
+import { loadPlanPerformance } from '@/lib/sales/plan-performance-load';
+import type { PlanMetricKey, PlanPerformance, PlanScopeCells, PlanValue } from '@/lib/sales/plan-performance';
 
 const shopSchema = z.guid();
 const yearSchema = SalesYearSchema;
@@ -22,6 +25,34 @@ const rosterSchema = z.object({
 });
 
 function throwOnError(error: unknown): never { throw error; }
+
+const SYSTEM_ACTUAL_SOURCE = 'Төслийн бүх гэрээ (менежерээр шүүхгүй) · захиалга өгсөн огноогоор · цуцлагдсаныг хассан · Б1, Б2, зогсоол';
+
+const autoOf = (cells: PlanScopeCells) => Object.fromEntries(Object.entries(cells.metrics).map(([key, cell]) => [key, cell!.auto])) as Partial<Record<PlanMetricKey, PlanValue>>;
+
+/** Мэдэгдэх саруудын нийлбэр; огноогүй гэрээтэй бол доод хязгаар («+»), «0+» = тодорхойгүй. */
+function sumValues(values: Array<PlanValue | undefined>): PlanValue {
+    const known = values.filter((value): value is PlanValue => !!value && value.value !== null);
+    const lowerBound = values.some(value => value?.lowerBound);
+    const total = known.reduce((sum, value) => sum + Math.round(value.value! * 100), 0) / 100;
+    return { value: !known.length || (total === 0 && lowerBound) ? null : total, lowerBound };
+}
+
+/**
+ * «CRM-ээр тооцсон» харьцуулалт — төлөвлөгөөний биелэлтийн ачаалагчийн системийн дүн (гар гүйцэтгэлээс тусдаа):
+ * сар × блок, огноогүй гэрээтэй бол «+», ирээдүйн сар null. Гар гүйцэтгэлд хэзээ ч нэмэхгүй.
+ */
+function systemActuals(plan: PlanPerformance) {
+    const months = plan.months.map(row => ({
+        month: row.month, status: row.status,
+        total: autoOf(row.total),
+        blocks: { b1: autoOf(row.blocks.b1), b2: autoOf(row.blocks.b2), parking: autoOf(row.blocks.parking) },
+        outside: { count: row.outside.count, amount: row.outside.amount },
+    }));
+    const year = Object.fromEntries((['contract_count', 'contract', 'cashflow'] as const)
+        .map(key => [key, sumValues(months.map(row => row.total[key]))])) as Record<PlanMetricKey, PlanValue>;
+    return { months, year, undated: plan.undated.count, source: SYSTEM_ACTUAL_SOURCE };
+}
 
 /**
  * Багийн борлуулалтын төлөвлөгөө + идэвхтэй менежерийн бүртгэл (admin only).
@@ -77,7 +108,12 @@ export async function GET(request: NextRequest) {
 
         const supabase = supabaseAdmin();
 
-        const [months, byManager, rosterRes, teamMembers, projects, memberships] = await Promise.all([
+        // Системийн дүн зөвхөн харьцуулалт: уншиж чадахгүй бол төлөвлөгөө засварыг хаахгүй, «тооцоолж чадсангүй» гэнэ.
+        const system = loadPlanPerformance(supabase, { shopId: shopId!, year, canReadFinance: true }).then(systemActuals).catch(error => {
+            logger.warn('[Sales targets] System actuals unavailable', { error });
+            return null;
+        });
+        const [months, byManager, rosterRes, teamMembers, projects, memberships, systemActual] = await Promise.all([
             getTeamMonthlySales(supabase, shopId!, year),
             getMonthlyActualsByManager(supabase, shopId!, year, throwOnError),
             supabase.from('sales_managers').select('name, user_id, is_active').eq('shop_id', shopId),
@@ -86,6 +122,7 @@ export async function GET(request: NextRequest) {
                 .select('id, name').eq('shop_id', shopId).order('id').range(from, to)),
             fetchAllRows<{ manager_name: string; project_id: string }>((from, to) => supabase.from('sales_manager_projects')
                 .select('manager_name, project_id').eq('shop_id', shopId).order('manager_name').order('project_id').range(from, to)),
+            system,
         ]);
         if (rosterRes.error) throw rosterRes.error;
         const projectsByManager = new Map<string, string[]>();
@@ -106,22 +143,13 @@ export async function GET(request: NextRequest) {
             })
             .sort((a, b) => a.name.localeCompare(b.name, 'mn'));
 
-        // Багийн гүйцэтгэл = идэвхтэй менежерүүдийн нийлбэр
-        const activeNames = new Set(managers.filter((m) => m.is_active).map((m) => m.name));
-        const teamActual = Array(12).fill(0);
-        const teamCount = Array(12).fill(0);
-        for (const [name, m] of byManager) {
-            if (!activeNames.has(name)) continue;
-            for (let i = 0; i < 12; i++) {
-                teamActual[i] += m.actuals[i];
-                teamCount[i] += m.counts[i];
-            }
-        }
-
-        // Compatibility figures remain CRM-derived and never enter the manual performance totals.
+        // Багийн системийн гүйцэтгэл төслийн хэмжээнд (эзэмшигч 2026-10-22) — роостер өөрчлөгдөхөд түүх өөрчлөгдөхгүй.
+        // Менежер бүрийн year_actual л роостероор. Тодорхойгүй сар null (0 биш).
+        const teamActual = systemActual ? systemActual.months.map(row => row.total.contract?.value ?? null) : null;
+        const teamCount = systemActual ? systemActual.months.map(row => row.total.contract_count?.value ?? null) : null;
         const teamTarget = months.map(row => row.target_amount ?? 0);
         return NextResponse.json({ year, months, summary: summarizeMonthlySales(months), teamTarget, teamActual, teamCount,
-            computedActualSource: 'CRM-ийн гэрээ · одоо идэвхтэй менежерүүдийн нийлбэр', managers, teamMembers, projects }, {
+            system: systemActual, computedActualSource: SYSTEM_ACTUAL_SOURCE, managers, teamMembers, projects }, {
             headers: { 'Cache-Control': 'private, no-store' },
         });
     } catch (error) {
