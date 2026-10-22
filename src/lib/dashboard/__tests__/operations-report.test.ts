@@ -114,6 +114,30 @@ describe('operations report financial meaning', () => {
         expect(report.target.attainmentPct).toBe(50);
         expect(buildOperationsReport({ ...base, range: { from: '2026-08-01', to: '2026-09-30' }, targets: [{ year: 2026, month: 9, target_amount: 400_000_000 }] }).target.amount).toBeNull();
     });
+
+    it('compares only in-plan contracts with the plan and marks a lower bound while undated contracts exist', () => {
+        const targets = [{ year: 2026, month: 9, target_amount: 400_000_000, block_amounts: { b1: { target_amount: 300_000_000 }, parking: { target_amount: 100_000_000 } } }];
+        const report = buildOperationsReport({ ...base, targets, contracts: [
+            contract({ block_name: 'Б1' }),
+            contract({ id: 'storage', product_type: 'industry', total_price: 50_000_000 }),
+            contract({ id: 'other-block', block_name: '202', total_price: 70_000_000 }),
+            contract({ id: 'undated', contract_date: null, product_type: 'parking' }),
+        ] });
+        expect(report.contracts).toMatchObject({ count: 3, value: 320_000_000, undatedCount: 1 });
+        expect(report.target).toMatchObject({ amount: 400_000_000, attainmentPct: 50, attainmentPartial: true,
+            planContracts: { count: 1, value: 200_000_000, outsideCount: 2 } });
+        expect(formatOperationsReportText({ ...report, shopName: 'Тест' })).toContain('биелэлт 50%+ (төлөвлөгөөнд хамаарахгүй 2 гэрээг хассан)');
+
+        // Хугацаанд төлөвлөгөөнд хамаарах гэрээ алга, огноогүй нь байгаа бол хувь тодорхойгүй — 0% биш.
+        const unknown = buildOperationsReport({ ...base, targets, contracts: [contract({ id: 'undated', contract_date: null, product_type: 'parking' })] });
+        expect(unknown.target.attainmentPct).toBeNull();
+        expect(buildOperationsReport({ ...base, targets, contracts: [] }).target.attainmentPct).toBe(0);
+
+        // Блокоор задлаагүй төлөвлөгөөнд бусад блокийн орон сууц орно, агуулах орохгүй.
+        const total = buildOperationsReport({ ...base, targets: [{ year: 2026, month: 9, target_amount: 400_000_000 }],
+            contracts: [contract({ block_name: '202' }), contract({ id: 'storage', product_type: 'industry' })] });
+        expect(total.target).toMatchObject({ attainmentPct: 50, attainmentPartial: false });
+    });
 });
 
 describe('operations meetings and product breakdown', () => {

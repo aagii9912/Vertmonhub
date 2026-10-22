@@ -1,3 +1,5 @@
+import Link from 'next/link';
+import { ArrowUpRight } from 'lucide-react';
 import { Money } from '@/components/ui/Money';
 import { isMonthlySalesCount, MONTHLY_SALES_LABELS, MONTHLY_SALES_METRICS, monthlySalesAttainment, type MonthlySalesField } from '@/lib/sales/monthly';
 import type { MonthlyPerformance } from '@/lib/dashboard/operations-report';
@@ -12,7 +14,10 @@ export function MonthlySalesPerformance({ data }: { data: MonthlyPerformance }) 
         : isMonthlySalesCount(field) ? amount.toLocaleString('en-US') : <Money value={amount} />;
     return <section className="overflow-hidden rounded-md border border-border bg-surface">
         <div className="border-b border-border p-3">
-            <h2 className="text-sm font-semibold">Сарын төлөвлөгөө ба гүйцэтгэл</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold">Сарын төлөвлөгөө ба гүйцэтгэл</h2>
+                <Link href="/dashboard/reports/plan" className="inline-flex items-center gap-1 text-xs text-brand-strong hover:underline print:hidden">Блокоор дэлгэрэнгүй<ArrowUpRight className="size-3.5" /></Link>
+            </div>
             <p className="mt-1 text-xs text-muted-foreground">Гүйцэтгэл нь удирдлагын гараар оруулсан тоо, дүн. Доорх системийн бүртгэлийн дүнтэй нэмж нийлүүлэхгүй. Хоосон нүд — оруулаагүй; 0 — тэг.</p>
         </div>
         {!data.completeMonths ? <p className="p-3 text-sm text-muted-foreground">Сарын мэдээллийг харьцуулахдаа бүтэн сар сонгоно уу.</p> :

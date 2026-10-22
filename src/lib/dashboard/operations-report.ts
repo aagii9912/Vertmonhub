@@ -5,7 +5,8 @@ import { getLeadWorkQueues } from '@/lib/leads/work-queue';
 import { formatMNT } from '@/lib/utils/currency';
 import { ubDateStr, ubMonthRange } from '@/lib/utils/date';
 import { isMonthlySalesCount, MONTHLY_SALES_LABELS, MONTHLY_SALES_METRICS, monthlySalesAttainment, type MonthlySalesField, type MonthlySalesMonth } from '@/lib/sales/monthly';
-import { periodContractAmount, periodContractCount, undatedContractsHint } from './contract-dates';
+import { contractPlanScope, countsTowardPlan, hasBlockPlan } from '@/lib/sales/plan-performance';
+import { knownPeriodAmount, periodContractAmount, periodContractCount, undatedContractsHint } from './contract-dates';
 
 export const OperationsRangeSchema = z.object({
     from: z.iso.date(),
@@ -23,6 +24,7 @@ export interface OperationsContract {
     total_price: Amount;
     prepayment_paid_cash: Amount;
     product_type?: string | null;
+    block_name?: string | null;
     deleted_at?: string | null;
 }
 export interface OperationsViewing {
@@ -57,6 +59,8 @@ export interface OperationsTarget {
     cashflow_target_amount?: Amount; manual_contract_actual_amount?: Amount; manual_cashflow_actual_amount?: Amount;
     contract_count_target?: Amount; manual_contract_count_actual?: Amount;
     revision?: number;
+    /** Блокийн задаргаа — төлөвлөгөөнд хамаарах гэрээг ялгахад (`hasBlockPlan`). */
+    block_amounts?: unknown;
 }
 
 function amount(value: Amount): number | null {
@@ -199,6 +203,21 @@ export function buildOperationsReport(input: {
     const targetValues = months?.map(m => targets.get(m) ?? null);
     const targetAmount = targetValues?.length && targetValues.every(t => t !== null)
         ? targetValues.reduce<number>((sum, n) => sum + (n ?? 0), 0) : null;
+    // Төлөвлөгөөтэй харьцуулахдаа зөвхөн төлөвлөгөөнд хамаарах гэрээ (Б1/Б2/Зогсоол; задаргаагүй төлөвлөгөөнд бусад блокийн
+    // орон сууц ч орно) — Агуулах, Үйлчилгээ нь «Төлөвлөгөөний биелэлт» хуудастай адил тусдаа.
+    const blockPlanned = new Map(input.targets.map(t => [`${t.year}-${String(t.month).padStart(2, '0')}`, hasBlockPlan(t.block_amounts)]));
+    let planValue = 0;
+    let planCount = 0;
+    let planMissing = 0;
+    for (const c of periodContracts) {
+        if (!countsTowardPlan(contractPlanScope(c), blockPlanned.get(c.contract_date!.slice(0, 7)) ?? false)) continue;
+        planCount++;
+        const value = amount(c.total_price);
+        if (value === null) planMissing++;
+        else planValue += value;
+    }
+    const undatedInPlan = contracts.filter(c => !c.contract_date && contractPlanScope(c) !== null).length;
+    const knownPlanValue = knownPeriodAmount(planValue, planCount, undatedInPlan);
 
     const leads = input.leads.filter(l => !l.deleted_at);
     const active = leads.filter(l => ACTIVE_STATUSES.some(status => status === l.status));
@@ -229,7 +248,10 @@ export function buildOperationsReport(input: {
             byProduct: [...products.values()].sort((a, b) => b.count - a.count || a.productType.localeCompare(b.productType)) },
         meetings,
         target: { amount: targetAmount, completeMonths: !!months, configuredMonths: targetValues?.filter(t => t !== null).length ?? 0, expectedMonths: months?.length ?? 0,
-            attainmentPct: targetAmount && !missingContractAmounts ? Math.round(contractValue / targetAmount * 100) : null },
+            // Огноогүй гэрээтэй ч хугацаанд төлөвлөгөөнд хамаарах гэрээ байвал хувь «N%+» (доод хязгаар); нэг ч байхгүй бол null.
+            attainmentPct: targetAmount && !planMissing && knownPlanValue !== null ? Math.round(knownPlanValue / targetAmount * 100) : null,
+            attainmentPartial: undatedInPlan > 0,
+            planContracts: { count: planCount, value: planValue, outsideCount: periodContracts.length - planCount } },
         cash,
         // Stored contract/import snapshot. New ledger receipts do not update this field.
         advanceSnapshot: { amount: snapshots.some(n => n !== null) ? snapshots.reduce<number>((sum, n) => sum + (n ?? 0), 0) : null,
@@ -256,7 +278,7 @@ export function formatOperationsReportText(report: OperationsReport): string {
             meetings.basis,
             ...(!meetings.classificationAvailable ? ['Уулзалтын төрлийн ангилал системд хараахан нэвтрээгүй. Болсон уулзалтыг төрөл тодорхойгүйгээр харуулав.'] : []),
         ] : ['Уулзалтын мэдээлэл энэ тайланд байхгүй.']),
-        target.amount !== null ? `Гэрээний зорилт: ${formatMNT(target.amount)} · биелэлт ${target.attainmentPct === null ? 'тооцох боломжгүй' : `${target.attainmentPct}%`}` : 'Гэрээний зорилт: сонгосон хугацаанд бүрэн тохируулаагүй эсвэл бүтэн сар сонгоогүй',
+        target.amount !== null ? `Гэрээний зорилт: ${formatMNT(target.amount)} · биелэлт ${target.attainmentPct === null ? 'тооцох боломжгүй' : `${target.attainmentPct}%${target.attainmentPartial ? '+' : ''}`}${target.planContracts?.outsideCount ? ` (төлөвлөгөөнд хамаарахгүй ${target.planContracts.outsideCount} гэрээг хассан)` : ''}` : 'Гэрээний зорилт: сонгосон хугацаанд бүрэн тохируулаагүй эсвэл бүтэн сар сонгоогүй',
         ...(report.monthlyPerformance ? [
             'Сарын төлөвлөгөө ба гараар оруулсан гүйцэтгэл (системийн бүртгэлтэй нэмж нийлүүлэхгүй):',
             ...(!report.monthlyPerformance.completeMonths ? ['Сарын мэдээллийг харьцуулахдаа бүтэн сар сонгоно уу.'] : []),
