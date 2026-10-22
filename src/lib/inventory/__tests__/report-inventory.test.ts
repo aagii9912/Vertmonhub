@@ -49,6 +49,31 @@ describe('overlayContracts', () => {
         expect(unmatched).toBe(1);
     });
 
+    it('never borrows a stale register manager for a live contract without one, and takes barter from the contract channel too', () => {
+        const { rows } = overlayContracts([
+            unit('Б1-96', { sales_manager: 'Чанцалдулам.Раднаа' }) as never,
+            unit('Б1-97') as never,
+        ], [
+            contract('resale', 'Б1-96', { sales_manager: null }) as never,
+            contract('barter', 'Б1-97', { sales_channel: 'Бартер' }) as never,
+        ]);
+        expect(rows[0]).toMatchObject({ status: 'sold', manager: null });
+        expect(rows[1]).toMatchObject({ status: 'sold', barter: true });
+    });
+
+    it('takes the newest of several active contracts on one unit', () => {
+        const { rows } = overlayContracts([unit('Б1-1') as never], [
+            contract('newer', 'Б1-1', { contract_date: '2026-09-01', sales_manager: 'New' }) as never,
+            contract('older', 'Б1-1', { contract_date: '2026-01-01', sales_manager: 'Old' }) as never,
+        ]);
+        expect(rows[0].manager).toBe('New');
+        const reversed = overlayContracts([unit('Б1-1') as never], [
+            contract('older', 'Б1-1', { contract_date: '2026-01-01', sales_manager: 'Old' }) as never,
+            contract('newer', 'Б1-1', { contract_date: '2026-09-01', sales_manager: 'New' }) as never,
+        ]);
+        expect(reversed.rows[0].manager).toBe('New');
+    });
+
     it('prefers a closed contract, then active, then the newest date when a unit has several live contracts', () => {
         const { rows } = overlayContracts([unit('Б1-1', { status: 'sold' }) as never], [
             contract('old', 'Б1-1', { contract_date: '2026-01-01', sales_manager: 'Old' }) as never,

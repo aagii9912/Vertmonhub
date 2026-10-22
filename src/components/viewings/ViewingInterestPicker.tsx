@@ -5,6 +5,7 @@ import { Plus, X } from 'lucide-react';
 import { useViewingQuote } from '@/hooks/useViewings';
 import { formatMNT } from '@/lib/utils/currency';
 import { pricingKey } from '@/lib/sales/pricing';
+import { unitDisplayNumber } from '@/lib/inventory/labels';
 import { interestInput, viewingInterestLabel, type ViewingInterestInput, type ViewingUnitOption, type ViewingCondition } from '@/lib/viewings/interests';
 import { Button } from '@/components/ui/Button';
 
@@ -41,7 +42,7 @@ export function ViewingInterestPicker({ units, conditions = [], pricingReason, v
     return <div className="space-y-3 rounded-lg border border-border p-3">
         <div className="text-sm font-medium">Сонирхсон байр</div>
         {value.map((item, index) => <div key={index} className="flex items-start gap-2 rounded-md bg-brand-soft p-2 text-xs">
-            <span className="min-w-0 flex-1">{viewingInterestLabel({ ...item, unit_label: item.unit_id ? units.find(unit => unit.id === item.unit_id)?.unit_number || units.find(unit => unit.id === item.unit_id)?.code : null })}</span>
+            <span className="min-w-0 flex-1">{viewingInterestLabel({ ...item, unit_label: item.unit_id ? unitDisplayNumber(units.find(unit => unit.id === item.unit_id) ?? {}) : null })}</span>
             <button type="button" aria-label={`${index + 1}-р сонголтыг хасах`} onClick={() => onChange(value.filter((_, i) => i !== index))} className="rounded p-1 hover:bg-surface-2"><X className="size-3.5" /></button>
         </div>)}
         <div className="grid grid-cols-2 gap-3">
@@ -59,7 +60,7 @@ export function ViewingInterestPicker({ units, conditions = [], pricingReason, v
             </select></label>
         </div>
         <label className="block space-y-1 text-xs">Тоот — сонгох албагүй<select aria-label="Тоот" className={control} disabled={!area} value={unitId} onChange={e => { setUnitId(e.target.value); const unit = units.find(u => u.id === e.target.value); if (unit) { setFloor(unit.floor == null ? '' : String(unit.floor)); setTerm(''); } }}>
-            <option value="">Тоот сонгоогүй</option>{onFloor.map(unit => <option key={unit.id} value={unit.id}>{unit.unit_number || unit.code}{unit.floor == null ? '' : ` · ${unit.floor}-р давхар`}{unit.status !== 'available' ? ' · боломжгүй' : ''}</option>)}
+            <option value="">Тоот сонгоогүй</option>{onFloor.map(unit => <option key={unit.id} value={unit.id}>{unitDisplayNumber(unit)}{unit.floor == null ? '' : ` · ${unit.floor}-р давхар`}{unit.status !== 'available' ? ' · боломжгүй' : ''}</option>)}
         </select></label>
         <label className="block space-y-1 text-xs">Төлбөрийн нөхцөл<select aria-label="Төлбөрийн нөхцөл" className={control} value={term} disabled={!area || !terms.length} onChange={e => setTerm(e.target.value)}>
             <option value="">Сонгоогүй</option>{terms.map(v => <option key={v}>{v}</option>)}

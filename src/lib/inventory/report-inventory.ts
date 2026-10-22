@@ -12,7 +12,7 @@ import { fetchAllRows } from '@/lib/utils/pagination';
  *  1. HUB гэрээний жагсаалтын сүүлийн импорт ERP бүтээгдэхүүний экспортоос шинэ (эсвэл экспорт алга) бол байрны
  *     бүртгэл (`property_units`) дээр амьд гэрээг давхарлана (эзний шийдвэр W14, 2026-10-22): амьд гэрээтэй байр
  *     зарагдсан, гэрээгүй байр бүртгэлийн төлөвөөрөө, харин «зарагдсан/хүлээлгэсэн» гэсэн ч амьд гэрээгүй бол худалдаанд.
- *     Менежер, гэрээлсэн талбайг гэрээнээс; цуцалсан борлуулалтын хуучин менежер сул байранд гарахгүй.
+ *     Менежер (зөвхөн гэрээнийх), гэрээлсэн талбайг гэрээнээс; цуцалсан борлуулалтын хуучин менежер хэзээ ч гарахгүй.
  *  2. Үгүй бол хамгийн сүүлийн ERP бүтээгдэхүүний экспорт.
  *  3. Аль нь ч алга бол байрны бүртгэл (төлөвөөрөө) — `unitsFallback: false` бол null.
  *
@@ -86,7 +86,9 @@ export function overlayContracts(units: UnitRow[], contracts: ContractRow[]): { 
             return unitProduct(unit, status === 'handed_over' ? 'handed_over' : 'sold', {
                 statusLabel: contract.contract_status === 'closed' ? 'Гэрээ хаасан' : 'Гэрээтэй',
                 barter: isBarter(unit.sales_channel) || isBarter(contract.sales_channel),
-                manager: contract.sales_manager ?? unit.sales_manager,
+                // Зөвхөн гэрээний менежер: байрны бүртгэлийн нэр цуцалсан өмнөх борлуулалтынх байж болно (HUB гэрээ менежергүй ирдэг —
+                // гэрээний хуудсанд сонгоно).
+                manager: contract.sales_manager,
                 area: number(contract.contracted_area) || number(unit.updated_sale_area) || number(unit.sale_area),
             });
         }

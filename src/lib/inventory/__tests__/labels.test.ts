@@ -7,6 +7,7 @@ import {
     propertyTypeLabel,
     unitCategoryLabel,
     unitStatusLabel,
+    unitDisplayNumber,
 } from '../labels';
 
 describe('inventory labels', () => {
@@ -30,5 +31,14 @@ describe('inventory labels', () => {
         expect(propertyStatusLabel('rented')).toBe('Түрээслэсэн');
         expect(propertyStatusTone('rented')).toBe('info');
         expect(propertyStatusTone('toString')).toBe('neutral');
+    });
+});
+
+describe('unitDisplayNumber', () => {
+    it('uses the unit number, but the code when the ERP left «0» or nothing', () => {
+        expect(unitDisplayNumber({ unit_number: '1301', code: 'Б1-1301' })).toBe('1301');
+        expect(unitDisplayNumber({ unit_number: '0', code: 'Б1-53' })).toBe('Б1-53');
+        expect(unitDisplayNumber({ unit_number: ' ', code: 'Б2-171' })).toBe('Б2-171');
+        expect(unitDisplayNumber({})).toBeNull();
     });
 });

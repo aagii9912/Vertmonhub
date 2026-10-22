@@ -3,11 +3,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import type { MemoryDb } from '@/test/memory-db';
 
-const state = vi.hoisted(() => ({ db: null as unknown as MemoryDb, gate: null as Response | null }));
+const { state, gate } = vi.hoisted(() => {
+    const state = { db: null as unknown as MemoryDb, granted: ['contracts'] as string[], asked: [] as string[] };
+    const gate = async (module: string | string[]) => {
+        const modules = Array.isArray(module) ? module : [module];
+        state.asked.push(...modules);
+        return modules.some(name => state.granted.includes(name)) ? null : new Response(JSON.stringify({ error: 'Эрхгүй' }), { status: 403 });
+    };
+    return { state, gate };
+});
 
-vi.mock('@/lib/auth/require-permission', () => ({
-    requireModule: async () => state.gate, requireModuleWrite: async () => state.gate, requireModuleDelete: async () => state.gate, requireAnyModule: async () => state.gate,
-}));
+vi.mock('@/lib/auth/require-permission', () => ({ requireModule: gate, requireModuleWrite: gate, requireModuleDelete: gate, requireAnyModule: gate }));
 vi.mock('@/lib/auth/supabase-auth', () => ({ getUserShop: async () => ({ id: 'shop-1' }), getUserId: async () => 'user-1' }));
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => state.db }));
 vi.mock('@/lib/utils/logger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
@@ -18,7 +24,8 @@ import { GET } from '../managers/route';
 const get = () => GET(new NextRequest('http://localhost/api/dashboard/contracts/managers'), { params: Promise.resolve({}) });
 
 beforeEach(() => {
-    state.gate = null;
+    state.granted = ['contracts'];
+    state.asked = [];
     state.db = createMemoryDb({
         sales_managers: [
             { shop_id: 'shop-1', name: 'Khongoroo', is_active: true },
@@ -49,7 +56,9 @@ describe('GET /api/dashboard/contracts/managers', () => {
     });
 
     it('is gated by the contracts module', async () => {
-        state.gate = new Response(JSON.stringify({ error: 'Эрхгүй' }), { status: 403 });
+        expect((await get()).status).toBe(200);
+        expect(state.asked).toEqual(['contracts']);
+        state.granted = ['leads', 'reports', 'dashboard'];
         expect((await get()).status).toBe(403);
     });
 });

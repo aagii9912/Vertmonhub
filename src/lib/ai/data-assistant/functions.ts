@@ -36,6 +36,7 @@ import { loadLatestContractListImport, NOT_CANCELLED_CONTRACT } from '@/lib/cont
 import { summarizeContracts, type ContractSummaryRow } from '@/lib/contracts/summary';
 import { periodContractAmount, periodContractCount, undatedContractsHint } from '@/lib/dashboard/contract-dates';
 import { loadReportInventory } from '@/lib/inventory/report-inventory';
+import { unitDisplayNumber } from '@/lib/inventory/labels';
 import { parseUnitUpdate, unitFieldLabel, updateInventoryUnit } from '@/lib/inventory/unit-update';
 import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 
@@ -246,7 +247,7 @@ export async function fetchProperties(shopId: string, args: any, access: Propert
         }));
         const units = (unitResult.data || []).map(u => ({
             source: 'property_units', id: u.id, project_id: u.project_id,
-            name: [projectById.get(u.project_id)?.name, u.phase, u.block, u.unit_number || u.code].filter(Boolean).join(' · '),
+            name: [projectById.get(u.project_id)?.name, u.phase, u.block, unitDisplayNumber(u)].filter(Boolean).join(' · '),
             type: u.category === 'residential' ? 'apartment' : u.category, category: u.category,
             phase: u.phase, block: u.block, code: u.code, unit_number: u.unit_number, unit_type: u.unit_type,
             rooms: u.rooms, size_sqm: u.sale_area, floor: u.floor, window_view: u.window_view, status: u.status,

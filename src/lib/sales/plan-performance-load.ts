@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CASH_RECEIPT_METHODS, summarizeCashTransactions, type OperationsTransaction } from '@/lib/dashboard/operations-report';
 import { fetchAllRows } from '@/lib/utils/pagination';
-import { ubParts } from '@/lib/utils/date';
+import { ubDateStr, ubParts } from '@/lib/utils/date';
 import { SalesYearSchema } from './monthly';
 import { getTeamMonthlySales } from './targets';
 import { buildPlanPerformance, type PlanContract, type PlanPerformance, type PlanReceipt } from './plan-performance';
@@ -39,12 +39,14 @@ export function ledgerReceipts(transactions: OperationsTransaction[], year: numb
  * Эрх (reports, төслийн хүрээ, санхүү)-ийг дуудагч сервер шалгана. Уншилтын алдаа тайланг бүхэлд нь унагаана
  * (хоосон өгөгдлийг 0 гэж харуулахгүй); зөвхөн шинэ migration-ы хоцролтын багана/импортын хүснэгт дутвал хоцролтыг «—».
  * `through` (YYYY-MM-DD, Улаанбаатар): тайлант өдрөөр огтолно — түүнээс хойш огноотой гэрээ, төлбөр орохгүй, сарын
- * явц тэр өдрөөр (Лхагвын илтгэлийн «10-р сарын гүйцэтгэл» тайлант долоо хоногийн эцэс хүртэл).
+ * явц тэр өдрөөр (Лхагвын илтгэлийн «10-р сарын гүйцэтгэл» тайлант долоо хоногийн эцэс хүртэл). Ирээдүйн өдрийг өнөөдрөөр
+ * хязгаарлана — болоогүй сарыг өнгөрсөн гэж 0 харуулахгүй.
  */
 export async function loadPlanPerformance(db: SupabaseClient, options: {
     shopId: string; year?: number; canReadFinance: boolean; now?: Date; through?: string;
 }): Promise<PlanPerformance> {
-    const through = options.through ?? null;
+    const today = ubDateStr(options.now ?? new Date());
+    const through = options.through ? (options.through > today ? today : options.through) : null;
     // Тайлант өдрийн Улаанбаатарын (UTC+8) үд дунд — сарын хил серверийн UTC-д шилжихгүй.
     const now = options.now ?? (through ? new Date(`${through}T12:00:00+08:00`) : new Date());
     const year = SalesYearSchema.parse(options.year ?? ubParts(now).year);
@@ -82,12 +84,14 @@ export async function loadPlanPerformance(db: SupabaseClient, options: {
             .order('id').range(from, to)) : Promise.resolve(null),
         options.canReadFinance ? ledgerStart() : Promise.resolve(null),
     ]);
+    // Тайлант өдрөөс хойш эхэлсэн дэвтэр тэр өдөр байгаагүй — «бүртгэлгүй» (0 биш).
+    const ledgerSinceAt = through && ledgerSince && ledgerSince > through ? null : ledgerSince;
     return buildPlanPerformance({
         year, now, months, planYears: [...new Set(planRows.map(row => Number(row.year)))],
         // Тайлант өдрөөс хойш огноотой гэрээ тэр үед байгаагүй; огноогүй гэрээ хэвээр (доод хязгаар «+»).
         contracts: through ? contracts.filter(contract => !contract.contract_date || contract.contract_date.slice(0, 10) <= through) : contracts,
         receipts: transactions === null ? null : ledgerReceipts(transactions, year),
-        ...(transactions === null ? {} : { ledgerSince }),
+        ...(transactions === null ? {} : { ledgerSince: ledgerSinceAt }),
         latestImportDate, overdueAvailable,
     });
 }

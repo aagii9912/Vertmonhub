@@ -3,6 +3,7 @@ import type { SalesProjectScope } from '@/lib/sales/project-scope';
 import { quoteViewingSelection, PricingSelectionError } from '@/lib/sales/pricing-store';
 import { ViewingInterestsSchema, type ViewingInterest } from './interests';
 import { pricingKey, type PricingSelection } from '@/lib/sales/pricing';
+import { unitDisplayNumber } from '@/lib/inventory/labels';
 
 const selectionKey = (selection: PricingSelection) => JSON.stringify([
     pricingKey(selection.block), pricingKey(selection.model), selection.area_sqm, selection.floor,
@@ -28,9 +29,7 @@ export async function prepareViewingInterests(db: SupabaseClient, shopId: string
                 .eq('id', selection.unit_id).eq('shop_id', shopId).eq('project_id', projectId).maybeSingle();
             if (unit.error) throw new PricingSelectionError('Тоотын мэдээллийг шалгаж чадсангүй', 503);
             if (!unit.data) throw new PricingSelectionError('Тоот олдсонгүй', 404);
-            // Elysium-ийн орон сууцны unit_number нь '0' (ERP-д тоотгүй) — тэр үед кодыг (Б1-53) харуулна.
-            const number = unit.data.unit_number?.trim();
-            unitLabel = (number && number !== '0' ? number : null) || unit.data.code || null;
+            unitLabel = unitDisplayNumber(unit.data);
         }
         result.push({ ...selection, ...(selection.unit_id ? { unit_label: unitLabel } : {}), quote: quote.available ? quote.quote : null, quote_unavailable_reason: quote.available ? null : quote.reason });
     }

@@ -67,4 +67,13 @@ describe('plan performance API', () => {
         expect((await get()).status).toBe(200);
         expect(state.loads.at(-1)!.year).toBeGreaterThanOrEqual(2026);
     });
+
+    it('passes a valid report date (through), defaults the year to its year and answers impossible dates with 400', async () => {
+        expect((await get('?through=2026-10-20')).status).toBe(200);
+        expect(state.loads.at(-1)).toMatchObject({ year: 2026, through: '2026-10-20' });
+        expect((await get('?year=2025&through=2026-10-20')).status).toBe(200);
+        expect(state.loads.at(-1)).toMatchObject({ year: 2025, through: '2026-10-20' });
+        for (const bad of ['2026-13-01', '2026-00-10', '2026-02-30', '2026-1x-01', 'abc']) expect((await get(`?through=${bad}`)).status, bad).toBe(400);
+        expect(state.loads.every(load => !('through' in load) || load.through === '2026-10-20')).toBe(true);
+    });
 });

@@ -84,6 +84,23 @@ describe('plan performance loading', () => {
         } finally { process.env.TZ = tz; }
     });
 
+    it('clamps a future report date to today and treats a ledger that started after the report date as no ledger (never 0)', async () => {
+        const { now, ...rest } = options; // now = 2026-10-22 (Улаанбаатар)
+        const future = database({ property_contracts: [contract()], team_sales_targets: [{ year: 2026, month: 12, revision: 1, target_amount: 1_000, block_amounts: {} }] });
+        const report = await loadPlanPerformance(future.db, { ...rest, now, through: '2026-12-31' });
+        expect(report.months[10]).toMatchObject({ status: 'future' });
+        expect(report.months[11].total.metrics.contract).toMatchObject({ actual: null });
+        expect(future.calls.find(call => call.table === 'finance_transactions' && call.columns.includes('amount'))!.filters).toContainEqual(['lte:txn_date', '2026-10-22']);
+
+        const late = database({
+            property_contracts: [contract({ contract_date: '2026-10-05' })],
+            finance_transactions: [{ txn_date: '2026-10-21', type: 'receipt', amount: 40, method: 'bank', contract_id: 'c1' }],
+        });
+        const cut = await loadPlanPerformance(late.db, { ...rest, now, through: '2026-10-20' });
+        expect(cut.cash).toMatchObject({ availability: 'no_ledger', ledgerSince: null });
+        expect(cut.months[9].total.metrics.cashflow).toMatchObject({ actual: null });
+    });
+
     it('never reads the ledger without finance permission and omits the cash section', async () => {
         const { db, from } = database({ property_contracts: [contract()] });
         const report = await loadPlanPerformance(db, { ...options, canReadFinance: false });
