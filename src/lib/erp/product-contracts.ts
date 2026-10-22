@@ -55,10 +55,53 @@ function cell(row: ImportRow, column: string): string | null {
     return text || null;
 }
 
-/** ERP-ийн тооцоолсон дүнгийн хөвөгч таслалын үлдэгдлийг (459194120.0000001) 2 орон руу буцаана. */
+/**
+ * ERP-ийн тооцоолсон дүнгийн хөвөгч таслалын үлдэгдлийг (459194120.0000001) 2 орон руу буцаана.
+ * Хязгааргүй/тоо биш → null; тэмдгийг хадгална (−0 → 0). 0 бол 0 — «мэдэгдэхгүй» гэж хувиргахгүй.
+ */
+export function roundMoney(value: number | null | undefined): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    const cents = Math.round(value * 100) / 100;
+    return cents === 0 ? 0 : cents;
+}
+
+/** Бүтээгдэхүүний экспортод 0 / сөрөг дүн = бүртгээгүй (null) — зөвхөн энэ импортын дүрэм. */
 function money(row: ImportRow, column: string): number | null {
     const value = erpNumber(cell(row, column));
-    return value === null || value <= 0 ? null : Math.round(value * 100) / 100;
+    return value === null || value <= 0 ? null : roundMoney(value);
+}
+
+/**
+ * М.кв үнэ зөвхөн талбай × үнэ нийт дүнтэй (1%-ийн дотор) таарвал. Зогсоолд ERP нэгжийн үнийг «1мкв»-ийн
+ * баганад бичдэг — тэр үед null (таахгүй).
+ */
+export function pricePerSqmOrNull(area: number | null | undefined, price: number | null | undefined, total: number | null | undefined): number | null {
+    return area && price && total && Math.abs(area * price - total) <= total * 0.01 ? price : null;
+}
+
+/** Нэгжийн (`property_units` эсвэл байрны импортын мөр) гэрээнд хуулагдах талбарууд. */
+export interface ContractUnitSource {
+    code: string;
+    block: string | null;
+    floor: string | null;
+    model: string | null;
+    unit_number: string | null;
+    legacy_unit_number: string | null;
+}
+
+/**
+ * Гэрээний байрны баганууд нэгжээс — бүтээгдэхүүний экспорт ба HUB импорт ижил дүрмээр бөглөнө:
+ * unit_label = нэгжийн код («Б1-19 (B1)»), шинэ тоот '0' → null.
+ */
+export function contractUnitColumns<B extends string | null>(unit: ContractUnitSource & { block: B }) {
+    return {
+        unit_label: unit.code,
+        block_name: unit.block,
+        floor: unit.floor,
+        model: unit.model,
+        unit_number: unit.unit_number && unit.unit_number !== '0' ? unit.unit_number : null,
+        legacy_unit_number: unit.legacy_unit_number,
+    };
 }
 
 export function contractsFromErpProducts(sourceRows: ImportRow[], context: ErpProductContractContext) {
@@ -87,17 +130,12 @@ export function contractsFromErpProducts(sourceRows: ImportRow[], context: ErpPr
             shop_id: unit.shop_id,
             project_id: unit.project_id,
             product_type: unit.category,
-            block_name: unit.block,
-            floor: unit.floor,
-            unit_label: unit.code,
-            unit_number: unit.unit_number && unit.unit_number !== '0' ? unit.unit_number : null,
-            legacy_unit_number: unit.legacy_unit_number,
-            model: unit.model,
+            ...contractUnitColumns(unit),
             rooms: unit.rooms,
             unit_type: unit.unit_type,
             contracted_area: area,
             // Зогсоолд ERP нэгжийн үнийг «1мкв»-ийн баганад бичдэг: талбай × үнэ нийт дүнтэй таарахгүй бол хадгалахгүй.
-            price_per_sqm: area && pricePerSqm && total && Math.abs(area * pricePerSqm - total) <= total * 0.01 ? pricePerSqm : null,
+            price_per_sqm: pricePerSqmOrNull(area, pricePerSqm, total),
             total_price: total,
             prepayment_condition: cell(source, 'Урьдчилгааны нөхцөл'),
             prepayment_due: money(source, 'Төлөх урьдчилгаа төлбөр'),

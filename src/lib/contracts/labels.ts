@@ -9,6 +9,17 @@ export const CONTRACT_STATUS_META: Record<string, { label: string; tone: Tone }>
     cancelled: { label: 'Цуцалсан', tone: 'danger' },
     transferred: { label: 'Тоот шилжсэн', tone: 'neutral' },
 };
+/**
+ * ERP-ийн HUB гэрээний жагсаалтын «Төлөв» багана (Гэрээ үүссэн / Гэрээ хаасан / Цуцлагдсан / Тоот шилжсэн).
+ * Апп-ын товч нэр (CONTRACT_STATUS_META) өөр — HUB загварын хүснэгт, экспортод энэ үгсийг хэрэглэнэ.
+ */
+export const HUB_STATUS_LABEL = {
+    active: 'Гэрээ үүссэн',
+    closed: 'Гэрээ хаасан',
+    cancelled: 'Цуцлагдсан',
+    transferred: 'Тоот шилжсэн',
+} as const;
+export type HubContractStatus = keyof typeof HUB_STATUS_LABEL;
 export const PAYMENT_STATUS_META: Record<string, { label: string; tone: Tone }> = {
     pending: { label: 'Хүлээгдэж буй', tone: 'neutral' },
     paid: { label: 'Төлсөн', tone: 'success' },

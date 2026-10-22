@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contractsFromErpProducts, type ErpProductContractContext } from '../product-contracts';
+import { contractUnitColumns, contractsFromErpProducts, pricePerSqmOrNull, roundMoney, type ErpProductContractContext } from '../product-contracts';
 
 const context: ErpProductContractContext = {
     shopId: '10000000-0000-4000-8000-000000000001',
@@ -54,5 +54,33 @@ describe('contractsFromErpProducts', () => {
         const badUnit = contractsFromErpProducts([apartment, { ...apartment, 'Бүтээгдэхүүний төлөв': 'Тодорхойгүй' }], context);
         expect(badUnit.contracts).toEqual([]);
         expect(badUnit.errors).toHaveLength(1);
+    });
+});
+
+describe('гэрээний импортуудын хуваалцдаг туслахууд', () => {
+    it('roundMoney: хөвөгч таслалын үлдэгдлийг цент рүү, 0 болон сөрөгийг хадгална', () => {
+        expect(roundMoney(403415999.9999999)).toBe(403416000);
+        expect(roundMoney(94999999.99999999)).toBe(95000000);
+        expect(roundMoney(439503120.0000001)).toBe(439503120);
+        expect(Object.is(roundMoney(-1.49e-8), 0)).toBe(true);
+        expect(roundMoney(0)).toBe(0);
+        expect(roundMoney(-5.555)).toBe(-5.55);
+        expect(roundMoney(Number.NaN)).toBeNull();
+        expect(roundMoney(Number.POSITIVE_INFINITY)).toBeNull();
+        expect(roundMoney(null)).toBeNull();
+    });
+
+    it('pricePerSqmOrNull: талбай × үнэ нийт дүнтэй 1%-ийн дотор таарвал л', () => {
+        expect(pricePerSqmOrNull(80.91, 5432000, 439503120)).toBe(5432000);
+        expect(pricePerSqmOrNull(12.5, 79700000, 79700000)).toBeNull();
+        expect(pricePerSqmOrNull(null, 5432000, 439503120)).toBeNull();
+        expect(pricePerSqmOrNull(80.91, 5432000, null)).toBeNull();
+    });
+
+    it('contractUnitColumns: нэгжийн код, блок, давхар, загвар; шинэ тоот 0 → null', () => {
+        expect(contractUnitColumns({ code: 'Б1-19 (B1)', block: 'Б1', floor: 'B1', model: 'A-2', unit_number: '0', legacy_unit_number: '19' }))
+            .toEqual({ unit_label: 'Б1-19 (B1)', block_name: 'Б1', floor: 'B1', model: 'A-2', unit_number: null, legacy_unit_number: '19' });
+        expect(contractUnitColumns({ code: 'Б2-231', block: null, floor: '22', model: null, unit_number: '231', legacy_unit_number: null }))
+            .toMatchObject({ block_name: null, unit_number: '231' });
     });
 });

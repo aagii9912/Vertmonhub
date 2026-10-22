@@ -29,6 +29,9 @@ describe('nav v3 — бүтэц', () => {
         expect(getRouteModule('/dashboard/leadsX')).toBeUndefined();
         // «Тайлан»-ийн хүүхэд мөр reports-ийг өвлөдөг ч ERP нь илүү нарийн эрх шаардана.
         expect(getRouteModule('/dashboard/reports/erp')).toBe('erp-imports');
+        // HUB импорт «Гэрээ»-ний, төлөвлөгөөний биелэлт «Тайлан»-гийн эрхээр (API нэмж erp-imports / хязгаарыг шалгана).
+        expect(getRouteModule('/dashboard/contracts/import')).toBe('contracts');
+        expect(getRouteModule('/dashboard/reports/plan')).toBe('reports');
     });
 
     it('sidebar бүлгүүд: Өнөөдөр · Борлуулалт · Үр дүн · Удирдлага (super_admin)', () => {
@@ -138,6 +141,20 @@ describe('findNavItem / getBreadcrumb / getNavTitle / getDocumentTitle', () => {
         expect(getBreadcrumb('/dashboard/leads')).toEqual([{ name: 'Лид', href: '/dashboard/leads' }]);
         expect(getNavTitle('/dashboard/leads')).toBe('Лид');
         expect(getNavTitle('/dashboard/inbox')).toBe('Мессеж');
+    });
+
+    it('гэрээний HUB импорт, төлөвлөгөөний биелэлтийн гарчиг', () => {
+        expect(getBreadcrumb('/dashboard/contracts/import')).toEqual([
+            { name: 'Гэрээ', href: '/dashboard/contracts' },
+            { name: 'Excel импорт', href: '/dashboard/contracts/import' },
+        ]);
+        expect(getBreadcrumb('/dashboard/reports/plan')).toEqual([
+            { name: 'Тайлан', href: '/dashboard/reports' },
+            { name: 'Төлөвлөгөөний биелэлт', href: '/dashboard/reports/plan' },
+        ]);
+        expect(getNavTitle('/dashboard/reports/plan')).toBe('Төлөвлөгөөний биелэлт');
+        // Гэрээний дэлгэрэнгүй (динамик id) хэвээр.
+        expect(getNavTitle('/dashboard/contracts/abc-123')).toBe('Дэлгэрэнгүй');
     });
 
     it('child хуудсанд 2 crumb, бичлэгт 3 crumb', () => {

@@ -252,6 +252,10 @@ export interface PropertyContract {
     balance: number | null;
     penalty_amount: number | null;
     overdue_days: number | null;
+    /** Төлбөр хоцролт ₮ — HUB/ERP файлын огноогоор (overdue_as_of); overdue_days-аас тусдаа, cron бичихгүй. */
+    overdue_amount?: number | null;
+    /** overdue_amount-ийн файлын огноо (YYYY-MM-DD). */
+    overdue_as_of?: string | null;
 
     // Гэрээ
     contract_number: string | null;
@@ -286,10 +290,14 @@ export interface PropertyContract {
     /** Одоогийн эзэмшигчийн харилцагч (шилжүүлэгт солигдоно). */
     customer_id?: string | null;
     project_id?: string | null;
+    notes?: string | null;
+    vat_rate?: number | null;
+    vat_amount?: number | null;
 
     // Timestamps
     created_at: string;
     updated_at: string;
+    deleted_at?: string | null;
 }
 
 /**

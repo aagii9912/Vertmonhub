@@ -70,6 +70,16 @@ describe('аудит, лидийн түүх', () => {
         }, names)).toMatchObject({ by: 'Систем', summary: 'Гэрээ шилжүүлэв', detail: 'Болд → Сараа' });
         expect(auditItem({ id: 'a4', actor_id: 'gone', entity: 'customer', entity_id: 'x', action: 'delete', changes: null, created_at: '2026-10-18T01:00:00Z' }, names))
             .toMatchObject({ by: null, summary: 'Харилцагч устгав', detail: null });
+        // Гэрээний жагсаалтын импорт: PATCH-ийн {from,to} талбарууд, эх сурвалж `_meta`-д (талбар биш).
+        const meta = { source: 'contract_list_import', import_id: 'imp-1', report_date: '2026-10-21', label: 'Б1-19 (B1)', review: false };
+        expect(auditItem({
+            id: 'a5', actor_id: 'admin-user', entity: 'contract', entity_id: 'k2', action: 'update', created_at: '2026-10-21T01:00:00Z',
+            changes: { order_date: { from: null, to: '2026-09-03' }, overdue_amount: { from: null, to: 0 }, _meta: meta },
+        }, names)).toMatchObject({ summary: 'Гэрээ засав · Б1-19 (B1)', detail: 'Талбар: Захиалга өгсөн огноо, Төлбөр хоцролт · Гэрээний жагсаалтын импорт' });
+        expect(auditItem({
+            id: 'a6', actor_id: 'admin-user', entity: 'contract', entity_id: 'k3', action: 'create', created_at: '2026-10-21T01:00:00Z',
+            changes: { name: 'Б1-60', total_price: 377650000, contract_status: 'active', _meta: { ...meta, label: 'Б1-60' } },
+        }, names)).toMatchObject({ summary: 'Гэрээ нэмэв · Б1-60', detail: 'Талбар: Нийт үнэ, Гэрээний төлөв · Гэрээний жагсаалтын импорт' });
     });
 
     it('лидийн түүх: төрөл, харилцагчийн нэр, лидийн холбоос', () => {
