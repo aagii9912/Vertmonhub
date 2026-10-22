@@ -58,8 +58,19 @@ export async function dashboardJson<T>(input: string, init: DashboardFetchInit =
     return (await res.json()) as T;
 }
 
-/** Excel зэрэг файлыг идэвхтэй байгууллагын эрхээр татна. */
-export async function dashboardDownload(input: string, filename: string): Promise<void> {
+/** `Content-Disposition`-ийн файлын нэр (filename* эсвэл filename, URL-encode хийсэн ч). */
+export function contentDispositionFilename(header: string | null): string | null {
+    if (!header) return null;
+    const match = /filename\*=UTF-8''([^;]+)/i.exec(header) ?? /filename="?([^";]+)"?/i.exec(header);
+    if (!match) return null;
+    try { return decodeURIComponent(match[1].trim()) || null; } catch { return match[1].trim() || null; }
+}
+
+/**
+ * Excel зэрэг файлыг идэвхтэй байгууллагын эрхээр татна.
+ * `filename` өгөөгүй бол серверийн `Content-Disposition` нэрийг (ж: «Төсөл_гэрээ_2026-10-22.xlsx») хэрэглэнэ.
+ */
+export async function dashboardDownload(input: string, filename?: string): Promise<void> {
     const res = await dashboardFetch(input);
     if (!res.ok) {
         const detail = await res.json().catch(() => null);
@@ -68,7 +79,7 @@ export async function dashboardDownload(input: string, filename: string): Promis
     const url = URL.createObjectURL(await res.blob());
     const link = document.createElement('a');
     link.href = url;
-    link.download = filename;
+    link.download = filename ?? contentDispositionFilename(res.headers.get('Content-Disposition')) ?? 'download';
     document.body.append(link);
     link.click();
     link.remove();
