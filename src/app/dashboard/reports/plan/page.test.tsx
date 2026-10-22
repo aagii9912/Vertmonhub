@@ -1,0 +1,83 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { emptyMonthlySales } from '@/lib/sales/monthly';
+import { buildPlanPerformance, type PlanContract, type PlanReceipt } from '@/lib/sales/plan-performance';
+
+const transport = vi.hoisted(() => ({ json: vi.fn() }));
+vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ shop: { id: 'shop-1' }, user: { id: 'user-1', role: 'admin' } }) }));
+vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardJson: transport.json }));
+
+import PlanPerformancePage from './page';
+
+const contract = (id: string, over: Partial<PlanContract>): PlanContract => ({
+    id, contract_date: '2026-09-05', contract_status: 'active', product_type: 'residential', block_name: 'Б1', unit_label: `Б1-${id}`,
+    total_price: 600, prepayment_due: 180, paid_amount: null, overdue_amount: 0, overdue_as_of: '2026-10-20', ...over,
+});
+
+function report(receipts: PlanReceipt[] | null) {
+    const months = emptyMonthlySales();
+    for (const index of [8, 9]) months[index] = { ...months[index], target_amount: 1_100, cashflow_target_amount: 330,
+        block_amounts: { b1: { target_amount: 1_000, cashflow_target_amount: 300 }, parking: { target_amount: 100, cashflow_target_amount: 30 } } };
+    const built = buildPlanPerformance({
+        year: 2026, now: new Date('2026-10-22T04:00:00Z'), months, planYears: [2026], latestImportDate: '2026-10-20', receipts,
+        contracts: [
+            contract('1', {}), contract('2', { overdue_amount: 250 }),
+            contract('3', { product_type: 'parking', contract_date: null, unit_label: 'Б1-108 (01)', total_price: 80 }),
+            contract('4', { product_type: 'industry', total_price: 40 }),
+            contract('5', { contract_status: 'cancelled', total_price: 900 }),
+        ],
+    });
+    return { ...built, shopName: 'Elysium Residence', ...(receipts === null ? { cashHidden: true } : {}) };
+}
+
+function open(data: ReturnType<typeof report>) {
+    transport.json.mockResolvedValue(data);
+    const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={cache}><PlanPerformancePage /></QueryClientProvider>);
+    return cache;
+}
+
+afterEach(() => { vi.clearAllMocks(); });
+
+describe('plan fulfilment page', () => {
+    it('shows system actuals with a lower bound, outside-plan contracts and the undated list', async () => {
+        const cache = open(report(null));
+        const september = (await screen.findByRole('rowheader', { name: '9-р сар' })).closest('tr')!;
+        expect(within(september).getByText((_, node) => node?.textContent === '1,200+*' && node.tagName === 'SPAN')).toBeInTheDocument();
+        expect(within(september).getByText('109.1%+')).toBeInTheDocument();
+        const october = screen.getByRole('rowheader', { name: /10-р сар/ }).closest('tr')!;
+        expect(within(october).getByText('явцын')).toBeInTheDocument();
+        expect(within(october).getAllByText('—').length).toBeGreaterThan(0);
+        expect(screen.getByText(/Агуулах — 1 гэрээ · 40/)).toBeInTheDocument();
+        expect(screen.getByText('Огноогүй 1 гэрээ сарын гүйцэтгэлд ороогүй')).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: 'Б1-108 (01)' })).toHaveAttribute('href', '/dashboard/contracts/3');
+        expect(screen.getByText(/Энэ онд цуцлагдсан: 1 гэрээ · 900/)).toBeInTheDocument();
+        expect(screen.getAllByText('Мөнгөн урсгалыг санхүүгийн эрхтэй ажилтан харна.').length).toBeGreaterThan(0);
+        expect(screen.queryByRole('heading', { name: /Мөнгөн урсгал/ })).not.toBeInTheDocument();
+        expect(transport.json).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/dashboard\/reports\/plan-performance\?year=\d{4}$/), expect.any(Object));
+        cache.clear();
+    });
+
+    it('switches to a block and keeps an undated block without contracts unknown', async () => {
+        const cache = open(report(null));
+        await screen.findByRole('rowheader', { name: '9-р сар' });
+        fireEvent.click(screen.getByRole('button', { name: 'Зогсоол' }));
+        expect(screen.getByRole('button', { name: 'Зогсоол' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('heading', { name: 'Гэрээ · Зогсоол' })).toBeInTheDocument();
+        const september = screen.getByRole('rowheader', { name: '9-р сар' }).closest('tr')!;
+        expect(within(september).queryByText(/\d+%/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/Агуулах — 1 гэрээ/)).not.toBeInTheDocument();
+        cache.clear();
+    });
+
+    it('explains an empty cash ledger instead of showing 0 to finance users', async () => {
+        const cache = open(report([]));
+        expect(await screen.findByText('Орсон мөнгө бүртгэгдээгүй')).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Мөнгөн урсгал · Нийт' })).toBeInTheDocument();
+        expect(screen.getByText('Оруулаагүй')).toBeInTheDocument();
+        expect(screen.queryByText('0₮')).not.toBeInTheDocument();
+        cache.clear();
+    });
+});
