@@ -6,6 +6,7 @@ import { ChevronRight, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModuleAccess } from '@/hooks/useModuleAccess';
+import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
@@ -74,10 +75,14 @@ function formatValue(field: string, value: string | number | null): string {
 export default function ContractImportPage() {
     const { shop, user } = useAuth();
     const { canWrite } = useModuleAccess();
+    const { data: mode, isPending: modePending } = useDashboardMode();
     if (!shop) return <Spinner label="Уншиж байна…" />;
     if (!canWrite('contracts') || !canWrite('erp-imports')) {
         return <Alert variant="warning">Гэрээний Excel импорт хийхэд «Гэрээ» болон «ERP импорт»-ын бичих эрх шаардлагатай.</Alert>;
     }
+    if (modePending) return <Spinner label="Уншиж байна…" />;
+    // Хязгаарлагдсан (хувийн горимын) менежерийг сервер 403-аар буцаана; горим уншигдаагүй бол админыг хаахгүй.
+    if (mode?.isManager) return <Alert variant="warning">Гэрээний Excel импортыг удирдлага (админ) хийнэ.</Alert>;
     return <ImportWorkspace key={`${user?.id}:${shop.id}`} shopId={shop.id} />;
 }
 

@@ -4,10 +4,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const transport = vi.hoisted(() => ({ json: vi.fn(), fetch: vi.fn(), confirm: vi.fn() }));
-const auth = vi.hoisted(() => ({ role: 'super_admin', modules: [] as string[], canWrite: true }));
+const auth = vi.hoisted(() => ({ role: 'super_admin', modules: [] as string[], canWrite: true, isManager: false }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ shop: { id: 'shop-1' }, user: { id: 'user-1', role: auth.role, permissions: { role: auth.role, modules: auth.modules, canWrite: auth.canWrite, canDelete: false } } }) }));
 vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardJson: transport.json, dashboardFetch: transport.fetch }));
 vi.mock('@/components/ui/Toast', () => ({ confirmToast: transport.confirm }));
+vi.mock('@/hooks/useDashboardMode', () => ({ useDashboardMode: () => ({ data: { mode: auth.isManager ? 'personal' : 'org', isManager: auth.isManager, canViewTeam: !auth.isManager }, isPending: false }) }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('next/navigation', () => ({ usePathname: () => '/dashboard/contracts/import', useRouter: () => ({ push: vi.fn() }) }));
 
@@ -43,7 +44,7 @@ async function upload() {
 }
 
 beforeEach(() => {
-    auth.role = 'super_admin'; auth.modules = []; auth.canWrite = true;
+    auth.role = 'super_admin'; auth.modules = []; auth.canWrite = true; auth.isManager = false;
     transport.json.mockResolvedValue({ latest: { report_date: '2026-10-15', file_name: 'old.xlsx', row_count: 80, created_at: '2026-10-15T02:00:00Z', created_by_name: 'Номин' }, available: true });
     transport.confirm.mockResolvedValue(true);
 });
@@ -53,6 +54,13 @@ it('is hidden without contracts and ERP import write access', () => {
     auth.role = 'viewer'; auth.modules = ['contracts']; auth.canWrite = true;
     renderPage();
     expect(screen.getByText(/«ERP импорт»-ын бичих эрх шаардлагатай/)).toBeInTheDocument();
+    expect(screen.queryByText('Файл шалгах')).not.toBeInTheDocument();
+});
+
+it('tells a restricted sales manager the import is for management instead of offering the file step', () => {
+    auth.role = 'sales_manager'; auth.modules = ['contracts', 'erp-imports', 'reports']; auth.canWrite = true; auth.isManager = true;
+    renderPage();
+    expect(screen.getByText('Гэрээний Excel импортыг удирдлага (админ) хийнэ.')).toBeInTheDocument();
     expect(screen.queryByText('Файл шалгах')).not.toBeInTheDocument();
 });
 

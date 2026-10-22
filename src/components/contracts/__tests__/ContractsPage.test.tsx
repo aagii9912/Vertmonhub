@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
     user: null as unknown as TestUser,
     search: new URLSearchParams(),
     canViewTeam: true,
+    isManager: undefined as boolean | undefined,
     push: vi.fn(),
     download: vi.fn(),
 }));
@@ -22,7 +23,8 @@ vi.mock('@/hooks/useContracts', () => ({
 }));
 vi.mock('@/hooks/useLeads', () => ({ useManagers: () => ({ data: [{ name: 'Номин' }] }) }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: state.user }) }));
-vi.mock('@/hooks/useDashboardMode', () => ({ useDashboardMode: () => ({ data: { mode: state.canViewTeam ? 'org' : 'personal', canViewTeam: state.canViewTeam } }) }));
+vi.mock('@/hooks/useDashboardMode', () => ({ useDashboardMode: () => ({ data: { mode: state.canViewTeam ? 'org' : 'personal', canViewTeam: state.canViewTeam,
+    isManager: state.isManager ?? !state.canViewTeam } }) }));
 vi.mock('@/lib/navigation/pageTitle', () => ({ usePageTitle: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: state.push }), useSearchParams: () => state.search }));
 vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardDownload: (...args: unknown[]) => state.download(...args) }));
@@ -77,6 +79,7 @@ beforeEach(() => {
     state.params = [];
     state.search = new URLSearchParams();
     state.canViewTeam = true;
+    state.isManager = undefined;
     state.user = { role: 'admin', permissions: { canWrite: true, modules: ['contracts', 'erp-imports', 'reports'] } };
     setData();
 });
@@ -187,6 +190,15 @@ describe('ContractsPage — tiles and header', () => {
         render(<ContractsPage />);
         expect(link('Excel импорт')).toBeNull();
         expect(link('Гэрээ үүсгэх')).toBeNull();
+    });
+
+    it('hides «Excel импорт» from a restricted sales manager even with both write grants (the server answers 403)', () => {
+        // Анхдагч sales_manager дүр contracts, erp-imports бичих эрхтэй ч хувийн горимд импорт хийхгүй.
+        state.user = { role: 'sales_manager', permissions: { canWrite: true, modules: ['contracts', 'erp-imports', 'reports'] } };
+        state.isManager = true;
+        render(<ContractsPage />);
+        expect(link('Excel импорт')).toBeNull();
+        expect(link('Гэрээ үүсгэх')).toHaveAttribute('href', '/dashboard/contracts/generate');
     });
 
     it('downloads either export and lets the server name the file', async () => {

@@ -91,8 +91,9 @@ function ContractsWorkspace({ initialFilter }: { initialFilter: string | null })
     const { canWrite } = useModuleAccess();
     const { data: mode } = useDashboardMode();
     const canCreate = canWrite('contracts');
-    // Импорт RPC нь гэрээ ба ERP импортын бичих эрхтэй удирдлагад (сервер дахин шалгана).
-    const canImport = canWrite('contracts') && canWrite('erp-imports');
+    // Импорт RPC нь гэрээ ба ERP импортын бичих эрхтэй, хувийн горимгүй (хязгааргүй) удирдлагад — горим ачаалж
+    // байх эсвэл уншиж чадаагүй үед нууна (сервер дахин шалгана).
+    const canImport = canWrite('contracts') && canWrite('erp-imports') && mode?.isManager === false;
     // Багийн төлөвлөгөө: super_admin эсвэл `reports` эрхтэй, хязгаарлагдаагүй (хувийн горимгүй) хэрэглэгч — серверийн дүрэм.
     const canSeePlan = !!mode?.canViewTeam;
     const [view, setView] = useState<View>('hub');
