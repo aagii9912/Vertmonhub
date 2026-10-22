@@ -102,6 +102,8 @@ describe('loadWeeklySales', () => {
         expect(report.week.count).toBe(0);
         // Төлөвлөгөө байгаа ч гүйцэтгэлийн хувь 0% биш — тодорхойгүй.
         expect(report.month).toMatchObject({ count: 0, target: 5350000000, attainmentPct: null });
-        expect(report.notes.join(' ')).toContain('2 гэрээ байгуулсан огноогүй');
+        expect(report.notes.join(' ')).toContain('2 гэрээ захиалга өгсөн огноогүй');
+        // CRM-ийн нөөц замд ERP-ийн борлуулалтын экспорт мөн долоо хоногийг тооцуулна.
+        expect(report.notes.join(' ')).toContain('ERP-ийн борлуулалтын экспортыг оруулбал');
     });
 });

@@ -130,7 +130,8 @@ export function buildWeeklySales(input: WeeklySalesInput) {
     const monthLines = allLines.filter(line => line.date?.startsWith(month));
     const previousWeek = { from: shift(range.from, -7), to: shift(range.to, -7) };
     const undated = input.sales ? allLines.filter(line => !line.date).length : input.crmUndated ?? 0;
-    if (undated) notes.push(input.sales ? `${undated} гэрээний огноо хоосон тул хугацаанд ороогүй.` : undatedContractsHint(undated));
+    if (undated) notes.push(input.sales ? `${undated} гэрээний огноо хоосон тул хугацаанд ороогүй.`
+        : `${undatedContractsHint(undated)} Эсвэл ERP-ийн борлуулалтын экспортыг оруулбал долоо хоногийн тайлан түүнээс тооцогдоно.`);
 
     const kinds = [...new Set(monthLines.map(line => line.kind))];
     const monthByWeek = kinds.map(kind => {

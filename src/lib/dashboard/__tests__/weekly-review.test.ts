@@ -68,7 +68,8 @@ describe('Лхагва гарагийн тайлангийн хугацаа', ()
         const sales = { ...buildOperationsReport({ range, now: '2026-10-13T10:00:00Z', transactions: null, targets: [], viewings: [], leads: [],
             contracts: [{ id: 'e1', contract_date: null, product_type: 'residential', total_price: null, contract_status: 'active', prepayment_paid_cash: null }] }), shopName: 'Elysium' };
         const weeklySales = { meetingDate: '2026-10-14', ...buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [], crmUndated: 1, inventory: null, monthTarget: 1000 }) };
-        expect(weeklyDiscussionItems({ sales })[0]).toMatchObject({ title: 'Огноогүй 1 гэрээ', part: 'sales', href: '/dashboard/reports/erp' });
+        expect(weeklyDiscussionItems({ sales })[0]).toMatchObject({ title: 'Огноогүй 1 гэрээ', part: 'sales', href: '/dashboard/contracts?filter=undated' });
+        expect(weeklyDiscussionItems({ sales })[0].detail).not.toMatch(/ERP/);
         const text = formatWeeklyReview({ shopName: 'Elysium', meetingDate: '2026-10-14', sales, weeklySales, notices: [] });
         expect(text).toContain('Байгуулсан гэрээ: — (огноогүй 1 гэрээ ороогүй)');
         expect(text).toContain('Энэ долоо хоног: — гэрээ · — (огноогүй 1 гэрээ ороогүй)');

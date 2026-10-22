@@ -274,13 +274,13 @@ describe('weekly meeting deck (.pptx)', () => {
         const at = (needle: string) => text.find(slideText => slideText.includes(needle))!;
         expect(at('Энэ хурлаар шийдэх')).toContain('Огноогүй 77 гэрээ');
         const overview = at('Борлуулалтын тойм');
-        expect(overview).toMatch(/Байгуулсан гэрээ — Огноогүй 77 гэрээ · ERP гэрээний экспорт хэрэгтэй/);
+        expect(overview).toMatch(/Байгуулсан гэрээ — Огноогүй 77 гэрээ · «Захиалга өгсөн огноо» оруулах/);
         expect(overview).toMatch(/Гэрээний бүртгэлтэй дүн — Огноогүй гэрээ дүнд ороогүй/);
         const plan = at('сарын төлөвлөгөө ба гүйцэтгэл');
         expect(plan).toMatch(/Гэрээний гүйцэтгэл — Огноогүй 77 гэрээ/);
         expect(plan).toMatch(/Гүйцэтгэлийн хувь — /);
         expect(plan).not.toContain('0%');
-        expect(at('Энэ долоо хоногийн гэрээ')).toContain('Гэрээний тоо тодорхойгүй. 77 гэрээ байгуулсан огноогүй');
+        expect(at('Энэ долоо хоногийн гэрээ')).toContain('Гэрээний тоо тодорхойгүй. 77 гэрээ захиалга өгсөн огноогүй');
         const month = at('сарын гэрээ долоо хоногоор');
         expect(month).toContain('— / төлөвлөгөө 5.35 тэрбум ₮ · —');
         expect(month).toContain('Сарын гэрээний тоо тодорхойгүй');
