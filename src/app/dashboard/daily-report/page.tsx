@@ -13,12 +13,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useModuleAccess } from '@/hooks/useModuleAccess';
 import { invalidateDailyMeetingQueries, useDailyReport, type DailyReportConflictResponse } from '@/hooks/useDailyReport';
 import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
-import { shiftDate } from '@/lib/sales/activity';
+import { activityWeekStart, daySpan, periodBounds, shiftDate } from '@/lib/sales/activity';
 import { ubDateStr } from '@/lib/utils/date';
 import { downloadElementImage, type ImageFormat } from '@/lib/utils/element-image';
 import { cn } from '@/lib/utils';
 import {
-    DAILY_COUNT_MAX, DailyReportDateSchema, dailyMetricLabel, dailyNoteLabel, formalManagerName, formatDailyReportText,
+    DAILY_COUNT_MAX, DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, dailyMetricLabel, dailyNoteLabel, formalManagerName, formatDailyReportText,
     type DailyMeetingItem, type DailyPendingMeeting, type DailyReport, type DailyReportConflict, type DailyReportNotes,
 } from '@/lib/dashboard/daily-report';
 import { DAILY_MEETING_BACKDATE_DAYS, type DailyMeetingRequestBody, type DailyMeetingResponse } from '@/lib/dashboard/daily-report-meetings';
@@ -32,14 +32,41 @@ import { DailyReportHistorySheet } from '@/components/daily-report/DailyReportHi
 import { DailyReportSettingsSheet } from '@/components/daily-report/DailyReportSettingsSheet';
 
 export default function DailyReportPage() {
+    return <Suspense fallback={<Skeleton className="mx-auto h-[560px] max-w-[1180px]" />}><DailyReportRoute /></Suspense>;
+}
+
+type DateRange = { from: string; to: string };
+
+/** `?from=&to=` (AI-ийн холбоос) → хугацааны нэгтгэл; буруу, ирээдүйн эсвэл хэт урт бол null. */
+function rangeFromSearch(from: string | null, to: string | null, today: string): DateRange | null {
+    const start = DailyReportDateSchema.safeParse(from), end = DailyReportDateSchema.safeParse(to);
+    if (!start.success || !end.success) return null;
+    if (start.data >= end.data || end.data > today || daySpan(start.data, end.data) > DAILY_RANGE_MAX_DAYS) return null;
+    return { from: start.data, to: end.data };
+}
+
+function DailyReportRoute() {
     const { shop, user } = useAuth();
-    // `?date=` (админы түүхийн холбоос) useSearchParams-ийн шаардлагаар Suspense-д. Байгууллага/хэрэглэгч
-    // солиход өмнөх ноорог, огноог авч үлдэхгүй.
-    return (
-        <Suspense fallback={<Skeleton className="h-[560px]" />}>
-            <DailyReportView key={`${shop?.id}:${user?.id}`} />
-        </Suspense>
-    );
+    const search = useSearchParams();
+    const today = ubDateStr();
+    // `?date=` (админы түүхийн холбоос) эсвэл `?from=&to=` (AI-ийн хугацааны холбоос).
+    const range = rangeFromSearch(search.get('from'), search.get('to'), today);
+    const initial = { date: range?.from ?? initialDate(search.get('date'), today), to: range?.to ?? null };
+    // Байгууллага/хэрэглэгч солиход өмнөх ноорог, огноог авч үлдэхгүй.
+    return <DailyReportView key={`${shop?.id}:${user?.id}`} initial={initial} />;
+}
+
+/** Хугацааны бэлэн сонголт: сүүлийн 7 хоног, Лхагвагийн хурлын өмнөх 7 хоног (Лхагва–Мягмар), энэ/өмнөх сар. */
+function rangePresets(today: string): Array<{ label: string; title: string; range: DateRange }> {
+    const month = periodBounds(today, 'month');
+    const previousMonth = periodBounds(shiftDate(month.from, -1), 'month');
+    const meetingWeek = periodBounds(shiftDate(activityWeekStart(today), -1), 'week');
+    return [
+        { label: 'Сүүлийн 7 хоног', title: 'Өнөөдрийг оруулаад сүүлийн 7 өдөр', range: { from: shiftDate(today, -6), to: today } },
+        { label: 'Хурлын 7 хоног', title: 'Өнгөрсөн Лхагва–Мягмар (Лхагвагийн хурлын тайлан)', range: meetingWeek },
+        { label: 'Энэ сар', title: 'Сарын эхнээс өнөөдөр хүртэл', range: { from: month.from, to: today } },
+        { label: 'Өмнөх сар', title: 'Өмнөх сарын бүх өдөр', range: previousMonth },
+    ];
 }
 
 const savedNotes = (report: DailyReport): DailyReportNotes => ({
@@ -95,13 +122,15 @@ function initialDate(raw: string | null, today: string) {
     return parsed.success && parsed.data <= today ? parsed.data : today;
 }
 
-function DailyReportView() {
+/** `initial.to` = хугацааны нэгтгэлийн дуусах өдөр (null = нэг өдрийн тайлан). */
+function DailyReportView({ initial }: { initial: { date: string; to: string | null } }) {
     const { shop } = useAuth();
     const { canWrite } = useModuleAccess();
     const queryClient = useQueryClient();
-    const searchParams = useSearchParams();
     const today = ubDateStr();
-    const [date, setDate] = useState(() => initialDate(searchParams.get('date'), today));
+    const [date, setDate] = useState(initial.date);
+    /** Хугацааны нэгтгэлийн дуусах өдөр; null = нэг өдрийн тайлан. */
+    const [rangeTo, setRangeTo] = useState<string | null>(initial.to);
     const [editOverride, setEditOverride] = useState<boolean | null>(null);
     const [draft, setDraft] = useState<Record<string, string>>({});
     // Зассан тэмдэглэлийн түлхүүрүүд л (бүх тэмдэглэлийн хуулбар биш).
@@ -119,19 +148,22 @@ function DailyReportView() {
     // Товлосон уулзалтын цаг болмогц «Болсон»/«Ирээгүй» идэвхжинэ (хуудас хөдөлгөөнгүй байсан ч).
     const [now, setNow] = useState(() => Date.now());
     const imageRef = useRef<HTMLDivElement>(null);
-    const query = useDailyReport(date);
-    const data = query.data?.date === date ? query.data : undefined;
+    const ranged = rangeTo !== null;
+    const to = rangeTo ?? date;
+    const query = useDailyReport(date, to);
+    const data = query.data?.date === date && (query.data.to ?? query.data.date) === to ? query.data : undefined;
     const report = data?.report ?? null;
     const viewer = data?.viewer;
     const own = viewer?.own ?? null;
-    const editable = new Set(viewer?.editable ?? []);
+    // Хугацааны нэгтгэл зөвхөн харах: тоо, тэмдэглэл, уулзалт, баталгаажуулалтыг өдөр бүрээр нь хийнэ.
+    const editable = new Set(ranged ? [] : viewer?.editable ?? []);
     // Менежер өөрийн өнөөдрийн тоогоо оруулаагүй бол шууд оруулах горимоор нээгдэнэ.
-    const editMode = editOverride ?? (!!viewer?.personal && !!own && editable.has(own) && !!report && !report.filled.includes(own));
+    const editMode = !ranged && (editOverride ?? (!!viewer?.personal && !!own && editable.has(own) && !!report && !report.filled.includes(own)));
     const dirty = Object.keys(draft).length > 0 || Object.keys(notesDraft).length > 0;
     const canConfigure = canWrite('settings') && !!data?.config && !viewer?.personal;
 
     // Уулзалт: POST /meetings-ийн дүрэм — viewings бичих эрх; бүртгэлтэй менежер өөрийн төсөлд, сүүлийн 7 хоногт.
-    const canMeet = !!report && !!viewer && canWrite('viewings') && (!viewer.personal || !!own);
+    const canMeet = !ranged && !!report && !!viewer && canWrite('viewings') && (!viewer.personal || !!own);
     const meetingWindow = !viewer?.personal || date >= shiftDate(today, -DAILY_MEETING_BACKDATE_DAYS);
     // Сервер зорилтот менежерийг төслийн идэвхтэй бүртгэлээр шалгадаг — тэр жагсаалтаар (хуучин хариунд: идэвхтэй багана).
     const registered = viewer?.meetingManagers ? new Set(viewer.meetingManagers) : null;
@@ -151,6 +183,27 @@ function DailyReportView() {
         setEditOverride(null);
         resetDraft();
     };
+    /** Хугацааг тохируулна: ирээдүй хасагдана; урт хугацааг өөрчилсөн захаас нь DAILY_RANGE_MAX_DAYS-д багтаана. */
+    const selectRange = (from: string, until: string, anchor: 'from' | 'to' = 'to') => {
+        if (dirty) return;
+        let start = from > today ? today : from;
+        let end = until > today ? today : until;
+        if (start > end) { if (anchor === 'from') end = start; else start = end; }
+        if (daySpan(start, end) > DAILY_RANGE_MAX_DAYS) {
+            if (anchor === 'from') end = shiftDate(start, DAILY_RANGE_MAX_DAYS - 1);
+            else start = shiftDate(end, 1 - DAILY_RANGE_MAX_DAYS);
+        }
+        setDate(start);
+        setRangeTo(end);
+        setEditOverride(null);
+        resetDraft();
+    };
+    const switchMode = (next: 'day' | 'range') => {
+        if (dirty || (next === 'range') === ranged) return;
+        if (next === 'range') selectRange(shiftDate(date, -6), date);
+        else { setDate(to); setRangeTo(null); setEditOverride(null); resetDraft(); }
+    };
+    const presets = rangePresets(today);
     const cancelEdit = () => { resetDraft(); setEditOverride(false); };
 
     async function save(extra: { complete?: boolean } = {}) {
@@ -240,7 +293,7 @@ function DailyReportView() {
         item.id, { action: 'reassign', date, viewing_id: item.id, manager },
         result => (result.changed === false ? 'Менежер өөрчлөгдөөгүй' : `Уулзалтыг ${formalManagerName(manager)}-д шилжүүллээ`),
     );
-    const meetingActions: DailyMeetingActions | null = report ? {
+    const meetingActions: DailyMeetingActions | null = report && !ranged ? {
         onAdd: canMeet && meetingWindow && meetingManagers.length > 0 ? () => setMeetingOpen(true) : null,
         onComplete: canMeet && meetingWindow ? completeMeeting : null,
         reassign: viewer?.canReassign ? { managers: meetingManagers, onChange: reassignMeeting } : null,
@@ -258,11 +311,11 @@ function DailyReportView() {
 
     async function downloadImage(format: ImageFormat) {
         if (!report) return;
-        // Зургийн хувилбарыг (цагаан цаас, нэг баганатай) дэлгэцээс гадуур зурж авна.
+        // Зургийн хувилбарыг (цагаан цаас, дэлгэцийн өргөн загвар) дэлгэцээс гадуур зурж авна.
         flushSync(() => setImageFormat(format));
         try {
             if (!imageRef.current) throw new Error('Тайлангийн зураг зурагдсангүй');
-            await downloadElementImage(imageRef.current, `өдрийн_тайлан_${date}`, format);
+            await downloadElementImage(imageRef.current, ranged ? `өдрийн_тайлан_${date}_${to}` : `өдрийн_тайлан_${date}`, format);
             toast.success('Тайлангийн зураг татагдлаа');
         } catch {
             toast.error('Зураг үүсгэж чадсангүй. PDF / хэвлэх үйлдлийг ашиглана уу.');
@@ -281,8 +334,9 @@ function DailyReportView() {
         return `${label} · ${formalManagerName(conflict.manager)}: одоо ${conflict.current ?? '—'}`;
     };
     const notices: Array<{ tone: 'info' | 'warning'; text: ReactNode }> = [];
-    if (report && date === today) notices.push({ tone: 'info', text: 'Өдөр дуусаагүй — одоогоор бүртгэсэн мэдээллийг харуулж байна.' });
-    if (report && viewer?.personal) notices.push({ tone: 'info', text: 'Төслийн бүх менежерийн мэдээлэл харагдана. Ээлжийн менежер бүх менежерийн дуудлага, чатын тоог оруулж болно; өөрчлөлт бүр «Түүх»-д хадгалагдана.' });
+    if (report && ranged) notices.push({ tone: 'info', text: `${report.days} өдрийн тайланг нэгтгэв: дуудлага, чатын тоо, уулзалт нийлбэрээр. Тоо засах, уулзалт бүртгэх, тэмдэглэл, баталгаажуулалтыг «Өдөр» горимд өдөр тус бүрээр хийнэ.` });
+    if (report && to === today) notices.push({ tone: 'info', text: 'Өдөр дуусаагүй — одоогоор бүртгэсэн мэдээллийг харуулж байна.' });
+    if (report && viewer?.personal && !ranged) notices.push({ tone: 'info', text: 'Төслийн бүх менежерийн мэдээлэл харагдана. Ээлжийн менежер бүх менежерийн дуудлага, чатын тоог оруулж болно; өөрчлөлт бүр «Түүх»-д хадгалагдана.' });
     if (report && editMode && report.completed) notices.push({ tone: 'warning', text: 'Тайлан баталгаажсан. Өөрчлөлт түүхэд бүртгэгдэнэ.' });
     if (report && editMode && conflicts.length > 0) {
         notices.push({ tone: 'warning', text: <span>Энэ хооронд өөр хүн өөрчилсөн: {conflicts.map(conflictText).join('; ')}. Таны оруулсан утга хэвээр байна — шалгаад дахин «Хадгалах» дарна уу.</span> });
@@ -290,9 +344,9 @@ function DailyReportView() {
     if (report && report.meetings.pending > 0) {
         notices.push({ tone: 'warning', text: meetingActions?.onComplete
             ? <span>Энэ өдөр товлосон {report.meetings.pending} уулзалтын үр дүн бүртгэгдээгүй тул тайланд ороогүй. Доорх «Товлосон, үр дүн бүртгээгүй» жагсаалтаас «Болсон» эсвэл «Ирээгүй» гэж тэмдэглэнэ үү; шинэ уулзалтыг <Link href="/dashboard/viewings" className="font-medium underline">Уулзалт</Link> хуудаснаас товлоно.</span>
-            : <span>Энэ өдөр товлосон {report.meetings.pending} уулзалтын үр дүн бүртгэгдээгүй тул тайланд ороогүй. <Link href="/dashboard/viewings" className="font-medium underline">Уулзалт</Link> хуудсанд «Болсон» гэж тэмдэглэнэ үү.</span> });
+            : <span>{ranged ? 'Энэ хугацаанд' : 'Энэ өдөр'} товлосон {report.meetings.pending} уулзалтын үр дүн бүртгэгдээгүй тул тайланд ороогүй. <Link href="/dashboard/viewings" className="font-medium underline">Уулзалт</Link> хуудсанд «Болсон» гэж тэмдэглэнэ үү.</span> });
     }
-    if (report && report.missing.length > 0) notices.push({ tone: 'warning', text: `Тоо оруулаагүй: ${report.missing.join(', ')}.` });
+    if (report && report.missing.length > 0) notices.push({ tone: 'warning', text: `${ranged ? 'Энэ хугацаанд тоо огт оруулаагүй' : 'Тоо оруулаагүй'}: ${report.missing.join(', ')}.` });
     if (data?.configInvalid) notices.push({ tone: 'warning', text: 'Хадгалсан загвар уншигдсангүй — анхдагч загварыг харуулж байна. «Загвар»-аас дахин хадгална уу.' });
     if (data && !data.configSaved && canConfigure) notices.push({ tone: 'info', text: 'Энэ төслийн загварыг тохируулаагүй байна. «Загвар» товчоор утасны шугам, чатын суваг, менежерийн баганаа тохируулна уу.' });
 
@@ -311,16 +365,51 @@ function DailyReportView() {
             </header>
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4 print:hidden">
-                <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="icon" aria-label="Өмнөх өдөр" disabled={dirty} onClick={() => goTo(shiftDate(date, -1))}><ChevronLeft /></Button>
-                    <input type="date" value={date} max={today} disabled={dirty} aria-label="Тайлангийн өдөр"
-                        onChange={event => {
-                            const parsed = DailyReportDateSchema.safeParse(event.target.value);
-                            if (parsed.success && parsed.data <= today) goTo(parsed.data);
-                        }}
-                        className="h-9 rounded-lg border border-control bg-surface px-3 text-sm text-foreground" />
-                    <Button variant="ghost" size="icon" aria-label="Дараах өдөр" disabled={dirty || date >= today} onClick={() => goTo(shiftDate(date, 1))}><ChevronRight /></Button>
-                    {date !== today && <Button variant="ghost" size="sm" disabled={dirty} onClick={() => goTo(today)}>Өнөөдөр</Button>}
+                <div className="flex flex-wrap items-center gap-2">
+                    <div role="group" aria-label="Тайлангийн хугацаа" className="flex rounded-lg border border-control p-0.5">
+                        {(['day', 'range'] as const).map(mode => (
+                            <button key={mode} type="button" aria-pressed={(mode === 'range') === ranged} disabled={dirty} onClick={() => switchMode(mode)}
+                                className={cn('h-8 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50',
+                                    (mode === 'range') === ranged && 'bg-surface-2 text-foreground')}>
+                                {mode === 'day' ? 'Өдөр' : 'Хугацаа'}
+                            </button>
+                        ))}
+                    </div>
+                    {ranged ? <>
+                        <input type="date" value={date} max={today} disabled={dirty} aria-label="Эхлэх өдөр"
+                            onChange={event => {
+                                const parsed = DailyReportDateSchema.safeParse(event.target.value);
+                                if (parsed.success) selectRange(parsed.data, to, 'from');
+                            }}
+                            className="h-9 rounded-lg border border-control bg-surface px-3 text-sm text-foreground" />
+                        <span aria-hidden className="text-muted-foreground">–</span>
+                        <input type="date" value={to} max={today} disabled={dirty} aria-label="Дуусах өдөр"
+                            onChange={event => {
+                                const parsed = DailyReportDateSchema.safeParse(event.target.value);
+                                if (parsed.success) selectRange(date, parsed.data, 'to');
+                            }}
+                            className="h-9 rounded-lg border border-control bg-surface px-3 text-sm text-foreground" />
+                        <div className="flex flex-wrap gap-1">
+                            {presets.map(preset => (
+                                <Button key={preset.label} variant="ghost" size="sm" title={preset.title} disabled={dirty}
+                                    aria-pressed={preset.range.from === date && preset.range.to === to}
+                                    className={cn(preset.range.from === date && preset.range.to === to && 'bg-surface-2 text-foreground')}
+                                    onClick={() => selectRange(preset.range.from, preset.range.to)}>
+                                    {preset.label}
+                                </Button>
+                            ))}
+                        </div>
+                    </> : <>
+                        <Button variant="ghost" size="icon" aria-label="Өмнөх өдөр" disabled={dirty} onClick={() => goTo(shiftDate(date, -1))}><ChevronLeft /></Button>
+                        <input type="date" value={date} max={today} disabled={dirty} aria-label="Тайлангийн өдөр"
+                            onChange={event => {
+                                const parsed = DailyReportDateSchema.safeParse(event.target.value);
+                                if (parsed.success && parsed.data <= today) goTo(parsed.data);
+                            }}
+                            className="h-9 rounded-lg border border-control bg-surface px-3 text-sm text-foreground" />
+                        <Button variant="ghost" size="icon" aria-label="Дараах өдөр" disabled={dirty || date >= today} onClick={() => goTo(shiftDate(date, 1))}><ChevronRight /></Button>
+                        {date !== today && <Button variant="ghost" size="sm" disabled={dirty} onClick={() => goTo(today)}>Өнөөдөр</Button>}
+                    </>}
                 </div>
                 <div className="flex flex-wrap gap-2">
                     {editMode ? <>
@@ -329,7 +418,7 @@ function DailyReportView() {
                     </> : <>
                         {editable.size > 0 && report && <Button variant="secondary" onClick={() => setEditOverride(true)}><PencilLine />{viewer?.personal ? 'Тоо оруулах' : 'Засах'}</Button>}
                         {canConfigure && <Button variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 />Загвар</Button>}
-                        {report && <Button variant="ghost" onClick={() => setHistoryOpen(true)}><History />Түүх</Button>}
+                        {report && !ranged && <Button variant="ghost" onClick={() => setHistoryOpen(true)}><History />Түүх</Button>}
                         <Button variant="ghost" disabled={!report} onClick={() => void copy()}><ClipboardCopy />Хуулах</Button>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -343,7 +432,7 @@ function DailyReportView() {
                             </DropdownMenuContent>
                         </DropdownMenu>
                         <Button variant="secondary" disabled={!report} onClick={() => window.print()}><Printer />PDF / хэвлэх</Button>
-                        {viewer?.canEditTeam && report && (report.completed
+                        {viewer?.canEditTeam && !ranged && report && (report.completed
                             ? <Button variant="ghost" disabled={saving} onClick={() => void save({ complete: false })}><Undo2 />Баталгаажуулалт цуцлах</Button>
                             : <Button disabled={saving} onClick={() => void save({ complete: true })}><CheckCircle2 />Баталгаажуулах</Button>)}
                     </>}
@@ -397,7 +486,7 @@ function DailyReportView() {
 
             {imageFormat && report && (
                 <div inert className="pointer-events-none fixed top-0 left-[-10000px]">
-                    <div ref={imageRef} className="paper-theme w-[760px] p-8">
+                    <div ref={imageRef} className="paper-theme w-[1180px] p-8">
                         <DailyReportDocument report={report} forImage />
                     </div>
                 </div>

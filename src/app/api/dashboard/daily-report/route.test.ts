@@ -37,7 +37,7 @@ import { PUT as PUT_SETTINGS } from './settings/route';
 
 const CHAN = 'Чанцалдулам.Раднаа';
 const KHON = 'Хонгорзул.Мөнхгэрэл';
-const get = (date?: string) => GET(new NextRequest(`http://localhost/api/dashboard/daily-report${date ? `?date=${date}` : ''}`));
+const get = (date?: string, to?: string) => GET(new NextRequest(`http://localhost/api/dashboard/daily-report${date ? `?date=${date}` : ''}${to ? `&to=${to}` : ''}`));
 const put = (body: unknown) => PUT(new NextRequest('http://localhost/api/dashboard/daily-report', { method: 'PUT', body: JSON.stringify(body) }));
 const putSettings = (body: unknown) => PUT_SETTINGS(new NextRequest('http://localhost/api/dashboard/daily-report/settings', { method: 'PUT', body: JSON.stringify(body) }));
 const viewing = (id: string, manager: string | null, scheduledAt: string, extra: Record<string, unknown> = {}) => ({
@@ -116,7 +116,7 @@ describe('GET /api/dashboard/daily-report', () => {
         expect(report.chats.total).toBe(3);
         expect(report.meetings.total).toBe(2);
         expect(report.meetings.byManager).toEqual({ [KHON]: 1, [CHAN]: 1 });
-        expect(report.meetings.groups[0].items).toEqual([{ id: 'v1', manager: 'Чан', managerName: CHAN, text: 'Харилцагч v1 — Б2-58м2 10-30%; үлдэгдэл банк' }]);
+        expect(report.meetings.groups[0].items).toEqual([{ id: 'v1', manager: 'Чан', managerName: CHAN, text: 'Харилцагч v1 — Б2-58м2 10-30%; үлдэгдэл банк', day: null }]);
         expect(report.meetings.pending).toBe(2);
         expect(report.meetings.pendingItems).toEqual([
             // Хариуцагчгүй лидийн уулзалтыг менежер тэмдэглэхгүй (assigned=false).
@@ -209,6 +209,41 @@ describe('GET /api/dashboard/daily-report', () => {
         // updated_by_name багана алга (migration хэрэглэгдээгүй).
         state.db.failNext.daily_report_counts = { code: '42703', message: 'column daily_report_counts.updated_by_name does not exist' };
         expect((await get('2026-09-30')).status).toBe(503);
+    });
+
+    it('sums a date range read-only: counts per manager, meetings with their day, general notes by date', async () => {
+        state.db.tables.daily_reports.push({ shop_id: 'shop-1', report_date: '2026-09-29', notes: { general: 'Бартерийн санал ирсэн' }, completed_by_name: null, completed_at: null });
+        state.db.tables.daily_reports[0].notes = { lines: { l1: 'Ерөнхий мэдээлэл' }, general: 'Үзэсгэлэн' };
+        state.db.tables.property_viewings.push(viewing('v10', CHAN, '2026-09-29T03:00:00.000Z'));
+        const response = await get('2026-09-29', '2026-09-30');
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body).toMatchObject({ date: '2026-09-29', to: '2026-09-30' });
+        // Мужид засах, уулзалт бүртгэх/шилжүүлэх эрх өгөхгүй (өдөр бүрээр).
+        expect(body.viewer).toEqual({ personal: false, onboarding: false, canEditTeam: false, editable: [], own: null, canReassign: false, meetingManagers: [] });
+        const report = body.report;
+        expect(report).toMatchObject({ date: '2026-09-29', to: '2026-09-30', days: 2, weekday: '2 өдөр', completed: null, completedDays: 1 });
+        // 106 = 99 + 7: өөр төслийн 55 орохгүй.
+        expect(report.lines[0].total).toBe(106);
+        expect(report.lines[0].byManager).toEqual({ [KHON]: 99, [CHAN]: 7 });
+        // Нүд олон өдрийн нийлбэр — оруулсан хүнгүй.
+        expect(report.lines[0].rows[0].authors).toBeUndefined();
+        // Шугамын тайлбар өдөр бүрийнх тул мужид нэгтгэхгүй; нэмэлт тэмдэглэл огноотойгоо.
+        expect(report.lines[0].note).toBe('');
+        expect(report.generalNote).toBe('2026.09.29: Бартерийн санал ирсэн\n2026.09.30: Үзэсгэлэн');
+        expect(report.meetings.total).toBe(3);
+        expect(report.meetings.groups[0].items.map((item: { id: string; day: string }) => [item.id, item.day]))
+            .toEqual([['v10', '2026-09-29'], ['v1', '2026-09-30']]);
+        expect(report.meetings.pending).toBe(2);
+        expect(report.missing).toEqual([]);
+    });
+
+    it('rejects a reversed, future or too long range', async () => {
+        expect((await get('2026-09-30', '2026-09-29')).status).toBe(400);
+        expect((await get('2026-09-30', '2099-01-01')).status).toBe(400);
+        expect((await get('2026-01-01', '2026-09-30')).status).toBe(400);
+        expect((await get('2026-07-01', '2026-09-30')).status).toBe(200);
+        expect((await get('2026-09-30', 'bad')).status).toBe(400);
     });
 
     it.each(['inactive', 'unlinked', 'ambiguous', 'no-project', 'foreign-project'])('does not grant the team view to a manager with %s membership', async reason => {

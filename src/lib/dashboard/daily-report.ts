@@ -16,6 +16,8 @@
  */
 import { z } from 'zod';
 import { formatStaffPhone } from '@/lib/admin/staff-profile';
+import { daySpan } from '@/lib/sales/activity';
+import { ubDateStr } from '@/lib/utils/date';
 import { MEETING_TYPE_META, MEETING_TYPES, WEEKDAYS_MN, type MeetingType } from '@/lib/viewings/labels';
 
 export const CALL_CATEGORIES = ['new', 'repeat', 'other'] as const;
@@ -25,6 +27,8 @@ export const CALL_CATEGORY_LABEL: Record<CallCategory, string> = { new: 'Шин�
 /** Нэг нүдний дээд утга (оруулах алдаанаас сэргийлнэ; DB-ийн CHECK-тэй ижил). */
 export const DAILY_COUNT_MAX = 10_000;
 export const DAILY_LIMITS = { lines: 6, chats: 4, managers: 30, note: 1000, generalNote: 2000 } as const;
+/** Огнооны мужаар нэгтгэх хамгийн урт хугацаа (өдөр). */
+export const DAILY_RANGE_MAX_DAYS = 92;
 /** `call.<шугам>.<ангилал|total>` эсвэл `chat.<суваг>` — DB-ийн CHECK-тэй ижил. */
 export const DAILY_METRIC_PATTERN = /^(call\.[a-z0-9]{1,16}\.(total|new|repeat|other)|chat\.[a-z0-9]{1,16})$/;
 /** Хариуцагчгүй уулзалтын баганы түлхүүр. */
@@ -241,6 +245,8 @@ export interface DailyMeetingItem {
     /** Канон нэр; хариуцагчгүй бол ''. */
     managerName: string;
     text: string;
+    /** Мужийн тайланд уулзалтын УБ өдөр; нэг өдрийн тайланд null. */
+    day: string | null;
 }
 /** «Товлосон» хэвээр (үр дүн бүртгээгүй) тухайн өдрийн уулзалт. */
 export interface DailyPendingMeeting {
@@ -258,23 +264,34 @@ export interface DailyPendingMeeting {
 export interface DailyMeetingGroup { type: MeetingKind; label: string; heading: string; count: number; items: DailyMeetingItem[] }
 
 export interface DailyReport {
+    /** Эхлэх өдөр (нэг өдрийн тайланд тухайн өдөр). */
     date: string;
+    /** Дуусах өдөр (оруулсан); нэг өдрийн тайланд `date`-тэй тэнцүү. */
+    to: string;
+    /** Нэгтгэсэн өдрийн тоо (нэг өдөрт 1). */
+    days: number;
     weekday: string;
     title: string;
     managers: DailyReportManager[];
     lines: DailyLineSection[];
     chats: DailyGridSection & { note: string };
     meetings: DailyGridSection & { groups: DailyMeetingGroup[]; pending: number; pendingItems: DailyPendingMeeting[] };
-    /** Тухайн өдөр тоо оруулсан менежерүүд (0-ийг оруулсан ч тооцно). */
+    /** Тухайн өдөр (мужид: аль нэг өдөр) тоо оруулсан менежерүүд (0-ийг оруулсан ч тооцно). */
     filled: string[];
     /** Загварын менежерээс тоо оруулаагүй нь (идэвхтэй, бүртгэлтэй). */
     missing: string[];
     generalNote: string;
     completed: { by: string | null; at: string } | null;
+    /** Мужид: баталгаажуулсан өдрийн тоо; нэг өдрийн тайланд null. */
+    completedDays: number | null;
 }
 
 export interface BuildDailyReportInput {
     date: string;
+    /** Огнооны муж: дуусах өдөр (оруулсан). Орхивол нэг өдрийн тайлан; тоог дуудагч нэгтгэж өгнө (`sumDailyCounts`). */
+    to?: string;
+    /** Мужид баталгаажуулсан өдрийн тоо. */
+    completedDays?: number;
     title: string;
     config: DailyReportConfig;
     roster: readonly DailyRosterEntry[];
@@ -286,6 +303,28 @@ export interface BuildDailyReportInput {
     completed: { by: string | null; at: string } | null;
     /** Хувийн горим: зөвхөн энэ менежерийн багана. */
     only: string | null;
+}
+
+/** Мужийн өдөр бүрийн тоог менежер × үзүүлэлтээр нэгтгэнэ. */
+export function sumDailyCounts(rows: readonly DailyCountRow[]): DailyCountRow[] {
+    const sums = new Map<string, DailyCountRow>();
+    for (const row of rows) {
+        const key = `${row.manager_name}\u0000${row.metric}`;
+        const current = sums.get(key);
+        if (current) current.value += row.value;
+        else sums.set(key, { manager_name: row.manager_name, metric: row.metric, value: row.value });
+    }
+    return [...sums.values()];
+}
+
+/** Мужийн тайлангийн нэмэлт тэмдэглэл: өдөр бүрийн тэмдэглэл огноотойгоо, огнооны дарааллаар. */
+export function joinDailyGeneralNotes(notes: ReadonlyArray<{ date: string; general: string | null | undefined }>): string {
+    return [...notes].sort((a, b) => a.date.localeCompare(b.date))
+        .map(note => ({ date: note.date, text: (note.general ?? '').trim() }))
+        .filter(note => note.text)
+        .map(note => `${reportDateLabel(note.date)}: ${note.text}`)
+        .join('\n')
+        .slice(0, DAILY_LIMITS.generalNote * 4);
 }
 
 const MEETING_KINDS: MeetingKind[] = [...MEETING_TYPES, 'unclassified'];
@@ -325,6 +364,8 @@ function gridSection(rows: GridInput[], managers: readonly DailyReportManager[])
 
 export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
     const { config, only } = input;
+    const to = input.to && input.to > input.date ? input.to : input.date;
+    const ranged = to !== input.date;
     const counts = input.counts.filter(row => !only || row.manager_name === only);
     const meetings = input.meetings.filter(row => !only || row.manager === only).filter(row => row.id);
     const managers = only
@@ -349,7 +390,8 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
         }
         return authors;
     };
-    const countRow = (key: string, label: string): GridInput => ({ key, label, values: valuesFor(key), authors: authorsFor(key) });
+    // Мужид нүд олон өдрийн нийлбэр тул нэг оруулсан хүнгүй.
+    const countRow = (key: string, label: string): GridInput => ({ key, label, values: valuesFor(key), ...(ranged ? {} : { authors: authorsFor(key) }) });
 
     const lines: DailyLineSection[] = config.lines.map(line => {
         const rows = line.categories.length
@@ -378,7 +420,11 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
         heading: MEETING_HEADING[kind],
         count: byKind.get(kind)!.length,
         items: byKind.get(kind)!.map(meeting => ({
-            id: meeting.id, manager: shortOf.get(meeting.manager ?? UNASSIGNED) ?? '', managerName: meeting.manager ?? UNASSIGNED, text: meetingItemText(meeting),
+            id: meeting.id,
+            manager: shortOf.get(meeting.manager ?? UNASSIGNED) ?? '',
+            managerName: meeting.manager ?? UNASSIGNED,
+            text: meetingItemText(meeting),
+            day: ranged ? ubDateStr(new Date(meeting.scheduled_at)) : null,
         })),
     }));
     const pendingItems: DailyPendingMeeting[] = input.pendingMeetings
@@ -400,7 +446,9 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
 
     return {
         date: input.date,
-        weekday: WEEKDAYS_MN[new Date(`${input.date}T00:00:00Z`).getUTCDay()],
+        to,
+        days: daySpan(input.date, to),
+        weekday: ranged ? `${daySpan(input.date, to)} өдөр` : WEEKDAYS_MN[new Date(`${input.date}T00:00:00Z`).getUTCDay()],
         title: input.title,
         managers,
         lines,
@@ -408,9 +456,10 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
         meetings: { ...meetingGrid, groups, pending: pendingItems.length, pendingItems },
         filled,
         missing,
-        // Мөр шилжилтийг хадгална (бусад тайлбар нэг мөрөнд).
-        generalNote: (input.notes.general ?? '').trim().slice(0, DAILY_LIMITS.generalNote),
-        completed: input.completed,
+        // Мөр шилжилтийг хадгална (бусад тайлбар нэг мөрөнд). Мужийн тэмдэглэл өдөр бүрээр нийлсэн тул урт байж болно.
+        generalNote: (input.notes.general ?? '').trim().slice(0, ranged ? DAILY_LIMITS.generalNote * 4 : DAILY_LIMITS.generalNote),
+        completed: ranged ? null : input.completed,
+        completedDays: ranged ? input.completedDays ?? 0 : null,
     };
 }
 
@@ -419,6 +468,10 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
 /* ------------------------------------------------------------------ */
 
 export const reportDateLabel = (date: string) => date.replaceAll('-', '.');
+/** «2026.10.21» эсвэл мужид «2026.10.15 – 2026.10.21». */
+export const reportPeriodLabel = (report: Pick<DailyReport, 'date' | 'to'>) => (report.to === report.date
+    ? reportDateLabel(report.date)
+    : `${reportDateLabel(report.date)} – ${reportDateLabel(report.to)}`);
 
 /** «Зу 7, Ба 4, Но 7» — тоотой баганууд. */
 function perManager(values: Record<string, number | null>, managers: readonly DailyReportManager[]): string {
@@ -434,7 +487,7 @@ const sentence = (text: string) => (!text || /[.!?…]$/.test(text) ? text : `${
 export function formatDailyReportText(report: DailyReport): string {
     const out: string[] = [];
     const { managers } = report;
-    out.push(`${report.title.toLocaleUpperCase('mn')} — ${reportDateLabel(report.date)}`);
+    out.push(`${report.title.toLocaleUpperCase('mn')} — ${reportPeriodLabel(report)}${report.days > 1 ? ` (${report.days} өдөр)` : ''}`);
     const named = managers.filter(manager => manager.inRoster);
     if (named.length) out.push(`Менежер: ${named.map(manager => `${manager.title}${manager.phone ? ` (${formatStaffPhone(manager.phone)})` : ''}`).join(', ')}`);
 
@@ -450,11 +503,12 @@ export function formatDailyReportText(report: DailyReport): string {
     out.push('', `Уулзалт: ${report.meetings.total}${detail(report.meetings.byManager, managers)}`);
     for (const group of report.meetings.groups) {
         out.push(`${group.heading} - ${group.count}`);
-        group.items.forEach((item, index) => out.push(`${index + 1}. ${item.text}`));
+        group.items.forEach((item, index) => out.push(`${index + 1}. ${item.day ? `${reportDateLabel(item.day).slice(5)} ` : ''}${item.text}`));
     }
     if (report.meetings.pending > 0) out.push(`(Үр дүнгээ бүртгээгүй товлосон уулзалт: ${report.meetings.pending})`);
     if (report.generalNote) out.push('', report.generalNote);
     if (report.completed?.by) out.push('', `Тайлан хийж гүйцэтгэсэн: ${report.completed.by}`);
+    if (report.completedDays !== null) out.push('', `Баталгаажсан өдөр: ${report.completedDays}/${report.days}`);
     return out.join('\n');
 }
 

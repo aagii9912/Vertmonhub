@@ -6,7 +6,7 @@ import { resolveReportViewer } from '@/lib/sales/manager-identity';
 import { ProjectScopeError } from '@/lib/sales/project-scope';
 import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 import {
-    buildDailyReport, buildDailyReportChanges, flattenDailyNotes, readDailyReportConfig, readDailyReportNotes,
+    buildDailyReport, buildDailyReportChanges, flattenDailyNotes, joinDailyGeneralNotes, readDailyReportConfig, readDailyReportNotes, sumDailyCounts,
     type DailyCountRow, type DailyMeetingRow, type DailyReport, type DailyReportChange, type DailyReportChangeRow, type DailyReportConfig,
     type DailyReportConflict, type DailyRosterEntry, type SaveDailyReportInput,
 } from './daily-report';
@@ -118,41 +118,47 @@ export async function loadDailyReport(db: SupabaseClient, options: {
     shopId: string;
     shopName: string;
     date: string;
+    /** Огнооны муж: дуусах өдөр (оруулсан). Орхивол `date` нэг өдөр; урт мужийг дуудагч хязгаарлана. */
+    to?: string;
     /** Хувийн горим: зөвхөн энэ менежерийн тоо, уулзалт. */
     only: string | null;
 }): Promise<{ report: DailyReport; config: DailyReportConfig; configSaved: boolean; configInvalid: boolean; roster: DailyRosterEntry[] }> {
     const { shopId, date, only } = options;
+    const to = options.to && options.to > date ? options.to : date;
+    const ranged = to !== date;
     const start = ubDateStart(date).toISOString();
-    const end = ubDateStart(shiftDate(date, 1)).toISOString();
+    const end = ubDateStart(shiftDate(to, 1)).toISOString();
     const settings = await loadDailyReportConfig(db, shopId, options.shopName);
 
-    const [roster, counts, meetings, pending, reportRow] = await Promise.all([
+    const [roster, counts, meetings, pending, reportRows] = await Promise.all([
         loadRosterAccounts(db, shopId),
-        allRows<DailyCountRow>((from, to) => {
+        allRows<DailyCountRow>((from, until) => {
             let query = db.from('daily_report_counts').select('manager_name, metric, value, updated_by, updated_by_name, updated_at')
-                .eq('shop_id', shopId).eq('report_date', date);
+                .eq('shop_id', shopId).gte('report_date', date).lte('report_date', to);
             if (only) query = query.eq('manager_name', only);
-            return query.order('manager_name').order('metric').range(from, to);
+            return query.order('report_date').order('manager_name').order('metric').range(from, until);
         }),
-        allRows<MeetingSelect>((from, to) => {
+        allRows<MeetingSelect>((from, until) => {
             let query = db.from('property_viewings')
                 .select('id, sales_manager_name, meeting_type, scheduled_at, agent_notes, customer_feedback, interests, leads(customer_name), properties(name)')
                 .eq('shop_id', shopId).is('deleted_at', null).eq('status', 'completed').gte('scheduled_at', start).lt('scheduled_at', end);
             if (only) query = query.eq('sales_manager_name', only);
-            return query.order('scheduled_at').order('id').range(from, to);
+            return query.order('scheduled_at').order('id').range(from, until);
         }),
-        allRows<PendingSelect>((from, to) => {
+        allRows<PendingSelect>((from, until) => {
             let query = db.from('property_viewings').select('id, sales_manager_name, meeting_type, scheduled_at, leads(customer_name, sales_manager_name, deleted_at)')
                 .eq('shop_id', shopId).is('deleted_at', null).eq('status', 'scheduled').gte('scheduled_at', start).lt('scheduled_at', end);
             if (only) query = query.eq('sales_manager_name', only);
-            return query.order('scheduled_at').order('id').range(from, to);
+            return query.order('scheduled_at').order('id').range(from, until);
         }),
-        db.from('daily_reports').select('notes, completed_by_name, completed_at').eq('shop_id', shopId).eq('report_date', date).maybeSingle(),
+        db.from('daily_reports').select('report_date, notes, completed_by_name, completed_at').eq('shop_id', shopId)
+            .gte('report_date', date).lte('report_date', to).order('report_date'),
     ]);
-    assertOk(reportRow.error);
+    assertOk(reportRows.error);
+    const reportRow = reportRows.data?.find(row => row.report_date === date) ?? null;
 
-    // Хуучин мөр (оруулсан хүний нэргүй): тухайн акаунтын профайлын нэр.
-    const legacy = [...new Set(counts.filter(row => row.updated_by && !row.updated_by_name).map(row => row.updated_by as string))];
+    // Хуучин мөр (оруулсан хүний нэргүй): тухайн акаунтын профайлын нэр. Мужид нүд нийлбэр тул оруулсан хүнгүй.
+    const legacy = ranged ? [] : [...new Set(counts.filter(row => row.updated_by && !row.updated_by_name).map(row => row.updated_by as string))];
     if (legacy.length) {
         const profiles = await db.from('user_profiles').select('id, full_name').in('id', legacy);
         assertOk(profiles.error);
@@ -170,12 +176,17 @@ export async function loadDailyReport(db: SupabaseClient, options: {
         feedback: row.customer_feedback,
         scheduled_at: row.scheduled_at,
     }));
+    // Мужид шугамын тайлбар өдөр бүрийнх тул нэгтгэхгүй; нэмэлт тэмдэглэлийг огноотой нь жагсаана.
+    const notes = only ? {} : ranged
+        ? { general: joinDailyGeneralNotes((reportRows.data ?? []).map(row => ({ date: row.report_date as string, general: readDailyReportNotes(row.notes).general }))) }
+        : readDailyReportNotes(reportRow?.notes);
     const report = buildDailyReport({
         date,
+        to,
         title: settings.config.title || `${options.shopName} баг`,
         config: settings.config,
         roster,
-        counts,
+        counts: ranged ? sumDailyCounts(counts) : counts,
         meetings: meetingRows,
         pendingMeetings: pending.map(row => {
             const lead = one(row.leads);
@@ -186,10 +197,11 @@ export async function loadDailyReport(db: SupabaseClient, options: {
             };
         }),
         // Хувийн горимд багийн тэмдэглэл, баталгаажуулалт харуулахгүй (зөвхөн өөрийн багана).
-        notes: only ? {} : readDailyReportNotes(reportRow.data?.notes),
-        completed: !only && reportRow.data?.completed_at
-            ? { by: (reportRow.data.completed_by_name as string | null) ?? null, at: reportRow.data.completed_at as string }
+        notes,
+        completed: !only && reportRow?.completed_at
+            ? { by: (reportRow.completed_by_name as string | null) ?? null, at: reportRow.completed_at as string }
             : null,
+        completedDays: only ? 0 : (reportRows.data ?? []).filter(row => row.completed_at).length,
         only,
     });
     return { report, config: settings.config, configSaved: settings.saved, configInvalid: settings.invalid, roster: roster.map(withoutAccount) };

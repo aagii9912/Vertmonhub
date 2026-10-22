@@ -149,6 +149,7 @@ export function createMemoryDb(tables: Record<string, Row[]> = {}, constraints: 
             in: (key: string, values: unknown[]) => { filters.push((row) => values.includes(valueAt(row, key))); return query; },
             gte: (key: string, value: any) => { filters.push((row) => valueAt(row, key) >= value); return query; },
             lt: (key: string, value: any) => { filters.push((row) => valueAt(row, key) < value); return query; },
+            lte: (key: string, value: any) => { filters.push((row) => valueAt(row, key) <= value); return query; },
             ilike: (key: string, value: string) => {
                 const pattern = new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*')}$`, 'iu');
                 filters.push((row) => pattern.test(String(valueAt(row, key) ?? '')));

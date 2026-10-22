@@ -8,7 +8,7 @@ import { supabaseAdmin as adminClient } from '@/lib/supabase';
 import { ubDateStr, ubParts } from '@/lib/utils/date';
 import { phoneIlikePattern } from '@/lib/utils/phone';
 import { resolveManagerIdentity, resolveReportViewer } from '@/lib/sales/manager-identity';
-import { activityRangeError, resolveActivityRange, type ActivityGroup, type ActivityRow } from '@/lib/sales/activity';
+import { activityRangeError, daySpan, resolveActivityRange, type ActivityGroup, type ActivityRow } from '@/lib/sales/activity';
 import { findActivityManager, loadManagerActivity } from '@/lib/sales/activity-load';
 import { dateSchema } from '@/lib/marketing/performance';
 import { resolveSalesProjectScope, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
@@ -18,7 +18,7 @@ import { getManagerPerformance } from '@/lib/reports/manager-performance';
 import { loadWeeklySales } from '@/lib/dashboard/weekly-sales-load';
 import { formatWeeklySalesText, meetingDateSchema, nextMeetingDate } from '@/lib/dashboard/weekly-review';
 import { listWeeklyUpdates, saveWeeklyUpdate } from '@/lib/dashboard/weekly-updates';
-import { DailyReportDateSchema, formatDailyReportText } from '@/lib/dashboard/daily-report';
+import { DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, formatDailyReportText } from '@/lib/dashboard/daily-report';
 import { DailyReportUnavailableError, loadDailyReport, resolveDailyReportViewer } from '@/lib/dashboard/daily-report-load';
 import { logger } from '@/lib/utils/logger';
 import { addCustomerTag, removeCustomerTag, replyToCustomer, mergeCustomers, updateCustomerInfo } from '@/lib/services/CustomerOps';
@@ -118,6 +118,10 @@ export async function getDailyReportTool(shopId: string, args: Args, userId: str
     const date = args.date ? String(args.date) : today;
     if (!DailyReportDateSchema.safeParse(date).success) return { error: 'Огноог YYYY-MM-DD хэлбэрээр өгнө үү' };
     if (date > today) return { error: 'Ирээдүйн өдрийн тайлан гаргахгүй' };
+    const to = args.to ? String(args.to) : date;
+    if (!DailyReportDateSchema.safeParse(to).success || to < date) return { error: 'Дуусах огноог YYYY-MM-DD хэлбэрээр, эхлэх өдрөөс хойш өгнө үү' };
+    if (to > today) return { error: 'Ирээдүйн өдрийн тайлан гаргахгүй' };
+    if (daySpan(date, to) > DAILY_RANGE_MAX_DAYS) return { error: `Хугацаа ${DAILY_RANGE_MAX_DAYS} өдрөөс ихгүй байна` };
 
     const viewer = await resolveDailyReportViewer(db(), shopId, { userId, role: perms.role, modules: perms.modules });
     if ((viewer.personal && !viewer.ownManager) || scope.projectIds?.length === 0) {
@@ -130,7 +134,7 @@ export async function getDailyReportTool(shopId: string, args: Args, userId: str
     const { data: shop } = await db().from('shops').select('name').eq('id', shopId).maybeSingle();
     let report;
     try {
-        ({ report } = await loadDailyReport(db(), { shopId, shopName: shop?.name || 'Төсөл', date, only: null }));
+        ({ report } = await loadDailyReport(db(), { shopId, shopName: shop?.name || 'Төсөл', date, to, only: null }));
     } catch (error) {
         if (error instanceof DailyReportUnavailableError) return { error: error.message };
         throw error;
@@ -138,7 +142,7 @@ export async function getDailyReportTool(shopId: string, args: Args, userId: str
     const short = new Map(report.managers.map(manager => [manager.name, manager.title || 'Оноогдоогүй']));
     const byManager = (values: Record<string, number>) => Object.fromEntries(Object.entries(values).filter(([, count]) => count > 0).map(([name, count]) => [short.get(name) ?? name, count]));
     return {
-        date, title: report.title, personal: false,
+        date, ...(to !== date ? { to, days: report.days, completedDays: report.completedDays } : {}), title: report.title, personal: false,
         plainText: formatDailyReportText(report),
         calls: report.lines.map(line => ({ line: line.label, total: line.total, byManager: byManager(line.byManager), note: line.note || undefined })),
         chats: { total: report.chats.total, byManager: byManager(report.chats.byManager) },
@@ -147,7 +151,7 @@ export async function getDailyReportTool(shopId: string, args: Args, userId: str
         missingManagers: report.missing,
         completedBy: report.completed?.by ?? null,
         guidance: DAILY_GUIDANCE,
-        url: '/dashboard/daily-report',
+        url: to !== date ? `/dashboard/daily-report?from=${date}&to=${to}` : '/dashboard/daily-report',
     };
 }
 

@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { withRoute } from '@/lib/api/route';
 import { supabaseAdmin } from '@/lib/supabase';
+import { daySpan } from '@/lib/sales/activity';
 import { ubDateStr } from '@/lib/utils/date';
-import { configMetrics, DailyReportDateSchema, SaveDailyReportSchema, UNASSIGNED } from '@/lib/dashboard/daily-report';
+import { configMetrics, DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, SaveDailyReportSchema, UNASSIGNED } from '@/lib/dashboard/daily-report';
 import {
     checkDailyCellAccess, dailyReportActorName, loadDailyEditableManagers, resolveDailyReportRequest,
 } from '@/lib/dashboard/daily-report-access';
@@ -14,7 +15,8 @@ const unavailable = (error: unknown) => error instanceof DailyReportUnavailableE
     : null;
 
 /**
- * GET /api/dashboard/daily-report?date=YYYY-MM-DD — «Өдрийн тайлан» (анхдагч: өнөөдөр, УБ).
+ * GET /api/dashboard/daily-report?date=YYYY-MM-DD[&to=YYYY-MM-DD] — «Өдрийн тайлан» (анхдагч: өнөөдөр, УБ).
+ * `to` өгвөл [date, to] мужийн тоо, уулзалтыг нэгтгэсэн, зөвхөн унших тайлан (≤ DAILY_RANGE_MAX_DAYS өдөр).
  * • Багийн харагдац: super_admin эсвэл `reports` модультай, хувийн горимгүй хэрэглэгч — бүх менежер,
  *   уулзалтын жагсаалт, тэмдэглэл; бүртгэлийн аль ч менежерийн тоог засна.
  * • Төсөлдөө бүртгэлтэй менежер: багийн бүх багана, уулзалт, тэмдэглэл; ээлжийн менежер тул төслийн
@@ -33,13 +35,20 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
     if (!parsed.success) return NextResponse.json({ error: 'Огноо буруу байна' }, { status: 400 });
     const date = parsed.data;
     if (date > today) return NextResponse.json({ error: 'Ирээдүйн өдрийн тайлан гаргахгүй' }, { status: 400 });
+    const rawTo = request.nextUrl.searchParams.get('to');
+    const parsedTo = DailyReportDateSchema.safeParse(rawTo || date);
+    if (!parsedTo.success || parsedTo.data < date) return NextResponse.json({ error: 'Хугацааны дуусах огноо буруу байна' }, { status: 400 });
+    const to = parsedTo.data;
+    if (to > today) return NextResponse.json({ error: 'Ирээдүйн өдрийн тайлан гаргахгүй' }, { status: 400 });
+    if (daySpan(date, to) > DAILY_RANGE_MAX_DAYS) return NextResponse.json({ error: `Хугацаа ${DAILY_RANGE_MAX_DAYS} өдрөөс ихгүй байна` }, { status: 400 });
+    const ranged = to !== date;
 
     const resolved = await resolveDailyReportRequest(shop.id);
     if (!resolved) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
     const { permissions, viewer, writable } = resolved;
 
     if (viewer.personal && !viewer.ownManager) {
-        return NextResponse.json({ date, today, report: null, config: null, roster: [],
+        return NextResponse.json({ date, to, today, report: null, config: null, roster: [],
             viewer: { personal: true, onboarding: true, canEditTeam: false, editable: [], own: null, canReassign: false, meetingManagers: [] } }, { headers: NO_STORE });
     }
     if (!viewer.canViewTeam) {
@@ -53,20 +62,24 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
 
     try {
         const db = supabaseAdmin();
-        const result = await loadDailyReport(db, { shopId: shop.id, shopName: shop.name || 'Төсөл', date, only: null });
-        const allowed = writable ? await loadDailyEditableManagers(db, shop.id, viewer, result.roster) : new Set<string>();
+        const result = await loadDailyReport(db, { shopId: shop.id, shopName: shop.name || 'Төсөл', date, to, only: null });
+        // Мужийн нэгтгэл зөвхөн унших: тоо, тэмдэглэл, уулзалтыг өдөр бүрээр нь засна.
+        const allowed = writable && !ranged ? await loadDailyEditableManagers(db, shop.id, viewer, result.roster) : new Set<string>();
         const editable = result.report.managers.map(manager => manager.name).filter(name => name !== UNASSIGNED && allowed.has(name));
         // Уулзалтын RPC зорилтот менежерийг төслийн идэвхтэй бүртгэлээр шалгадаг — жагсаалт ижил.
-        const meetingManagers = viewer.personal && writable ? [...allowed] : await loadDailyColleagues(db, shop.id);
+        const meetingManagers = ranged ? [] : viewer.personal && writable ? [...allowed] : await loadDailyColleagues(db, shop.id);
         return NextResponse.json({
-            date, today,
+            date, to, today,
             report: result.report,
             config: result.config,
             configSaved: result.configSaved,
             configInvalid: result.configInvalid,
             // Бүртгэлийн жагсаалт зөвхөн загвар засахад; багийн нэрс тайланд өөрт нь бий.
             roster: viewer.personal ? [] : result.roster,
-            viewer: { personal: viewer.personal, onboarding: false, canEditTeam: writable, editable, own: viewer.ownManager, canReassign, meetingManagers },
+            viewer: {
+                personal: viewer.personal, onboarding: false, canEditTeam: writable && !ranged, editable, own: viewer.ownManager,
+                canReassign: canReassign && !ranged, meetingManagers,
+            },
         }, { headers: NO_STORE });
     } catch (error) {
         const response = unavailable(error);
