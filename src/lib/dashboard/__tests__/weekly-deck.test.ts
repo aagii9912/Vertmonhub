@@ -327,6 +327,24 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(plan).not.toMatch(/Гэрээний гүйцэтгэл 2 тэрбум ₮ Удирдлагын баталгаажуулсан/);
     });
 
+    it('sales deck: cash entered for only some blocks is a lower bound, not the whole month; finance-hidden cash never resolves', async () => {
+        const month = { from: '2026-10-01', to: '2026-10-31' };
+        const target = { ...M1_TARGET, cashflow_target_amount: 1_605_898_800, manual_cashflow_actual_amount: 187_824_800, block_amounts: {
+            b1: { target_amount: 2_807_220_000, cashflow_target_amount: 842_166_000 },
+            b2: { target_amount: 2_245_776_000, cashflow_target_amount: 673_732_800, manual_cashflow_actual_amount: 161_844_800 },
+            parking: { target_amount: 300_000_000, cashflow_target_amount: 90_000_000, manual_cashflow_actual_amount: 25_980_000 },
+        } };
+        const partial = buildMonthlyPerformance([target], month, true, M1_CONTRACTS);
+        expect(partial.months[0].resolvedCash).toEqual({ value: 187_824_800, lowerBound: true, source: 'mixed' });
+        const { text } = await render(input({ monthSales: { ...operations(month.from, month.to), monthlyPerformance: partial } }));
+        const plan = text.find(slideText => slideText.includes('сарын төлөвлөгөө ба гүйцэтгэл'))!;
+        expect(plan).toMatch(/Орсон мөнгөний гүйцэтгэл 188 сая ₮\+ Удирдлагын оруулсан блокууд — бусад блок оруулаагүй Гүйцэтгэлийн хувь 12%\+/);
+        // Бүх блок (Б1-д тодорхой 0) оруулсан бол бүрэн.
+        const full = buildMonthlyPerformance([{ ...target, block_amounts: { ...target.block_amounts, b1: { ...target.block_amounts.b1, manual_cashflow_actual_amount: 0 } } }], month, true, M1_CONTRACTS);
+        expect(full.months[0].resolvedCash).toMatchObject({ value: 187_824_800, lowerBound: false });
+        expect(buildMonthlyPerformance([target], month, false, M1_CONTRACTS).months[0].resolvedCash).toBeNull();
+    });
+
     it('sales deck: totals of unknown paid amounts are a lower bound, and ERP cash is not divided by the month cash plan', async () => {
         const month = { from: '2026-10-01', to: '2026-10-31' };
         const monthSales = { ...operations(month.from, month.to), monthlyPerformance: buildMonthlyPerformance([{ year: 2026, month: 10,

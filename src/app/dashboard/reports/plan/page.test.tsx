@@ -116,6 +116,9 @@ describe('plan fulfilment page', () => {
         const cache = open({ ...built, shopName: 'Elysium Residence' });
         expect(await screen.findByText('Зөвхөн гараар оруулсан орсон мөнгө')).toBeInTheDocument();
         expect(screen.queryByText('Орсон мөнгө бүртгэгдээгүй')).not.toBeInTheDocument();
+        // Мөнгөний хүснэгтэд ч жилийн төлөвлөгөөнөөс мөр (Лхагвын илтгэлийн «2026 он»).
+        const cashTable = screen.getByRole('table', { name: /орсон мөнгөний төлөвлөгөө/ });
+        expect(within(cashTable).getByRole('rowheader', { name: 'Жилийн төлөвлөгөөнөөс' })).toBeInTheDocument();
         cache.clear();
     });
 

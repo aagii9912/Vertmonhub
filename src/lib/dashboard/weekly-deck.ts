@@ -240,7 +240,10 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
         : value.source === 'manual' ? 'Удирдлагын баталгаажуулсан' : value.source === 'mixed' ? 'Холимог: гар + CRM' : 'CRM-ийн гэрээ';
     const resolvedPct = (value: PlanResolvedValue, target: number | null) => value.value === null || !target ? '—'
         : `${Math.round(value.value / target * 100)}%${value.lowerBound ? '+' : ''}`;
-    const cashActual = month?.manual_cashflow_actual_amount ?? null;
+    // Орсон мөнгө M1 дүрмээр (блок = гараар оруулсан нүд; оруулаагүй блоктой бол «+»). Хуучин хариунд resolvedCash алга бол хадгалсан нийт.
+    const cashResolved: PlanResolvedValue | null = month ? month.resolvedCash ?? (month.manual_cashflow_actual_amount === null ? null
+        : { value: month.manual_cashflow_actual_amount, lowerBound: false, source: 'manual' }) : null;
+    const cashActual = cashResolved?.value ?? null;
     // Төлөвлөгөөнд хамаарах огноогүй гэрээ л төлөвлөгөөтэй харьцуулсан дүнг бүрэн бус болгоно (Агуулах г.м. биш).
     const undated = weekly?.sources.undatedPlanContracts ?? 0;
     // Удирдлагын баталгаажуулсан дүн байхгүй бол гэрээний бүртгэл — зөвхөн төлөвлөгөөнд хамаарах (Б1/Б2/Зогсоол) гэрээ;
@@ -276,9 +279,11 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const cashVisible = !!input.monthSales?.monthlyPerformance?.cashflowVisible;
     statRow(slide, TOP + rowStep * 2, cashVisible ? [
         { label: 'Орсон мөнгөний төлөвлөгөө', value: short(month?.cashflow_target_amount ?? null), tone: 'gold' },
-        { label: 'Орсон мөнгөний гүйцэтгэл', value: short(cashActual ?? weekly?.cash?.delta ?? null), helper: cashActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly?.cash ? `ERP зөрүү ${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : undefined },
+        { label: 'Орсон мөнгөний гүйцэтгэл', value: cashActual !== null ? `${short(cashActual)}${cashResolved?.lowerBound ? '+' : ''}` : short(weekly?.cash?.delta ?? null),
+            helper: cashActual !== null ? (cashResolved?.lowerBound ? 'Удирдлагын оруулсан блокууд — бусад блок оруулаагүй' : 'Удирдлагын баталгаажуулсан')
+                : weekly?.cash ? `ERP зөрүү ${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : undefined },
         // ERP-ийн зөрүү хоёр snapshot-ын хоорондох (ихэвчлэн долоо хоног) мөнгө — сарын төлөвлөгөөтэй харьцуулахгүй.
-        { label: 'Гүйцэтгэлийн хувь', value: ratio(cashActual, month?.cashflow_target_amount ?? null) },
+        { label: 'Гүйцэтгэлийн хувь', value: `${ratio(cashActual, month?.cashflow_target_amount ?? null)}${cashResolved?.lowerBound && cashActual !== null && month?.cashflow_target_amount ? '+' : ''}` },
     ] : [
         { label: 'Мөнгөн орлого (ERP)', value: short(weekly?.cash?.delta ?? null), helper: weekly?.cash ? `${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : 'Хоёр долоо хоногийн ERP экспорт хэрэгтэй' },
         { label: 'Төлбөрийн хоцролт', value: short(weekly?.receivables?.overdue ?? null), helper: weekly?.receivables ? `${weekly.receivables.overdueContracts} гэрээ · үлдэгдэл ${short(weekly.receivables.balance)}` : 'ERP гэрээний экспорт хэрэгтэй', tone: weekly?.receivables?.overdue ? 'danger' : undefined },

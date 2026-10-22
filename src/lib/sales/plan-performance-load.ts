@@ -38,11 +38,15 @@ export function ledgerReceipts(transactions: OperationsTransaction[], year: numb
  * Төлөвлөгөөний биелэлтийн ачаалагч — тайлангийн хуудас, захирлын самбар, админы «CRM-ээр тооцсон» нэг эх сурвалж.
  * Эрх (reports, төслийн хүрээ, санхүү)-ийг дуудагч сервер шалгана. Уншилтын алдаа тайланг бүхэлд нь унагаана
  * (хоосон өгөгдлийг 0 гэж харуулахгүй); зөвхөн шинэ migration-ы хоцролтын багана/импортын хүснэгт дутвал хоцролтыг «—».
+ * `through` (YYYY-MM-DD, Улаанбаатар): тайлант өдрөөр огтолно — түүнээс хойш огноотой гэрээ, төлбөр орохгүй, сарын
+ * явц тэр өдрөөр (Лхагвын илтгэлийн «10-р сарын гүйцэтгэл» тайлант долоо хоногийн эцэс хүртэл).
  */
 export async function loadPlanPerformance(db: SupabaseClient, options: {
-    shopId: string; year?: number; canReadFinance: boolean; now?: Date;
+    shopId: string; year?: number; canReadFinance: boolean; now?: Date; through?: string;
 }): Promise<PlanPerformance> {
-    const now = options.now ?? new Date();
+    const through = options.through ?? null;
+    // Тайлант өдрийн Улаанбаатарын (UTC+8) үд дунд — сарын хил серверийн UTC-д шилжихгүй.
+    const now = options.now ?? (through ? new Date(`${through}T12:00:00+08:00`) : new Date());
     const year = SalesYearSchema.parse(options.year ?? ubParts(now).year);
     let overdueAvailable = true;
     const contractPage = async (from: number, to: number) => {
@@ -74,13 +78,15 @@ export async function loadPlanPerformance(db: SupabaseClient, options: {
         latestImport(),
         options.canReadFinance ? fetchAllRows<OperationsTransaction>((from, to) => db.from('finance_transactions')
             .select('txn_date, type, amount, method, contract_id')
-            .eq('shop_id', options.shopId).gte('txn_date', `${year}-01-01`).lte('txn_date', `${year}-12-31`)
+            .eq('shop_id', options.shopId).gte('txn_date', `${year}-01-01`).lte('txn_date', through && through < `${year}-12-31` ? through : `${year}-12-31`)
             .order('id').range(from, to)) : Promise.resolve(null),
         options.canReadFinance ? ledgerStart() : Promise.resolve(null),
     ]);
     return buildPlanPerformance({
         year, now, months, planYears: [...new Set(planRows.map(row => Number(row.year)))],
-        contracts, receipts: transactions === null ? null : ledgerReceipts(transactions, year),
+        // Тайлант өдрөөс хойш огноотой гэрээ тэр үед байгаагүй; огноогүй гэрээ хэвээр (доод хязгаар «+»).
+        contracts: through ? contracts.filter(contract => !contract.contract_date || contract.contract_date.slice(0, 10) <= through) : contracts,
+        receipts: transactions === null ? null : ledgerReceipts(transactions, year),
         ...(transactions === null ? {} : { ledgerSince }),
         latestImportDate, overdueAvailable,
     });

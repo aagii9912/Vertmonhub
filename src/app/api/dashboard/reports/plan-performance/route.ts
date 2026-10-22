@@ -8,9 +8,12 @@ import { loadPlanPerformance } from '@/lib/sales/plan-performance-load';
 import { ubParts } from '@/lib/utils/date';
 
 const yearSchema = z.coerce.number().int().min(2000).max(2100);
+/** Тайлант өдөр (Лхагвын илтгэл): жинхэнэ хуанлийн өдөр. */
+const throughSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value);
 
 /**
- * GET /api/dashboard/reports/plan-performance?year= — төслийн сар × блокийн төлөвлөгөөний биелэлт.
+ * GET /api/dashboard/reports/plan-performance?year=&through= — төслийн сар × блокийн төлөвлөгөөний биелэлт.
+ * `through` (заавал биш): тайлант өдрөөр огтолно (`loadPlanPerformance`); өгөөгүй бол өнөөдрийн байдлаар.
  * Багийн төлөвлөгөө удирдлагад: `reports` модуль (super_admin нэвтэрнэ), төслийн хүрээгээр хязгаарлагдсан менежерт 403.
  * Орсон мөнгөний төлөвлөгөө, гүйцэтгэл зөвхөн super_admin эсвэл `finance` эрхтэй (үйл ажиллагааны тайлангийн дүрэм);
  * бусдад хэсэг нь огт ирэхгүй (`cashHidden: true`).
@@ -19,12 +22,15 @@ export const GET = withRoute({ module: 'reports', error: 'Төлөвлөгөөн
     const raw = request.nextUrl.searchParams.get('year');
     const year = yearSchema.safeParse(raw ?? ubParts().year);
     if (!year.success) return NextResponse.json({ error: 'Он буруу байна' }, { status: 400 });
+    const rawThrough = request.nextUrl.searchParams.get('through');
+    const through = rawThrough === null ? null : throughSchema.safeParse(rawThrough);
+    if (through && !through.success) return NextResponse.json({ error: 'Тайлант өдөр буруу байна' }, { status: 400 });
     const db = supabaseAdmin();
     const [permissions, scope] = await Promise.all([resolvePermissions(), resolveSalesProjectScope(db, shop.id)]);
     if (!permissions) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
     if (scope.projectIds !== null) return NextResponse.json({ error: 'Багийн төлөвлөгөө удирдлагад харагдана' }, { status: 403 });
     const canReadFinance = permissions.role === 'super_admin' || permissions.permissions.modules.includes('finance');
-    const report = await loadPlanPerformance(db, { shopId: shop.id, year: year.data, canReadFinance });
+    const report = await loadPlanPerformance(db, { shopId: shop.id, year: year.data, canReadFinance, ...(through ? { through: through.data } : {}) });
     return NextResponse.json({ ...report, shopName: shop.name, ...(canReadFinance ? {} : { cashHidden: true }) }, {
         headers: { 'Cache-Control': 'private, no-store' },
     });

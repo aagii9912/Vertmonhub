@@ -295,12 +295,19 @@ function CashTable({ data, segment, segmentLabel }: { data: PlanResponse; segmen
                         <td className="num border-b border-border px-3 py-2 text-right"><Pct pct={cell?.pct ?? null} lowerBound={!!cell?.lowerBound} /></td>
                     </tr>;
                 })}</tbody>
-                <tfoot className="bg-surface-2 font-medium"><tr>
-                    <th scope="row" className="whitespace-nowrap border-r border-border px-3 py-2 text-left">{data.throughMonth ? `Он эхнээс (1–${data.throughMonth} сар)` : 'Он эхнээс'}</th>
-                    <td className="num px-3 py-2 text-right">{ytd?.plan === null || ytd?.plan === undefined ? <Missing /> : whole(ytd.plan)}</td>
-                    <td className="num px-3 py-2 text-right">{ytd?.actual === null || ytd?.actual === undefined ? <Missing /> : `${whole(ytd.actual)}${ytd.lowerBound ? '+' : ''}`}</td>
-                    <td className="num px-3 py-2 text-right"><Pct pct={ytd?.pct ?? null} lowerBound={!!ytd?.lowerBound} /></td>
-                </tr></tfoot>
+                <tfoot className="bg-surface-2 font-medium">
+                    {/* Он эхнээс ба жилийн төлөвлөгөөнөөс (гэрээний хүснэгт, Лхагвын илтгэлийн «2026 он» баганатай ижил). */}
+                    {(['ytd', 'year'] as const).map(kind => {
+                        const plan = kind === 'ytd' ? ytd?.plan ?? null : ytd?.yearPlan ?? null;
+                        const pct = kind === 'ytd' ? ytd?.pct ?? null : ytd?.yearPct ?? null;
+                        return <tr key={kind}>
+                            <th scope="row" className="whitespace-nowrap border-b border-r border-border px-3 py-2 text-left">{kind === 'ytd' ? (data.throughMonth ? `Он эхнээс (1–${data.throughMonth} сар)` : 'Он эхнээс') : 'Жилийн төлөвлөгөөнөөс'}</th>
+                            <td className="num border-b border-border px-3 py-2 text-right">{plan === null ? <Missing /> : whole(plan)}</td>
+                            <td className="num border-b border-border px-3 py-2 text-right">{ytd?.actual === null || ytd?.actual === undefined ? <Missing /> : `${whole(ytd.actual)}${ytd.lowerBound ? '+' : ''}`}</td>
+                            <td className="num border-b border-border px-3 py-2 text-right"><Pct pct={pct} lowerBound={!!ytd?.lowerBound} /></td>
+                        </tr>;
+                    })}
+                </tfoot>
             </table>
         </div>
         <p className="border-t border-border px-3.5 py-2.5 text-xs text-muted-foreground">Гэрээний нөхцлөөр төлөх урьдчилгаа, төлбөр хоцролтыг орсон мөнгө гэж тооцохгүй. Гараар оруулсан дүн байвал түүнийг, эс бөгөөс системд бүртгэсэн төлбөрийг харуулна — хоёрыг нэмэхгүй.</p>

@@ -58,6 +58,32 @@ describe('plan performance loading', () => {
         for (const call of calls.filter(call => call.table === 'property_contracts')) expect(call.filters).toContainEqual(['is:deleted_at', null]);
     });
 
+    it('cuts the report off at the report date: later contracts and receipts are out, the month is in progress, undated stay a lower bound', async () => {
+        const tz = process.env.TZ;
+        process.env.TZ = 'UTC';
+        try {
+        const { db, calls } = database({
+            property_contracts: [
+                contract({ id: 'in', contract_date: '2026-10-19', total_price: 100 }),
+                contract({ id: 'later', contract_date: '2026-10-21', total_price: 900 }),
+                contract({ id: 'undated', contract_date: null, total_price: 50 }),
+            ],
+            team_sales_targets: [{ year: 2026, month: 10, revision: 1, target_amount: 1_000, block_amounts: {} }],
+        });
+        const { now: _now, ...rest } = options;
+        const report = await loadPlanPerformance(db, { ...rest, through: '2026-10-20' });
+        expect(report.months[9]).toMatchObject({ status: 'current' });
+        expect(report.months[9].total.metrics.contract).toMatchObject({ actual: 100, lowerBound: true });
+        expect(report.months[10]).toMatchObject({ status: 'future' });
+        const ledger = calls.find(call => call.table === 'finance_transactions' && call.columns.includes('amount'))!;
+        expect(ledger.filters).toEqual(expect.arrayContaining([['gte:txn_date', '2026-01-01'], ['lte:txn_date', '2026-10-20']]));
+        // Өмнөх оны тайлан тайлант өдрөөр огтлогдохгүй (бүтэн он).
+        const previous = database({ property_contracts: [contract()] });
+        await loadPlanPerformance(previous.db, { ...rest, year: 2025, through: '2026-10-20' });
+        expect(previous.calls.find(call => call.table === 'finance_transactions' && call.columns.includes('amount'))!.filters).toContainEqual(['lte:txn_date', '2025-12-31']);
+        } finally { process.env.TZ = tz; }
+    });
+
     it('never reads the ledger without finance permission and omits the cash section', async () => {
         const { db, from } = database({ property_contracts: [contract()] });
         const report = await loadPlanPerformance(db, { ...options, canReadFinance: false });

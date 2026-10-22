@@ -93,7 +93,11 @@ export function targetMonths({ from, to }: OperationsRange): string[] | null {
 export interface OperationsResolvedMonth { contract: PlanResolvedValue; count: PlanResolvedValue }
 
 export interface MonthlyPerformance {
-    months: (MonthlySalesMonth & { year: number; resolved: OperationsResolvedMonth })[];
+    /**
+     * `resolvedCash` — сарын орсон мөнгө M1 дүрмээр: блок = гараар оруулсан нүд, оруулаагүй блок тодорхойгүй (энэ тайланд
+     * блокоор ledger тооцохгүй) тул нийт нь доод хязгаар «+»; задаргаагүй гар нийт байвал түүнийг. Санхүүгийн эрхгүйд null.
+     */
+    months: (MonthlySalesMonth & { year: number; resolved: OperationsResolvedMonth; resolvedCash: PlanResolvedValue | null })[];
     completeMonths: boolean;
     cashflowVisible: boolean;
 }
@@ -154,6 +158,7 @@ export function buildMonthlyPerformance(targets: OperationsTarget[], range: Oper
     const months = targetMonths(range);
     const byMonth = new Map(targets.map(row => [monthKey(row.year, row.month), row]));
     const resolved = resolveOperationsMonths(contracts, targets, months ?? []);
+    const unknownCash = { value: null, lowerBound: true };
     return { completeMonths: months !== null, cashflowVisible, months: (months ?? []).map(key => {
         const [year, month] = key.split('-').map(Number);
         const row = byMonth.get(key);
@@ -164,7 +169,10 @@ export function buildMonthlyPerformance(targets: OperationsTarget[], range: Oper
             manual_contract_actual_amount: amount(row?.manual_contract_actual_amount ?? null),
             cashflow_target_amount: cashflowVisible ? amount(row?.cashflow_target_amount ?? null) : null,
             manual_cashflow_actual_amount: cashflowVisible ? amount(row?.manual_cashflow_actual_amount ?? null) : null,
-            resolved: resolved.get(key)! };
+            resolved: resolved.get(key)!,
+            resolvedCash: cashflowVisible
+                ? resolveMonthMetric(monthlySalesRow(row, month), 'cashflow', { b1: unknownCash, b2: unknownCash, parking: unknownCash }, null)
+                : null };
     }) };
 }
 
