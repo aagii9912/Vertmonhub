@@ -42,6 +42,16 @@ describe('manual monthly performance report', () => {
         expect(text).not.toContain('98,765');
         expect(buildMonthlyPerformance(targets, { from: '2026-09-02', to: '2026-09-30' }, true)).toMatchObject({ completeMonths: false, months: [] });
     });
+
+    it('shows the contract count plan and actual as whole contracts with attainment, also without finance permission', () => {
+        const targets = [{ year: 2026, month: 9, target_amount: 100, contract_count_target: 40, manual_contract_count_actual: 30 }];
+        const monthlyPerformance = buildMonthlyPerformance(targets, range, false);
+        expect(monthlyPerformance.months[0]).toMatchObject({ contract_count_target: 40, manual_contract_count_actual: 30 });
+        const text = formatOperationsReportText({ ...buildOperationsReport({ ...base, targets }), shopName: 'Тест', monthlyPerformance });
+        expect(text).toContain('Гэрээний тооны төлөвлөгөө 40 гэрээ · Гэрээний тооны гүйцэтгэл 30 гэрээ (75%)');
+        expect(text).not.toContain('40₮');
+        expect(buildMonthlyPerformance([], range, true).months[0]).toMatchObject({ contract_count_target: null, manual_contract_count_actual: null });
+    });
 });
 
 describe('operations report financial meaning', () => {

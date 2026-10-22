@@ -223,7 +223,7 @@ function salesOverviewSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     ]);
 }
 
-/** Сарын төлөвлөгөө ба удирдлагын баталгаажуулсан гүйцэтгэл (гэрээний дүн, орсон мөнгө). */
+/** Сарын төлөвлөгөө ба удирдлагын баталгаажуулсан гүйцэтгэл (гэрээний тоо, дүн, орсон мөнгө). */
 function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const month = input.monthSales?.monthlyPerformance?.months?.[0];
     const weekly = input.weeklySales;
@@ -237,26 +237,37 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     // Удирдлагын баталгаажуулсан дүн байхгүй бол гэрээний бүртгэл; огноогүй гэрээтэй бол бүрэн биш («N+» эсвэл «—»).
     const recorded = weekly ? knownPeriodAmount(weekly.month.total, weekly.month.count, undated) : null;
     const contractTarget = month?.target_amount ?? weekly?.month.target ?? null;
+    const countActual = month?.manual_contract_count_actual ?? null;
+    const countTarget = month?.contract_count_target ?? null;
+    const recordedCount = weekly ? knownPeriodAmount(weekly.month.count, weekly.month.count, undated) : null;
+    // Гурван мөр картыг BOTTOM-оос дээш багтаана.
+    const rowH = 1.5, rowStep = rowH + 0.15;
     statRow(slide, TOP, [
+        { label: 'Гэрээний тооны төлөвлөгөө', value: countTarget === null ? '—' : countTarget.toLocaleString('en-US'), tone: 'gold' },
+        { label: 'Гэрээний тооны гүйцэтгэл', value: countActual !== null ? countActual.toLocaleString('en-US') : weekly ? periodContractCount(weekly.month.count, undated) : '—',
+            helper: countActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly ? (undated ? undatedContractsShort(undated) : `${weekly.sources.contracts === 'erp' ? 'ERP' : 'CRM'}-ийн гэрээ`) : undefined },
+        { label: 'Гүйцэтгэлийн хувь', value: `${ratio(countActual ?? recordedCount, countTarget)}${countActual === null && undated && recordedCount !== null && countTarget ? '+' : ''}` },
+    ], rowH);
+    statRow(slide, TOP + rowStep, [
         { label: 'Гэрээний төлөвлөгөө', value: short(contractTarget), tone: 'gold' },
         { label: 'Гэрээний гүйцэтгэл', value: contractActual !== null ? short(contractActual) : weekly ? periodContractAmount(weekly.month.total, weekly.month.count, undated, short) : '—',
             helper: contractActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly ? (undated ? undatedContractsShort(undated) : `${weekly.sources.contracts === 'erp' ? 'ERP' : 'CRM'}-ийн гэрээ, ${weekly.month.count} ш`) : undefined },
         { label: 'Гүйцэтгэлийн хувь', value: `${ratio(contractActual ?? recorded, contractTarget)}${contractActual === null && undated && recorded !== null && contractTarget ? '+' : ''}` },
-    ]);
+    ], rowH);
     const cashVisible = !!input.monthSales?.monthlyPerformance?.cashflowVisible;
-    statRow(slide, TOP + 1.85, cashVisible ? [
+    statRow(slide, TOP + rowStep * 2, cashVisible ? [
         { label: 'Орсон мөнгөний төлөвлөгөө', value: short(month?.cashflow_target_amount ?? null), tone: 'gold' },
         { label: 'Орсон мөнгөний гүйцэтгэл', value: short(cashActual ?? weekly?.cash?.delta ?? null), helper: cashActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly?.cash ? `ERP зөрүү ${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : undefined },
         { label: 'Гүйцэтгэлийн хувь', value: ratio(cashActual ?? weekly?.cash?.delta ?? null, month?.cashflow_target_amount ?? null) },
     ] : [
         { label: 'Мөнгөн орлого (ERP)', value: short(weekly?.cash?.delta ?? null), helper: weekly?.cash ? `${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : 'Хоёр долоо хоногийн ERP экспорт хэрэгтэй' },
         { label: 'Төлбөрийн хоцролт', value: short(weekly?.receivables?.overdue ?? null), helper: weekly?.receivables ? `${weekly.receivables.overdueContracts} гэрээ · үлдэгдэл ${short(weekly.receivables.balance)}` : 'ERP гэрээний экспорт хэрэгтэй', tone: weekly?.receivables?.overdue ? 'danger' : undefined },
-    ]);
+    ], rowH);
     note(slide, [
         weekly?.cash?.basis,
         cashVisible ? null : 'Орсон мөнгөний төлөвлөгөө, гүйцэтгэлийг санхүүгийн эрхтэй хүн харна.',
         'Гэрээний дүн, мөнгөн орлого, бартерыг холихгүй.',
-        contractActual === null && undated ? undatedContractsHint(undated) : null,
+        (contractActual === null || countActual === null) && undated ? undatedContractsHint(undated) : null,
     ]);
 }
 

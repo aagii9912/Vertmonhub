@@ -44,10 +44,10 @@ beforeEach(() => {
 });
 
 describe('monthly sales administration form', () => {
-    it('shows 144 labelled block cells and saves explicit zero without filling other metrics', async () => {
+    it('shows 216 labelled block cells and saves explicit zero without filling other metrics', async () => {
         open();
         const cashActual = await screen.findByRole('textbox', { name: label('Орсон мөнгөний гүйцэтгэл') });
-        expect(screen.getAllByRole('textbox')).toHaveLength(145); // 12 months × 3 blocks × 4 amounts, plus the manager field.
+        expect(screen.getAllByRole('textbox')).toHaveLength(217); // 12 months × 3 blocks × (2 counts + 4 amounts), plus the manager field.
         expect(cashActual).toHaveValue('');
         expect(saveButton()).toBeDisabled();
         fireEvent.change(cashActual, { target: { value: '0' } });
@@ -57,7 +57,31 @@ describe('monthly sales administration form', () => {
         await waitFor(() => expect(saveButton()).toBeDisabled());
         expect(screen.getByRole('textbox', { name: label('Орсон мөнгөний гүйцэтгэл') })).toHaveValue('0');
         expect(screen.getByRole('textbox', { name: label('Гэрээний гүйцэтгэл') })).toHaveValue('');
-        expect(screen.getByText(/CRM-ээр тооцсон гэрээний дүн/)).toHaveTextContent('100');
+        expect(screen.getByText(/CRM-ээр тооцсон гэрээ ·/)).toHaveTextContent('100');
+    });
+
+    it('takes whole contract counts and shows each attainment % after the actual', async () => {
+        open();
+        const countPlan = await screen.findByRole('textbox', { name: label('Гэрээний тооны төлөвлөгөө') });
+        fireEvent.change(countPlan, { target: { value: '1.5' } });
+        expect(countPlan).toHaveAttribute('aria-invalid', 'true');
+        expect(saveButton()).toBeDisabled();
+        expect(screen.getByRole('alert')).toHaveTextContent('бүхэл тоо');
+        fireEvent.change(countPlan, { target: { value: '100' } });
+        fireEvent.change(screen.getByRole('textbox', { name: label('Гэрээний тооны гүйцэтгэл') }), { target: { value: '80' } });
+        expect(screen.getByLabelText(label('Гэрээний тоо гүйцэтгэлийн хувь'))).toHaveTextContent('80%');
+        expect(screen.getByLabelText(label('Гэрээний тоо гүйцэтгэлийн хувь', 'Нийт'))).toHaveTextContent('80%');
+        expect(screen.getByLabelText(label('Гэрээний тооны төлөвлөгөө', 'Нийт'))).toHaveTextContent(/^100$/);
+        expect(screen.getByLabelText(label('Гэрээний тооны төлөвлөгөө', 'Нийт'))).not.toHaveTextContent('₮');
+        expect(screen.getByLabelText(label('Гэрээний дүн гүйцэтгэлийн хувь'))).toHaveTextContent('—');
+        expect(screen.getByLabelText(`${year} оны жилийн Гэрээний тоо гүйцэтгэлийн хувь`)).toHaveTextContent('80%');
+        fireEvent.click(saveButton());
+        await waitFor(() => expect(posts).toHaveLength(1));
+        expect(posts[0].months).toEqual([{ month: 1, expectedRevision: 0, block_amounts: {
+            b1: { contract_count_target: 100, manual_contract_count_actual: 80 },
+        } }]);
+        await waitFor(() => expect(saveButton()).toBeDisabled());
+        expect(months[0]).toMatchObject({ contract_count_target: 100, manual_contract_count_actual: 80, target_amount: null });
     });
 
     it('retains a failed-save draft and blocks invalid negative monetary input', async () => {

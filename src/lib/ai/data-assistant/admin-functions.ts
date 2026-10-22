@@ -13,7 +13,7 @@ import { ALL_MODULES, clearPermissionsCache } from '@/lib/rbac';
 import { CreateRoleSchema } from '@/lib/validations/schemas';
 import { updateUserProjects } from '@/lib/admin/user-projects';
 import { getTeamMonthlySales, saveTeamMonthlySales } from '@/lib/sales/targets';
-import { hasMonthlySalesBreakdown, MONTHLY_SALES_LABELS, MonthlySalesPatchSchema, SalesYearSchema, type MonthlySalesField } from '@/lib/sales/monthly';
+import { hasMonthlySalesBreakdown, isMonthlySalesCount, MONTHLY_SALES_LABELS, MonthlySalesPatchSchema, SalesYearSchema, type MonthlySalesField } from '@/lib/sales/monthly';
 import { ubParts } from '@/lib/utils/date';
 import { formatMNT } from '@/lib/utils/currency';
 import { ZodError } from 'zod';
@@ -247,14 +247,16 @@ export async function setSalesTarget(shopId: string, args: any, confirm = false,
     try {
         const year = SalesYearSchema.parse(args.year ?? ubParts().year);
         const metricFields: Record<string, MonthlySalesField> = { contract_plan: 'target_amount', cashflow_plan: 'cashflow_target_amount',
-            contract_actual: 'manual_contract_actual_amount', cashflow_actual: 'manual_cashflow_actual_amount' };
+            contract_actual: 'manual_contract_actual_amount', cashflow_actual: 'manual_cashflow_actual_amount',
+            contract_count_plan: 'contract_count_target', contract_count_actual: 'manual_contract_count_actual' };
         const metric = args.metric ?? 'contract_plan';
         const field = metricFields[metric];
         if (!field) return { error: 'Төлөвлөгөө эсвэл гүйцэтгэлийн үзүүлэлтээ сонгоно уу' };
         const patch = MonthlySalesPatchSchema.parse({ month: args.month, expectedRevision: args.expectedRevision ?? 0, [field]: args.amount });
         const { month } = patch;
         const amount = patch[field]!;
-        const valueLabel = (value: number | null) => value === null ? 'Оруулаагүй' : formatMNT(value);
+        const valueLabel = (value: number | null) => value === null ? 'Оруулаагүй'
+            : isMonthlySalesCount(field) ? `${value.toLocaleString('en-US')} гэрээ` : formatMNT(value);
         const label = MONTHLY_SALES_LABELS[field];
         const db = supabaseAdmin();
         // Old confirmation cards must be previewed again; never replace the revision silently.
@@ -276,7 +278,7 @@ export async function setSalesTarget(shopId: string, args: any, confirm = false,
         if (error) return { error: error.code === '40001' ? 'Энэ сарын мэдээлэл өөрчлөгдсөн байна. Шинэ утгыг уншиж дахин батална уу.' : 'Сарын мэдээлэл хадгалахад алдаа гарлаа' };
         return { success: true, message: `${year} оны ${month}-р сарын ${label.toLowerCase()}: ${valueLabel(amount)}.` };
     } catch (error) {
-        if (error instanceof ZodError) return { error: 'Он, сар, дүн эсвэл хувилбар буруу байна. Дүн нь 0-ээс дээш, 2 орны нарийвчлалтай байна; null бол цэвэрлэнэ.' };
+        if (error instanceof ZodError) return { error: 'Он, сар, дүн эсвэл хувилбар буруу байна. Дүн нь 0-ээс дээш, 2 орны нарийвчлалтай; гэрээний тоо 0-ээс дээш бүхэл тоо байна; null бол цэвэрлэнэ.' };
         console.error('AI sales target update failed:', error);
         return { error: 'Төлөвлөгөөг шалгаж чадсангүй. Дахин оролдоно уу.' };
     }

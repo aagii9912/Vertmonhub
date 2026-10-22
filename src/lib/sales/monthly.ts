@@ -4,15 +4,30 @@ import { z } from 'zod';
 export const MONTHLY_SALES_FIELDS = [
     'target_amount', 'cashflow_target_amount',
     'manual_contract_actual_amount', 'manual_cashflow_actual_amount',
+    'contract_count_target', 'manual_contract_count_actual',
 ] as const;
 export type MonthlySalesField = typeof MONTHLY_SALES_FIELDS[number];
+
+/** Contract counts are whole numbers (ш), never money. */
+const COUNT_FIELDS: ReadonlySet<MonthlySalesField> = new Set(['contract_count_target', 'manual_contract_count_actual']);
+export const isMonthlySalesCount = (field: MonthlySalesField) => COUNT_FIELDS.has(field);
 
 export const MONTHLY_SALES_LABELS: Record<MonthlySalesField, string> = {
     target_amount: 'Гэрээний төлөвлөгөө',
     cashflow_target_amount: 'Орсон мөнгөний төлөвлөгөө',
     manual_contract_actual_amount: 'Гэрээний гүйцэтгэл',
     manual_cashflow_actual_amount: 'Орсон мөнгөний гүйцэтгэл',
+    contract_count_target: 'Гэрээний тооны төлөвлөгөө',
+    manual_contract_count_actual: 'Гэрээний тооны гүйцэтгэл',
 };
+
+/** Plan → actual pairs in display order; the attainment % follows the actual. */
+export const MONTHLY_SALES_METRICS = [
+    { key: 'contract_count', label: 'Гэрээний тоо', plan: 'contract_count_target', actual: 'manual_contract_count_actual' },
+    { key: 'contract', label: 'Гэрээний дүн', plan: 'target_amount', actual: 'manual_contract_actual_amount' },
+    { key: 'cashflow', label: 'Мөнгөн урсгал', plan: 'cashflow_target_amount', actual: 'manual_cashflow_actual_amount' },
+] as const satisfies readonly { key: string; label: string; plan: MonthlySalesField; actual: MonthlySalesField }[];
+export type MonthlySalesMetric = typeof MONTHLY_SALES_METRICS[number];
 
 export const MONTHLY_SALES_BLOCKS = ['b1', 'b2', 'parking'] as const;
 export type MonthlySalesBlock = typeof MONTHLY_SALES_BLOCKS[number];
@@ -22,11 +37,15 @@ export const MONTHLY_SALES_BLOCK_LABELS: Record<MonthlySalesBlock, string> = {
 
 export const SalesYearSchema = z.number().int().min(2000).max(2100);
 export const MonthlySalesAmountSchema = z.number().finite().min(0).max(1e13).multipleOf(0.01).nullable();
+export const MONTHLY_SALES_COUNT_MAX = 1_000_000;
+export const MonthlySalesCountSchema = z.number().int().min(0).max(MONTHLY_SALES_COUNT_MAX).nullable();
 const values = {
     target_amount: MonthlySalesAmountSchema,
     cashflow_target_amount: MonthlySalesAmountSchema,
     manual_contract_actual_amount: MonthlySalesAmountSchema,
     manual_cashflow_actual_amount: MonthlySalesAmountSchema,
+    contract_count_target: MonthlySalesCountSchema,
+    manual_contract_count_actual: MonthlySalesCountSchema,
 };
 const blockValues = z.object(values).partial().strict()
     .refine(row => Object.values(row).some(value => value !== undefined), { message: 'Блокийн дүнг оруулна уу' });
@@ -49,7 +68,7 @@ export const MonthlySalesPatchSchema = z.object({
         message: 'Блокийн дүнг оруулна уу',
     }).optional(),
     ...Object.fromEntries(MONTHLY_SALES_FIELDS.map(field => [field, values[field].optional()])) as {
-        [K in MonthlySalesField]: z.ZodOptional<typeof MonthlySalesAmountSchema>;
+        [K in MonthlySalesField]: z.ZodOptional<(typeof values)[K]>;
     },
 }).strict().refine(row => row.block_amounts !== undefined || MONTHLY_SALES_FIELDS.some(field => row[field] !== undefined), {
     message: 'Өөрчлөх дүнг сонгоно уу',
@@ -69,6 +88,7 @@ export function emptyMonthlySales(): MonthlySalesMonth[] {
     return Array.from({ length: 12 }, (_, index) => ({
         month: index + 1, revision: 0, target_amount: null, cashflow_target_amount: null,
         manual_contract_actual_amount: null, manual_cashflow_actual_amount: null,
+        contract_count_target: null, manual_contract_count_actual: null,
     }));
 }
 
@@ -79,6 +99,19 @@ export function parseMonthlySalesAmount(text: string): number | null | undefined
     if (!/^\d+(?:\.\d{1,2})?$/.test(cleaned)) return undefined;
     const parsed = MonthlySalesAmountSchema.safeParse(Number(cleaned));
     return parsed.success ? parsed.data : undefined;
+}
+
+/** Whole contract count; empty is unknown, anything else non-integer is invalid. */
+export function parseMonthlySalesCount(text: string): number | null | undefined {
+    const cleaned = text.replace(/[,\s]/g, '');
+    if (!cleaned) return null;
+    if (!/^\d+$/.test(cleaned)) return undefined;
+    const parsed = MonthlySalesCountSchema.safeParse(Number(cleaned));
+    return parsed.success ? parsed.data : undefined;
+}
+
+export function parseMonthlySalesValue(field: MonthlySalesField, text: string): number | null | undefined {
+    return isMonthlySalesCount(field) ? parseMonthlySalesCount(text) : parseMonthlySalesAmount(text);
 }
 
 export function monthlySalesAttainment(actual: number | null, plan: number | null): number | null {
@@ -136,6 +169,7 @@ export function summarizeMonthlySales(months: MonthlySalesMonth[]) {
         if (!entered.length || entered.some(row => row[plan] === null || row[actual] === null)) return null;
         return monthlySalesAttainment(totals[actual].amount, totals[plan].amount);
     };
-    return { totals, contractAttainmentPct: attainment('target_amount', 'manual_contract_actual_amount'),
-        cashflowAttainmentPct: attainment('cashflow_target_amount', 'manual_cashflow_actual_amount') };
+    const attainmentPct = Object.fromEntries(MONTHLY_SALES_METRICS.map(metric => [metric.key, attainment(metric.plan, metric.actual)])) as
+        Record<MonthlySalesMetric['key'], number | null>;
+    return { totals, attainmentPct };
 }

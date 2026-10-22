@@ -1080,14 +1080,14 @@ const adminDefinitions: ToolDefinition[] = [
     },
     {
         name: 'set_sales_target',
-        description: 'Идэвхтэй төслийн сарын гэрээ / орсон мөнгөний төлөвлөгөө эсвэл гараар оруулах гүйцэтгэлийг хадгалах (₮). Системийн тооцоотой нэмж нийлүүлэхгүй. ЗӨВХӨН super_admin; хуучин ба шинэ утгыг батална.',
+        description: 'Идэвхтэй төслийн сарын гэрээний тоо (ш) / гэрээ / орсон мөнгөний (₮) төлөвлөгөө эсвэл гараар оруулах гүйцэтгэлийг хадгалах. Системийн тооцоотой нэмж нийлүүлэхгүй. ЗӨВХӨН super_admin; хуучин ба шинэ утгыг батална.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 year: { type: SchemaType.NUMBER, description: 'Он; орхивол энэ он' },
                 month: { type: SchemaType.NUMBER, description: 'Сар (1–12)' },
-                metric: { type: SchemaType.STRING, enum: ['contract_plan', 'cashflow_plan', 'contract_actual', 'cashflow_actual'], description: 'Үзүүлэлт; орхивол contract_plan' },
-                amount: { type: [SchemaType.NUMBER, 'null'], description: 'Дүн (₮); null бол цэвэрлэнэ, 0 бол илэрхий тэг дүн' }
+                metric: { type: SchemaType.STRING, enum: ['contract_plan', 'cashflow_plan', 'contract_actual', 'cashflow_actual', 'contract_count_plan', 'contract_count_actual'], description: 'Үзүүлэлт; орхивол contract_plan. contract_count_* = гэрээний тоо (ш)' },
+                amount: { type: [SchemaType.NUMBER, 'null'], description: 'Дүн (₮) эсвэл contract_count_* бол гэрээний тоо (бүхэл); null бол цэвэрлэнэ, 0 бол илэрхий тэг' }
             },
             required: ['month', 'amount']
         }

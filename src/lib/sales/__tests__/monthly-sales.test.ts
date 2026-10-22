@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     emptyMonthlySales, MonthlySalesWriteSchema, monthlySalesAttainment, monthlySalesPatches,
-    parseMonthlySalesAmount, summarizeMonthlySales, monthlySalesWithBlockTotals,
+    parseMonthlySalesAmount, parseMonthlySalesValue, summarizeMonthlySales, monthlySalesWithBlockTotals,
 } from '../monthly';
 
 describe('monthly sales monetary meaning', () => {
@@ -22,10 +22,10 @@ describe('monthly sales monetary meaning', () => {
             cashflow_target_amount: 10, manual_cashflow_actual_amount: 0 };
         const first = summarizeMonthlySales(months);
         expect(first.totals.manual_cashflow_actual_amount).toEqual({ amount: 0, filledMonths: 1, expectedMonths: 12 });
-        expect(first.contractAttainmentPct).toBe(50);
-        expect(first.cashflowAttainmentPct).toBe(0);
+        expect(first.attainmentPct.contract).toBe(50);
+        expect(first.attainmentPct.cashflow).toBe(0);
         months[1].target_amount = 100;
-        expect(summarizeMonthlySales(months).contractAttainmentPct).toBeNull();
+        expect(summarizeMonthlySales(months).attainmentPct.contract).toBeNull();
         expect(summarizeMonthlySales(months).totals.manual_contract_actual_amount.amount).toBe(50);
     });
 
@@ -88,5 +88,31 @@ describe('monthly sales monetary meaning', () => {
             expect(MonthlySalesWriteSchema.safeParse({ ...input, months: [{ ...row, block_amounts }] }).success).toBe(false);
         }
         expect(MonthlySalesWriteSchema.safeParse({ ...input, months: [{ ...row, target_amount: 12 }] }).success).toBe(false);
+    });
+
+    it('contract counts are whole numbers: blank is unknown, zero is kept, fractions and money-style input are rejected', () => {
+        expect(parseMonthlySalesValue('contract_count_target', '')).toBeNull();
+        expect(parseMonthlySalesValue('contract_count_target', '0')).toBe(0);
+        expect(parseMonthlySalesValue('manual_contract_count_actual', '1,200')).toBe(1200);
+        for (const value of ['1.5', '-1', '12.00', 'abc', '1000001']) expect(parseMonthlySalesValue('contract_count_target', value)).toBeUndefined();
+        expect(parseMonthlySalesValue('target_amount', '12.5')).toBe(12.5);
+        const input = { shopId: '20000000-0000-4000-8000-000000000001', year: 2026 };
+        expect(MonthlySalesWriteSchema.safeParse({ ...input, months: [{ month: 1, expectedRevision: 0, contract_count_target: 100 }] }).success).toBe(true);
+        for (const months of [[{ month: 1, expectedRevision: 0, contract_count_target: 1.5 }],
+            [{ month: 1, expectedRevision: 0, block_amounts: { b1: { manual_contract_count_actual: -1 } } }]]) {
+            expect(MonthlySalesWriteSchema.safeParse({ ...input, months }).success).toBe(false);
+        }
+    });
+
+    it('sums block counts and reports count attainment next to the amount attainment', () => {
+        const months = emptyMonthlySales();
+        months[0] = monthlySalesWithBlockTotals({ ...months[0], block_amounts: {
+            b1: { contract_count_target: 60, manual_contract_count_actual: 60 }, b2: { contract_count_target: 40, manual_contract_count_actual: 40 },
+        } });
+        expect(months[0]).toMatchObject({ contract_count_target: 100, manual_contract_count_actual: 100, target_amount: null });
+        expect(summarizeMonthlySales(months).attainmentPct).toEqual({ contract_count: 100, contract: null, cashflow: null });
+        months[1] = { ...months[1], contract_count_target: 50 };
+        expect(summarizeMonthlySales(months).attainmentPct.contract_count).toBeNull();
+        expect(summarizeMonthlySales(months).totals.contract_count_target).toEqual({ amount: 150, filledMonths: 2, expectedMonths: 12 });
     });
 });

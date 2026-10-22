@@ -9,6 +9,7 @@ const actor = '10000000-0000-4000-8000-000000000001';
 let db: PGlite;
 const migration = readFileSync('supabase/migrations/20261008122000_team_monthly_sales.sql', 'utf8');
 const blocksMigration = readFileSync('supabase/migrations/20261008130000_team_sales_blocks.sql', 'utf8');
+const countsMigration = readFileSync('supabase/migrations/20261022120000_team_sales_contract_counts.sql', 'utf8');
 const save = (months: unknown[], user = actor, shopId = shop, year = 2026) => db.query(
     'SELECT save_team_monthly_sales($1,$2,$3::jsonb,$4) AS saved', [shopId, year, JSON.stringify(months), user],
 );
@@ -38,6 +39,8 @@ beforeEach(async () => {
     await db.exec(migration); // Idempotent and no rewrite of existing monetary values.
     await db.exec(blocksMigration);
     await db.exec(blocksMigration);
+    await db.exec(countsMigration);
+    await db.exec(countsMigration);
 });
 afterEach(async () => { await db.close(); });
 
@@ -147,5 +150,30 @@ describe('audited monthly monetary RPC', () => {
         expect((await db.query('SELECT target_amount::int, revision, block_amounts FROM team_sales_targets')).rows)
             .toEqual([{ target_amount: 500, revision: 0, block_amounts: {} }]);
         expect((await db.query('SELECT count(*)::int AS count FROM admin_audit_log')).rows).toEqual([{ count: 0 }]);
+    });
+
+    it('stores whole contract counts per block next to the amounts without touching money', async () => {
+        await db.exec('SET ROLE service_role');
+        await save([{ month: 1, expectedRevision: 0, block_amounts: {
+            b1: { contract_count_target: 60, manual_contract_count_actual: 0 }, b2: { contract_count_target: 40 },
+        } }]);
+        await save([{ month: 2, expectedRevision: 0, contract_count_target: 100, manual_contract_count_actual: 100 }]);
+        await db.exec('RESET ROLE');
+        expect((await db.query('SELECT month, target_amount::int, contract_count_target, manual_contract_count_actual FROM team_sales_targets ORDER BY month')).rows)
+            .toEqual([{ month: 1, target_amount: 500, contract_count_target: 100, manual_contract_count_actual: 0 },
+                { month: 2, target_amount: null, contract_count_target: 100, manual_contract_count_actual: 100 }]);
+        await expect(save([{ month: 1, expectedRevision: 1, contract_count_target: 5 }])).rejects.toMatchObject({ code: '22023' });
+    });
+
+    it('rejects fractional, negative, text and oversized contract counts', async () => {
+        for (const patch of [{ contract_count_target: 1.5 }, { contract_count_target: -1 }, { manual_contract_count_actual: '3' },
+            { contract_count_target: 1_000_001 }, { block_amounts: { b1: { contract_count_target: 0.5 } } }]) {
+            await expect(save([{ month: 1, expectedRevision: 0, ...patch }])).rejects.toMatchObject({ code: '22023' });
+        }
+        await expect(save([{ month: 1, expectedRevision: 0, block_amounts: {
+            b1: { contract_count_target: 600_000 }, b2: { contract_count_target: 600_000 },
+        } }])).rejects.toMatchObject({ code: '22023' });
+        await expect(db.query('UPDATE team_sales_targets SET contract_count_target = -1')).rejects.toThrow(/team_sales_contract_counts/);
+        expect((await db.query('SELECT contract_count_target, revision FROM team_sales_targets')).rows).toEqual([{ contract_count_target: null, revision: 0 }]);
     });
 });
