@@ -60,11 +60,14 @@ type Step = 'file' | 'review' | 'done';
 const STEPS: Array<[Step, string]> = [['file', 'Файл'], ['review', 'Шалгах'], ['done', 'Хадгалсан']];
 const MONEY_FIELDS = new Set(['total_price', 'price_per_sqm', 'prepayment_due', 'overdue_amount']);
 const number = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+/** Мөнгө ERP-ийн файлын форматаар (#,##0) — бүхэл төгрөг. */
+const money = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 0 });
 
 function formatValue(field: string, value: string | number | null): string {
     if (value === null || value === undefined || value === '') return '—';
     if (field === 'contract_status') return HUB_STATUS_LABEL[value as keyof typeof HUB_STATUS_LABEL] ?? String(value);
-    if (typeof value === 'number' && (MONEY_FIELDS.has(field) || field === 'contracted_area')) return number(value);
+    if (typeof value === 'number' && MONEY_FIELDS.has(field)) return money(value);
+    if (typeof value === 'number' && field === 'contracted_area') return number(value);
     return String(value);
 }
 
@@ -303,7 +306,7 @@ function ReviewStep({ preview, busy, acceptReview, onAcceptReview, allowOlder, o
 
             <SectionCard title="Файлын нийлбэр" description="Excel файлынхаа нийлбэртэй тулгана уу. Цуцлагдсан мөр гэрээний нийт дүнд орохгүй.">
                 <Table head={['Төлөв', 'Мөр', 'Нийт дүн', 'Урьдчилгааны дүн', 'Төлбөр хоцролт']} numeric={[1, 2, 3, 4]}
-                    rows={preview.fileTotals.map(total => [total.label, number(total.rows), number(total.total), number(total.prepaymentDue), number(total.overdue)])} />
+                    rows={preview.fileTotals.map(total => [total.label, number(total.rows), money(total.total), money(total.prepaymentDue), money(total.overdue)])} />
             </SectionCard>
 
             {preview.review.length > 0 && (
@@ -353,14 +356,14 @@ function ReviewStep({ preview, busy, acceptReview, onAcceptReview, allowOlder, o
             {preview.inserts.length > 0 && (
                 <SectionCard title="Шинэ гэрээ" description="Төлсөн дүн, үлдэгдэлгүй (мэдэгдэхгүй) бүртгэгдэнэ. Цуцлагдсан мөр түүх болж хадгалагдана.">
                     <Table head={['Байр', 'Төлөв', 'Захиалга өгсөн огноо', 'Нийт дүн', 'Эзэмшигч']} numeric={[3]}
-                        rows={preview.inserts.map(item => [item.label, HUB_STATUS_LABEL[item.status], item.orderDate, number(item.total), item.name ?? '—'])} />
+                        rows={preview.inserts.map(item => [item.label, HUB_STATUS_LABEL[item.status], item.orderDate, money(item.total), item.name ?? '—'])} />
                 </SectionCard>
             )}
 
             {preview.missing.length > 0 && (
                 <SectionCard title="Файлд байхгүй — өөрчлөхгүй" description={undated ? `Эдгээр гэрээ хэвээр үлдэнэ. ${undated} нь огноогүй тул сарын гүйцэтгэлд орохгүй.` : 'Эдгээр гэрээ хэвээр үлдэнэ.'}>
                     <Table head={['Байр', 'Төлөв', 'Захиалга өгсөн огноо', 'Нийт дүн']} numeric={[3]}
-                        rows={preview.missing.map(item => [item.label, formatValue('contract_status', item.status), item.orderDate ?? 'Огноогүй', item.total === null ? '—' : number(item.total)])} />
+                        rows={preview.missing.map(item => [item.label, formatValue('contract_status', item.status), item.orderDate ?? 'Огноогүй', item.total === null ? '—' : money(item.total)])} />
                 </SectionCard>
             )}
 
