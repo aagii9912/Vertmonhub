@@ -66,3 +66,29 @@ export function diffPricingRules(rules: readonly PricingRule[], previous: readon
 export function withArchiveTimes<T extends { status: string; created_at: string }>(rows: readonly T[]): Array<T & { archived_at: string | null }> {
     return rows.map((row, index) => ({ ...row, archived_at: row.status === 'archived' && index > 0 ? rows[index - 1].created_at : null }));
 }
+
+export interface PricingSheetGroup { block: string; model: string; floor_min: number; floor_max: number; cells: Record<string, PricingRuleDiff> }
+export interface PricingSheetCondition { key: string; label: string; /** One advance for every row of the condition, else 'mixed' (shown per cell). */ advance_percent: number | null | 'mixed' }
+export interface PricingSheetTable { blocks: string[]; conditions: PricingSheetCondition[]; groups: PricingSheetGroup[] }
+
+/** The price-list layout: one row per block × model × floors, one column per payment condition. */
+export function pivotPricingRows(rows: readonly PricingRuleDiff[]): PricingSheetTable {
+    const conditions = new Map<string, PricingSheetCondition>();
+    const groups = new Map<string, PricingSheetGroup>();
+    const blocks = new Map<string, string>();
+    for (const row of rows) {
+        const { rule } = row, key = pricingKey(rule.payment_condition);
+        const condition = conditions.get(key);
+        if (!condition) conditions.set(key, { key, label: rule.payment_condition, advance_percent: rule.advance_percent });
+        else if (condition.advance_percent !== rule.advance_percent) condition.advance_percent = 'mixed';
+        if (!blocks.has(pricingKey(rule.block))) blocks.set(pricingKey(rule.block), rule.block);
+        const groupKey = [pricingKey(rule.block), pricingKey(rule.model), rule.floor_min, rule.floor_max].join('|');
+        const group = groups.get(groupKey) ?? { block: rule.block, model: rule.model, floor_min: rule.floor_min, floor_max: rule.floor_max, cells: {} };
+        group.cells[key] = row;
+        groups.set(groupKey, group);
+    }
+    // A list price («Ашиглалтад орсны дараа») first, then percent conditions in numeric order.
+    const ordered = [...conditions.values()].sort((a, b) => Number(/^\d/.test(a.label)) - Number(/^\d/.test(b.label))
+        || (/^\d/.test(a.label) ? a.label.localeCompare(b.label, 'en', { numeric: true }) : 0));
+    return { blocks: [...blocks.values()], conditions: ordered, groups: [...groups.values()] };
+}

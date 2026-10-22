@@ -1,10 +1,13 @@
-import type { ReactNode } from 'react';
+'use client';
+
+import { useMemo, useState, type ReactNode } from 'react';
 import { Alert } from '@/components/ui/Alert';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { DateText } from '@/components/ui/DateText';
 import { formatMNT } from '@/lib/utils/currency';
-import type { PricingRule } from '@/lib/sales/pricing';
-import type { PricingRuleDiff, PricingSheetVersion, PricingValidity } from '@/lib/sales/pricing-history';
+import { pricingKey } from '@/lib/sales/pricing';
+import { pivotPricingRows, type PricingRuleDiff, type PricingSheetVersion, type PricingValidity } from '@/lib/sales/pricing-history';
 
 const VALIDITY: Record<PricingValidity, { label: string; variant: 'success' | 'pending' | 'danger' }> = {
     valid: { label: 'Хүчинтэй', variant: 'success' },
@@ -14,7 +17,7 @@ const VALIDITY: Record<PricingValidity, { label: string; variant: 'success' | 'p
 
 /** Calendar days stay as typed (no timezone shift): 2026-10-01 → 2026.10.01. */
 export const pricingDay = (value: string | null) => value ? value.replaceAll('-', '.') : '—';
-const floors = (rule: PricingRule) => rule.floor_min === rule.floor_max ? String(rule.floor_min) : `${rule.floor_min}–${rule.floor_max}`;
+const floors = (rule: { floor_min: number; floor_max: number }) => rule.floor_min === rule.floor_max ? String(rule.floor_min) : `${rule.floor_min}–${rule.floor_max}`;
 const percent = (value: number | null) => value === null ? '—' : `${value}%`;
 
 function PricingStatusBadge({ version }: { version: Pick<PricingSheetVersion, 'status' | 'validity'> }) {
@@ -27,10 +30,17 @@ function Meta({ label, children }: { label: string; children: ReactNode }) {
     return <div className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-0.5 text-sm text-foreground">{children}</dd></div>;
 }
 
-function ChangeCell({ row }: { row: PricingRuleDiff }) {
-    if (row.change === 'added') return <Badge variant="info">Шинэ</Badge>;
-    if (row.change === 'changed') return <Badge variant="pending">Өөрчлөгдсөн</Badge>;
-    return <span className="text-xs text-muted-foreground">Хэвээр</span>;
+function PriceCell({ row, perCellAdvance }: { row: PricingRuleDiff | undefined; perCellAdvance: boolean }) {
+    if (!row) return <td className="px-4 py-2.5 text-right text-muted-foreground">—</td>;
+    const { rule, previous } = row;
+    const priceMoved = row.change === 'changed' && previous && previous.price_per_sqm !== rule.price_per_sqm;
+    const advanceMoved = row.change === 'changed' && previous && previous.advance_percent !== rule.advance_percent;
+    return <td className={`num px-4 py-2.5 text-right${row.change === 'changed' ? ' bg-status-pending-soft' : ''}`}>
+        {formatMNT(rule.price_per_sqm)}
+        {row.change === 'added' && <Badge variant="info" className="ml-1.5">Шинэ</Badge>}
+        {(perCellAdvance || advanceMoved) && <span className="block text-xs text-muted-foreground">урьдчилгаа {percent(rule.advance_percent)}{advanceMoved && <> · өмнө <s>{percent(previous!.advance_percent)}</s></>}</span>}
+        {priceMoved && <span className="block text-xs text-muted-foreground">өмнө <s>{formatMNT(previous!.price_per_sqm)}</s></span>}
+    </td>;
 }
 
 /** One activated version: its terms, rules and the difference from the version it replaced. */
@@ -38,6 +48,9 @@ export function PricingVersionView({ version }: { version: PricingSheetVersion }
     const compared = version.previous_version !== null;
     const changed = version.rows.filter(row => row.change === 'changed').length;
     const added = version.rows.filter(row => row.change === 'added').length;
+    const table = useMemo(() => pivotPricingRows(version.rows), [version.rows]);
+    const [block, setBlock] = useState<string | null>(null);
+    const groups = block === null ? table.groups : table.groups.filter(group => pricingKey(group.block) === pricingKey(block));
     return <div className="space-y-4">
         <div className="rounded-xl border border-border bg-surface p-5">
             <div className="flex flex-wrap items-center gap-2">
@@ -50,7 +63,7 @@ export function PricingVersionView({ version }: { version: PricingSheetVersion }
                 <Meta label="Идэвхжүүлсэн"><DateText value={version.activated_at} format="datetime" />{version.activated_by ? ` · ${version.activated_by}` : ''}</Meta>
                 {version.status === 'archived'
                     ? <Meta label="Архивт шилжсэн"><DateText value={version.archived_at} format="datetime" /></Meta>
-                    : <Meta label="Мөрийн тоо"><span className="num">{version.rows.length}</span></Meta>}
+                    : <Meta label="Үнийн мөр"><span className="num">{version.rows.length}</span></Meta>}
             </dl>
             {version.status === 'active' && version.validity !== 'valid' && <Alert variant="warning" className="mt-4">
                 {version.validity === 'expired'
@@ -64,39 +77,32 @@ export function PricingVersionView({ version }: { version: PricingSheetVersion }
             </p>
         </div>
 
+        {table.blocks.length > 1 && <div role="group" aria-label="Блокоор шүүх" className="flex flex-wrap gap-2">
+            {[null, ...table.blocks].map(item => <Button key={item ?? 'all'} type="button" size="sm" variant={block === item ? 'primary' : 'secondary'}
+                aria-pressed={block === item} onClick={() => setBlock(item)}>{item ?? 'Бүх блок'}</Button>)}
+        </div>}
+
         <div className="overflow-x-auto rounded-xl border border-border bg-surface">
-            <table className="w-full min-w-[720px] border-collapse text-sm">
-                <caption className="sr-only">Хувилбар {version.version}-ийн үнэ, төлбөрийн нөхцөл</caption>
+            <table className="w-full min-w-[640px] border-collapse text-sm">
+                <caption className="sr-only">Хувилбар {version.version}-ийн м² үнэ, төлбөрийн нөхцөлөөр</caption>
                 <thead><tr className="text-left text-xs text-muted-foreground">
                     <th scope="col" className="border-b border-border px-4 py-2.5 font-medium">Блок</th>
                     <th scope="col" className="border-b border-border px-4 py-2.5 font-medium">Загвар</th>
                     <th scope="col" className="border-b border-border px-4 py-2.5 font-medium">Давхар</th>
-                    <th scope="col" className="border-b border-border px-4 py-2.5 font-medium">Төлбөрийн нөхцөл</th>
-                    <th scope="col" className="border-b border-border px-4 py-2.5 text-right font-medium">м² үнэ</th>
-                    <th scope="col" className="border-b border-border px-4 py-2.5 text-right font-medium">Эхний урьдчилгаа</th>
-                    {compared && <th scope="col" className="border-b border-border px-4 py-2.5 font-medium">Өмнөхөөс</th>}
+                    {table.conditions.map(condition => <th key={condition.key} scope="col" className="border-b border-border px-4 py-2.5 text-right font-medium">
+                        <span className="text-foreground">{condition.label}</span>
+                        {condition.advance_percent !== 'mixed' && <span className="block font-normal">урьдчилгаа {percent(condition.advance_percent)}</span>}
+                    </th>)}
                 </tr></thead>
-                <tbody>{version.rows.map((row, index) => {
-                    const priceMoved = row.change === 'changed' && row.previous && row.previous.price_per_sqm !== row.rule.price_per_sqm;
-                    const advanceMoved = row.change === 'changed' && row.previous && row.previous.advance_percent !== row.rule.advance_percent;
-                    return <tr key={index} className="border-b border-border last:border-b-0">
-                        <td className="px-4 py-2.5">{row.rule.block}</td>
-                        <td className="px-4 py-2.5">{row.rule.model}</td>
-                        <td className="num px-4 py-2.5">{floors(row.rule)}</td>
-                        <td className="px-4 py-2.5">{row.rule.payment_condition}</td>
-                        <td className="num px-4 py-2.5 text-right">
-                            {formatMNT(row.rule.price_per_sqm)}
-                            {priceMoved && <span className="block text-xs text-muted-foreground">өмнө <s>{formatMNT(row.previous!.price_per_sqm)}</s></span>}
-                        </td>
-                        <td className="num px-4 py-2.5 text-right">
-                            {percent(row.rule.advance_percent)}
-                            {advanceMoved && <span className="block text-xs text-muted-foreground">өмнө <s>{percent(row.previous!.advance_percent)}</s></span>}
-                        </td>
-                        {compared && <td className="px-4 py-2.5"><ChangeCell row={row} /></td>}
-                    </tr>;
-                })}</tbody>
+                <tbody>{groups.map(group => <tr key={`${group.block}|${group.model}|${group.floor_min}|${group.floor_max}`} className="border-b border-border last:border-b-0">
+                    <td className="px-4 py-2.5">{group.block}</td>
+                    <td className="px-4 py-2.5">{group.model}</td>
+                    <td className="num px-4 py-2.5">{floors(group)}</td>
+                    {table.conditions.map(condition => <PriceCell key={condition.key} row={group.cells[condition.key]} perCellAdvance={condition.advance_percent === 'mixed'} />)}
+                </tr>)}</tbody>
             </table>
         </div>
+        <p className="text-xs text-muted-foreground">Нүд бүр м² үнэ. Хоосон нүд — тухайн байранд энэ нөхцөл байхгүй.{compared ? ' «Шинэ» — өмнөх хувилбарт байгаагүй; зураастай нь өмнөх үнэ.' : ''}</p>
 
         {version.removed.length > 0 && <div className="rounded-xl border border-border bg-surface p-5">
             <h3 className="text-sm font-semibold">Хасагдсан мөр</h3>

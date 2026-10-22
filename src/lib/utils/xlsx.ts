@@ -91,6 +91,29 @@ export async function readWorkbookSheets(input: BinaryInput): Promise<Array<{ na
     }));
 }
 
+/** Бүх харагдах листийн нүднүүд мөрийн дугаартай (толгой хайх, «N-р мөр» гэж мэдээлэх файлуудад). */
+export async function readWorkbookGrids(input: BinaryInput): Promise<Array<{ name: string; hidden: boolean; rows: Array<{ row: number; cells: unknown[] }> }>> {
+    const buf = toBuffer(input);
+    const format = detectFormat(buf);
+    if (format === 'xls') throw new XlsxUnsupportedFormatError('.xls');
+    if (format === 'text') return [{ name: 'Sheet1', hidden: false, rows: csvToMatrix(buf, 0, true).map((cells, index) => ({ row: index + 1, cells })) }];
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buf as unknown as ArrayBuffer);
+    return workbook.worksheets.map(ws => {
+        const rows: Array<{ row: number; cells: unknown[] }> = [];
+        ws.eachRow((row, number) => {
+            const values: unknown[] = [];
+            row.eachCell({ includeEmpty: true }, (cell, col) => {
+                const v = normalizeCell(cell);
+                if (v !== undefined) values[col - 1] = v;
+            });
+            const cells = trimRow(values);
+            if (cells.length > 0) rows.push({ row: number, cells });
+        });
+        return { name: ws.name, hidden: ws.state !== 'visible', rows };
+    });
+}
+
 function matrixRows(matrix: Matrix, options: ReadSheetOptions): SheetRow[] {
     if (matrix.length === 0) return [];
 
