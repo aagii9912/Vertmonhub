@@ -4,9 +4,15 @@ import { unitCategoryLabel } from '@/lib/inventory/labels';
 import { getLeadWorkQueues } from '@/lib/leads/work-queue';
 import { formatMNT } from '@/lib/utils/currency';
 import { ubDateStr, ubMonthRange } from '@/lib/utils/date';
-import { isMonthlySalesCount, MONTHLY_SALES_LABELS, MONTHLY_SALES_METRICS, monthlySalesAttainment, type MonthlySalesField, type MonthlySalesMonth } from '@/lib/sales/monthly';
-import { contractPlanScope, countsTowardPlan, hasBlockPlan } from '@/lib/sales/plan-performance';
-import { knownPeriodAmount, periodContractAmount, periodContractCount, undatedContractsHint } from './contract-dates';
+import {
+    isMonthlySalesCount, MONTHLY_SALES_LABELS, MONTHLY_SALES_METRICS, MonthlySalesBlocksSchema, monthlySalesAttainment,
+    type MonthlySalesField, type MonthlySalesMonth,
+} from '@/lib/sales/monthly';
+import {
+    contractAutoValue, contractPlanScope, countsTowardPlan, hasBlockPlan, resolveMonthMetric, sumPlanValues,
+    type PlanResolvedValue, type PlanScope,
+} from '@/lib/sales/plan-performance';
+import { periodContractAmount, periodContractCount, undatedContractsHint } from './contract-dates';
 
 export const OperationsRangeSchema = z.object({
     from: z.iso.date(),
@@ -83,16 +89,71 @@ export function targetMonths({ from, to }: OperationsRange): string[] | null {
     return months;
 }
 
+/** Сарын төлөвлөгөөтэй харьцуулах гэрээний гүйцэтгэл (дүн, тоо) — «Төлөвлөгөөний биелэлт»-ийн M1 дүрмээр. */
+export interface OperationsResolvedMonth { contract: PlanResolvedValue; count: PlanResolvedValue }
+
 export interface MonthlyPerformance {
-    months: (MonthlySalesMonth & { year: number })[];
+    months: (MonthlySalesMonth & { year: number; resolved: OperationsResolvedMonth })[];
     completeMonths: boolean;
     cashflowVisible: boolean;
 }
 
+const monthKey = (year: number, month: number) => `${year}-${String(month).padStart(2, '0')}`;
+
+/** Хадгалсан сарын мөр → `MonthlySalesMonth` (блокийн задаргааг `getTeamMonthlySales`-тай ижил схемээр). */
+function monthlySalesRow(target: OperationsTarget | undefined, month: number): MonthlySalesMonth {
+    return {
+        month, revision: target?.revision ?? 0,
+        block_amounts: MonthlySalesBlocksSchema.parse(target?.block_amounts ?? {}),
+        target_amount: amount(target?.target_amount ?? null),
+        cashflow_target_amount: amount(target?.cashflow_target_amount ?? null),
+        manual_contract_actual_amount: amount(target?.manual_contract_actual_amount ?? null),
+        manual_cashflow_actual_amount: amount(target?.manual_cashflow_actual_amount ?? null),
+        contract_count_target: amount(target?.contract_count_target ?? null),
+        manual_contract_count_actual: amount(target?.manual_contract_count_actual ?? null),
+    };
+}
+
+/**
+ * Сар бүрийн гэрээний гүйцэтгэл (дүн, тоо) — «Төлөвлөгөөний биелэлт»-тэй нэг дүрэм (`contractAutoValue`, `resolveMonthMetric`):
+ * блок = гараар оруулсан нүд ?? систем (огноотой, цуцлаагүй, төлөвлөгөөнд хамаарах гэрээ; задаргаагүй төлөвлөгөөтэй сард бусад
+ * блокийн орон сууц нийтэд); огноогүй амьд гэрээтэй хүрээ доод хязгаар. Гар ба системийн дүнг нэг хүрээнд хэзээ ч нэмэхгүй.
+ */
+export function resolveOperationsMonths(contracts: OperationsContract[], targets: OperationsTarget[], months: readonly string[]): Map<string, OperationsResolvedMonth> {
+    const undated: Record<PlanScope, number> = { b1: 0, b2: 0, parking: 0, residential_other: 0 };
+    const agg = new Map<string, { count: number; cents: number; missingAmounts: number }>();
+    for (const contract of contracts) {
+        if (contract.deleted_at || contract.contract_status === 'cancelled') continue;
+        const scope = contractPlanScope(contract);
+        if (!scope) continue;
+        if (!contract.contract_date) { undated[scope]++; continue; }
+        const key = `${contract.contract_date.slice(0, 7)}|${scope}`;
+        const row = agg.get(key) ?? { count: 0, cents: 0, missingAmounts: 0 };
+        const value = amount(contract.total_price);
+        row.count++;
+        if (value === null) row.missingAmounts++;
+        else row.cents += Math.round(value * 100);
+        agg.set(key, row);
+    }
+    const byMonth = new Map(targets.map(row => [monthKey(row.year, row.month), row]));
+    return new Map(months.map(key => {
+        const row = monthlySalesRow(byMonth.get(key), Number(key.slice(5, 7)));
+        const blockPlanned = hasBlockPlan(row.block_amounts);
+        const auto = (scope: PlanScope, kind: 'count' | 'amount') => {
+            const cell = agg.get(`${key}|${scope}`) ?? { count: 0, cents: 0, missingAmounts: 0 };
+            return contractAutoValue({ count: cell.count, amount: cell.cents / 100, missingAmounts: cell.missingAmounts }, undated[scope], kind);
+        };
+        const resolve = (metric: 'contract' | 'contract_count', kind: 'count' | 'amount') => resolveMonthMetric(row, metric,
+            { b1: auto('b1', kind), b2: auto('b2', kind), parking: auto('parking', kind) }, blockPlanned ? null : auto('residential_other', kind));
+        return [key, { contract: resolve('contract', 'amount'), count: resolve('contract_count', 'count') }];
+    }));
+}
+
 /** Management input is shown separately; missing months remain unknown and partial months are never prorated. */
-export function buildMonthlyPerformance(targets: OperationsTarget[], range: OperationsRange, cashflowVisible: boolean): MonthlyPerformance {
+export function buildMonthlyPerformance(targets: OperationsTarget[], range: OperationsRange, cashflowVisible: boolean, contracts: OperationsContract[]): MonthlyPerformance {
     const months = targetMonths(range);
-    const byMonth = new Map(targets.map(row => [`${row.year}-${String(row.month).padStart(2, '0')}`, row]));
+    const byMonth = new Map(targets.map(row => [monthKey(row.year, row.month), row]));
+    const resolved = resolveOperationsMonths(contracts, targets, months ?? []);
     return { completeMonths: months !== null, cashflowVisible, months: (months ?? []).map(key => {
         const [year, month] = key.split('-').map(Number);
         const row = byMonth.get(key);
@@ -102,7 +163,8 @@ export function buildMonthlyPerformance(targets: OperationsTarget[], range: Oper
             target_amount: amount(row?.target_amount ?? null),
             manual_contract_actual_amount: amount(row?.manual_contract_actual_amount ?? null),
             cashflow_target_amount: cashflowVisible ? amount(row?.cashflow_target_amount ?? null) : null,
-            manual_cashflow_actual_amount: cashflowVisible ? amount(row?.manual_cashflow_actual_amount ?? null) : null };
+            manual_cashflow_actual_amount: cashflowVisible ? amount(row?.manual_cashflow_actual_amount ?? null) : null,
+            resolved: resolved.get(key)! };
     }) };
 }
 
@@ -211,16 +273,15 @@ export function buildOperationsReport(input: {
     const blockPlanned = new Map(input.targets.map(t => [`${t.year}-${String(t.month).padStart(2, '0')}`, hasBlockPlan(t.block_amounts)]));
     let planValue = 0;
     let planCount = 0;
-    let planMissing = 0;
     for (const c of periodContracts) {
         if (!countsTowardPlan(contractPlanScope(c), blockPlanned.get(c.contract_date!.slice(0, 7)) ?? false)) continue;
         planCount++;
-        const value = amount(c.total_price);
-        if (value === null) planMissing++;
-        else planValue += value;
+        planValue += amount(c.total_price) ?? 0;
     }
-    const undatedInPlan = contracts.filter(c => !c.contract_date && contractPlanScope(c) !== null).length;
-    const knownPlanValue = knownPeriodAmount(planValue, planCount, undatedInPlan);
+    // Биелэлт: сар бүрийн гүйцэтгэл «Төлөвлөгөөний биелэлт»-ийн M1 дүрмээр (гараар оруулсан блок давамгайлна, огноогүй
+    // гэрээтэй хүрээ доод хязгаар) — тодорхойгүй сарыг 0 гэж нэмэхгүй.
+    const resolvedMonths = months ? resolveOperationsMonths(input.contracts, input.targets, months) : null;
+    const planActual = resolvedMonths ? sumPlanValues([...resolvedMonths.values()].map(row => row.contract)) : null;
 
     const leads = input.leads.filter(l => !l.deleted_at);
     const active = leads.filter(l => ACTIVE_STATUSES.some(status => status === l.status));
@@ -251,9 +312,10 @@ export function buildOperationsReport(input: {
             byProduct: [...products.values()].sort((a, b) => b.count - a.count || a.productType.localeCompare(b.productType)) },
         meetings,
         target: { amount: targetAmount, completeMonths: !!months, configuredMonths: targetValues?.filter(t => t !== null).length ?? 0, expectedMonths: months?.length ?? 0,
-            // Огноогүй гэрээтэй ч хугацаанд төлөвлөгөөнд хамаарах гэрээ байвал хувь «N%+» (доод хязгаар); нэг ч байхгүй бол null.
-            attainmentPct: targetAmount && !planMissing && knownPlanValue !== null ? Math.round(knownPlanValue / targetAmount * 100) : null,
-            attainmentPartial: undatedInPlan > 0,
+            // Огноогүй (эсвэл дүн дутуу) гэрээтэй хүрээ байвал хувь «N%+» (доод хязгаар); гүйцэтгэл тодорхойгүй бол null.
+            attainmentPct: targetAmount && planActual && planActual.value !== null ? Math.round(planActual.value / targetAmount * 100) : null,
+            attainmentPartial: !!planActual?.lowerBound,
+            actual: planActual,
             planContracts: { count: planCount, value: planValue, outsideCount: periodContracts.length - planCount } },
         cash,
         // Stored contract/import snapshot. New ledger receipts do not update this field.

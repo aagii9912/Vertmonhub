@@ -71,6 +71,18 @@ function weeklySales() {
     });
 }
 
+// M1 (c-plan-math): 10-р сард зөвхөн Б2-ийн гүйцэтгэлийг гараар 2,000,000,000 оруулсан; Б1, зогсоол системийнх,
+// огноогүй Б1, Б2, зогсоолын гэрээтэй (доод хязгаар). Хадгалсан мөрийн нийт = оруулсан блокуудын нийлбэр.
+const M1_TARGET = { year: 2026, month: 10, target_amount: 5_352_996_000, manual_contract_actual_amount: 2_000_000_000, block_amounts: {
+    b1: { target_amount: 2_807_220_000 }, b2: { target_amount: 2_245_776_000, manual_contract_actual_amount: 2_000_000_000 }, parking: { target_amount: 300_000_000 },
+} };
+const M1_CONTRACTS = [
+    ...[548_848_750, 548_848_750, 548_848_750, 548_848_750].map((total_price, index) => ({ id: `b2-${index}`, contract_date: '2026-10-1' + index, product_type: 'residential', block_name: 'Б2', total_price, contract_status: 'active', prepayment_paid_cash: null })),
+    { id: 'p-1', contract_date: '2026-10-15', product_type: 'parking', block_name: 'Б1', total_price: 86_600_000, contract_status: 'active', prepayment_paid_cash: null },
+    ...(['residential|Б1', 'residential|Б2', 'parking|Б1', 'industry|Б1'] as const).map((kind, index) => ({ id: `u-${index}`, contract_date: null,
+        product_type: kind.split('|')[0], block_name: kind.split('|')[1], total_price: 400_000_000, contract_status: 'active', prepayment_paid_cash: null })),
+];
+
 function operations(from: string, to: string) {
     return { ...buildOperationsReport({
         range: { from, to }, now: `${to}T10:00:00Z`, transactions: null, targets: [],
@@ -289,23 +301,36 @@ describe('weekly meeting deck (.pptx)', () => {
 
     it('sales deck: the month plan slide shows contract count plan, actual and attainment before the amounts', async () => {
         const month = { from: '2026-10-01', to: '2026-10-31' };
+        const monthContracts = [{ id: 'c1', contract_date: month.from, product_type: 'residential', total_price: 286000000, contract_status: 'active', prepayment_paid_cash: 80000000 }];
         const monthSales = { ...operations(month.from, month.to), monthlyPerformance: buildMonthlyPerformance([{ year: 2026, month: 10,
-            target_amount: 2500000000, contract_count_target: 100, manual_contract_count_actual: 100 }], month, true) };
+            target_amount: 2500000000, contract_count_target: 100, manual_contract_count_actual: 100 }], month, true, monthContracts) };
         const { text } = await render(input({ monthSales }));
         const plan = text.find(slideText => slideText.includes('сарын төлөвлөгөө ба гүйцэтгэл'))!;
         expect(plan).toMatch(/Гэрээний тооны төлөвлөгөө 100 Гэрээний тооны гүйцэтгэл 100 Удирдлагын баталгаажуулсан Гүйцэтгэлийн хувь 100%/);
         expect(plan.indexOf('Гэрээний тооны төлөвлөгөө')).toBeLessThan(plan.indexOf('Гэрээний төлөвлөгөө'));
-        // Without a manual count the recorded contracts of the month stand in, labelled by their source.
+        // Without a manual count the month's CRM contracts stand in (the plan page rule), labelled by their source.
         const recorded = await render(input({ monthSales: { ...monthSales, monthlyPerformance: buildMonthlyPerformance([{ year: 2026, month: 10,
-            target_amount: null, contract_count_target: 20 }], month, true) } }));
+            target_amount: null, contract_count_target: 20 }], month, true, monthContracts) } }));
         const fallback = recorded.text.find(slideText => slideText.includes('сарын төлөвлөгөө ба гүйцэтгэл'))!;
-        expect(fallback).toMatch(/Гэрээний тооны төлөвлөгөө 20 Гэрээний тооны гүйцэтгэл 14 ERP-ийн гэрээ Гүйцэтгэлийн хувь 70%/);
+        expect(fallback).toMatch(/Гэрээний тооны төлөвлөгөө 20 Гэрээний тооны гүйцэтгэл 1 CRM-ийн гэрээ Гүйцэтгэлийн хувь 5%/);
+        // No month report at all: the weekly report's recorded contracts, labelled by their source.
+        const weeklyOnly = await render(input({ monthSales: undefined }));
+        expect(weeklyOnly.text.find(slideText => slideText.includes('сарын төлөвлөгөө ба гүйцэтгэл'))).toMatch(/Гэрээний тооны гүйцэтгэл 14 ERP-ийн гэрээ/);
+    });
+
+    it('sales deck: a partly entered block breakdown is resolved like the plan page (manual block + system blocks), not taken as the whole month', async () => {
+        const month = { from: '2026-10-01', to: '2026-10-31' };
+        const monthSales = { ...operations(month.from, month.to), monthlyPerformance: buildMonthlyPerformance([M1_TARGET], month, true, M1_CONTRACTS) };
+        const { text } = await render(input({ monthSales }));
+        const plan = text.find(slideText => slideText.includes('сарын төлөвлөгөө ба гүйцэтгэл'))!;
+        expect(plan).toMatch(/Гэрээний гүйцэтгэл 2\.09 тэрбум ₮\+ Холимог: гар \+ CRM Гүйцэтгэлийн хувь 39%\+/);
+        expect(plan).not.toMatch(/Гэрээний гүйцэтгэл 2 тэрбум ₮ Удирдлагын баталгаажуулсан/);
     });
 
     it('sales deck: totals of unknown paid amounts are a lower bound, and ERP cash is not divided by the month cash plan', async () => {
         const month = { from: '2026-10-01', to: '2026-10-31' };
         const monthSales = { ...operations(month.from, month.to), monthlyPerformance: buildMonthlyPerformance([{ year: 2026, month: 10,
-            target_amount: 2500000000, cashflow_target_amount: 750000000 }], month, true) };
+            target_amount: 2500000000, cashflow_target_amount: 750000000 }], month, true, []) };
         const { text } = await render(input({ monthSales }));
         const contracts = text.filter(slideText => slideText.includes('Энэ долоо хоногийн гэрээ')).join(' ');
         // 14 гэрээний 5-ынх нь төлсөн дүн хоосон: 9 × 60 сая = 540 сая «+», хэзээ ч 0 биш; урьдчилгаа бүгд мэдэгдэнэ.

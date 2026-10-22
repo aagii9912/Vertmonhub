@@ -67,6 +67,6 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
             .select('id, name, is_active').eq('shop_id', options.shopId).order('sort_order').order('id').range(from, to)),
     ]);
     return { ...buildOperationsReport({ range, now: now.toISOString(), contracts, leads, targets, transactions, viewings, receiptClassificationAvailable, meetingClassificationAvailable, categories }),
-        monthlyPerformance: scope.projectIds === null ? buildMonthlyPerformance(targets, range, options.canReadFinance) : null,
+        monthlyPerformance: scope.projectIds === null ? buildMonthlyPerformance(targets, range, options.canReadFinance, contracts) : null,
         shopName: options.shopName || 'Vertmon Hub' };
 }

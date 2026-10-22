@@ -249,6 +249,33 @@ function resolveMetric(
     return { total: cell(row[metric.plan], future ? none : total, source, future ? none : autoTotal), blocks };
 }
 
+/** Нэг сарын нийт гүйцэтгэл M1 дүрмээр: утга, доод хязгаар, эх сурвалж (гар / систем / холимог). */
+export interface PlanResolvedValue extends PlanValue { source: PlanSource | null }
+
+/**
+ * Системийн гэрээний нүд (сар × хүрээ): тухайн хүрээнд огноогүй амьд гэрээ байвал доод хязгаар, тэр сард гэрээгүй бол
+ * тодорхойгүй (null); дүн дутуу гэрээ ч доод хязгаар. Төлөвлөгөөний биелэлт ба үйл ажиллагааны тайлан нэг дүрэм.
+ */
+export function contractAutoValue(row: { count: number; amount: number; missingAmounts: number }, undated: number, kind: 'count' | 'amount'): PlanValue {
+    if (undated > 0 && row.count === 0) return { value: null, lowerBound: true };
+    return kind === 'count'
+        ? { value: row.count, lowerBound: undated > 0 }
+        : { value: row.amount, lowerBound: undated > 0 || row.missingAmounts > 0 };
+}
+
+/**
+ * M1 давамгайллын ганц хуулбар — сарын нийт гүйцэтгэл (`resolveMetric`): блок = гар ?? систем, задаргаатай бол нийт =
+ * блокуудын нийлбэр; задаргаагүй гар нийт; эс бөгөөс систем. Төлөвлөгөөний биелэлт, захирал, үйл ажиллагааны тайлан,
+ * хурлын слайд бүгд үүгээр (хадгалсан мөрийн нийт `row[f]`-ийг задаргаатай үед уншихгүй).
+ */
+export function resolveMonthMetric(
+    row: MonthlySalesMonth, key: PlanMetricKey, autoBlocks: Record<MonthlySalesBlock, PlanValue>, extra: PlanValue | null,
+): PlanResolvedValue {
+    const metric = MONTHLY_SALES_METRICS.find(item => item.key === key)!;
+    const { total } = resolveMetric(row, metric, autoBlocks, extra, false);
+    return { value: total.actual, lowerBound: total.lowerBound, source: total.source };
+}
+
 /** Төлөвлөгөөний биелэлтийн цэвэр тооцоо. */
 export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerformance {
     const { year } = input;
@@ -332,11 +359,7 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
 
     const contractAuto = (month: number, scope: PlanScope, kind: 'count' | 'amount'): PlanValue => {
         const row = agg.get(`${month}|${scope}`) ?? emptyAgg();
-        const undated = undatedByScope[scope];
-        if (undated > 0 && row.count === 0) return { value: null, lowerBound: true };
-        return kind === 'count'
-            ? { value: row.count, lowerBound: undated > 0 }
-            : { value: fromCents(row.amountCents), lowerBound: undated > 0 || row.missingAmounts > 0 };
+        return contractAutoValue({ count: row.count, amount: fromCents(row.amountCents), missingAmounts: row.missingAmounts }, undatedByScope[scope], kind);
     };
     const cashAuto = (month: number, scope: string): PlanValue => {
         if (availability === 'none' || availability === 'no_ledger') return { value: null, lowerBound: false };

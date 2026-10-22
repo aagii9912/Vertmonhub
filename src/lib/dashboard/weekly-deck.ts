@@ -6,6 +6,7 @@ import { formatReviewChange, updatePart } from './weekly-review';
 import { knownPeriodAmount, periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from './contract-dates';
 import { WEEKLY_SLIDE_PART_LABEL, WEEKLY_SLIDE_SECTION_LABEL, type WeeklySlide } from './weekly-slides';
 import type { MarketingPerformance } from '@/lib/marketing/performance';
+import { planValueText, type PlanResolvedValue } from '@/lib/sales/plan-performance';
 import type { BudgetOverview } from '@/lib/marketing/budget';
 import type { ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
 import { CHANNEL_SOURCE_LABELS, CHANNEL_SOURCES, channelKeyMetrics, channelMetric, type ChannelSource } from '@/lib/marketing/channel-reports';
@@ -231,7 +232,14 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const label = `${Number((weekly?.month.month ?? input.range.to).slice(5, 7))}-р сар`;
     const slide = content(pres, 'Борлуулалт', `${label}ын төлөвлөгөө ба гүйцэтгэл`, 'Төлөвлөгөө, баталгаажуулсан гүйцэтгэлийг удирдлага оруулна. Хоосон бол тооцоогүй.');
     const ratio = (actual: number | null | undefined, target: number | null | undefined) => actual === null || actual === undefined || !target ? '—' : `${Math.round(actual / target * 100)}%`;
-    const contractActual = month?.manual_contract_actual_amount ?? null;
+    // Сарын (үйл ажиллагааны) тайлан байвал гэрээний тоо, дүн «Төлөвлөгөөний биелэлт»-ийн M1 дүрмээр (гараар оруулсан блок
+    // давамгайлна, бусад блок систем) — хадгалсан мөрийн нийтийг (оруулсан блокуудын нийлбэр) бүтэн сар гэж үзэхгүй.
+    // Үгүй бол долоо хоногийн тайлангийн гэрээний бүртгэл.
+    const resolved = month?.resolved;
+    const resolvedHelper = (value: PlanResolvedValue) => value.value === null ? (value.lowerBound ? 'Огноогүй гэрээтэй — тодорхойгүй' : undefined)
+        : value.source === 'manual' ? 'Удирдлагын баталгаажуулсан' : value.source === 'mixed' ? 'Холимог: гар + CRM' : 'CRM-ийн гэрээ';
+    const resolvedPct = (value: PlanResolvedValue, target: number | null) => value.value === null || !target ? '—'
+        : `${Math.round(value.value / target * 100)}%${value.lowerBound ? '+' : ''}`;
     const cashActual = month?.manual_cashflow_actual_amount ?? null;
     // Төлөвлөгөөнд хамаарах огноогүй гэрээ л төлөвлөгөөтэй харьцуулсан дүнг бүрэн бус болгоно (Агуулах г.м. биш).
     const undated = weekly?.sources.undatedPlanContracts ?? 0;
@@ -242,7 +250,6 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const outside = weekly?.month.outsidePlanCount ?? 0;
     const recorded = weekly ? knownPeriodAmount(planTotal, planCount, undated) : null;
     const contractTarget = month?.target_amount ?? weekly?.month.target ?? null;
-    const countActual = month?.manual_contract_count_actual ?? null;
     const countTarget = month?.contract_count_target ?? null;
     const recordedCount = weekly ? knownPeriodAmount(planCount, planCount, undated) : null;
     const source = weekly?.sources.contracts === 'erp' ? 'ERP' : 'CRM';
@@ -250,15 +257,21 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const rowH = 1.5, rowStep = rowH + 0.15;
     statRow(slide, TOP, [
         { label: 'Гэрээний тооны төлөвлөгөө', value: countTarget === null ? '—' : countTarget.toLocaleString('en-US'), tone: 'gold' },
-        { label: 'Гэрээний тооны гүйцэтгэл', value: countActual !== null ? countActual.toLocaleString('en-US') : weekly ? periodContractCount(planCount, undated) : '—',
-            helper: countActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly ? (undated ? undatedContractsShort(undated) : `${source}-ийн гэрээ`) : undefined },
-        { label: 'Гүйцэтгэлийн хувь', value: `${ratio(countActual ?? recordedCount, countTarget)}${countActual === null && undated && recordedCount !== null && countTarget ? '+' : ''}` },
+        resolved
+            ? { label: 'Гэрээний тооны гүйцэтгэл', value: planValueText(resolved.count.value, resolved.count.lowerBound, value => value.toLocaleString('en-US')), helper: resolvedHelper(resolved.count) }
+            : { label: 'Гэрээний тооны гүйцэтгэл', value: weekly ? periodContractCount(planCount, undated) : '—',
+                helper: weekly ? (undated ? undatedContractsShort(undated) : `${source}-ийн гэрээ`) : undefined },
+        { label: 'Гүйцэтгэлийн хувь', value: resolved ? resolvedPct(resolved.count, countTarget)
+            : `${ratio(recordedCount, countTarget)}${undated && recordedCount !== null && countTarget ? '+' : ''}` },
     ], rowH);
     statRow(slide, TOP + rowStep, [
         { label: 'Гэрээний төлөвлөгөө', value: short(contractTarget), tone: 'gold' },
-        { label: 'Гэрээний гүйцэтгэл', value: contractActual !== null ? short(contractActual) : weekly ? periodContractAmount(planTotal, planCount, undated, short) : '—',
-            helper: contractActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly ? (undated ? undatedContractsShort(undated) : `${source}-ийн гэрээ, ${planCount} ш`) : undefined },
-        { label: 'Гүйцэтгэлийн хувь', value: `${ratio(contractActual ?? recorded, contractTarget)}${contractActual === null && undated && recorded !== null && contractTarget ? '+' : ''}` },
+        resolved
+            ? { label: 'Гэрээний гүйцэтгэл', value: planValueText(resolved.contract.value, resolved.contract.lowerBound, short), helper: resolvedHelper(resolved.contract) }
+            : { label: 'Гэрээний гүйцэтгэл', value: weekly ? periodContractAmount(planTotal, planCount, undated, short) : '—',
+                helper: weekly ? (undated ? undatedContractsShort(undated) : `${source}-ийн гэрээ, ${planCount} ш`) : undefined },
+        { label: 'Гүйцэтгэлийн хувь', value: resolved ? resolvedPct(resolved.contract, contractTarget)
+            : `${ratio(recorded, contractTarget)}${undated && recorded !== null && contractTarget ? '+' : ''}` },
     ], rowH);
     const cashVisible = !!input.monthSales?.monthlyPerformance?.cashflowVisible;
     statRow(slide, TOP + rowStep * 2, cashVisible ? [
@@ -275,8 +288,9 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
         cashVisible ? null : 'Орсон мөнгөний төлөвлөгөө, гүйцэтгэлийг санхүүгийн эрхтэй хүн харна.',
         'Гэрээний дүн, мөнгөн орлого, бартерыг холихгүй.',
         cashActual === null && weekly?.cash ? 'ERP-ийн төлсөн дүнгийн зөрүүг сарын орсон мөнгөний төлөвлөгөөтэй харьцуулж хувь гаргаагүй.' : null,
-        (contractActual === null || countActual === null) && outside ? `Төлөвлөгөөнд хамаарахгүй ${outside} гэрээ (Агуулах, Үйлчилгээ г.м.) гүйцэтгэлд ороогүй.` : null,
-        (contractActual === null || countActual === null) && undated ? undatedContractsHint(undated) : null,
+        (!resolved || resolved.contract.source !== 'manual' || resolved.count.source !== 'manual') && outside ? `Төлөвлөгөөнд хамаарахгүй ${outside} гэрээ (Агуулах, Үйлчилгээ г.м.) гүйцэтгэлд ороогүй.` : null,
+        (resolved ? resolved.contract.lowerBound || resolved.count.lowerBound : undated > 0)
+            ? (undated ? undatedContractsHint(undated) : '«+» — огноогүй гэрээ байгаа тул доод хязгаар; тухайн сард гэрээгүй бол «—».') : null,
     ]);
 }
 
