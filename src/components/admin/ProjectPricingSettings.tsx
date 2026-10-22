@@ -20,7 +20,7 @@ const fields: Array<{ key: keyof RuleForm; label: string; numeric?: boolean }> =
 ];
 
 /** Root admin projects page wires the chosen shop; the API rechecks access independently. */
-export function ProjectPricingSettings({ shopId, projectName }: { shopId: string; projectName?: string }) {
+export function ProjectPricingSettings({ shopId, projectName, onSaved }: { shopId: string; projectName?: string; onSaved?: () => void }) {
     const query = useQuery({
         queryKey: ['project-pricing', shopId], enabled: !!shopId,
         queryFn: () => dashboardJson<Overview>('/api/admin/pricing', { shopId }),
@@ -32,6 +32,7 @@ export function ProjectPricingSettings({ shopId, projectName }: { shopId: string
         {query.isPending ? <p className="mt-4 text-sm">Ачаалж байна…</p>
             : query.error && !query.data ? <p role="alert" className="mt-4 text-sm text-status-danger">{query.error.message} <button type="button" className="underline" onClick={() => void query.refetch()}>Дахин ачаалах</button></p>
                 : query.data && <PricingEditor key={`${shopId}:${query.dataUpdatedAt}`} shopId={shopId} overview={query.data} onSaved={async () => {
+                    onSaved?.();
                     const result = await query.refetch();
                     if (result.error) throw result.error;
                 }} />}

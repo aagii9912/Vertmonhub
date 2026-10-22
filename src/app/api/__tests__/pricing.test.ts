@@ -3,15 +3,16 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ProjectScopeError } from '@/lib/sales/project-scope';
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), shop: vi.fn(), admin: vi.fn(), overview: vi.fn(), save: vi.fn(), quote: vi.fn(), scope: vi.fn() }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), shop: vi.fn(), admin: vi.fn(), overview: vi.fn(), save: vi.fn(), quote: vi.fn(), scope: vi.fn(), sheet: vi.fn(), access: vi.fn() }));
 vi.mock('@/lib/auth/require-permission', () => ({ requireModule: mocks.read, requireModuleWrite: mocks.write, requireModuleDelete: mocks.write, requireAnyModule: mocks.read }));
 vi.mock('@/lib/auth/supabase-auth', () => ({ getUserShop: mocks.shop, getUserId: async () => 'actor' }));
 vi.mock('@/lib/admin/auth', () => ({ getAdminUser: mocks.admin }));
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({}) }));
 vi.mock('@/lib/sales/project-scope', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/sales/project-scope')>(), resolveSalesProjectScope: mocks.scope }));
-vi.mock('@/lib/sales/pricing-store', () => ({ loadPricingOverview: mocks.overview, savePricingConfig: mocks.save, quoteViewingSelection: mocks.quote }));
+vi.mock('@/lib/sales/pricing-store', () => ({ loadPricingOverview: mocks.overview, savePricingConfig: mocks.save, quoteViewingSelection: mocks.quote, loadPricingSheet: mocks.sheet, assertPricingProjectAccess: mocks.access }));
 import { GET, PUT } from '@/app/api/admin/pricing/route';
 import { POST } from '@/app/api/dashboard/viewings/quote/route';
+import { GET as SHEET } from '@/app/api/dashboard/pricing/route';
 import { EMPTY_PRICING_DRAFT } from '@/lib/sales/pricing';
 
 const body = { block: 'Б1', model: 'E6', area_sqm: 51.72, floor: 2 };
@@ -22,6 +23,7 @@ beforeEach(() => {
     mocks.scope.mockResolvedValue({ projectIds: ['project'], managerName: 'Бат' });
     mocks.quote.mockResolvedValue({ available: false, reason: 'Үнийн тохиргоо байхгүй', quote: null });
     mocks.overview.mockResolvedValue({ latest: null, active: null }); mocks.save.mockResolvedValue({ version: 1 });
+    mocks.sheet.mockResolvedValue({ as_of: '2026-10-22', history: [], selected: null }); mocks.access.mockResolvedValue(undefined);
 });
 it('requires dedicated modules and shop access before loading or writing pricing', async () => {
     mocks.read.mockResolvedValue(NextResponse.json({}, { status: 403 }));
@@ -53,4 +55,20 @@ it('quote preview is read only, scoped, and rejects client totals before calcula
 it('preserves an identifiable foreign-selection error', async () => {
     mocks.quote.mockRejectedValue(new ProjectScopeError(404, 'Байр олдсонгүй'));
     expect((await POST(request('/api/dashboard/viewings/quote', body))).status).toBe(404);
+});
+it('price sheet is a properties read, project-scoped, and validates the version before loading', async () => {
+    mocks.read.mockResolvedValue(NextResponse.json({}, { status: 403 }));
+    expect((await SHEET(new NextRequest('http://localhost/api/dashboard/pricing'))).status).toBe(403);
+    expect(mocks.read).toHaveBeenCalledWith('properties'); expect(mocks.sheet).not.toHaveBeenCalled();
+    mocks.read.mockResolvedValue(null);
+    for (const bad of ['0', '-1', '1.5', 'abc']) expect((await SHEET(new NextRequest(`http://localhost/api/dashboard/pricing?version=${bad}`))).status).toBe(400);
+    expect(mocks.sheet).not.toHaveBeenCalled();
+    mocks.access.mockRejectedValueOnce(new ProjectScopeError(403, 'Энэ төслийн үнийг харах эрхгүй'));
+    expect((await SHEET(new NextRequest('http://localhost/api/dashboard/pricing'))).status).toBe(403);
+    expect(mocks.sheet).not.toHaveBeenCalled();
+    const response = await SHEET(new NextRequest('http://localhost/api/dashboard/pricing?version=2'));
+    expect(response.status).toBe(200);
+    expect(mocks.access).toHaveBeenLastCalledWith({}, 'shop', { projectIds: ['project'], managerName: 'Бат' });
+    expect(mocks.sheet).toHaveBeenCalledWith({}, 'shop', { version: 2 });
+    expect(mocks.write).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
 });
