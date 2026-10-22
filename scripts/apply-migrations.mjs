@@ -29,6 +29,10 @@ const [from, to] = args.filter((arg) => /^\d{14}$/.test(arg));
 
 // Энэ хувилбаруудын оруулсны дараах шалгалт (объект бий эсэх). Бусад хувилбарт шалгалтгүй.
 const VERIFY = {
+    '20261022160000': `SELECT NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+        AND table_name = 'team_sales_targets' AND column_name IN ('target_count', 'manual_contract_actual_count'))
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+        AND table_name = 'team_sales_targets' AND column_name = 'contract_count_target') AS ok`,
     '20261022140000': `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
         AND table_name = 'property_contracts' AND column_name = 'overdue_amount')
         AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
@@ -42,7 +46,7 @@ const VERIFY = {
         AND EXISTS (SELECT 1 FROM pg_class WHERE oid = to_regclass('public.property_units_with_buyer') AND relkind = 'v'
             AND reloptions && ARRAY['security_invoker=on', 'security_invoker=true'])
         AND position('cancelled' in pg_get_viewdef('public.property_units_with_buyer'::regclass)) > 0 AS ok`,
-    '20261022120000':`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+    '20261022120000': `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
         AND table_name = 'team_sales_targets' AND column_name = 'contract_count_target')
         AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
         AND table_name = 'team_sales_targets' AND column_name = 'manual_contract_count_actual')
