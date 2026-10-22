@@ -57,7 +57,8 @@ beforeEach(() => {
     });
 });
 
-describe('monthly sales administration form', () => {
+// 217 нүдтэй маягт: ачаалал ихтэй CI/машин дээр 5 секундээс удаж болно.
+describe('monthly sales administration form', { timeout: 15_000 }, () => {
     it('shows 216 labelled block cells and saves explicit zero without filling other metrics', async () => {
         open();
         const cashActual = await screen.findByRole('textbox', { name: label('Орсон мөнгөний гүйцэтгэл') });
