@@ -15,6 +15,9 @@
  *  • Шинэ лид = тухайн УБ өдөр бүртгэгдсэн (`created_at`), устгаагүй лид, ОДООГИЙН хариуцагчаар
  *    (`sales_manager_name`; хариуцагчгүй бол «Оноогдоогүй»), эх үүсвэрээр (`source`). Зөвхөн тоо —
  *    нэр, утас гаргахгүй (эзэмшигчийн шийдвэр 2026-10-22). Гараар засахгүй.
+ *  • Утсаар бүртгэсэн лид (`source = phone`) = утсаар ярьсан дуудлага, гэхдээ аль шугамаар ирсэн нь
+ *    тодорхойгүй тул дуудлагын тоонд АВТОМАТААР НЭМЭХГҮЙ: менежерийн бүх шугамын оруулсан дуудлагатай
+ *    харьцуулж, оруулаагүй эсвэл бага бол анхааруулна (`phoneLeadChecks`, эзэмшигчийн шийдвэр 2026-10-22).
  *  • Загвар (шугам, ангилал, чатын суваг, менежерийн дараалал/товчлол) нь төсөл бүрийн тохиргоо.
  */
 import { z } from 'zod';
@@ -498,6 +501,42 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
         completed: ranged ? null : input.completed,
         completedDays: ranged ? input.completedDays ?? 0 : null,
     };
+}
+
+/** «Утас» эх үүсвэртэй лид — утсаар ярьсан дуудлага. */
+export const PHONE_LEAD_SOURCE = 'phone';
+
+/** Менежерийн утсаар бүртгэсэн лид ба бүх шугамд оруулсан дуудлага. */
+export interface DailyPhoneLeadCheck {
+    manager: string;
+    /** Бүх шугамын оруулсан дуудлагын нийлбэр; нэг ч нүд оруулаагүй бол null. */
+    calls: number | null;
+    /** Утсаар бүртгэсэн шинэ лид. */
+    leads: number;
+    /** Утсаар лид бүртгэсэн ч дуудлага оруулаагүй эсвэл түүнээс бага. */
+    short: boolean;
+}
+
+/**
+ * Утсаар бүртгэсэн лид дуудлагын тоонд орсон эсэх: утасны лидтэй өдөр л менежер бүрээр (хариуцагчгүйг
+ * эс тооцно). `valueOf` — засаж буй ноорогтой нүд (байхгүй бол хадгалсан утга); тоог өөрчлөхгүй.
+ */
+export function phoneLeadChecks(
+    report: Pick<DailyReport, 'managers' | 'lines' | 'leads'>,
+    valueOf: (manager: string, row: DailyGridRow) => number | null = (manager, row) => row.values[manager] ?? null,
+): DailyPhoneLeadCheck[] {
+    const phone = report.leads.rows.find(row => row.key === PHONE_LEAD_SOURCE);
+    if (!phone?.total) return [];
+    const callRows = report.lines.flatMap(line => line.rows);
+    return report.managers.filter(manager => manager.name !== UNASSIGNED).map(manager => {
+        let calls: number | null = null;
+        for (const row of callRows) {
+            const value = valueOf(manager.name, row);
+            if (value !== null) calls = (calls ?? 0) + value;
+        }
+        const leads = phone.values[manager.name] ?? 0;
+        return { manager: manager.name, calls, leads, short: leads > 0 && (calls === null || calls < leads) };
+    });
 }
 
 /* ------------------------------------------------------------------ */

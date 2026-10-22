@@ -25,7 +25,10 @@ vi.mock('@/lib/dashboard/daily-report-load', async (importOriginal) => {
                 counts: [{ manager_name: 'Хонгорзул.Мөнхгэрэл', metric: 'call.l1.total', value: 4 }],
                 meetings: [{ id: 'm1', manager: 'Хонгорзул.Мөнхгэрэл', type: 'repeat_customer', customer: 'Загдсүрэн', property: null, notes: '10-50 хувь', feedback: null, scheduled_at: '2026-10-07T02:00:00Z' }],
                 pendingMeetings: [{ id: 'p1', manager: 'Хонгорзул.Мөнхгэрэл', type: 'new_customer', customer: 'Болд', scheduled_at: '2026-10-07T05:00:00Z' }],
-                leads: [{ manager: 'Хонгорзул.Мөнхгэрэл', source: 'facebook_ads' }, { manager: 'Хонгорзул.Мөнхгэрэл', source: 'phone' }, { manager: 'Хонгорзул.Мөнхгэрэл', source: 'facebook_ads' }],
+                leads: [
+                    { manager: 'Хонгорзул.Мөнхгэрэл', source: 'facebook_ads' }, { manager: 'Хонгорзул.Мөнхгэрэл', source: 'phone' },
+                    { manager: 'Хонгорзул.Мөнхгэрэл', source: 'facebook_ads' }, { manager: 'Чанцалдулам.Раднаа', source: 'phone' },
+                ],
                 notes: {}, completed: null, only: options.only,
             });
             return { report };
@@ -58,8 +61,10 @@ describe('get_daily_report AI tool', () => {
         expect(result.meetings).toEqual({ total: 1, byType: [{ type: 'Шинэ', count: 0 }, { type: 'Давтан', count: 1 }, { type: 'Захиалагч', count: 0 }] });
         expect(result.missingManagers).toEqual(['Чанцалдулам.Раднаа']);
         expect(result.pendingMeetings).toBe(1);
-        expect(result.newLeads).toEqual({ total: 3, byManager: { 'М. Хонгорзул': 3 }, bySource: [{ source: 'Утас', count: 1 }, { source: 'Facebook Ads', count: 2 }] });
-        expect(result.plainText).toContain('Шинэ лид: Нийт 3 лид бүртгэгдсэн');
+        expect(result.newLeads).toEqual({ total: 4, byManager: { 'М. Хонгорзул': 3, 'Р. Чанцалдулам': 1 }, bySource: [{ source: 'Утас', count: 2 }, { source: 'Facebook Ads', count: 2 }] });
+        expect(result.plainText).toContain('Шинэ лид: Нийт 4 лид бүртгэгдсэн');
+        // Хонгорзул 4 дуудлага ≥ 1 утасны лид; Чанцалдулам дуудлага оруулаагүй.
+        expect(result.phoneLeadGaps).toEqual([{ manager: 'Р. Чанцалдулам', calls: null, phoneLeads: 1 }]);
         expect(result.plainText).toContain('ELYSIUM RESIDENCE БАГ — 2026.10.07');
         expect(result.plainText).toContain('1. Загдсүрэн — 10-50 хувь');
         expect(result.url).toBe('/dashboard/daily-report');
