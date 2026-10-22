@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import {
     buildDailyReport, buildDailyReportChanges, dailyNoteText, flattenDailyNotes, readDailyReportConfig,
-    type BuildDailyReportInput, type DailyCountRow, type DailyMeetingRow, type DailyReportChangeRow, type DailyReportConflict,
+    type BuildDailyReportInput, type DailyCountRow, type DailyLeadRow, type DailyMeetingRow, type DailyReportChangeRow, type DailyReportConflict,
     type DailyReportNotes, type SaveDailyReportInput,
 } from '../src/lib/dashboard/daily-report';
 import type { DailyMeetingRequestBody } from '../src/lib/dashboard/daily-report-meetings';
@@ -58,6 +58,8 @@ async function setup(page: Page, mode: 'team' | 'personal') {
         ] as DailyMeetingRow[],
         // Цаг нь өнгөрсөн товлосон уулзалт («Болсон» товч идэвхтэй).
         pending: [{ id: 'p1', manager: KHON, type: 'new_customer', customer: 'Болд', scheduled_at: new Date(Date.now() - 30 * 60_000).toISOString() }],
+        // Өнөөдөр бүртгэгдсэн лид (нэг нь хариуцагчгүй — «Оноогдоогүй» багана).
+        leads: [{ manager: CHAN, source: 'facebook_ads' }, { manager: KHON, source: 'facebook_ads' }, { manager: KHON, source: 'phone' }, { manager: null, source: 'website' }] as DailyLeadRow[],
         changes: [] as DailyReportChangeRow[],
     };
     let nextChange = 1;
@@ -76,6 +78,7 @@ async function setup(page: Page, mode: 'team' | 'personal') {
         counts: state.counts,
         meetings: state.meetings,
         pendingMeetings: state.pending,
+        leads: state.leads,
         notes: state.notes,
         completed: state.completed,
         only: null,
@@ -192,6 +195,12 @@ test('багийн өдрийн тайлан: хүснэгт, хэн оруул�
     await expect(projectLine.locator('td[data-author="other"]')).toHaveCount(1);
     await expect(projectLine.locator('td[data-author="other"]')).toHaveAttribute('title', `Оруулсан: М. Хонгорзул · ${formatTime(`${today}T02:15:00.000Z`)}`);
     await expect(report.getByText('— өөр хүн оруулсан тоо (дээр нь очиж хэн оруулсныг харна)')).toBeVisible();
+    // Шинэ лид: системээс, эх үүсвэр × менежер, засагдахгүй.
+    const newLeads = report.getByRole('region', { name: 'Шинэ лид', exact: true });
+    await expect(newLeads.getByRole('rowheader', { name: 'Facebook Ads' })).toBeVisible();
+    await expect(newLeads.getByRole('rowheader', { name: 'Вэбсайт' })).toBeVisible();
+    await expect(newLeads.getByRole('columnheader', { name: '—' })).toHaveAttribute('title', 'Оноогдоогүй');
+    await expect(report.getByText('Нийт 4 лид бүртгэгдсэн.', { exact: true })).toBeVisible();
     await page.screenshot({ path: 'test-results/e2e/daily-report-team.png', fullPage: true });
 
     // Зураг (PNG/JPEG): мессенжерт илгээх цагаан тайлан, 2x нягтрал, дэлгэцийн загвартай адил 2 баганатай (1180px → 2360px).
@@ -207,8 +216,8 @@ test('багийн өдрийн тайлан: хүснэгт, хэн оруул�
         expect(bytes.subarray(0, signature.length / 2).toString('hex')).toBe(signature);
         if (extension === 'png') {
             expect(bytes.readUInt32BE(16)).toBe(2360);
-            // Хүснэгтүүд хоёр баганаар тул зураг өргөнөөсөө намхан.
-            expect(bytes.readUInt32BE(20)).toBeLessThan(2360);
+            // Хүснэгтүүд (дуудлага ×2, уулзалт, чат, шинэ лид) хоёр баганаар: ~2800px; нэг баганаар бол ~3500px.
+            expect(bytes.readUInt32BE(20)).toBeLessThan(3100);
         }
         await expect(page.getByRole('button', { name: 'Зураг', exact: true })).toBeEnabled();
     }
@@ -360,6 +369,7 @@ test('ээлжийн менежер хамт олныхоо тоог оруул�
     expect(copied).toContain('Менежерийн дуудлага: Нийт 9 дуудлага ирсэн');
     expect(copied).toContain('Бат — Б2-58м2 10-30%; үлдэгдэл банк');
     expect(copied).toContain('Тулга');
+    expect(copied).toContain('Шинэ лид: Нийт 4 лид бүртгэгдсэн (Чан 1, Хон 2, Оноогдоогүй 1).');
     expect(copied).toContain('Тайлан хийж гүйцэтгэсэн: М. Хонгорзул');
     expect(copied).toContain('Р. Чанцалдулам (8888 1234)');
     expect(copied).toContain('М. Хонгорзул (9008 5678)');

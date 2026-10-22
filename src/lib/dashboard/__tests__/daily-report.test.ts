@@ -55,6 +55,7 @@ const input = (overrides: Partial<BuildDailyReportInput> = {}): BuildDailyReport
         meeting('ccc', 'Хонгорзул.Мөнхгэрэл', 'new_customer', 'Дорж', 'Эмийн сан үйлчилгээний талбай Б2 блокоос 60 орчим мкв'),
     ],
     pendingMeetings: [],
+    leads: [],
     notes: { lines: { l1: 'Төслийн ерөнхий мэдээлэл авсан' } },
     completed: { by: 'М. Хонгорзул', at: '2026-09-30T10:00:00Z' },
     only: null,
@@ -177,6 +178,44 @@ describe('buildDailyReport', () => {
         expect(report.meetings.byManager['']).toBe(1);
     });
 
+    it('counts the day’s new leads by current manager and source, with unassigned and off-roster owners as columns', () => {
+        const leads = [
+            { manager: 'Чанцалдулам.Раднаа', source: 'facebook_ads' },
+            { manager: 'Хонгорзул.Мөнхгэрэл', source: 'facebook_ads' },
+            { manager: 'Чанцалдулам.Раднаа', source: 'phone' },
+            { manager: null, source: 'website' },
+            { manager: 'Батаа.Дорж', source: null },
+            { manager: 'Чанцалдулам.Раднаа', source: 'legacy_import' },
+        ];
+        const report = buildDailyReport(input({ leads }));
+        expect(report.managers.map(manager => manager.short)).toEqual(['Ари', 'Чан', 'Хон', 'Бат', '—']);
+        // Эх үүсвэрийн толь бичгийн дарааллаар; эх үүсвэргүй = «Бусад», танигдаагүй нь төгсгөлд нэрээрээ.
+        expect(report.leads.rows.map(row => [row.label, row.total])).toEqual([
+            ['Вэбсайт', 1], ['Утас', 1], ['Facebook Ads', 2], ['Бусад', 1], ['legacy_import', 1],
+        ]);
+        expect(report.leads.rows[2].values).toMatchObject({ 'Ариунбилэг.Нямхүү': null, 'Чанцалдулам.Раднаа': 1, 'Хонгорзул.Мөнхгэрэл': 1 });
+        expect(report.leads.total).toBe(6);
+        expect(report.leads.byManager).toEqual({ 'Ариунбилэг.Нямхүү': 0, 'Чанцалдулам.Раднаа': 3, 'Хонгорзул.Мөнхгэрэл': 1, 'Батаа.Дорж': 1, '': 1 });
+        // Лидийн багана тоо оруулаагүй менежерийн анхааруулгад нөлөөлөхгүй.
+        expect(report.missing).toEqual([]);
+
+        const text = formatDailyReportText(report);
+        expect(text).toContain('Шинэ лид: Нийт 6 лид бүртгэгдсэн (Чан 3, Хон 1, Бат 1, Оноогдоогүй 1).');
+        expect(text).toContain('  Facebook Ads: 2 (Чан 1, Хон 1)');
+        expect(text).toContain('  Вэбсайт: 1 (Оноогдоогүй 1)');
+
+        const own = buildDailyReport(input({ leads, only: 'Чанцалдулам.Раднаа', notes: {}, completed: null }));
+        expect(own.leads.total).toBe(3);
+        expect(own.managers.map(manager => manager.name)).toEqual(['Чанцалдулам.Раднаа']);
+    });
+
+    it('shows one zero total row when no lead was registered', () => {
+        const report = buildDailyReport(input());
+        expect(report.leads.rows.map(row => [row.key, row.label, row.total])).toEqual([['total', 'Нийт', 0]]);
+        expect(report.leads.total).toBe(0);
+        expect(report.managers.map(manager => manager.short)).toEqual(['Ари', 'Чан', 'Хон']);
+    });
+
     it('shows only the manager’s own column in personal mode', () => {
         const report = buildDailyReport(input({ only: 'Хонгорзул.Мөнхгэрэл', notes: {}, completed: null }));
         expect(report.managers.map(manager => [manager.name, manager.short])).toEqual([['Хонгорзул.Мөнхгэрэл', 'Хон']]);
@@ -211,6 +250,7 @@ describe('date range report', () => {
     it('labels the period, dates meeting items and counts confirmed days instead of one confirmer', () => {
         const report = buildDailyReport(input({
             date: '2026-09-24', to: '2026-09-30', completedDays: 3,
+            leads: [{ manager: 'Хонгорзул.Мөнхгэрэл', source: 'phone' }, { manager: 'Хонгорзул.Мөнхгэрэл', source: 'phone' }],
             meetings: [meeting('a', 'Чанцалдулам.Раднаа', 'new_customer', 'Бат', 'Б2-58м2'), { ...meeting('bb', 'Хонгорзул.Мөнхгэрэл', 'new_customer', 'Сараа'), scheduled_at: '2026-09-24T18:00:00Z' }],
         }));
         expect(report).toMatchObject({ date: '2026-09-24', to: '2026-09-30', days: 7, weekday: '7 өдөр', completed: null, completedDays: 3 });
@@ -224,6 +264,7 @@ describe('date range report', () => {
         expect(text).toContain('1. 09.25 Сараа');
         expect(text).toContain('2. 09.30 Бат — Б2-58м2');
         expect(text).toContain('Баталгаажсан өдөр: 3/7');
+        expect(text).toContain('Шинэ лид: Нийт 2 лид бүртгэгдсэн (Хон 2).');
         expect(text).not.toContain('Тайлан хийж гүйцэтгэсэн');
     });
 
@@ -256,6 +297,8 @@ describe('formatDailyReportText', () => {
             '',
             'Менежерийн чат: Нийт 4 чат харилцаа үүсгэсэн.',
             '  Хувь чат: 4 (Чан 2, Хон 2)',
+            '',
+            'Шинэ лид: Нийт 0 лид бүртгэгдсэн.',
             '',
             'Уулзалт: 3 (Чан 1, Хон 2)',
             'Шинэ уулзалт - 3',

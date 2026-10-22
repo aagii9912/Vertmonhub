@@ -19,7 +19,7 @@ const input = (patch: Partial<BuildDailyReportInput> = {}): BuildDailyReportInpu
         { id: 'p1', manager: KHON, type: 'new_customer', customer: 'Болд', scheduled_at: '2026-10-19T03:00:00.000Z' },
         { id: 'p2', manager: CHAN, type: 'repeat_customer', customer: 'Дорж', scheduled_at: '2026-10-19T11:00:00.000Z' },
     ],
-    notes: {}, completed: null, only: null, ...patch,
+    leads: [], notes: {}, completed: null, only: null, ...patch,
 });
 const actions = (patch: Partial<DailyMeetingActions> = {}): DailyMeetingActions => ({
     onAdd: vi.fn(), onComplete: vi.fn(), reassign: null, busy: null, isUpcoming: meeting => meeting.id === 'p2', completeUnassigned: false, ...patch,
@@ -106,6 +106,23 @@ describe('DailyReportDocument', () => {
         expect(button().parentElement?.getAttribute('title')).toContain('Хариуцагчгүй');
         rerender(<DailyReportDocument report={report} meetings={actions({ completeUnassigned: true })} />);
         expect(button().disabled).toBe(false);
+    });
+
+    it('shows the day’s new leads by source and manager, read-only, in the summary as well', () => {
+        const report = buildDailyReport(input({ leads: [
+            { manager: CHAN, source: 'facebook_ads' }, { manager: KHON, source: 'facebook_ads' }, { manager: null, source: 'website' },
+        ] }));
+        render(<DailyReportDocument report={report} editing={{ editable: new Set([CHAN, KHON]), own: null, draft: {}, onCell: vi.fn(), notes: null, onNotes: vi.fn() }} />);
+        const region = screen.getByRole('region', { name: 'Шинэ лид' });
+        expect(within(region).queryByRole('spinbutton')).toBeNull();
+        expect(within(region).getByRole('columnheader', { name: '—' }).getAttribute('title')).toBe('Оноогдоогүй');
+        const facebook = within(region).getByRole('rowheader', { name: 'Facebook Ads' }).closest('tr')!;
+        expect([...facebook.querySelectorAll('td')].map(cell => cell.textContent)).toEqual(['1', '1', '', '2']);
+        expect(within(region).getByRole('rowheader', { name: 'Вэбсайт' })).toBeTruthy();
+        // Хариуцагчгүй багана зөвхөн тоотой хүснэгтэд — дуудлагын хүснэгтэд хоосон «—» гаргахгүй.
+        expect(within(screen.getByRole('region', { name: 'Төслийн утас' })).queryByRole('columnheader', { name: '—' })).toBeNull();
+        const summary = screen.getByRole('region', { name: 'Товч дүгнэлт' });
+        expect(within(summary).getByText('Шинэ лид').nextElementSibling?.textContent).toBe('Нийт 3 лид бүртгэгдсэн.');
     });
 
     it('dates an author or history time that falls on another day than the report', () => {
