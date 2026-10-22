@@ -119,6 +119,8 @@ function SalesVsTarget({ data, loading, className, month }: { data?: ReturnType<
                         <span className="num text-[34px] font-semibold leading-none tracking-[-0.02em] text-foreground">{s.actual === null ? '—' : `${formatMNTShort(s.actual)}${s.lowerBound ? '+' : ''}`}</span>
                         {s.target !== null && s.target > 0 ? (
                             <span className="text-[13px] text-muted-foreground">Зорилт {formatMNTShort(s.target)}{s.attainmentPct !== null && <> · <b className={cn('font-semibold', s.attainmentPct >= 100 ? 'text-status-success' : 'text-foreground')}>{s.attainmentPct}%{s.lowerBound ? '+' : ''}</b></>}</span>
+                        ) : data?.missing?.includes('sales') ? (
+                            <span role="alert" className="text-[12.5px] text-status-pending">Борлуулалт, зорилтыг уншиж чадсангүй</span>
                         ) : (
                             <Link href="/admin/sales-targets" className="text-[12.5px] text-brand-strong hover:underline">Сарын зорилт тохируулах</Link>
                         )}
