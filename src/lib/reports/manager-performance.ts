@@ -1,15 +1,18 @@
 /**
  * Менежерийн гүйцэтгэл (manager_performance view + багийн зорилт) — API route ба AI tool
  * (`get_manager_performance`) хоёулаа энд дамжина.
+ *
+ * Менежерийн жагсаалт идэвхтэй роостероор; багийн төлөвлөгөөний биелэлт төслийн хэмжээнд (`loadPlanPerformance`-ийн
+ * «Нийт» гэрээний дүн — Director, «Төлөвлөгөөний биелэлт»-тэй нэг тоо). Тодорхойгүй бол null (0 биш), огноогүй гэрээтэй бол «+».
  */
 
 import { ubParts } from '@/lib/utils/date';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getTeamTargets, getMonthlyActualsByManager, sumYear } from '@/lib/sales/targets';
+import { loadPlanPerformance } from '@/lib/sales/plan-performance-load';
+import { logger } from '@/lib/utils/logger';
+import { emptyTotals, type ManagerPerformanceTotals } from './manager-performance-totals';
 
-export function emptyTotals() {
-    return { managers: 0, contracts: 0, closed: 0, sales: 0, collected: 0, teamTarget: 0, teamActual: 0, teamAttainmentPct: 0 };
-}
+export { emptyTotals, type ManagerPerformanceTotals };
 
 export async function getManagerPerformance(supabase: SupabaseClient, shopId: string) {
     const { data, error } = await supabase
@@ -21,14 +24,15 @@ export async function getManagerPerformance(supabase: SupabaseClient, shopId: st
 
     // Багийн жилийн төлөвлөгөө + идэвхтэй менежерийн бүртгэл
     const year = ubParts().year;
-    const [teamTargets, byManager, rosterRes] = await Promise.all([
-        getTeamTargets(supabase, shopId, year),
-        getMonthlyActualsByManager(supabase, shopId, year),
+    const [plan, rosterRes] = await Promise.all([
+        loadPlanPerformance(supabase, { shopId, year, canReadFinance: false }).catch((error: unknown) => {
+            logger.warn('[manager-performance] plan performance unavailable', { message: error instanceof Error ? error.message : String(error) });
+            return null;
+        }),
         supabase.from('sales_managers').select('name, is_active').eq('shop_id', shopId),
     ]);
     if (rosterRes.error) throw rosterRes.error;
     const activeRoster = (rosterRes.data || []).filter((r) => r.is_active);
-    const activeNames = new Set(activeRoster.map((r) => r.name));
     const performanceByName = new Map((data || []).map((m) => [m.sales_manager, m]));
 
     const managers = activeRoster.map((r) => {
@@ -46,13 +50,8 @@ export async function getManagerPerformance(supabase: SupabaseClient, shopId: st
         };
     }).sort((a, b) => b.total_sales - a.total_sales || a.sales_manager.localeCompare(b.sales_manager, 'mn'));
 
-    // Багийн гүйцэтгэл (энэ жил) = идэвхтэй менежерүүдийн нийлбэр
-    let teamActualYear = 0;
-    for (const [name, mm] of byManager) {
-        if (activeNames.has(name)) teamActualYear += sumYear(mm.actuals);
-    }
-    const teamTargetYear = sumYear(teamTargets);
-
+    // Багийн гүйцэтгэл (энэ он) = төслийн төлөвлөгөөнд хамаарах бүх гэрээ, аль ч менежер.
+    const ytd = plan?.ytd.total.metrics.contract;
     const totals = managers.reduce(
         (acc, m) => {
             acc.managers += 1;
@@ -63,11 +62,14 @@ export async function getManagerPerformance(supabase: SupabaseClient, shopId: st
             return acc;
         },
         {
-            managers: 0, contracts: 0, closed: 0, sales: 0, collected: 0,
-            teamTarget: teamTargetYear,
-            teamActual: teamActualYear,
-            teamAttainmentPct: teamTargetYear > 0 ? Math.round((teamActualYear / teamTargetYear) * 100) : 0,
-        }
+            ...emptyTotals(),
+            teamTarget: ytd?.plan ?? null,
+            teamActual: ytd?.actual ?? null,
+            teamLowerBound: !!ytd?.lowerBound,
+            teamAttainmentPct: ytd?.pct ?? null,
+            teamYearTarget: ytd?.yearPlan ?? null,
+            teamYearPct: ytd?.yearPct ?? null,
+        } satisfies ManagerPerformanceTotals,
     );
 
 

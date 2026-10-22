@@ -12,6 +12,8 @@ import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { formatMNTShort } from '@/lib/utils/currency';
 import { ubDateStr } from '@/lib/utils/date';
+import { emptyTotals, type ManagerPerformanceTotals } from '@/lib/reports/manager-performance-totals';
+import { planPctText } from '@/lib/sales/plan-performance';
 
 interface ManagerRow {
     sales_manager: string;
@@ -23,19 +25,10 @@ interface ManagerRow {
     collection_rate_pct: number;
     unique_customers: number;
 }
-interface Totals {
-    managers: number;
-    contracts: number;
-    closed: number;
-    sales: number;
-    collected: number;
-    teamTarget: number;
-    teamActual: number;
-    teamAttainmentPct: number;
-}
+type Totals = ManagerPerformanceTotals;
 
 const NO_MANAGERS: ManagerRow[] = [];
-const EMPTY_TOTALS: Totals = { managers: 0, contracts: 0, closed: 0, sales: 0, collected: 0, teamTarget: 0, teamActual: 0, teamAttainmentPct: 0 };
+const EMPTY_TOTALS: Totals = emptyTotals();
 
 export default function ManagerPerformancePage() {
     const { data, error, isFetching, refetch } = useDashboardQuery<{ managers?: ManagerRow[]; totals?: Totals }>(
@@ -145,8 +138,8 @@ export default function ManagerPerformancePage() {
                 <StatTile label="Цуглуулсан" value={formatMNTShort(totals.collected)} icon={<DollarSign className="w-4 h-4" />} accent="warning" helper={totals.sales > 0 ? `${Math.round((totals.collected / totals.sales) * 100)}%` : undefined} />
             </StatBar>
 
-            {/* Багийн жилийн төлөвлөгөө (admin-аас тохируулсан үед) */}
-            {totals.teamTarget > 0 && (
+            {/* Багийн жилийн төлөвлөгөө (admin-аас тохируулсан үед) — төслийн төлөвлөгөөнд хамаарах бүх гэрээ */}
+            {((totals.teamTarget ?? 0) > 0 || (totals.teamYearTarget ?? 0) > 0) && (
                 <Card className="mb-4 border-brand/30 bg-brand-soft/40">
                     <div className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between md:p-5">
                         <div className="flex items-center gap-3">
@@ -156,20 +149,16 @@ export default function ManagerPerformancePage() {
                             <div>
                                 <p className="text-sm font-semibold text-foreground">Багийн {new Date().getFullYear()} оны төлөвлөгөө</p>
                                 <p className="text-xs text-muted-foreground">
-                                    Гүйцэтгэл {formatMNTShort(totals.teamActual)} / {formatMNTShort(totals.teamTarget)} (идэвхтэй менежерүүд)
+                                    Гүйцэтгэл {totals.teamActual === null ? '—' : `${formatMNTShort(totals.teamActual)}${totals.teamLowerBound ? '+' : ''}`}
+                                    {' '}/ {totals.teamTarget === null ? '—' : formatMNTShort(totals.teamTarget)} (он эхнээс, төслийн бүх гэрээ)
                                 </p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-3 md:w-64">
-                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-3">
-                                <div
-                                    className={`h-full rounded-full ${totals.teamAttainmentPct >= 100 ? 'bg-status-success' : totals.teamAttainmentPct >= 60 ? 'bg-brand' : 'bg-status-pending'}`}
-                                    style={{ width: `${Math.min(100, totals.teamAttainmentPct)}%` }}
-                                />
-                            </div>
-                            <span className={`text-lg font-bold tabular-nums ${totals.teamAttainmentPct >= 100 ? 'text-status-success' : 'text-brand-strong'}`}>
-                                {totals.teamAttainmentPct}%
-                            </span>
+                        <div className="flex items-center gap-4 text-sm">
+                            <span className="text-muted-foreground">Он эхнээс <b className={`text-lg font-bold tabular-nums ${(totals.teamAttainmentPct ?? 0) >= 100 ? 'text-status-success' : 'text-brand-strong'}`}>
+                                {planPctText(totals.teamAttainmentPct, totals.teamLowerBound)}</b></span>
+                            <span className="text-muted-foreground">Жилийн төлөвлөгөөнөөс <b className="text-lg font-bold tabular-nums text-foreground">
+                                {planPctText(totals.teamYearPct, totals.teamLowerBound)}</b></span>
                         </div>
                     </div>
                 </Card>

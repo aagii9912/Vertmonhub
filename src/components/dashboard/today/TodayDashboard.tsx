@@ -16,6 +16,7 @@ import { openQuickCreate } from '@/lib/navigation/commandPalette';
 import { useMyStats, type MyStatsTask, type MyStatsLead } from '@/hooks/useMyStats';
 import { useManagerActivity } from '@/hooks/useManagerActivity';
 import { attainmentTone, type ManagerActivity } from '@/lib/sales/activity';
+import { planPctText } from '@/lib/sales/plan-performance';
 import { Panel, Progress, Avatar, Pill, GhostButton, EmptyRow, Skeleton } from '@/components/dashboard/v2/primitives';
 import { useRegisterAiContext } from '@/lib/ai/context';
 
@@ -251,17 +252,18 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                                 </div>
                                 {missingTargets || missingSales ? (
                                     <div className="text-[12px] text-muted-foreground">{missingTargets ? 'Сарын зорилтын мэдээлэл түр боломжгүй' : 'Зорилтын гүйцэтгэлийг тооцох мэдээлэл дутуу байна'}</div>
-                                ) : month && month.target > 0 ? (
-                                    <div className="text-[12px] text-muted-foreground">
+                                ) : month && month.target !== null && month.target > 0 ? (
+                                    <div className="text-[12px] text-muted-foreground" title="Багийн гүйцэтгэл — төслийн төлөвлөгөөнд хамаарах бүх гэрээ">
                                         Зорилт {formatMNTShort(month.target)} ·{' '}
-                                        <span className={cn('font-medium', month.actual >= month.target ? 'text-status-success' : 'text-foreground')}>
-                                            {Math.round((month.actual / month.target) * 100)}%
+                                        <span className={cn('font-medium', month.pct !== null && month.pct >= 100 ? 'text-status-success' : 'text-foreground')}>
+                                            {planPctText(month.pct, month.lowerBound)}
                                         </span>
                                     </div>
                                 ) : (
                                     <div className="text-[12px] text-muted-foreground">Сарын зорилт тохируулаагүй</div>
                                 )}
-                                {!missingTargets && !missingSales && month && month.target > 0 && <Progress value={month.actual} max={month.target} className="mt-2" />}
+                                {!missingTargets && !missingSales && month && month.target !== null && month.target > 0 && month.actual !== null
+                                    && <Progress value={month.actual} max={month.target} className="mt-2" />}
                             </div>
                             <div className="grid grid-cols-3 gap-2">
                                 <Stat label="идэвхтэй гэрээ" value={missing.includes('contracts') ? '—' : data.kpis.activeContracts} />
