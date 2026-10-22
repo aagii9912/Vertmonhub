@@ -225,21 +225,33 @@ test('monthly block table totals, save and reload preserve zero and blank; stale
     const cashActual = page.getByLabel(`${year} оны 1-р сар Б1 блок Орсон мөнгөний гүйцэтгэл`, { exact: true });
     const b2Plan = page.getByLabel(`${year} оны 1-р сар Б2 блок Гэрээний төлөвлөгөө`, { exact: true });
     const parkingPlan = page.getByLabel(`${year} оны 1-р сар Зогсоол Гэрээний төлөвлөгөө`, { exact: true });
+    const countPlan = page.getByLabel(`${year} оны 1-р сар Б1 блок Гэрээний тооны төлөвлөгөө`, { exact: true });
+    const countActual = page.getByLabel(`${year} оны 1-р сар Б1 блок Гэрээний тооны гүйцэтгэл`, { exact: true });
     await contractPlan.fill('100000'); await cashPlan.fill('0'); await contractActual.fill('90000'); await cashActual.fill('');
     await b2Plan.fill('200000'); await parkingPlan.fill('30000');
+    await countPlan.fill('1.5');
+    await expect(countPlan).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByRole('button', { name: 'Төлөвлөгөө, гүйцэтгэл хадгалах', exact: true })).toBeDisabled();
+    await countPlan.fill('100'); await countActual.fill('100');
+    await expect(page.getByLabel(`${year} оны 1-р сар Б1 блок Гэрээний тоо гүйцэтгэлийн хувь`, { exact: true })).toHaveText('100%');
+    await expect(page.getByLabel(`${year} оны 1-р сар Б1 блок Гэрээний дүн гүйцэтгэлийн хувь`, { exact: true })).toHaveText('90%');
+    await expect(page.getByLabel(`${year} оны 1-р сар Нийт Гэрээний тооны төлөвлөгөө`, { exact: true })).toContainText('100');
+    await expect(page.getByLabel(`${year} оны 1-р сар Нийт Гэрээний тоо гүйцэтгэлийн хувь`, { exact: true })).toHaveText('100%');
     await expect(page.getByLabel(`${year} оны 1-р сар Нийт Гэрээний төлөвлөгөө`, { exact: true })).toContainText('330,000');
     await page.getByRole('button', { name: 'Төлөвлөгөө, гүйцэтгэл хадгалах', exact: true }).click();
     await expect(contractPlan).toHaveValue('100,000'); await expect(cashPlan).toHaveValue('0');
     expect(state.monthlyWrites[0]).toEqual({ shopId, year, months: [{ month: 1, expectedRevision: 0,
         block_amounts: {
-            b1: { target_amount: 100000, cashflow_target_amount: 0, manual_contract_actual_amount: 90000, manual_cashflow_actual_amount: null },
+            b1: { target_amount: 100000, cashflow_target_amount: 0, manual_contract_actual_amount: 90000, manual_cashflow_actual_amount: null,
+                contract_count_target: 100, manual_contract_count_actual: 100 },
             b2: { target_amount: 200000 }, parking: { target_amount: 30000 },
         } }] });
     await page.reload();
     await expect(cashPlan).toHaveValue('0'); await expect(cashActual).toHaveValue('');
-    await expect(b2Plan).toHaveValue('200,000'); await expect(parkingPlan).toHaveValue('30,000');
-    await expect(page.getByRole('columnheader', { name: 'Гэрээний дүн', exact: true })).toHaveAttribute('colspan', '2');
-    await expect(page.getByRole('columnheader', { name: 'Мөнгөн урсгал', exact: true })).toHaveAttribute('colspan', '2');
+    await expect(b2Plan).toHaveValue('200,000'); await expect(parkingPlan).toHaveValue('30,000'); await expect(countPlan).toHaveValue('100');
+    for (const group of ['Гэрээний тоо', 'Гэрээний дүн', 'Мөнгөн урсгал']) {
+        await expect(page.getByRole('columnheader', { name: group, exact: true })).toHaveAttribute('colspan', '3');
+    }
     await page.screenshot({ path: info.outputPath('monthly-blocks-dark.png'), fullPage: true });
     await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
     await page.screenshot({ path: info.outputPath('monthly-blocks-light.png'), fullPage: true });
