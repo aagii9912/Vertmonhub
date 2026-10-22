@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     contract: {} as Record<string, unknown>,
     payments: {} as Record<string, unknown>,
     refetchContract: vi.fn(), refetchPayments: vi.fn(),
-    update: vi.fn(), add: vi.fn(), confirm: vi.fn(), toastError: vi.fn(), toastSuccess: vi.fn(),
+    update: vi.fn(), add: vi.fn(), confirm: vi.fn(), toastError: vi.fn(), toastSuccess: vi.fn(), setOrderDate: vi.fn(),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, shop: { id: 'shop-a' } }) }));
@@ -19,6 +19,7 @@ vi.mock('@/hooks/useContracts', () => ({
     useContractTransfers: () => ({ data: { transfers: [] }, isError: false }),
     useAddPayment: () => ({ mutateAsync: mocks.add, isPending: false }),
     useUpdatePayment: () => ({ mutate: mocks.update, isPending: false }),
+    useSetContractOrderDate: () => ({ mutate: mocks.setOrderDate, isPending: false }),
 }));
 vi.mock('@/hooks/useLeads', () => ({ useLeadDetail: () => ({ data: undefined }) }));
 vi.mock('@/lib/navigation/pageTitle', () => ({ usePageTitle: vi.fn() }));
@@ -158,5 +159,67 @@ describe('ContractDetail payment writes', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Төлбөр хадгалах' }));
         expect(mocks.toastError).toHaveBeenCalledWith('Зөв төлөх дүн оруулна уу');
         expect(mocks.add).not.toHaveBeenCalled();
+    });
+});
+
+describe('ContractDetail HUB fields', () => {
+    const hub = { ...contract, contract_number: null, unit_label: 'Б1-19 (01)', block_name: 'Б1', unit_number: '0', legacy_unit_number: '19', customer_name: 'Болд.Батаа', customer_first_name: 'Болд', customer_last_name: 'Батаа', payment_condition: 'Тусгай', overdue_amount: 397_977_420, overdue_as_of: '2026-10-22', order_date: '2026-10-05', contract_date: '2026-10-05', paid_amount: null, balance: null };
+    const field = (label: string) => screen.getByText(label, { selector: 'span' }).nextElementSibling as HTMLElement;
+
+    it('shows the order date, payment condition, overdue amount with its file date, and the split names', () => {
+        mocks.contract = loaded({ contract: hub });
+        render(<ContractDetail id="contract-1" />);
+        expect(field('Захиалга өгсөн огноо')).toHaveTextContent('2026-10-05');
+        expect(field('Захиалгын нөхцөл')).toHaveTextContent('Тусгай');
+        expect(field('Төлбөр хоцролт')).toHaveTextContent('397,977,420₮ · 2026-10-22-ны байдлаар');
+        expect(field('Нэр')).toHaveTextContent('Болд');
+        expect(field('Овог')).toHaveTextContent('Батаа');
+        // «Тоот»: шинэ тоот '0' биш хуучин тоот.
+        expect(field('Блок / Тоот')).toHaveTextContent('Б1 / 19');
+        expect(screen.queryByRole('button', { name: /Огноо оруулах/ })).not.toBeInTheDocument();
+    });
+
+    it('shows «—» for an unknown overdue amount and price, never 0₮', () => {
+        mocks.contract = loaded({ contract: { ...hub, overdue_amount: null, overdue_as_of: null, total_price: null } });
+        render(<ContractDetail id="contract-1" />);
+        expect(field('Төлбөр хоцролт')).toHaveTextContent(/^—$/);
+        expect(field('Нийт үнэ')).toHaveTextContent(/^—$/);
+    });
+
+    it('lets a writer enter a missing order date once, after confirming', async () => {
+        mocks.contract = loaded({ contract: { ...hub, order_date: null, contract_date: null } });
+        render(<ContractDetail id="contract-1" />);
+        fireEvent.click(screen.getByRole('button', { name: /Огноо оруулах/ }));
+        const input = screen.getByLabelText('Захиалга өгсөн огноо');
+        fireEvent.change(input, { target: { value: '2026-09-15' } });
+
+        mocks.confirm.mockResolvedValueOnce(false);
+        fireEvent.click(screen.getByRole('button', { name: 'Огноо хадгалах' }));
+        await waitFor(() => expect(mocks.confirm).toHaveBeenCalledOnce());
+        const [options] = mocks.confirm.mock.calls[0] as [{ title: string; description: string }];
+        expect(options.title).toContain('2026-09-15');
+        expect(options.description).toContain('Гэрээний огноо мөн энэ өдөр болж');
+        expect(mocks.setOrderDate).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Огноо хадгалах' }));
+        await waitFor(() => expect(mocks.setOrderDate).toHaveBeenCalledWith('2026-09-15', expect.any(Object)));
+    });
+
+    it('refuses a future order date before asking', async () => {
+        mocks.contract = loaded({ contract: { ...hub, order_date: null } });
+        render(<ContractDetail id="contract-1" />);
+        fireEvent.click(screen.getByRole('button', { name: /Огноо оруулах/ }));
+        fireEvent.change(screen.getByLabelText('Захиалга өгсөн огноо'), { target: { value: '2999-01-01' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Огноо хадгалах' }));
+        expect(mocks.toastError).toHaveBeenCalledWith('Захиалга өгсөн огноо өнөөдрөөс хойш байж болохгүй');
+        expect(mocks.confirm).not.toHaveBeenCalled();
+    });
+
+    it('does not offer the order-date entry to a read-only user', () => {
+        mocks.user = reader;
+        mocks.contract = loaded({ contract: { ...hub, order_date: null } });
+        render(<ContractDetail id="contract-1" />);
+        expect(field('Захиалга өгсөн огноо')).toHaveTextContent(/^—$/);
+        expect(screen.queryByRole('button', { name: /Огноо оруулах/ })).not.toBeInTheDocument();
     });
 });

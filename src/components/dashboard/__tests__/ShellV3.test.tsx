@@ -141,7 +141,7 @@ describe('CommandPalette v3', () => {
         fireEvent.change(screen.getByPlaceholderText('Хуудас, лид, гэрээ хайх…'), { target: { value: '9911' } });
         await waitFor(() => expect(screen.getByText('VM-2026-001')).toBeInTheDocument());
         expect(state.json).toHaveBeenCalledWith('/api/dashboard/leads?q=9911&page=1&pageSize=5');
-        expect(state.json).toHaveBeenCalledWith('/api/dashboard/contracts?search=9911&page=1&pageSize=5');
+        expect(state.json).toHaveBeenCalledWith('/api/dashboard/contracts?search=9911&page=1&pageSize=5&stats=0');
         // Нэргүй лид шошгоор (leadDisplayName), хэзээ ч хоосон биш.
         expect(screen.getByText(ANONYMOUS_LEAD_LABEL)).toBeInTheDocument();
         fireEvent.click(screen.getByText('VM-2026-001'));

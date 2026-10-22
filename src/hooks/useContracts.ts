@@ -8,23 +8,62 @@ import type { TransferContractInput } from '@/lib/contracts/transfer';
 
 export type ContractRow = PropertyContract;
 
+/**
+ * Жагсаалтын статистик (`lib/contracts/summary.ts`, цуцалсныг мөнгөн дүнд оруулахгүй).
+ * Шинэ талбарууд optional — хуучин хариу (e2e mock) ч зөв харагдана.
+ */
 export interface ContractStats {
     total: number;
     closed: number;
     active: number;
+    cancelled?: number;
+    transferred?: number;
     total_sales: number;
+    /** Гэрээний нөхцлөөр төлөх урьдчилгаа (орсон мөнгө биш). */
+    prepayment_due?: number;
+    /** Төлбөр хоцролт ₮ (сүүлийн HUB файлын огноотой мөр); мэдэгдэхгүй бол null. */
+    overdue_amount?: number | null;
+    overdue_as_of?: string | null;
+    overdue_count: number;
+    /** Хоцролт нь өмнөх файлынх (нийлбэрт ороогүй). */
+    overdue_stale?: number;
+    /** Системийн (cron) хоногоор хоцорсон гэрээ. */
+    overdue_days_count?: number;
     total_paid: number;
     total_balance: number;
-    overdue_count: number;
     /** Төлсөн дүн тодорхойгүй гэрээний тоо (нийлбэрт ороогүй). */
     unknown_paid?: number;
+    area?: number;
+}
+
+export interface ContractListImportInfo {
+    report_date: string;
+    file_name: string | null;
+    row_count: number;
+    not_in_file?: number;
+}
+
+export interface ContractFacets {
+    blocks: string[];
+    paymentConditions: string[];
+    productTypes: string[];
 }
 
 export interface ContractsListParams {
     search?: string;
     status?: string;
     manager?: string;
+    productType?: string;
+    block?: string;
+    paymentCondition?: string;
     overdue?: boolean;
+    /** Огноогүй амьд гэрээ (сарын гүйцэтгэлд ороогүй). */
+    undated?: boolean;
+    /** Сүүлийн HUB файлд байгаагүй гэрээ. */
+    notInLatest?: boolean;
+    /** «Захиалга өгсөн огноо» (YYYY-MM-DD). */
+    from?: string;
+    to?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     page: number;
@@ -33,25 +72,44 @@ export interface ContractsListParams {
 
 export interface ContractsListResult {
     contracts: ContractRow[];
+    /** Төслийн бүх гэрээний статистик (шүүлтгүй). */
     stats: ContractStats;
+    /** Шүүсэн гэрээний нийлбэр (хүснэгтийн хөл). */
+    footer?: ContractStats;
+    latestImport?: ContractListImportInfo | null;
+    facets?: ContractFacets;
     pagination: { total: number; page: number; pageSize: number; totalPages: number; hasMore: boolean };
+}
+
+const selected = (value?: string) => !!value && value !== 'all';
+
+export function contractsListSearch(p: ContractsListParams): string {
+    const sp = new URLSearchParams();
+    if (p.search) sp.set('search', p.search);
+    if (selected(p.status)) sp.set('status', p.status!);
+    if (selected(p.manager)) sp.set('manager', p.manager!);
+    if (selected(p.productType)) sp.set('productType', p.productType!);
+    if (selected(p.block)) sp.set('block', p.block!);
+    if (selected(p.paymentCondition)) sp.set('paymentCondition', p.paymentCondition!);
+    if (p.overdue) sp.set('overdue', '1');
+    if (p.undated) sp.set('undated', '1');
+    if (p.notInLatest) sp.set('notInLatest', '1');
+    if (p.from) sp.set('from', p.from);
+    if (p.to) sp.set('to', p.to);
+    if (p.sortBy) sp.set('sortBy', p.sortBy);
+    if (p.sortOrder) sp.set('sortOrder', p.sortOrder);
+    sp.set('page', String(p.page));
+    sp.set('pageSize', String(p.pageSize));
+    return sp.toString();
 }
 
 export function useContractsList(p: ContractsListParams) {
     const { shop } = useAuth();
     const shopId = shop?.id;
-    const sp = new URLSearchParams();
-    if (p.search) sp.set('search', p.search);
-    if (p.status && p.status !== 'all') sp.set('status', p.status);
-    if (p.manager && p.manager !== 'all') sp.set('manager', p.manager);
-    if (p.overdue) sp.set('overdue', '1');
-    if (p.sortBy) sp.set('sortBy', p.sortBy);
-    if (p.sortOrder) sp.set('sortOrder', p.sortOrder);
-    sp.set('page', String(p.page));
-    sp.set('pageSize', String(p.pageSize));
+    const search = contractsListSearch(p);
     return useQuery<ContractsListResult>({
         queryKey: ['contracts', 'list', shopId, p],
-        queryFn: () => dashboardJson<ContractsListResult>(`/api/dashboard/contracts?${sp.toString()}`),
+        queryFn: () => dashboardJson<ContractsListResult>(`/api/dashboard/contracts?${search}`),
         enabled: !!shopId,
         staleTime: 30_000,
         placeholderData: (prev) => prev,
@@ -67,6 +125,20 @@ export function useContract(id: string | null) {
         staleTime: 15_000,
         // ContractDetail алдааг (404 «олдсонгүй» гэх мэт) «Дахин оролдох»-той өөрөө харуулна.
         meta: { inlineError: true },
+    });
+}
+
+/** Гэрээний огноо өөрчлөгдвөл сар, долоо хоногийн тайлан, төлөвлөгөөний биелэлт ч шинэчлэгдэнэ. */
+const CONTRACT_DATE_READERS = ['contracts', 'director', 'operations-report', 'weekly-sales', 'kpi-report', 'my-stats', 'plan-performance', 'admin-sales-targets'];
+
+/** «Огноо оруулах»: захиалга өгсөн огноо хоосон гэрээнд нэг удаа (PATCH `order_date`; гэрээний огноо хоосон бол мөн бөглөнө). */
+export function useSetContractOrderDate(contractId: string) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (orderDate: string) => dashboardMutate<{ contract: ContractRow }>(`/api/dashboard/contracts/${contractId}`, 'PATCH', { order_date: orderDate }),
+        onSettled: () => {
+            for (const key of CONTRACT_DATE_READERS) void qc.invalidateQueries({ queryKey: [key] });
+        },
     });
 }
 

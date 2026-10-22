@@ -2,15 +2,16 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ArrowLeftRight, Download, Plus, Check, Loader2, X, FileText, Phone } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, CalendarPlus, Download, Plus, Check, Loader2, X, FileText, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
 import { formatShortDate, formatTime, ubDateStr } from '@/lib/utils/date';
 import { usePageTitle } from '@/lib/navigation/pageTitle';
-import { useContract, useContractTransfers, usePayments, useAddPayment, useUpdatePayment, type PaymentRow } from '@/hooks/useContracts';
+import { useContract, useContractTransfers, usePayments, useAddPayment, useUpdatePayment, useSetContractOrderDate, type ContractRow, type PaymentRow } from '@/hooks/useContracts';
 import { CONTRACT_STATUS_META, CONTRACT_TRANSFER_KIND_META, PAYMENT_STATUS_META, PAYMENT_METHOD_LABEL } from '@/lib/contracts/labels';
 import { isTransferableContract, latestTransferDate, summarizeContractTransfers } from '@/lib/contracts/transfer';
+import { contractUnitNumber } from '@/lib/contracts/list-format';
 import { useAuth } from '@/contexts/AuthContext';
 import { ContractTransferDialog } from '@/components/contracts/ContractTransferDialog';
 import type { ContractTransfer } from '@/types/property';
@@ -93,15 +94,20 @@ export function ContractDetail({ id }: { id: string }) {
                 <div className="flex min-w-0 flex-col gap-4 xl:col-span-2">
                     <Panel title="Ерөнхий" bodyClassName="grid grid-cols-2 gap-x-6 gap-y-3 p-4 md:grid-cols-3">
                         <F label="Харилцагч">{c.lead_id ? <Link href={`/dashboard/leads?lead=${c.lead_id}`} className="text-brand-strong hover:underline">{customer}</Link> : customer}</F>
+                        <F label="Нэр">{c.customer_first_name || <span className="text-muted-foreground">—</span>}</F>
+                        <F label="Овог">{c.customer_last_name || <span className="text-muted-foreground">—</span>}</F>
                         <F label="Утас"><span className="mono-label">{phone || '—'}</span>{phone && <a href={`tel:${phone.replace(/\D/g, '')}`} className="ml-1 inline-flex text-brand-strong" aria-label="Залгах"><Phone className="h-3.5 w-3.5" /></a>}</F>
                         <F label="Регистр"><span className="mono-label">{c.customer_registration || '—'}</span></F>
-                        <F label="Блок / Тоот"><span className="mono-label">{[c.block_name, c.unit_number || c.legacy_unit_number].filter(Boolean).join(' / ') || '—'}</span></F>
+                        <F label="Блок / Тоот"><span className="mono-label">{[c.block_name, contractUnitNumber(c)].filter(Boolean).join(' / ') || '—'}</span></F>
                         <F label="Байр">{[c.unit_type || (c.rooms ? `${c.rooms} өрөө` : null), c.contracted_area ? `${c.contracted_area} м²` : null, c.floor ? `${c.floor}-р давхар` : null].filter(Boolean).join(' · ') || '—'}</F>
                         <F label="Менежер">{c.sales_manager ? <span className="inline-flex items-center gap-1.5"><Avatar name={c.sales_manager} />{c.sales_manager}</span> : '—'}</F>
-                        <F label="Нийт үнэ"><span className="num font-medium">{formatMNT(total)}</span></F>
+                        <F label="Захиалга өгсөн огноо" wrap><OrderDateField contract={c} canWrite={canWrite} /></F>
+                        <F label="Нийт үнэ"><span className="num font-medium">{formatMNT(c.total_price)}</span></F>
                         <F label="Урьдчилгаа"><span className="num">{c.prepayment_percent ? `${c.prepayment_percent}%` : c.prepayment_condition || '—'}{c.prepayment_due ? ` · ${formatMNT(c.prepayment_due)}` : ''}</span></F>
                         <F label="Урьдчилгаа төлсөн"><span className="num">{c.prepayment_paid === null || c.prepayment_paid === undefined ? '—' : formatMNT(c.prepayment_paid)}</span></F>
-                        {(c.payment_condition || c.sales_channel) && <F label="Нөхцөл / суваг">{[c.payment_condition, c.sales_channel].filter(Boolean).join(' · ')}</F>}
+                        <F label="Захиалгын нөхцөл">{c.payment_condition || <span className="text-muted-foreground">—</span>}</F>
+                        <F label="Төлбөр хоцролт"><OverdueAmount contract={c} /></F>
+                        {c.sales_channel && <F label="Суваг">{c.sales_channel}</F>}
                     </Panel>
 
                     <Panel title="Төлбөрийн график" sub={payments.length ? `${payments.length} төлөлт` : undefined}>
@@ -134,7 +140,7 @@ export function ContractDetail({ id }: { id: string }) {
                             <div className="overflow-x-auto">
                                 <table className="w-full text-[12.5px]">
                                     <thead>
-                                        <tr className="h-8 bg-surface-2 text-[11px] font-medium tracking-[0.03em] text-muted-foreground">
+                                        <tr className="h-8 bg-surface-2 text-xs font-medium tracking-[0.03em] text-muted-foreground">
                                             <th className="w-12 px-3 text-left font-medium">#</th>
                                             <th className="px-2 text-left font-medium">Огноо</th>
                                             <th className="px-2 text-right font-medium">Дүн</th>
@@ -199,7 +205,7 @@ export function ContractDetail({ id }: { id: string }) {
                                 .map((t, i) => (
                                     <li key={i} className="relative">
                                         <span className={cn('absolute -left-[21px] top-1.5 h-2 w-2 rounded-full', i === 0 ? 'bg-brand' : 'bg-border-strong')} />
-                                        <div className="mono-label text-[11px] text-muted-foreground">{formatShortDate(t.at)}{/T\d/.test(t.at) ? ` ${formatTime(t.at)}` : ''}{t.by ? ` · ${t.by}` : ''}</div>
+                                        <div className="mono-label text-xs text-muted-foreground">{formatShortDate(t.at)}{/T\d/.test(t.at) ? ` ${formatTime(t.at)}` : ''}{t.by ? ` · ${t.by}` : ''}</div>
                                         <div className="text-[13px] text-foreground">{t.title}</div>
                                     </li>
                                 ))}
@@ -231,13 +237,13 @@ function HolderHistory({ transfers, failed }: { transfers: ContractTransfer[]; f
                     return (
                         <li key={t.id} className="flex flex-col gap-1 border-t border-border pt-2.5 first:border-t-0 first:pt-0">
                             <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="mono-label text-[11px] text-muted-foreground">{formatShortDate(t.effective_date)}</span>
+                                <span className="mono-label text-xs text-muted-foreground">{formatShortDate(t.effective_date)}</span>
                                 <Pill tone={meta.tone}>{meta.label}</Pill>
                             </div>
                             <div className="text-[13px] text-foreground">{t.from_customer_name || '—'} → <span className="font-medium">{t.to_customer_name}</span></div>
-                            {t.to_registration && t.kind === 'transfer' && <div className="mono-label text-[11.5px] text-muted-foreground">{t.to_registration}</div>}
+                            {t.to_registration && t.kind === 'transfer' && <div className="mono-label text-xs text-muted-foreground">{t.to_registration}</div>}
                             {t.reason && <p className="text-[12px] text-fg-2">{t.reason}</p>}
-                            {t.created_by_name && <div className="text-[11px] text-muted-foreground">Бүртгэсэн: {t.created_by_name}</div>}
+                            {t.created_by_name && <div className="text-xs text-muted-foreground">Бүртгэсэн: {t.created_by_name}</div>}
                         </li>
                     );
                 })}
@@ -246,12 +252,74 @@ function HolderHistory({ transfers, failed }: { transfers: ContractTransfer[]; f
     );
 }
 
-function F({ label, children }: { label: string; children: React.ReactNode }) {
+function F({ label, children, wrap }: { label: string; children: React.ReactNode; wrap?: boolean }) {
     return (
         <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-[11.5px] text-muted-foreground">{label}</span>
-            <span className="truncate text-[13px] text-foreground">{children}</span>
+            <span className="text-xs text-muted-foreground">{label}</span>
+            <span className={cn('text-[13px] text-foreground', !wrap && 'truncate')}>{children}</span>
         </div>
+    );
+}
+
+/** «Төлбөр хоцролт» ₮ — HUB файлын огноогоор; бүртгээгүй бол «—» (0 биш). */
+function OverdueAmount({ contract: c }: { contract: ContractRow }) {
+    const raw = c.overdue_amount;
+    const amount = raw === null || raw === undefined || (raw as unknown) === '' ? null : Number(raw);
+    if (amount === null || !Number.isFinite(amount)) return <span className="text-muted-foreground">—</span>;
+    return (
+        <span className="num">
+            <span className={amount > 0 ? 'font-medium text-status-danger' : 'text-muted-foreground'}>{formatMNT(amount)}</span>
+            {c.overdue_as_of && <span className="text-muted-foreground"> · {c.overdue_as_of}-ны байдлаар</span>}
+        </span>
+    );
+}
+
+/**
+ * «Захиалга өгсөн огноо»: хоосон бол бичих эрхтэй хэрэглэгч нэг удаа оруулна (PATCH `order_date`; сервер
+ * хоосон үед л хүлээн авч, гэрээний огноо хоосон бол түүнийг ч бөглөнө). Оруулсны дараа энд солихгүй.
+ */
+function OrderDateField({ contract: c, canWrite }: { contract: ContractRow; canWrite: boolean }) {
+    const setOrderDate = useSetContractOrderDate(c.id);
+    const [editing, setEditing] = useState(false);
+    const [value, setValue] = useState('');
+    if (c.order_date) return <span className="num">{formatShortDate(c.order_date)}</span>;
+    if (!canWrite) return <span className="text-muted-foreground">—</span>;
+    if (!editing) {
+        return (
+            <span className="inline-flex flex-wrap items-center gap-1.5">
+                <span className="text-muted-foreground">—</span>
+                <GhostButton onClick={() => { setValue(''); setEditing(true); }} className="text-brand-strong hover:bg-brand-soft"><CalendarPlus className="h-3.5 w-3.5" /> Огноо оруулах</GhostButton>
+            </span>
+        );
+    }
+    const today = ubDateStr();
+    const save = async () => {
+        if (!value) { toast.error('Захиалга өгсөн огноог сонгоно уу'); return; }
+        if (value > today) { toast.error('Захиалга өгсөн огноо өнөөдрөөс хойш байж болохгүй'); return; }
+        const ok = await confirmToast({
+            title: `Захиалга өгсөн огноо ${value} гэж хадгалах уу?`,
+            description: c.contract_date
+                ? 'Хадгалсны дараа энд солихгүй.'
+                : 'Гэрээний огноо мөн энэ өдөр болж, сарын гүйцэтгэл ба төлөвлөгөөний биелэлтэд орно. Хадгалсны дараа энд солихгүй.',
+            confirmLabel: 'Хадгалах',
+            cancelLabel: 'Болих',
+        });
+        if (!ok) return;
+        setOrderDate.mutate(value, {
+            onSuccess: () => { toast.success('Захиалга өгсөн огноо хадгалагдлаа'); setEditing(false); },
+            onError: (e) => toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй'),
+        });
+    };
+    return (
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+            <input type="date" value={value} max={today} onChange={(e) => setValue(e.target.value)} aria-label="Захиалга өгсөн огноо"
+                className="num h-7 rounded-md border border-control bg-surface px-1.5 text-xs text-foreground" />
+            <button type="button" onClick={() => void save()} disabled={setOrderDate.isPending || !value} aria-label="Огноо хадгалах"
+                className="inline-flex h-7 items-center gap-1 rounded-md bg-brand px-2 text-xs font-medium text-brand-fg hover:bg-brand-hover disabled:opacity-60 focus-ring">
+                {setOrderDate.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Хадгалах
+            </button>
+            <button type="button" onClick={() => setEditing(false)} aria-label="Огноо оруулахыг болих" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 focus-ring"><X className="h-3.5 w-3.5" /></button>
+        </span>
     );
 }
 
@@ -306,7 +374,7 @@ function PaymentTr({ p, contractId, now, canWrite }: { p: PaymentRow; contractId
     return (
         <tr className="group h-9 border-b border-border last:border-b-0 hover:bg-surface-2/60">
             <td className="px-3 text-fg-2">{p.label || p.installment_number}</td>
-            <td className="mono-label px-2 text-foreground">{p.due_date}{p.status !== 'paid' && !overdue && daysTo >= 0 && daysTo <= 14 && <span className="ml-1.5 text-[11px] text-muted-foreground">{daysTo === 0 ? 'өнөөдөр' : `${daysTo} хоногийн дараа`}</span>}</td>
+            <td className="mono-label px-2 text-foreground">{p.due_date}{p.status !== 'paid' && !overdue && daysTo >= 0 && daysTo <= 14 && <span className="ml-1.5 text-xs text-muted-foreground">{daysTo === 0 ? 'өнөөдөр' : `${daysTo} хоногийн дараа`}</span>}</td>
             <td className="num px-2 text-right text-foreground">{formatMNT(Number(p.amount))}</td>
             <td className="num px-2 text-right text-fg-2">{Number(p.paid_amount) > 0 ? formatMNT(Number(p.paid_amount)) : '—'}</td>
             <td className="px-2"><Pill tone={meta.tone}>{meta.label}</Pill></td>
@@ -323,7 +391,7 @@ function PaymentTr({ p, contractId, now, canWrite }: { p: PaymentRow; contractId
                             {Object.entries(RECEIPT_KIND_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                         </select>
                     </div>
-                ) : Number(p.paid_amount) > 0 || p.paid_date ? <><span className="mono-label">{p.paid_date || '—'}</span><span className="ml-1 text-[11px] text-muted-foreground">{p.payment_method ? PAYMENT_METHOD_LABEL[p.payment_method] ?? p.payment_method : 'Хэлбэр тодорхойгүй'} · {p.receipt_kind ? RECEIPT_KIND_LABEL[p.receipt_kind] : 'Төрөл тодорхойгүй'}</span></> : <span className="mono-label">—</span>}
+                ) : Number(p.paid_amount) > 0 || p.paid_date ? <><span className="mono-label">{p.paid_date || '—'}</span><span className="ml-1 text-xs text-muted-foreground">{p.payment_method ? PAYMENT_METHOD_LABEL[p.payment_method] ?? p.payment_method : 'Хэлбэр тодорхойгүй'} · {p.receipt_kind ? RECEIPT_KIND_LABEL[p.receipt_kind] : 'Төрөл тодорхойгүй'}</span></> : <span className="mono-label">—</span>}
             </td>
             <td className="px-2 text-right">
                 {payable && (
@@ -371,7 +439,7 @@ function AddPaymentRow({ contractId, next, onDone }: { contractId: string; next:
             <td className="px-2"><input type="number" min="0" step="0.01" value={paid} onChange={(e) => setPaid(e.target.value)} inputMode="decimal" placeholder="0" className={cn(cls, 'num text-right')} aria-label="Төлсөн" /></td>
             <td className="px-2" colSpan={2}>
                 <div className="flex flex-col gap-1 py-1">
-                    {Number(paid) > 0 && <label className="text-[11px] text-muted-foreground">Төлсөн огноо<input type="date" value={receivedAt} onChange={e => setReceivedAt(e.target.value)} className={cls} aria-label="Төлсөн огноо" /></label>}
+                    {Number(paid) > 0 && <label className="text-xs text-muted-foreground">Төлсөн огноо<input type="date" value={receivedAt} onChange={e => setReceivedAt(e.target.value)} className={cls} aria-label="Төлсөн огноо" /></label>}
                     <select value={method} onChange={(e) => setMethod(e.target.value)} className={cls} aria-label="Хэлбэр">
                         {Object.entries(PAYMENT_METHOD_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                     </select>
