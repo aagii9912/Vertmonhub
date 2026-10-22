@@ -108,5 +108,8 @@ describe('HUB гэрээний жагсаалтын толь', () => {
         expect((ordered['Захиалга өгсөн огноо'] as Date).getDate()).toBe(12);
         expect(ordered).toMatchObject({ 'Тоот': 'A-3', 'Давхар': '5', 'Төлөв': 'Цуцлагдсан', 'Төлбөр хоцролт': null, 'Төрөл': 'Орон сууц' });
         expect(contractListRow({ product_type: 'other', contract_status: 'weird' })).toMatchObject({ 'Төрөл': 'other', 'Төлөв': 'weird', 'Захиалга өгсөн огноо': null });
+        // Тэгээр эхэлсэн тоот текстээр (дахин импортлоход «Б2-084» байр хэвээр олдоно).
+        expect(contractListRow({ legacy_unit_number: '084' })['Тоот']).toBe('084');
+        expect(contractListRow({ legacy_unit_number: '84' })['Тоот']).toBe(84);
     });
 });

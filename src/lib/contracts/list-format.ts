@@ -151,7 +151,10 @@ function dateCell(value: string | null | undefined): Date | null {
     return Number.isNaN(date.getTime()) ? null : date;
 }
 
-/** Экспортын нэг мөр: NULL → хоосон нүд, 0 → 0; «Тоот» цифр бол тоо; огноо Date. */
+/**
+ * Экспортын нэг мөр: NULL → хоосон нүд, 0 → 0; «Тоот» цифр бол тоо (тэгээр эхэлсэн «084» текстээр — эс бөгөөс
+ * дахин импортлоход «Б2-84» болж байр олдохгүй); огноо Date.
+ */
 export function contractListRow(contract: ContractListSource): Record<ContractListColumn, string | number | Date | null> {
     const unitNumber = contractUnitNumber(contract);
     const names = contractListNames(contract);
@@ -160,7 +163,7 @@ export function contractListRow(contract: ContractListSource): Record<ContractLi
     return {
         'Төрөл': type && Object.hasOwn(HUB_TYPE_LABEL, type) ? HUB_TYPE_LABEL[type] : type,
         'Блок': textOrNull(contract.block_name),
-        'Тоот': unitNumber && /^\d+$/.test(unitNumber) ? Number(unitNumber) : unitNumber,
+        'Тоот': unitNumber && /^(?:0|[1-9]\d*)$/.test(unitNumber) ? Number(unitNumber) : unitNumber,
         'Давхар': hubFloor(contract.floor),
         'Загвар': textOrNull(contract.model),
         'Гэрээлсэн талбай': numberOrNull(contract.contracted_area),

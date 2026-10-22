@@ -2,12 +2,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import ExcelJS from 'exceljs';
-import { readSheetRows } from '@/lib/utils/xlsx';
+import { readSheetRows, readWorkbookSheets } from '@/lib/utils/xlsx';
 import { toDateStr } from '@/lib/admin/import/mappers';
 import {
     CONTRACT_LIST_COLUMNS, CONTRACT_LIST_MONEY_FORMAT, contractListNames, contractListPricePerSqm, contractListRow, contractUnitNumber, dbFloor,
     hubContractStatus, hubProductType,
 } from '@/lib/contracts/list-format';
+import { parseContractList, planContractListImport, type ContractListContract, type ContractListUnit } from '@/lib/contracts/list-import';
 import type { MemoryDb } from '@/test/memory-db';
 
 type Row = Record<string, unknown>;
@@ -209,6 +210,102 @@ describe('contracts HUB export (16 багана)', () => {
                 else if (written instanceof Date) expect(toDateStr(read)).toBe(toDateStr(written));
                 else expect(read).toBe(written);
             }
+        }
+    });
+});
+
+describe('HUB export → import round trip', () => {
+    // Сүүлийн импортын дараах төслийн байдал (зохиомол нэр): огноо order_date = contract_date, хоцролт файлын огноогоор.
+    const REPORT_DATE = '2026-10-22';
+    const units: ContractListUnit[] = [
+        { code: 'Б1-16', category: 'residential', block: 'Б1', floor: '05', model: 'B', unit_number: '0', legacy_unit_number: '16', status: 'sold' },
+        { code: 'Б2-231', category: 'residential', block: 'Б2', floor: '22', model: 'A', unit_number: '231', legacy_unit_number: null, status: 'sold' },
+        { code: 'Б1-19 (B1)', category: 'parking', block: 'Б1', floor: 'B1', model: 'P', unit_number: '19', legacy_unit_number: '19', status: 'sold' },
+        { code: 'Б1-19 (01)', category: 'parking', block: 'Б1', floor: '01', model: 'P', unit_number: '19', legacy_unit_number: '19', status: 'sold' },
+        { code: 'Б1-46 (H-1)', category: 'industry', block: 'Б1', floor: '01', model: 'H-1', unit_number: '46', legacy_unit_number: '46', status: 'sold' },
+        { code: 'Б1-46 (H-2)', category: 'industry', block: 'Б1', floor: '01', model: 'H-2', unit_number: '46', legacy_unit_number: '46', status: 'available' },
+        { code: 'Б2-152', category: 'residential', block: 'Б2', floor: '10', model: 'E', unit_number: '0', legacy_unit_number: '152', status: 'sold' },
+        { code: 'Б2-084', category: 'residential', block: 'Б2', floor: '03', model: 'C', unit_number: '0', legacy_unit_number: '084', status: 'sold' },
+    ];
+    type Fixture = ContractListContract & { floor: string | null; model: string | null };
+    const onUnit = (n: number, code: string, overrides: Partial<Fixture>): Fixture => {
+        const unit = units.find((u) => u.code === code)!;
+        return {
+            id: `50000000-0000-4000-8000-${String(n).padStart(12, '0')}`, product_type: unit.category, unit_label: unit.code, block_name: unit.block,
+            floor: unit.floor, model: unit.model, unit_number: unit.unit_number === '0' ? null : unit.unit_number, legacy_unit_number: unit.legacy_unit_number,
+            contract_status: 'active', order_date: null, contract_date: null, total_price: null, price_per_sqm: null, contracted_area: null,
+            prepayment_condition: null, prepayment_due: null, payment_condition: null, overdue_amount: null, overdue_as_of: REPORT_DATE,
+            customer_name: null, customer_first_name: null, customer_last_name: null, contract_number: null, sales_manager: null, paid_amount: null,
+            ...overrides,
+        };
+    };
+    const dated = (day: string) => ({ order_date: day, contract_date: day });
+    // PostgREST numeric-ийг текстээр буцаадаг тул зарим дүнг '…00' хэлбэрээр.
+    const contracts: Fixture[] = [
+        onUnit(1, 'Б1-16', { ...dated('2026-10-05'), contracted_area: '58.00', price_per_sqm: '7800000.00', total_price: '452400000.00', prepayment_condition: '30%',
+            prepayment_due: '135720000.00', payment_condition: 'Тусгай', overdue_amount: '20010000.00', customer_name: 'Болд.Батаа', customer_first_name: 'Болд',
+            customer_last_name: 'Батаа', contract_number: 'EL-001', sales_manager: 'Менежер А' }),
+        // Хаасан; нэр салгаагүй (зөвхөн customer_name); хуучин/шинэ тоотгүй — «Тоот» кодоос; ₮/м² хоосон; урьдчилгаа 0; төлсөн дүн мэдэгдэнэ.
+        onUnit(2, 'Б2-231', { ...dated('2026-09-12'), unit_number: null, contract_status: 'closed', contracted_area: 64.33, total_price: 501774000, prepayment_due: 0,
+            overdue_amount: '0.00', customer_name: 'Сараа.Дорж', paid_amount: '501774000.00' }),
+        // Зогсоол «(B1)»: ₮/м² NULL → экспортод нэгжийн үнэ, импорт 1%-ийн дүрмээр буцааж бичихгүй.
+        onUnit(3, 'Б1-19 (B1)', { ...dated('2026-08-01'), contracted_area: 13.25, total_price: 35000000, prepayment_condition: '100%', prepayment_due: 35000000,
+            customer_name: 'Ану.Бат', customer_first_name: 'Ану', customer_last_name: 'Бат' }),
+        // Зогсоол «(01)»: ижил «Тоот», өөр давхар; ₮/м² хадгалсан.
+        onUnit(4, 'Б1-19 (01)', { ...dated('2026-09-03'), contracted_area: 12.5, price_per_sqm: 6376000, total_price: 79700000, prepayment_condition: '100%',
+            prepayment_due: 79700000, payment_condition: 'Энгийн', overdue_amount: 0, customer_name: 'Тэмүүлэн.Болд', customer_first_name: 'Тэмүүлэн', customer_last_name: 'Болд' }),
+        // Агуулах: ижил давхарт хоёр «(H-…)» байр — загвараар; 2025 оны захиалга.
+        onUnit(5, 'Б1-46 (H-1)', { ...dated('2025-12-20'), contracted_area: 9.5, total_price: 14000000, prepayment_condition: '50%', prepayment_due: 7000000,
+            customer_name: 'Номин.Гэрэл', customer_first_name: 'Номин', customer_last_name: 'Гэрэл' }),
+        // Цуцлагдаж дахин зарагдсан байр: цуцалсан гэрээ + шинэ идэвхтэй гэрээ.
+        onUnit(6, 'Б2-152', { ...dated('2026-07-29'), contract_status: 'cancelled', contracted_area: 70.2, price_per_sqm: 7000000, total_price: 491400000,
+            prepayment_condition: '30%', prepayment_due: 147420000, customer_name: 'Нараа.Бат', customer_first_name: 'Нараа', customer_last_name: 'Бат' }),
+        onUnit(7, 'Б2-152', { ...dated('2026-09-15'), contracted_area: 70.2, price_per_sqm: 7100000, total_price: 498420000, prepayment_condition: '30%',
+            prepayment_due: 149526000, payment_condition: 'Энгийн', overdue_amount: 1250000.5, customer_name: 'Тулга.Ганаа', customer_first_name: 'Тулга',
+            customer_last_name: 'Ганаа' }),
+        // Тэгээр эхэлсэн тоот («084») экспортод текстээр үлдэх ёстой, эс бөгөөс «Б2-84» болж байр олдохгүй.
+        onUnit(8, 'Б2-084', { ...dated('2026-10-10'), contracted_area: 45, price_per_sqm: 8000000, total_price: 360000000, prepayment_condition: '20%',
+            prepayment_due: 72000000, customer_name: 'Оюун.Дулам', customer_first_name: 'Оюун', customer_last_name: 'Дулам' }),
+    ];
+
+    beforeEach(() => {
+        state.db.tables.property_contracts = contracts.map((c) => ({ shop_id: 'shop-1', deleted_at: null, ...c }));
+    });
+
+    it('re-imports its own HUB export with zero inserts, updates, review items or blocking conflicts (UB and UTC servers)', async () => {
+        const original = process.env.TZ;
+        try {
+            for (const tz of ['Asia/Ulaanbaatar', 'UTC']) {
+                process.env.TZ = tz;
+                const { response, buffer } = await exportType('contracts_hub');
+                expect(response.status, tz).toBe(200);
+
+                const parsed = parseContractList(await readWorkbookSheets(buffer), { reportDate: REPORT_DATE });
+                expect(parsed.errors, tz).toEqual([]);
+                expect(parsed.skipped, tz).toEqual([]);
+                expect(parsed.ignoredColumns, tz).toEqual([]);
+                expect(parsed.rows, tz).toHaveLength(contracts.length);
+
+                const plan = planContractListImport({
+                    rows: parsed.rows, units, contracts, transferredIds: new Set(), paymentContractIds: new Set([contracts[1].id]),
+                    latestImportDate: REPORT_DATE, reportDate: REPORT_DATE, fileName: 'Elysium_Residence_гэрээ.xlsx', today: REPORT_DATE,
+                });
+                expect(plan.errors, tz).toEqual([]);
+                expect(plan.ops, tz).toEqual([]);
+                expect(plan.counts, tz).toEqual({ insert: 0, insertCancelled: 0, update: 0, unchanged: contracts.length, review: 0, blocking: 0, missing: 0 });
+                expect(plan.review, tz).toEqual([]);
+                expect(plan.blocking, tz).toEqual([]);
+                expect(plan.inserts, tz).toEqual([]);
+                expect(plan.updates, tz).toEqual([]);
+                expect(plan.info, tz).toEqual([]);
+                expect(plan.missing, tz).toEqual([]);
+                expect(plan.unitStatusMismatches, tz).toEqual([]);
+                expect(plan.olderThanLatest, tz).toBeNull();
+                expect(plan.units, tz).toEqual({ distinct: contracts.length - 1, resold: 1 });
+            }
+        } finally {
+            if (original === undefined) delete process.env.TZ;
+            else process.env.TZ = original;
         }
     });
 });
