@@ -326,7 +326,10 @@ BEGIN
                 -- ERP-ийн «Тоот шилжсэн» гэрээний төлвийг импорт хэзээ ч өөрчлөхгүй.
                 v_conflicts := v_conflicts || jsonb_build_array(jsonb_build_object('id', v_id, 'label', v_label, 'code', 'transferred'));
             ELSIF v_set->>'contract_status' = 'cancelled' AND v_row.contract_status IS DISTINCT FROM 'cancelled'
-                AND (coalesce(v_row.paid_amount, 0) > 0 OR EXISTS (SELECT 1 FROM public.payment_schedules WHERE contract_id = v_id)) THEN
+                AND (coalesce(v_row.paid_amount, 0) > 0
+                    OR EXISTS (SELECT 1 FROM public.payment_schedules WHERE contract_id = v_id)
+                    -- Кассын дэвтрийн төлөлт (санхүүгийн UI хасагдсан ч хүснэгт, мөр хэвээр).
+                    OR EXISTS (SELECT 1 FROM public.finance_transactions WHERE contract_id = v_id)) THEN
                 v_conflicts := v_conflicts || jsonb_build_array(jsonb_build_object('id', v_id, 'label', v_label, 'code', 'has_payments'));
             ELSIF v_row.contract_status = 'cancelled' AND v_set->>'contract_status' IN ('active', 'closed') AND v_row.unit_label IS NOT NULL THEN
                 -- Цуцалсан гэрээг сэргээхэд байр өөр амьд гэрээгүй байх ёстой.
