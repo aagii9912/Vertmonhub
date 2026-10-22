@@ -125,6 +125,12 @@ describe('DailyReportDocument', () => {
         expect(within(summary).getByText('Шинэ лид').nextElementSibling?.textContent).toBe('Нийт 3 лид бүртгэгдсэн.');
     });
 
+    it('shows no new-lead table or summary row while the section is switched off', () => {
+        render(<DailyReportDocument report={buildDailyReport(input({ leads: null }))} />);
+        expect(screen.queryByRole('region', { name: 'Шинэ лид' })).toBeNull();
+        expect(within(screen.getByRole('region', { name: 'Товч дүгнэлт' })).queryByText('Шинэ лид')).toBeNull();
+    });
+
     it('compares phone leads with the calls entered on screen only, and updates while counts are being entered', () => {
         const leads = [...Array.from({ length: 5 }, () => ({ manager: CHAN, source: 'phone' })), { manager: KHON, source: 'phone' }];
         const report = buildDailyReport(input({ leads }));

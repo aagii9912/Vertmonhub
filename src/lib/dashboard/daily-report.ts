@@ -14,7 +14,8 @@
  *    (`authors`), өөрчлөлт бүр түүхийг (`daily_report_changes`, хуучин → шинэ) хадгална.
  *  • Шинэ лид = тухайн УБ өдөр бүртгэгдсэн (`created_at`), устгаагүй лид, ОДООГИЙН хариуцагчаар
  *    (`sales_manager_name`; хариуцагчгүй бол «Оноогдоогүй»), эх үүсвэрээр (`source`). Зөвхөн тоо —
- *    нэр, утас гаргахгүй (эзэмшигчийн шийдвэр 2026-10-22). Гараар засахгүй.
+ *    нэр, утас гаргахгүй (эзэмшигчийн шийдвэр 2026-10-22). Гараар засахгүй. Эзэмшигч мөн өдөр түр
+ *    нуусан (`NEW_LEADS_SECTION_ENABLED`): loader лид уншихгүй, `leads: null` → хэсэг гарахгүй.
  *  • Утсаар бүртгэсэн лид (`source = phone`) = утсаар ярьсан дуудлага, гэхдээ аль шугамаар ирсэн нь
  *    тодорхойгүй тул дуудлагын тоонд АВТОМАТААР НЭМЭХГҮЙ: менежерийн бүх шугамын оруулсан дуудлагатай
  *    харьцуулж, оруулаагүй эсвэл бага бол анхааруулна (`phoneLeadChecks`, эзэмшигчийн шийдвэр 2026-10-22).
@@ -27,6 +28,9 @@ import { SOURCES, sourceLabel } from '@/lib/leads/labels';
 import { daySpan } from '@/lib/sales/activity';
 import { ubDateStr } from '@/lib/utils/date';
 import { MEETING_TYPE_META, MEETING_TYPES, WEEKDAYS_MN, type MeetingType } from '@/lib/viewings/labels';
+
+/** «Шинэ лид» хэсэг (хүснэгт, дүгнэлт, хуулах текст, AI) — эзэмшигч 2026-10-22 түр нуусан; асаахад true. */
+export const NEW_LEADS_SECTION_ENABLED = false;
 
 export const CALL_CATEGORIES = ['new', 'repeat', 'other'] as const;
 export type CallCategory = (typeof CALL_CATEGORIES)[number];
@@ -291,8 +295,8 @@ export interface DailyReport {
     lines: DailyLineSection[];
     chats: DailyGridSection & { note: string };
     meetings: DailyGridSection & { groups: DailyMeetingGroup[]; pending: number; pendingItems: DailyPendingMeeting[] };
-    /** Шинэ лид: эх үүсвэрийн мөр (лидгүй бол нэг «Нийт» мөр), одоогийн хариуцагчийн баганаар. */
-    leads: DailyGridSection;
+    /** Шинэ лид: эх үүсвэрийн мөр (лидгүй бол нэг «Нийт» мөр), одоогийн хариуцагчийн баганаар; хэсэг унтраалттай бол null. */
+    leads: DailyGridSection | null;
     /** Тухайн өдөр (мужид: аль нэг өдөр) тоо оруулсан менежерүүд (0-ийг оруулсан ч тооцно). */
     filled: string[];
     /** Загварын менежерээс тоо оруулаагүй нь (идэвхтэй, бүртгэлтэй). */
@@ -316,8 +320,8 @@ export interface BuildDailyReportInput {
     meetings: readonly DailyMeetingRow[];
     /** «Товлосон» хэвээр (үр дүн бүртгээгүй) тухайн өдрийн уулзалтууд. */
     pendingMeetings: readonly (Pick<DailyMeetingRow, 'id' | 'manager' | 'type' | 'customer' | 'scheduled_at'> & { assigned?: boolean })[];
-    /** Тухайн өдөр (мужид: хугацаанд) бүртгэгдсэн, устгаагүй лидүүд. */
-    leads: readonly DailyLeadRow[];
+    /** Тухайн өдөр (мужид: хугацаанд) бүртгэгдсэн, устгаагүй лидүүд; null = «Шинэ лид» хэсэг унтраалттай. */
+    leads: readonly DailyLeadRow[] | null;
     notes: DailyReportNotes;
     completed: { by: string | null; at: string } | null;
     /** Хувийн горим: зөвхөн энэ менежерийн багана. */
@@ -387,7 +391,7 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
     const ranged = to !== input.date;
     const counts = input.counts.filter(row => !only || row.manager_name === only);
     const meetings = input.meetings.filter(row => !only || row.manager === only).filter(row => row.id);
-    const leads = input.leads.filter(row => !only || row.manager === only);
+    const leads = (input.leads ?? []).filter(row => !only || row.manager === only);
     const managers = only
         ? resolveReportManagers({ ...config, managers: [{ name: only, short: config.managers?.find(manager => manager.name === only)?.short ?? defaultShortName(only) }] }, input.roster)
         : resolveReportManagers(config, input.roster, [
@@ -473,7 +477,7 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
         const index = (SOURCES as string[]).indexOf(source);
         return index < 0 ? SOURCES.length : index;
     };
-    const leadGrid = gridSection(bySource.size
+    const leadGrid = input.leads === null ? null : gridSection(bySource.size
         ? [...bySource].sort(([a], [b]) => sourceOrder(a) - sourceOrder(b) || a.localeCompare(b))
             .map(([source, values]) => ({ key: source, label: sourceLabel(source), values }))
         : [{ key: 'total', label: 'Нийт', values: {} }], managers);
@@ -528,7 +532,7 @@ export function phoneLeadChecks(
     report: Pick<DailyReport, 'managers' | 'lines' | 'leads'>,
     valueOf: (manager: string, row: DailyGridRow) => number | null = (manager, row) => row.values[manager] ?? null,
 ): DailyPhoneLeadCheck[] {
-    const phone = report.leads.rows.find(row => row.key === PHONE_LEAD_SOURCE);
+    const phone = report.leads?.rows.find(row => row.key === PHONE_LEAD_SOURCE);
     if (!phone?.total) return [];
     const callRows = report.lines.flatMap(line => line.rows);
     return report.managers.filter(manager => manager.name !== UNASSIGNED).map(manager => {
@@ -579,8 +583,10 @@ export function formatDailyReportText(report: DailyReport): string {
         out.push('', [`Менежерийн чат: Нийт ${report.chats.total} чат харилцаа үүсгэсэн.`, sentence(report.chats.note)].filter(Boolean).join(' '));
         for (const row of report.chats.rows) if (row.total > 0) out.push(`  ${row.label}: ${row.total}${detail(row.values, managers)}`);
     }
-    out.push('', `Шинэ лид: Нийт ${report.leads.total} лид бүртгэгдсэн${detail(report.leads.byManager, managers)}.`);
-    for (const row of report.leads.rows) if (row.total > 0) out.push(`  ${row.label}: ${row.total}${detail(row.values, managers)}`);
+    if (report.leads) {
+        out.push('', `Шинэ лид: Нийт ${report.leads.total} лид бүртгэгдсэн${detail(report.leads.byManager, managers)}.`);
+        for (const row of report.leads.rows) if (row.total > 0) out.push(`  ${row.label}: ${row.total}${detail(row.values, managers)}`);
+    }
 
     out.push('', `Уулзалт: ${report.meetings.total}${detail(report.meetings.byManager, managers)}`);
     for (const group of report.meetings.groups) {

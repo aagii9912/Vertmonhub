@@ -6,7 +6,7 @@ import { resolveReportViewer } from '@/lib/sales/manager-identity';
 import { ProjectScopeError } from '@/lib/sales/project-scope';
 import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 import {
-    buildDailyReport, buildDailyReportChanges, flattenDailyNotes, joinDailyGeneralNotes, readDailyReportConfig, readDailyReportNotes, sumDailyCounts,
+    buildDailyReport, buildDailyReportChanges, flattenDailyNotes, joinDailyGeneralNotes, NEW_LEADS_SECTION_ENABLED, readDailyReportConfig, readDailyReportNotes, sumDailyCounts,
     type DailyCountRow, type DailyMeetingRow, type DailyReport, type DailyReportChange, type DailyReportChangeRow, type DailyReportConfig,
     type DailyReportConflict, type DailyRosterEntry, type SaveDailyReportInput,
 } from './daily-report';
@@ -152,7 +152,8 @@ export async function loadDailyReport(db: SupabaseClient, options: {
             return query.order('scheduled_at').order('id').range(from, until);
         }),
         // Шинэ лид: тухайн УБ өдөр бүртгэгдсэн, устгаагүй — зөвхөн хариуцагч, эх үүсвэр (тоолоход; нэр, утас уншихгүй).
-        allRows<{ sales_manager_name: string | null; source: string | null }>((from, until) => {
+        // Хэсэг унтраалттай бол уншихгүй.
+        !NEW_LEADS_SECTION_ENABLED ? Promise.resolve(null) : allRows<{ sales_manager_name: string | null; source: string | null }>((from, until) => {
             let query = db.from('leads').select('sales_manager_name, source')
                 .eq('shop_id', shopId).is('deleted_at', null).gte('created_at', start).lt('created_at', end);
             if (only) query = query.eq('sales_manager_name', only);
@@ -203,7 +204,7 @@ export async function loadDailyReport(db: SupabaseClient, options: {
                 assigned: !!lead && !lead.deleted_at && !!lead.sales_manager_name?.trim(),
             };
         }),
-        leads: leads.map(row => ({ manager: row.sales_manager_name?.trim() || null, source: row.source })),
+        leads: leads?.map(row => ({ manager: row.sales_manager_name?.trim() || null, source: row.source })) ?? null,
         // Хувийн горимд багийн тэмдэглэл, баталгаажуулалт харуулахгүй (зөвхөн өөрийн багана).
         notes,
         completed: !only && reportRow?.completed_at

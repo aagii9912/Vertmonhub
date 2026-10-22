@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryDb, type MemoryDb } from '@/test/memory-db';
 
-const state = vi.hoisted(() => ({ isManager: false, rosterName: null as string | null, loads: [] as Array<Record<string, unknown>>, unavailable: false, db: null as unknown as MemoryDb }));
+const state = vi.hoisted(() => ({ isManager: false, rosterName: null as string | null, loads: [] as Array<Record<string, unknown>>, unavailable: false, leadsOff: false, db: null as unknown as MemoryDb }));
 vi.mock('@/lib/supabase', () => ({
     supabaseAdmin: () => state.db,
 }));
@@ -25,7 +25,7 @@ vi.mock('@/lib/dashboard/daily-report-load', async (importOriginal) => {
                 counts: [{ manager_name: 'Хонгорзул.Мөнхгэрэл', metric: 'call.l1.total', value: 4 }],
                 meetings: [{ id: 'm1', manager: 'Хонгорзул.Мөнхгэрэл', type: 'repeat_customer', customer: 'Загдсүрэн', property: null, notes: '10-50 хувь', feedback: null, scheduled_at: '2026-10-07T02:00:00Z' }],
                 pendingMeetings: [{ id: 'p1', manager: 'Хонгорзул.Мөнхгэрэл', type: 'new_customer', customer: 'Болд', scheduled_at: '2026-10-07T05:00:00Z' }],
-                leads: [
+                leads: state.leadsOff ? null : [
                     { manager: 'Хонгорзул.Мөнхгэрэл', source: 'facebook_ads' }, { manager: 'Хонгорзул.Мөнхгэрэл', source: 'phone' },
                     { manager: 'Хонгорзул.Мөнхгэрэл', source: 'facebook_ads' }, { manager: 'Чанцалдулам.Раднаа', source: 'phone' },
                 ],
@@ -43,7 +43,7 @@ const manager = { canWrite: true, canDelete: false, role: 'sales_manager', modul
 
 beforeEach(() => {
     vi.useFakeTimers({ now: new Date('2026-10-07T04:00:00Z'), toFake: ['Date'] }); // УБ Лхагва 12:00
-    Object.assign(state, { isManager: false, rosterName: null, loads: [], unavailable: false });
+    Object.assign(state, { isManager: false, rosterName: null, loads: [], unavailable: false, leadsOff: false });
     state.db = createMemoryDb({
         shops: [{ id: 'shop', name: 'Elysium Residence' }],
         sales_manager_projects: [{ shop_id: 'shop', manager_name: 'Хонгорзул.Мөнхгэрэл', project_id: 'project' }],
@@ -69,6 +69,13 @@ describe('get_daily_report AI tool', () => {
         expect(result.plainText).toContain('ELYSIUM RESIDENCE БАГ — 2026.10.07');
         expect(result.plainText).toContain('1. Загдсүрэн — 10-50 хувь');
         expect(result.url).toBe('/dashboard/daily-report');
+    });
+
+    it('omits new leads when the loader has the section switched off', async () => {
+        state.leadsOff = true;
+        const result = await getDailyReportTool('shop', {}, 'u-admin', admin) as Record<string, any>;
+        expect(result.newLeads).toBeUndefined();
+        expect(result.plainText).not.toContain('Шинэ лид');
     });
 
     it('gives registered managers the project team report and refuses users without access', async () => {

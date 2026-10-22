@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { Input } from '@/components/ui/Input';
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/Sheet';
 import {
-    CALL_CATEGORIES, CALL_CATEGORY_LABEL, DAILY_LIMITS, DailyReportConfigSchema, defaultShortName, nextConfigKey,
+    CALL_CATEGORIES, CALL_CATEGORY_LABEL, DAILY_LIMITS, DailyReportConfigSchema, defaultShortName, NEW_LEADS_SECTION_ENABLED, nextConfigKey,
     type CallCategory, type DailyReportConfig, type DailyRosterEntry,
 } from '@/lib/dashboard/daily-report';
 
@@ -63,7 +63,7 @@ export function DailyReportSettingsSheet({ open, onOpenChange, config, roster, s
             <SheetContent className="sm:max-w-xl">
                 <SheetHeader>
                     <SheetTitle>Өдрийн тайлангийн загвар</SheetTitle>
-                    <SheetDescription>Энэ төслийн утасны шугам, чатын суваг, менежерийн багана. Уулзалт, шинэ лидийн тоо системээс автоматаар орно.</SheetDescription>
+                    <SheetDescription>Энэ төслийн утасны шугам, чатын суваг, менежерийн багана. {NEW_LEADS_SECTION_ENABLED ? 'Уулзалт, шинэ лидийн тоо' : 'Уулзалт'} системээс автоматаар орно.</SheetDescription>
                 </SheetHeader>
                 <div className="flex-1 space-y-7 overflow-y-auto px-6 pb-6">
                     <label className="block space-y-1.5">

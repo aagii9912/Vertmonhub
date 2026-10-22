@@ -18,7 +18,7 @@ import { getManagerPerformance } from '@/lib/reports/manager-performance';
 import { loadWeeklySales } from '@/lib/dashboard/weekly-sales-load';
 import { formatWeeklySalesText, meetingDateSchema, nextMeetingDate } from '@/lib/dashboard/weekly-review';
 import { listWeeklyUpdates, saveWeeklyUpdate } from '@/lib/dashboard/weekly-updates';
-import { DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, formatDailyReportText, PHONE_LEAD_CHECK_ENABLED, phoneLeadChecks } from '@/lib/dashboard/daily-report';
+import { DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, formatDailyReportText, NEW_LEADS_SECTION_ENABLED, PHONE_LEAD_CHECK_ENABLED, phoneLeadChecks } from '@/lib/dashboard/daily-report';
 import { DailyReportUnavailableError, loadDailyReport, resolveDailyReportViewer } from '@/lib/dashboard/daily-report-load';
 import { logger } from '@/lib/utils/logger';
 import { addCustomerTag, removeCustomerTag, replyToCustomer, mergeCustomers, updateCustomerInfo } from '@/lib/services/CustomerOps';
@@ -111,7 +111,7 @@ export async function getManagerActivityTool(shopId: string, args: Args, userId:
 const DAILY_GUIDANCE = 'Утасны шугамын дуудлага, чат = менежерүүдийн өдөр бүр гараар оруулсан тоо (CallPro, CRM-ийн лидийн дуудлага биш); '
     + 'missingManagers нь тоогоо оруулаагүй менежер — 0 гэж бүү тайлбарла. Уулзалт = системд «Болсон» гэж бүртгэсэн уулзалт (Шинэ/Давтан/Захиалагч); '
     + 'pendingMeetings нь үр дүнгээ бүртгээгүй товлосон уулзалт (тайланд ороогүй). '
-    + 'newLeads = тухайн өдөр системд бүртгэгдсэн (устгаагүй) лидийн тоо, ОДООГИЙН хариуцагчаар, эх үүсвэрээр; «Оноогдоогүй» = хариуцагчгүй. '
+    + (NEW_LEADS_SECTION_ENABLED ? 'newLeads = тухайн өдөр системд бүртгэгдсэн (устгаагүй) лидийн тоо, ОДООГИЙН хариуцагчаар, эх үүсвэрээр; «Оноогдоогүй» = хариуцагчгүй. ' : '')
     + (PHONE_LEAD_CHECK_ENABLED ? 'phoneLeadGaps = утсаар лид бүртгэсэн ч бүх шугамд оруулсан дуудлага нь хоосон эсвэл түүнээс бага менежер — дуудлагын тоогоо шалгахыг сануул, тоог өөрөө бүү нэм. ' : '')
     + 'plainText-ийг хэрэглэгч мессенжерт хуулахад бэлэн — тоог бүү өөрчил.';
 
@@ -151,10 +151,10 @@ export async function getDailyReportTool(shopId: string, args: Args, userId: str
         chats: { total: report.chats.total, byManager: byManager(report.chats.byManager) },
         meetings: { total: report.meetings.total, byType: report.meetings.groups.map(group => ({ type: group.label, count: group.count })) },
         pendingMeetings: report.meetings.pending,
-        newLeads: {
+        ...(report.leads ? { newLeads: {
             total: report.leads.total, byManager: byManager(report.leads.byManager),
             bySource: report.leads.rows.filter(row => row.total > 0).map(row => ({ source: row.label, count: row.total })),
-        },
+        } } : {}),
         ...(PHONE_LEAD_CHECK_ENABLED ? { phoneLeadGaps: phoneLeadChecks(report).filter(check => check.short)
             .map(check => ({ manager: short.get(check.manager) ?? check.manager, calls: check.calls, phoneLeads: check.leads })) } : {}),
         missingManagers: report.missing,

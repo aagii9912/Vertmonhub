@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import {
-    buildDailyReport, buildDailyReportChanges, dailyNoteText, flattenDailyNotes, readDailyReportConfig,
+    buildDailyReport, buildDailyReportChanges, dailyNoteText, flattenDailyNotes, NEW_LEADS_SECTION_ENABLED, readDailyReportConfig,
     type BuildDailyReportInput, type DailyCountRow, type DailyLeadRow, type DailyMeetingRow, type DailyReportChangeRow, type DailyReportConflict,
     type DailyReportNotes, type SaveDailyReportInput,
 } from '../src/lib/dashboard/daily-report';
@@ -78,7 +78,8 @@ async function setup(page: Page, mode: 'team' | 'personal') {
         counts: state.counts,
         meetings: state.meetings,
         pendingMeetings: state.pending,
-        leads: state.leads,
+        // loader-ийн дүрэм: «Шинэ лид» хэсэг унтраалттай бол лид уншихгүй (null).
+        leads: NEW_LEADS_SECTION_ENABLED ? state.leads : null,
         notes: state.notes,
         completed: state.completed,
         only: null,
@@ -195,12 +196,17 @@ test('багийн өдрийн тайлан: хүснэгт, хэн оруул�
     await expect(projectLine.locator('td[data-author="other"]')).toHaveCount(1);
     await expect(projectLine.locator('td[data-author="other"]')).toHaveAttribute('title', `Оруулсан: М. Хонгорзул · ${formatTime(`${today}T02:15:00.000Z`)}`);
     await expect(report.getByText('— өөр хүн оруулсан тоо (дээр нь очиж хэн оруулсныг харна)')).toBeVisible();
-    // Шинэ лид: системээс, эх үүсвэр × менежер, засагдахгүй.
+    // Шинэ лид: системээс, эх үүсвэр × менежер, засагдахгүй (эзэмшигч 2026-10-22 түр нуусан).
     const newLeads = report.getByRole('region', { name: 'Шинэ лид', exact: true });
-    await expect(newLeads.getByRole('rowheader', { name: 'Facebook Ads' })).toBeVisible();
-    await expect(newLeads.getByRole('rowheader', { name: 'Вэбсайт' })).toBeVisible();
-    await expect(newLeads.getByRole('columnheader', { name: '—' })).toHaveAttribute('title', 'Оноогдоогүй');
-    await expect(report.getByText('Нийт 4 лид бүртгэгдсэн.', { exact: true })).toBeVisible();
+    if (NEW_LEADS_SECTION_ENABLED) {
+        await expect(newLeads.getByRole('rowheader', { name: 'Facebook Ads' })).toBeVisible();
+        await expect(newLeads.getByRole('rowheader', { name: 'Вэбсайт' })).toBeVisible();
+        await expect(newLeads.getByRole('columnheader', { name: '—' })).toHaveAttribute('title', 'Оноогдоогүй');
+        await expect(report.getByText('Нийт 4 лид бүртгэгдсэн.', { exact: true })).toBeVisible();
+    } else {
+        await expect(newLeads).toHaveCount(0);
+        await expect(report.getByText(/лид бүртгэгдсэн/)).toHaveCount(0);
+    }
     // Утасны лидийн шалгалт түр унтраалттай (PHONE_LEAD_CHECK_ENABLED = false).
     await expect(report.getByRole('region', { name: 'Дуудлага ба утасны лид', exact: true })).toHaveCount(0);
     await expect(report.locator('td[data-flag="short"]')).toHaveCount(0);
@@ -377,7 +383,8 @@ test('ээлжийн менежер хамт олныхоо тоог оруул�
     expect(copied).toContain('Менежерийн дуудлага: Нийт 9 дуудлага ирсэн');
     expect(copied).toContain('Бат — Б2-58м2 10-30%; үлдэгдэл банк');
     expect(copied).toContain('Тулга');
-    expect(copied).toContain('Шинэ лид: Нийт 4 лид бүртгэгдсэн (Чан 1, Хон 2, Оноогдоогүй 1).');
+    if (NEW_LEADS_SECTION_ENABLED) expect(copied).toContain('Шинэ лид: Нийт 4 лид бүртгэгдсэн (Чан 1, Хон 2, Оноогдоогүй 1).');
+    else expect(copied).not.toContain('Шинэ лид');
     expect(copied).toContain('Тайлан хийж гүйцэтгэсэн: М. Хонгорзул');
     expect(copied).toContain('Р. Чанцалдулам (8888 1234)');
     expect(copied).toContain('М. Хонгорзул (9008 5678)');

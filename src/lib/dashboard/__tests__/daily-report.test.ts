@@ -190,12 +190,12 @@ describe('buildDailyReport', () => {
         const report = buildDailyReport(input({ leads }));
         expect(report.managers.map(manager => manager.short)).toEqual(['Ари', 'Чан', 'Хон', 'Бат', '—']);
         // Эх үүсвэрийн толь бичгийн дарааллаар; эх үүсвэргүй = «Бусад», танигдаагүй нь төгсгөлд нэрээрээ.
-        expect(report.leads.rows.map(row => [row.label, row.total])).toEqual([
+        expect(report.leads!.rows.map(row => [row.label, row.total])).toEqual([
             ['Вэбсайт', 1], ['Утас', 1], ['Facebook Ads', 2], ['Бусад', 1], ['legacy_import', 1],
         ]);
-        expect(report.leads.rows[2].values).toMatchObject({ 'Ариунбилэг.Нямхүү': null, 'Чанцалдулам.Раднаа': 1, 'Хонгорзул.Мөнхгэрэл': 1 });
-        expect(report.leads.total).toBe(6);
-        expect(report.leads.byManager).toEqual({ 'Ариунбилэг.Нямхүү': 0, 'Чанцалдулам.Раднаа': 3, 'Хонгорзул.Мөнхгэрэл': 1, 'Батаа.Дорж': 1, '': 1 });
+        expect(report.leads!.rows[2].values).toMatchObject({ 'Ариунбилэг.Нямхүү': null, 'Чанцалдулам.Раднаа': 1, 'Хонгорзул.Мөнхгэрэл': 1 });
+        expect(report.leads!.total).toBe(6);
+        expect(report.leads!.byManager).toEqual({ 'Ариунбилэг.Нямхүү': 0, 'Чанцалдулам.Раднаа': 3, 'Хонгорзул.Мөнхгэрэл': 1, 'Батаа.Дорж': 1, '': 1 });
         // Лидийн багана тоо оруулаагүй менежерийн анхааруулгад нөлөөлөхгүй.
         expect(report.missing).toEqual([]);
 
@@ -205,7 +205,7 @@ describe('buildDailyReport', () => {
         expect(text).toContain('  Вэбсайт: 1 (Оноогдоогүй 1)');
 
         const own = buildDailyReport(input({ leads, only: 'Чанцалдулам.Раднаа', notes: {}, completed: null }));
-        expect(own.leads.total).toBe(3);
+        expect(own.leads!.total).toBe(3);
         expect(own.managers.map(manager => manager.name)).toEqual(['Чанцалдулам.Раднаа']);
     });
 
@@ -229,10 +229,18 @@ describe('buildDailyReport', () => {
         expect(phoneLeadChecks(buildDailyReport(input({ leads: [{ manager: 'Хонгорзул.Мөнхгэрэл', source: 'facebook' }] })))).toEqual([]);
     });
 
+    it('leaves the new-lead section out entirely when it is switched off (leads: null)', () => {
+        const report = buildDailyReport(input({ leads: null }));
+        expect(report.leads).toBeNull();
+        expect(report.managers.map(manager => manager.short)).toEqual(['Ари', 'Чан', 'Хон']);
+        expect(formatDailyReportText(report)).not.toContain('Шинэ лид');
+        expect(phoneLeadChecks(report)).toEqual([]);
+    });
+
     it('shows one zero total row when no lead was registered', () => {
         const report = buildDailyReport(input());
-        expect(report.leads.rows.map(row => [row.key, row.label, row.total])).toEqual([['total', 'Нийт', 0]]);
-        expect(report.leads.total).toBe(0);
+        expect(report.leads!.rows.map(row => [row.key, row.label, row.total])).toEqual([['total', 'Нийт', 0]]);
+        expect(report.leads!.total).toBe(0);
         expect(report.managers.map(manager => manager.short)).toEqual(['Ари', 'Чан', 'Хон']);
     });
 

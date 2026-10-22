@@ -129,7 +129,7 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
                     <CountTable title="Уулзалт" caption="Системээс" section={report.meetings} managers={managers} showAuthors={false} reportDate={report.date}
                         footer={forImage ? null : <Link href="/dashboard/viewings" className="inline-flex items-center gap-1 text-brand-strong hover:underline print:hidden">Уулзалт товлох<ArrowUpRight className="size-3.5" /></Link>} />
                     {report.chats.rows.length > 0 && <CountTable title="Чат" caption="Менежерийн чат" section={report.chats} managers={managers} editing={editing} showAuthors={showAuthors} reportDate={report.date} />}
-                    <CountTable title="Шинэ лид" caption="Системээс · эх үүсвэрээр" section={report.leads} managers={managers} showAuthors={false} reportDate={report.date} />
+                    {report.leads && <CountTable title="Шинэ лид" caption="Системээс · эх үүсвэрээр" section={report.leads} managers={managers} showAuthors={false} reportDate={report.date} />}
                 </section>
                 {marked && (
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground print:hidden">
@@ -151,7 +151,7 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
                         <SummaryRow label="Менежерийн чат" text={<>Нийт <SummaryTotal value={report.chats.total} /> чат харилцаа үүсгэсэн.</>} note={report.chats.note}
                             edit={editing?.notes ? { value: editing.notes.chats ?? '', onChange: value => editing.onNotes({ ...editing.notes, chats: value }) } : null} />
                     )}
-                    <SummaryRow label="Шинэ лид" text={<>Нийт <SummaryTotal value={report.leads.total} /> лид бүртгэгдсэн.</>} note="" edit={null} />
+                    {report.leads && <SummaryRow label="Шинэ лид" text={<>Нийт <SummaryTotal value={report.leads.total} /> лид бүртгэгдсэн.</>} note="" edit={null} />}
                 </dl>
             </section>
 

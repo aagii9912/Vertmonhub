@@ -18,7 +18,7 @@ import { ubDateStr } from '@/lib/utils/date';
 import { downloadElementImage, type ImageFormat } from '@/lib/utils/element-image';
 import { cn } from '@/lib/utils';
 import {
-    DAILY_COUNT_MAX, DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, dailyMetricLabel, dailyNoteLabel, formalManagerName, formatDailyReportText,
+    DAILY_COUNT_MAX, DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, dailyMetricLabel, dailyNoteLabel, formalManagerName, formatDailyReportText, NEW_LEADS_SECTION_ENABLED,
     type DailyMeetingItem, type DailyPendingMeeting, type DailyReport, type DailyReportConflict, type DailyReportNotes,
 } from '@/lib/dashboard/daily-report';
 import { DAILY_MEETING_BACKDATE_DAYS, type DailyMeetingRequestBody, type DailyMeetingResponse } from '@/lib/dashboard/daily-report-meetings';
@@ -334,7 +334,7 @@ function DailyReportView({ initial }: { initial: { date: string; to: string | nu
         return `${label} · ${formalManagerName(conflict.manager)}: одоо ${conflict.current ?? '—'}`;
     };
     const notices: Array<{ tone: 'info' | 'warning'; text: ReactNode }> = [];
-    if (report && ranged) notices.push({ tone: 'info', text: `${report.days} өдрийн тайланг нэгтгэв: дуудлага, чатын тоо, уулзалт, шинэ лид нийлбэрээр. Тоо засах, уулзалт бүртгэх, тэмдэглэл, баталгаажуулалтыг «Өдөр» горимд өдөр тус бүрээр хийнэ.` });
+    if (report && ranged) notices.push({ tone: 'info', text: `${report.days} өдрийн тайланг нэгтгэв: дуудлага, чатын тоо, уулзалт${NEW_LEADS_SECTION_ENABLED ? ', шинэ лид' : ''} нийлбэрээр. Тоо засах, уулзалт бүртгэх, тэмдэглэл, баталгаажуулалтыг «Өдөр» горимд өдөр тус бүрээр хийнэ.` });
     if (report && to === today) notices.push({ tone: 'info', text: 'Өдөр дуусаагүй — одоогоор бүртгэсэн мэдээллийг харуулж байна.' });
     if (report && viewer?.personal && !ranged) notices.push({ tone: 'info', text: 'Төслийн бүх менежерийн мэдээлэл харагдана. Ээлжийн менежер бүх менежерийн дуудлага, чатын тоог оруулж болно; өөрчлөлт бүр «Түүх»-д хадгалагдана.' });
     if (report && editMode && report.completed) notices.push({ tone: 'warning', text: 'Тайлан баталгаажсан. Өөрчлөлт түүхэд бүртгэгдэнэ.' });
@@ -362,7 +362,7 @@ function DailyReportView({ initial }: { initial: { date: string; to: string | nu
                 <div>
                     <h1 className="text-[24px] font-semibold tracking-tight">Өдрийн тайлан</h1>
                     <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-                        Ээлжийн менежер багийн дуудлага, чатын тоог оруулж, хамт олныхоо уулзалтыг бүртгэнэ; уулзалт «Уулзалт» хуудаснаас, шинэ лидийн тоо лидийн бүртгэлээс автоматаар орно. Өөрчлөлт бүр түүхэд хадгалагдана.
+                        Ээлжийн менежер багийн дуудлага, чатын тоог оруулж, хамт олныхоо уулзалтыг бүртгэнэ; уулзалт «Уулзалт» хуудаснаас{NEW_LEADS_SECTION_ENABLED ? ', шинэ лидийн тоо лидийн бүртгэлээс' : ' мөн'} автоматаар орно. Өөрчлөлт бүр түүхэд хадгалагдана.
                     </p>
                 </div>
                 <Button variant="secondary" onClick={() => void query.refetch()} disabled={query.isFetching || dirty}>
