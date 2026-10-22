@@ -216,6 +216,19 @@ describe('Elysium 2026 plan fulfilment (HUB fixtures)', () => {
     });
 });
 
+describe('year totals per block', () => {
+    it('leaves a block year plan unknown when a month has only a total plan', () => {
+        const months = emptyMonthlySales().map(row => row.month === 1
+            ? { ...row, target_amount: 1_000 }
+            : { ...row, target_amount: 500, block_amounts: { b1: { target_amount: 500 } } });
+        const report = buildPlanPerformance(base({ months, contracts: [contract({ contract_date: '2026-01-10', total_price: 400 }), contract({ total_price: 200 })] }));
+        expect(report.ytd.total.metrics.contract).toMatchObject({ plan: 5_500, actual: 600, pct: 10.9 });
+        // 1 сарын 1,000 нь блокоор задлаагүй — Б1-ийн жилийн төлөвлөгөөг 4,500 гэж тооцож 13.3% гаргахгүй.
+        expect(report.ytd.blocks.b1.metrics.contract).toMatchObject({ plan: null, yearPlan: null, actual: 600, pct: null });
+        expect(report.months[8].blocks.b1.metrics.contract).toMatchObject({ plan: 500, actual: 200, pct: 40 });
+    });
+});
+
 describe('manual and system precedence (M1)', () => {
     it('adds a manual block to the system blocks instead of replacing the whole month', () => {
         const months = elysiumPlan();
@@ -289,6 +302,23 @@ describe('projects without a block plan and cash receipts', () => {
         expect(partial.cash!.availability).toBe('partial');
         expect(partial.months[8].total.metrics.cashflow).toMatchObject({ actual: 57, lowerBound: true });
         expect(partial.months[7].total.metrics.cashflow).toMatchObject({ actual: null, lowerBound: true });
+    });
+
+    it('never counts unknown cash as zero next to a manual figure (lower bound instead)', () => {
+        const months = elysiumPlan();
+        // 9 сард зөвхөн Б1-ийн орсон мөнгийг гараар оруулсан; Б2, зогсоолынх бүртгэлгүй (бүх гэрээний төлсөн дүн NULL).
+        months[8] = { ...months[8], block_amounts: { ...months[8].block_amounts, b1: { ...months[8].block_amounts!.b1, manual_cashflow_actual_amount: 300_000_000 } } };
+        months[0] = { ...months[0], manual_cashflow_actual_amount: 100_000_000 };
+        const report = buildPlanPerformance(base({ months, receipts: [] }));
+        expect(report.months[8].blocks.b1.metrics.cashflow).toMatchObject({ actual: 300_000_000, source: 'manual', lowerBound: false });
+        expect(report.months[8].blocks.b2.metrics.cashflow).toMatchObject({ actual: null });
+        expect(report.months[8].total.metrics.cashflow).toMatchObject({ actual: 300_000_000, source: 'mixed', lowerBound: true, pct: 24 });
+        expect(report.months[0].total.metrics.cashflow).toMatchObject({ actual: 100_000_000, source: 'manual', lowerBound: false });
+        // Он эхнээс: 1, 9 сарын гар дүн + бусад сар тодорхойгүй → доод хязгаар.
+        expect(report.ytd.total.metrics.cashflow).toMatchObject({ actual: 400_000_000, lowerBound: true });
+        // Б1-д гараар 0 оруулсан ч Б2, зогсоол тодорхойгүй бол нийт нь 0 биш «—».
+        months[8] = { ...months[8], block_amounts: { ...months[8].block_amounts, b1: { ...months[8].block_amounts!.b1, manual_cashflow_actual_amount: 0 } } };
+        expect(buildPlanPerformance(base({ months, receipts: [] })).months[8].total.metrics.cashflow).toMatchObject({ actual: null, pct: null });
     });
 
     it('never treats the advance owed or the overdue stock as cash', () => {

@@ -16,7 +16,7 @@ import { ubParts } from '@/lib/utils/date';
 import { unitCategoryLabel } from '@/lib/inventory/labels';
 import { MONTHLY_SALES_BLOCK_LABELS, MONTHLY_SALES_BLOCKS, type MonthlySalesBlock } from '@/lib/sales/monthly';
 import {
-    PLAN_CANCELLED_NOTE, PLAN_LEGEND, PLAN_SOURCE_LABEL, planPctText,
+    PLAN_CANCELLED_NOTE, PLAN_LEGEND, PLAN_SOURCE_LABEL, planPctText, planValueText,
     type PlanCell, type PlanMetricKey, type PlanMonthRow, type PlanPerformance, type PlanScopeCells, type PlanYearCell,
 } from '@/lib/sales/plan-performance';
 
@@ -65,7 +65,7 @@ function Tile({ label, value, helper, tone, title }: { label: string; value: Rea
     </div>;
 }
 
-const short = (value: number | null, lowerBound = false) => value === null ? '—' : `${formatMNTShort(value)}${lowerBound ? '+' : ''}`;
+const short = (value: number | null, lowerBound = false) => planValueText(value, lowerBound, formatMNTShort);
 
 function yearCellOf(data: PlanPerformance, segment: Segment, key: PlanMetricKey): PlanYearCell | undefined {
     return segment === 'total' ? data.ytd.total.metrics[key] : data.ytd.blocks[segment].metrics[key];

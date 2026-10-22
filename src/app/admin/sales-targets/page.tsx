@@ -444,7 +444,7 @@ export default function SalesTargetsAdminPage() {
                                                                 className={`num w-full rounded border bg-transparent px-2 py-2 text-right text-sm text-foreground ${count ? 'min-w-20' : 'min-w-32'} ${invalid ? 'border-status-danger' : 'border-control'}`}
                                                             />
                                                             {kind === 'actual' && formatSystem(field, system?.months[row.month - 1]?.blocks[block]?.[metric.key]) && (
-                                                                <span className="mt-1 block whitespace-nowrap text-right text-xs text-muted-foreground">Систем: {formatSystem(field, system?.months[row.month - 1]?.blocks[block]?.[metric.key])}</span>
+                                                                <span className="num mt-1 block whitespace-nowrap text-right text-xs text-muted-foreground">Систем: {formatSystem(field, system?.months[row.month - 1]?.blocks[block]?.[metric.key])}</span>
                                                             )}
                                                         </td>;
                                                     })}
@@ -462,7 +462,7 @@ export default function SalesTargetsAdminPage() {
                                                         {months[index][field] !== null && !hasMonthlySalesBreakdown(months[index], field)
                                                             && <span className="mt-1 block text-xs font-normal text-muted-foreground">Задаргаагүй</span>}
                                                         {kind === 'actual' && formatSystem(field, system?.months[row.month - 1]?.total[metric.key])
-                                                            && <span className="mt-1 block whitespace-nowrap text-xs font-normal text-muted-foreground">Систем: {formatSystem(field, system?.months[row.month - 1]?.total[metric.key])}</span>}
+                                                            && <span className="num mt-1 block whitespace-nowrap text-xs font-normal text-muted-foreground">Систем: {formatSystem(field, system?.months[row.month - 1]?.total[metric.key])}</span>}
                                                     </td>
                                                 ))}
                                             </tr>

@@ -10,7 +10,7 @@ import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { ubParts } from '@/lib/utils/date';
 import { logger } from '@/lib/utils/logger';
 import { loadPlanPerformance } from '@/lib/sales/plan-performance-load';
-import type { PlanMetricKey, PlanPerformance, PlanScopeCells, PlanValue } from '@/lib/sales/plan-performance';
+import { sumPlanValues, type PlanMetricKey, type PlanPerformance, type PlanScopeCells, type PlanValue } from '@/lib/sales/plan-performance';
 
 const shopSchema = z.guid();
 const yearSchema = SalesYearSchema;
@@ -30,17 +30,10 @@ const SYSTEM_ACTUAL_SOURCE = 'Төслийн бүх гэрээ (менежерэ
 
 const autoOf = (cells: PlanScopeCells) => Object.fromEntries(Object.entries(cells.metrics).map(([key, cell]) => [key, cell!.auto])) as Partial<Record<PlanMetricKey, PlanValue>>;
 
-/** Мэдэгдэх саруудын нийлбэр; огноогүй гэрээтэй бол доод хязгаар («+»), «0+» = тодорхойгүй. */
-function sumValues(values: Array<PlanValue | undefined>): PlanValue {
-    const known = values.filter((value): value is PlanValue => !!value && value.value !== null);
-    const lowerBound = values.some(value => value?.lowerBound);
-    const total = known.reduce((sum, value) => sum + Math.round(value.value! * 100), 0) / 100;
-    return { value: !known.length || (total === 0 && lowerBound) ? null : total, lowerBound };
-}
-
 /**
  * «CRM-ээр тооцсон» харьцуулалт — төлөвлөгөөний биелэлтийн ачаалагчийн системийн дүн (гар гүйцэтгэлээс тусдаа):
  * сар × блок, огноогүй гэрээтэй бол «+», ирээдүйн сар null. Гар гүйцэтгэлд хэзээ ч нэмэхгүй.
+ * Жилийн нийлбэр нь өнгөрсөн ба энэ сарын (`sumPlanValues`: тодорхойгүй сар байвал «+», «0+» = тодорхойгүй).
  */
 function systemActuals(plan: PlanPerformance) {
     const months = plan.months.map(row => ({
@@ -49,8 +42,9 @@ function systemActuals(plan: PlanPerformance) {
         blocks: { b1: autoOf(row.blocks.b1), b2: autoOf(row.blocks.b2), parking: autoOf(row.blocks.parking) },
         outside: { count: row.outside.count, amount: row.outside.amount },
     }));
+    const elapsed = months.filter(row => row.status !== 'future');
     const year = Object.fromEntries((['contract_count', 'contract', 'cashflow'] as const)
-        .map(key => [key, sumValues(months.map(row => row.total[key]))])) as Record<PlanMetricKey, PlanValue>;
+        .map(key => [key, sumPlanValues(elapsed.flatMap(row => row.total[key] ? [row.total[key]!] : []))])) as Record<PlanMetricKey, PlanValue>;
     return { months, year, undated: plan.undated.count, source: SYSTEM_ACTUAL_SOURCE };
 }
 

@@ -180,13 +180,17 @@ const UNDATED_LIST_LIMIT = 100;
 type ScopeAgg = { count: number; amountCents: number; missingAmounts: number; prepaymentCents: number; prepaymentKnown: number };
 const emptyAgg = (): ScopeAgg => ({ count: 0, amountCents: 0, missingAmounts: 0, prepaymentCents: 0, prepaymentKnown: 0 });
 
-function combine(parts: PlanValue[]): PlanValue {
+/**
+ * Хэсгүүдийн нийлбэр. Тодорхойгүй (null) хэсэг байвал нийлбэр нь мэдэгдэх хэсгүүдийн доод хязгаар («+») —
+ * тодорхойгүйг 0 гэж нэмэхгүй (жишээ нь Б1-д гар орсон мөнгө, Б2/зогсоолынх тодорхойгүй). «0+» = тодорхойгүй.
+ */
+export function sumPlanValues(parts: PlanValue[]): PlanValue {
     const known = parts.filter(part => part.value !== null);
-    const lowerBound = parts.some(part => part.lowerBound);
+    const lowerBound = parts.some(part => part.lowerBound || part.value === null);
     const value = known.length ? fromCents(known.reduce((sum, part) => sum + cents(part.value!), 0)) : null;
-    // «0+» нь «мэдэгдэхгүй» гэсэн үг — 0 гэж харуулахгүй.
     return { value: value === 0 && lowerBound ? null : value, lowerBound };
 }
+const combine = sumPlanValues;
 
 function cell(plan: number | null, actual: PlanValue, source: PlanSource | null, auto: PlanValue, inTotal = true): PlanCell {
     return {
@@ -388,8 +392,11 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
     };
     const ytd = {
         total: { metrics: Object.fromEntries(metrics.map(metric => [metric.key, yearCell(row => row.total.metrics[metric.key], month => month[metric.plan], month => month[metric.plan])])) },
+        // Блокийн жилийн төлөвлөгөө: тухайн үзүүлэлтийн төлөвлөгөө блокоор задалсан сард блокийн нүдгүй бол 0;
+        // задаргаагүй (зөвхөн нийт) сар орвол блокийн төлөвлөгөө тодорхойгүй (null).
         blocks: Object.fromEntries(MONTHLY_SALES_BLOCKS.map(block => [block, { metrics: Object.fromEntries(metrics.map(metric => [metric.key,
-            yearCell(row => row.blocks[block].metrics[metric.key], month => metricNumber(month, block, metric.plan), month => month[metric.plan])])) }])),
+            yearCell(row => row.blocks[block].metrics[metric.key], month => metricNumber(month, block, metric.plan),
+                month => hasMonthlySalesBreakdown(month, metric.plan) ? month[metric.plan] : null)])) }])),
     } as PlanPerformance['ytd'];
 
     // Төлбөр хоцролт: сүүлийн HUB файлын огноотой snapshot (гэрээний жагсаалтын хавтан, AI-тай нэг дүрэм).
