@@ -26,6 +26,14 @@ beforeEach(() => {
             eq: (field: string, value: unknown) => { rows = rows.filter(r => r[field] === value); return chain; },
             is: (field: string, value: unknown) => { rows = rows.filter(r => r[field] === value); return chain; },
             gte: (field: string, value: string) => { rows = rows.filter(r => String(r[field]) >= value); return chain; },
+            // PostgREST `or`: `col.is.null` / `col.neq.value` (SQL: NULL <> x үнэн биш).
+            or: (filter: string) => {
+                const clauses = filter.split(',').map(clause => clause.split('.'));
+                rows = rows.filter(r => clauses.some(([field, op, value]) => op === 'is' ? (r[field] ?? null) === null
+                    : op === 'neq' ? (r[field] ?? null) !== null && String(r[field]) !== value
+                    : (() => { throw new Error(`Unexpected or: ${filter}`); })()));
+                return chain;
+            },
             order: () => chain,
             range: (start: number, end: number) => { from = start; to = end; pages.push({ table, from, to }); return chain; },
             then: (resolve: (value: unknown) => unknown) => Promise.resolve({
@@ -54,6 +62,19 @@ describe('AI dashboard statistics', () => {
         expect(await fetchDashboardStats('shop-1', 'today')).toMatchObject({
             totalContracts: 1, totalContractValue: 10, totalLeads: 1,
         });
+    });
+
+    it('leaves cancelled and deleted contracts out of the contract count and value', async () => {
+        tables.property_contracts = [
+            row('active', { total_price: 100, contract_date: '2026-09-01', contract_status: 'active' }),
+            row('closed', { total_price: 20, contract_date: '2026-09-01', contract_status: 'closed' }),
+            row('no-status', { total_price: 3, contract_date: '2026-09-01', contract_status: null }),
+            row('cancelled', { total_price: 384675000, contract_date: '2026-09-01', contract_status: 'cancelled' }),
+            row('deleted', { total_price: 999, contract_date: '2026-09-01', contract_status: 'active', deleted_at: '2026-09-02' }),
+        ];
+        const result = await fetchDashboardStats('shop-1', 'all_time');
+        expect(result).toMatchObject({ totalContracts: 3, totalContractValue: 123 });
+        expect(result.contractValueBasis).toContain('цуцалсан гэрээ ороогүй');
     });
 
     it('counts canonical residential inventory across pages, scopes rows and distinguishes contract value from cash', async () => {

@@ -1,7 +1,7 @@
 /**
  * Тестийн санах ойн Supabase (PostgREST) client — service/route тестэд зориулсан жижиг дуураймал.
  * Дэмжих: select (count/head), insert (нэг/олон мөр), upsert (onConflict түлхүүрээр), update, delete, eq/neq/is/not(is, eq)/in/ilike/or (энгийн
- * `col.op.value`), order (олон түлхүүр), range/limit, maybeSingle/single, await.
+ * `col.op.value`, op = is/eq/neq/gt/gte/lt/lte), order (олон түлхүүр), range/limit, maybeSingle/single, await.
  * DB-ийн хязгаарлалтыг `constraints` hook-оор дуурайна (unique → 23505, FK → 23503 гэх мэт).
  * RPC-г `db.rpcs[нэр]` handler-оор дуурайна (бүртгээгүй RPC → PGRST202).
  */
@@ -156,11 +156,19 @@ export function createMemoryDb(tables: Record<string, Row[]> = {}, constraints: 
                 return query;
             },
             or: (value: string) => {
-                const clauses = value.split(',').map((clause) => clause.match(/^([\w.]+)\.(is|eq)\.(.*)$/));
+                const clauses = value.split(',').map((clause) => clause.match(/^([\w.]+)\.(is|eq|neq|gt|gte|lt|lte)\.(.*)$/));
                 if (clauses.some((clause) => !clause)) return query;
                 filters.push((row) => clauses.some((clause) => {
                     const [, key, op, raw] = clause!;
-                    return op === 'is' ? (valueAt(row, key) ?? null) === null : String(valueAt(row, key)) === raw;
+                    const current = valueAt(row, key) ?? null;
+                    if (op === 'is') return current === null;
+                    if (op === 'eq') return String(current) === raw;
+                    // SQL шиг: NULL-тай харьцуулалт үнэн биш (NULL-ыг `is.null`-ээр тусад нь шүүнэ).
+                    if (current === null) return false;
+                    if (op === 'neq') return String(current) !== raw;
+                    const numeric = raw.trim() !== '' && Number.isFinite(Number(raw)) && Number.isFinite(Number(current));
+                    const [x, y] = numeric ? [Number(current), Number(raw)] : [String(current), raw];
+                    return op === 'gt' ? x > y : op === 'gte' ? x >= y : op === 'lt' ? x < y : x <= y;
                 }));
                 return query;
             },

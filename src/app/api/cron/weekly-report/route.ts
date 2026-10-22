@@ -6,11 +6,14 @@ import { sendWeeklyReportEmail } from '@/lib/email/email';
 import { logger } from '@/lib/utils/logger';
 import { ubDateStr } from '@/lib/utils/date';
 import { sourceLabel } from '@/lib/leads/labels';
+import { NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
 
 /**
  * Долоо хоногийн автомат тайлан. Даваа гараг бүр (vercel.json cron) төсөл бүрийн
  * өнгөрсөн 7 хоногийн лийд, уулзалт, гэрээний нэгтгэлийг push-аар мэдэгдэж,
  * DIGEST_EMAIL тохируулсан бол Resend имэйлээр илгээнэ. CRON_SECRET-ээр хамгаалагдсан.
+ * Шинэ гэрээ = гэрээний огноо (contract_date) нь өнгөрсөн 7 УБ өдөрт (өнөөдрийг оруулахгүй) багтсан,
+ * цуцлаагүй, устгаагүй гэрээ — импортоор нэмэгдсэн хуучин гэрээ «шинэ» болж тоологдохгүй.
  */
 
 async function run(request: Request) {
@@ -23,6 +26,8 @@ async function run(request: Request) {
         const now = new Date();
         const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
         const sinceISO = weekAgo.toISOString();
+        const weekStart = ubDateStr(weekAgo);
+        const weekEnd = ubDateStr(now);
         const recipient = process.env.DIGEST_EMAIL || '';
         const tag = `weekly-report-${ubDateStr(now)}`;
 
@@ -44,8 +49,14 @@ async function run(request: Request) {
                     db.from('property_contracts')
                         .select('id', { count: 'exact', head: true })
                         .eq('shop_id', shop.id)
-                        .gte('created_at', sinceISO),
+                        .is('deleted_at', null)
+                        .or(NOT_CANCELLED_CONTRACT)
+                        .gte('contract_date', weekStart)
+                        .lt('contract_date', weekEnd),
                 ]);
+                // Уншилт алдаатай бол «0 шинэ гэрээ» гэж мэдээлэхгүй.
+                const failed = leadsRes.error || meetingsRes.error || contractsRes.error;
+                if (failed) throw new Error(failed.message);
 
                 const leadRows = leadsRes.data || [];
                 const newLeads = leadRows.length;
@@ -78,8 +89,8 @@ async function run(request: Request) {
                 if (recipient) {
                     emailed = await sendWeeklyReportEmail(recipient, {
                         shopName: shop.name || 'Vertmon',
-                        weekStart: sinceISO.slice(0, 10),
-                        weekEnd: ubDateStr(now),
+                        weekStart,
+                        weekEnd,
                         newLeads,
                         meetings,
                         wonLeads,
@@ -89,8 +100,10 @@ async function run(request: Request) {
                 }
 
                 results.push({ shop: shop.name, newLeads, meetings, wonLeads, newContracts, emailed });
-            } catch {
+            } catch (error) {
                 // нэг төслийн алдаа бусдыг зогсоохгүй
+                logger.error('[WeeklyReport] shop error:', { shopId: shop.id, error });
+                results.push({ shop: shop.name, error: true });
             }
         }
 

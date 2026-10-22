@@ -63,8 +63,14 @@ export interface DirectorDigestData {
     newContracts: number;
     activeContracts: number;
     totalSales: number;
-    collected: number;
+    /** Гэрээнд бүртгэсэн төлсөн дүн; бүгд тодорхойгүй (ERP) бол null («—»). */
+    collected: number | null;
+    /** Зарим гэрээний төлсөн дүн тодорхойгүй — мэдэгдэж буй нийлбэр («+»). */
+    collectedPartial?: boolean;
     overdueCount: number;
+    /** HUB файлын Төлбөр хоцролт ₮ (overdueAsOf огноогоор); мэдээлэлгүй бол null — tile гарахгүй. */
+    overdueAmount?: number | null;
+    overdueAsOf?: string | null;
     topManagers: Array<{ name: string; contracts: number; sales: number }>;
 }
 export async function sendDirectorDigestEmail(to: string, d: DirectorDigestData): Promise<boolean> {
@@ -96,7 +102,8 @@ export async function sendDirectorDigestEmail(to: string, d: DirectorDigestData)
       </tr></table>
       <table style="width:100%;border-collapse:separate;border-spacing:8px;margin-top:4px"><tr>
         ${tile('Нийт борлуулалт', formatMNT(d.totalSales))}
-        ${tile('Цуглуулсан', formatMNT(d.collected))}
+        ${tile('Цуглуулсан', d.collected === null ? '—' : `${formatMNT(d.collected)}${d.collectedPartial ? '+' : ''}`)}
+        ${d.overdueAmount != null ? tile(`Төлбөр хоцролт${d.overdueAsOf ? ` · ${d.overdueAsOf}` : ''}`, formatMNT(d.overdueAmount)) : ''}
       </tr></table>
       <h3 style="margin:24px 0 8px;font-size:15px;color:#111">🏆 Топ менежерүүд</h3>
       <table style="width:100%;border-collapse:collapse;font-size:13px">${managerRows}</table>
