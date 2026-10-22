@@ -1,17 +1,19 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, Trash2 } from 'lucide-react';
+import { FileSpreadsheet, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { dashboardJson, dashboardMutate, DashboardApiError } from '@/lib/api/dashboardFetch';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { EMPTY_PRICING_DRAFT, PricingSaveSchema, type PricingConfig, type PricingRule } from '@/lib/sales/pricing';
+import { EMPTY_PRICING_DRAFT, PricingSaveSchema, pricingKey, type PricingConfig, type PricingRule } from '@/lib/sales/pricing';
+import { PricingImportPanel } from './PricingImportPanel';
 
 type Overview = { latest: PricingConfig | null; active: PricingConfig | null };
 type RuleForm = { [K in keyof PricingRule]: string };
 const emptyRule = (): RuleForm => ({ block: '', model: '', floor_min: '', floor_max: '', payment_condition: '', price_per_sqm: '', advance_percent: '' });
+const ruleForm = (rule: PricingRule): RuleForm => Object.fromEntries(Object.entries(rule).map(([key, value]) => [key, value === null ? '' : String(value)])) as RuleForm;
 const fields: Array<{ key: keyof RuleForm; label: string; numeric?: boolean }> = [
     { key: 'block', label: 'Блок' }, { key: 'model', label: 'Загвар' },
     { key: 'floor_min', label: 'Давхар эхлэх', numeric: true }, { key: 'floor_max', label: 'Давхар дуусах', numeric: true },
@@ -20,7 +22,7 @@ const fields: Array<{ key: keyof RuleForm; label: string; numeric?: boolean }> =
 ];
 
 /** Root admin projects page wires the chosen shop; the API rechecks access independently. */
-export function ProjectPricingSettings({ shopId, projectName }: { shopId: string; projectName?: string }) {
+export function ProjectPricingSettings({ shopId, projectName, onSaved }: { shopId: string; projectName?: string; onSaved?: () => void }) {
     const query = useQuery({
         queryKey: ['project-pricing', shopId], enabled: !!shopId,
         queryFn: () => dashboardJson<Overview>('/api/admin/pricing', { shopId }),
@@ -32,6 +34,7 @@ export function ProjectPricingSettings({ shopId, projectName }: { shopId: string
         {query.isPending ? <p className="mt-4 text-sm">Ачаалж байна…</p>
             : query.error && !query.data ? <p role="alert" className="mt-4 text-sm text-status-danger">{query.error.message} <button type="button" className="underline" onClick={() => void query.refetch()}>Дахин ачаалах</button></p>
                 : query.data && <PricingEditor key={`${shopId}:${query.dataUpdatedAt}`} shopId={shopId} overview={query.data} onSaved={async () => {
+                    onSaved?.();
                     const result = await query.refetch();
                     if (result.error) throw result.error;
                 }} />}
@@ -45,7 +48,13 @@ function PricingEditor({ shopId, overview, onSaved }: { shopId: string; overview
     const [from, setFrom] = useState(initial.valid_from ?? '');
     const [until, setUntil] = useState(initial.valid_until ?? '');
     const [confirmed, setConfirmed] = useState(initial.inventory_area_confirmed);
-    const [rows, setRows] = useState<RuleForm[]>(initial.rules.map(rule => Object.fromEntries(Object.entries(rule).map(([key, value]) => [key, value === null ? '' : String(value)])) as RuleForm));
+    const [rows, setRows] = useState<RuleForm[]>(initial.rules.map(ruleForm));
+    const [importing, setImporting] = useState(false);
+    const blockRows = useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const row of rows) if (row.block.trim()) counts.set(pricingKey(row.block), (counts.get(pricingKey(row.block)) ?? 0) + 1);
+        return counts;
+    }, [rows]);
     const [reviewed, setReviewed] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -108,7 +117,17 @@ function PricingEditor({ shopId, overview, onSaved }: { shopId: string; overview
         </div>
         {!rows.length && <p className="text-sm text-muted-foreground">Баталсан үнийн мөр нэмнэ үү.</p>}
         <p className="text-xs text-muted-foreground">Хоосон үнийн нөхцөлийг мөр болгон нэмэхгүй. «10–30%» зэрэг нөхцөлийн эхний урьдчилгааг шошгоос таахгүй; баталсан эхний хувийг тусад нь оруулна.</p>
-        <Button type="button" variant="secondary" disabled={saving || rows.length >= 500} onClick={() => { setRows(previous => [...previous, emptyRule()]); setReviewed(false); }}><Plus className="size-4" />Үнийн мөр нэмэх</Button>
+        <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" disabled={saving || rows.length >= 500} onClick={() => { setRows(previous => [...previous, emptyRule()]); setReviewed(false); }}><Plus className="size-4" />Үнийн мөр нэмэх</Button>
+            {!importing && <Button type="button" variant="secondary" disabled={saving || conflict} onClick={() => setImporting(true)}><FileSpreadsheet className="size-4" />Excel-ээс оруулах</Button>}
+        </div>
+        {importing && <PricingImportPanel shopId={shopId} currentBlocks={blockRows} onCancel={() => setImporting(false)} onApply={({ rules, files }) => {
+            const blocks = new Set(rules.map(rule => pricingKey(rule.block)));
+            setRows(previous => [...previous.filter(row => !blocks.has(pricingKey(row.block))), ...rules.map(ruleForm)]);
+            if (!source.trim()) setSource(`Файл: ${files.join(', ')}`.slice(0, 500));
+            setReviewed(false); setError(null); setImporting(false);
+            toast.success(`${rules.length} үнийн мөр засварт орлоо. Хугацаа, урьдчилгааг шалгаад хадгална уу.`);
+        }} />}
         {error && <div role="alert" className="text-sm text-status-danger"><p>{error}</p>
             {conflict && <button type="button" disabled={saving} className="mt-2 font-medium text-brand-strong underline" onClick={async () => {
                 setSaving(true);

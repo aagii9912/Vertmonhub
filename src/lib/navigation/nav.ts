@@ -49,6 +49,7 @@ import {
     SlidersHorizontal,
     History,
     NotebookPen,
+    BadgePercent,
 } from 'lucide-react';
 
 type IconType = ComponentType<SVGAttributes<SVGSVGElement>>;
@@ -172,6 +173,14 @@ const UNITS: NavItem = {
     keywords: ['нэгж', 'тоот', 'шатар', 'unit', 'property'],
 };
 
+const PRICING: NavItem = {
+    name: 'Үнэ, нөхцөл',
+    href: '/dashboard/pricing',
+    icon: BadgePercent,
+    module: 'properties',
+    keywords: ['үнэ', 'төлбөрийн нөхцөл', 'урьдчилгаа', 'м² үнэ', 'архив', 'price'],
+};
+
 const WEEKLY: NavItem = {
     name: 'Хурлын бэлтгэл',
     href: '/dashboard/weekly',
@@ -242,7 +251,7 @@ export const ADMIN_NAV: NavItem[] = [
 /** Sidebar-ийн бүлгүүд (дарааллаараа). */
 export const NAV_SECTIONS: NavSection[] = [
     { id: 'today', label: null, items: [TODAY] },
-    { id: 'sales', label: 'Борлуулалт', items: [LEADS, MEETINGS, CONTRACTS, CUSTOMERS, MESSAGES, UNITS] },
+    { id: 'sales', label: 'Борлуулалт', items: [LEADS, MEETINGS, CONTRACTS, CUSTOMERS, MESSAGES, UNITS, PRICING] },
     { id: 'results', label: 'Үр дүн', items: [DAILY_REPORT, WEEKLY, REPORTS, MARKETING] },
     { id: 'admin', label: 'Удирдлага', items: ADMIN_NAV, superAdmin: true },
 ];

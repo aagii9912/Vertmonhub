@@ -18,7 +18,7 @@ import { ubDateStr } from '@/lib/utils/date';
 import { downloadElementImage, type ImageFormat } from '@/lib/utils/element-image';
 import { cn } from '@/lib/utils';
 import {
-    DAILY_COUNT_MAX, DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, dailyMetricLabel, dailyNoteLabel, formalManagerName, formatDailyReportText,
+    DAILY_COUNT_MAX, DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, dailyMetricLabel, dailyNoteLabel, formalManagerName, formatDailyReportText, NEW_LEADS_SECTION_ENABLED,
     type DailyMeetingItem, type DailyPendingMeeting, type DailyReport, type DailyReportConflict, type DailyReportNotes,
 } from '@/lib/dashboard/daily-report';
 import { DAILY_MEETING_BACKDATE_DAYS, type DailyMeetingRequestBody, type DailyMeetingResponse } from '@/lib/dashboard/daily-report-meetings';
@@ -26,7 +26,7 @@ import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/Dropdown';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
-import { cellKey, DailyReportDocument, type DailyMeetingActions } from '@/components/daily-report/DailyReportDocument';
+import { cellKey, DailyReportDocument, draftPhoneLeadChecks, type DailyMeetingActions } from '@/components/daily-report/DailyReportDocument';
 import { DailyMeetingDialog } from '@/components/daily-report/DailyMeetingDialog';
 import { DailyReportHistorySheet } from '@/components/daily-report/DailyReportHistorySheet';
 import { DailyReportSettingsSheet } from '@/components/daily-report/DailyReportSettingsSheet';
@@ -334,7 +334,7 @@ function DailyReportView({ initial }: { initial: { date: string; to: string | nu
         return `${label} · ${formalManagerName(conflict.manager)}: одоо ${conflict.current ?? '—'}`;
     };
     const notices: Array<{ tone: 'info' | 'warning'; text: ReactNode }> = [];
-    if (report && ranged) notices.push({ tone: 'info', text: `${report.days} өдрийн тайланг нэгтгэв: дуудлага, чатын тоо, уулзалт нийлбэрээр. Тоо засах, уулзалт бүртгэх, тэмдэглэл, баталгаажуулалтыг «Өдөр» горимд өдөр тус бүрээр хийнэ.` });
+    if (report && ranged) notices.push({ tone: 'info', text: `${report.days} өдрийн тайланг нэгтгэв: дуудлага, чатын тоо, уулзалт${NEW_LEADS_SECTION_ENABLED ? ', шинэ лид' : ''} нийлбэрээр. Тоо засах, уулзалт бүртгэх, тэмдэглэл, баталгаажуулалтыг «Өдөр» горимд өдөр тус бүрээр хийнэ.` });
     if (report && to === today) notices.push({ tone: 'info', text: 'Өдөр дуусаагүй — одоогоор бүртгэсэн мэдээллийг харуулж байна.' });
     if (report && viewer?.personal && !ranged) notices.push({ tone: 'info', text: 'Төслийн бүх менежерийн мэдээлэл харагдана. Ээлжийн менежер бүх менежерийн дуудлага, чатын тоог оруулж болно; өөрчлөлт бүр «Түүх»-д хадгалагдана.' });
     if (report && editMode && report.completed) notices.push({ tone: 'warning', text: 'Тайлан баталгаажсан. Өөрчлөлт түүхэд бүртгэгдэнэ.' });
@@ -346,6 +346,12 @@ function DailyReportView({ initial }: { initial: { date: string; to: string | nu
             ? <span>Энэ өдөр товлосон {report.meetings.pending} уулзалтын үр дүн бүртгэгдээгүй тул тайланд ороогүй. Доорх «Товлосон, үр дүн бүртгээгүй» жагсаалтаас «Болсон» эсвэл «Ирээгүй» гэж тэмдэглэнэ үү; шинэ уулзалтыг <Link href="/dashboard/viewings" className="font-medium underline">Уулзалт</Link> хуудаснаас товлоно.</span>
             : <span>{ranged ? 'Энэ хугацаанд' : 'Энэ өдөр'} товлосон {report.meetings.pending} уулзалтын үр дүн бүртгэгдээгүй тул тайланд ороогүй. <Link href="/dashboard/viewings" className="font-medium underline">Уулзалт</Link> хуудсанд «Болсон» гэж тэмдэглэнэ үү.</span> });
     }
+    // Утсаар бүртгэсэн лид = утсаар ярьсан дуудлага; засаж байхад ноорогтой нь шууд шалгана.
+    const phoneGaps = report ? draftPhoneLeadChecks(report, editMode ? draft : null).filter(check => check.short) : [];
+    if (phoneGaps.length > 0) {
+        notices.push({ tone: 'warning', text: `Утсаар лид бүртгэсэн ч дуудлагын тоо ${ranged ? 'энэ хугацаанд ' : ''}дутуу байж магадгүй: ${phoneGaps
+            .map(check => `${formalManagerName(check.manager)} (дуудлага ${check.calls ?? '—'}, утасны лид ${check.leads})`).join(', ')}. Тэр дуудлагуудыг ирсэн шугамынх нь тоонд оруулна уу.` });
+    }
     if (report && report.missing.length > 0) notices.push({ tone: 'warning', text: `${ranged ? 'Энэ хугацаанд тоо огт оруулаагүй' : 'Тоо оруулаагүй'}: ${report.missing.join(', ')}.` });
     if (data?.configInvalid) notices.push({ tone: 'warning', text: 'Хадгалсан загвар уншигдсангүй — анхдагч загварыг харуулж байна. «Загвар»-аас дахин хадгална уу.' });
     if (data && !data.configSaved && canConfigure) notices.push({ tone: 'info', text: 'Энэ төслийн загварыг тохируулаагүй байна. «Загвар» товчоор утасны шугам, чатын суваг, менежерийн баганаа тохируулна уу.' });
@@ -356,7 +362,7 @@ function DailyReportView({ initial }: { initial: { date: string; to: string | nu
                 <div>
                     <h1 className="text-[24px] font-semibold tracking-tight">Өдрийн тайлан</h1>
                     <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-                        Ээлжийн менежер багийн дуудлага, чатын тоог оруулж, хамт олныхоо уулзалтыг бүртгэнэ; уулзалт «Уулзалт» хуудаснаас мөн автоматаар орно. Өөрчлөлт бүр түүхэд хадгалагдана.
+                        Ээлжийн менежер багийн дуудлага, чатын тоог оруулж, хамт олныхоо уулзалтыг бүртгэнэ; уулзалт «Уулзалт» хуудаснаас{NEW_LEADS_SECTION_ENABLED ? ', шинэ лидийн тоо лидийн бүртгэлээс' : ' мөн'} автоматаар орно. Өөрчлөлт бүр түүхэд хадгалагдана.
                     </p>
                 </div>
                 <Button variant="secondary" onClick={() => void query.refetch()} disabled={query.isFetching || dirty}>

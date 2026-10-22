@@ -43,3 +43,25 @@ it('preserves a reviewed draft on save failure and requires another review after
     fireEvent.click(screen.getByRole('button', { name: 'Серверийн шинэ утгыг авах · миний засварыг цэвэрлэх' }));
     await waitFor(() => expect(screen.queryByLabelText('1-р мөр м² үнэ (₮)')).not.toBeInTheDocument());
 });
+it('an Excel import replaces only the imported block rows and keeps the draft unsaved until review', async () => {
+    const rule = (block: string, model: string) => ({ block, model, floor_min: 2, floor_max: 9, payment_condition: '30%', price_per_sqm: 4_000_000, advance_percent: 30 });
+    const latest = { id: 'c1', shop_id: 'shop', version: 1, status: 'draft', source: '', valid_from: null, valid_until: null, inventory_area_confirmed: false, rules: [rule('B1', 'E3'), rule('Б2', 'A')] };
+    const file = { file: 'Б1.xlsx', skipped: [], sheets: [{ name: 'Б1', title: 'Б1 блок', kind: 'residential', block: 'Б1', valid_from: null, valid_until: null,
+        modelColumns: [{ header: 'Загвар', sample: ['E6'] }], conditions: [{ label: '30%', base: false }],
+        rows: [{ row: 8, floor_min: 3, floor_max: 4, models: ['E6'], prices: { '30%': 6_800_000 } }], issues: [] }] };
+    fetchMock.mockImplementation(async (url: string) => ({ ok: true, json: async () => url === '/api/admin/pricing/import' ? file : { latest, active: null } }));
+    mount();
+    await screen.findByDisplayValue('E3');
+    fireEvent.click(screen.getByRole('button', { name: 'Excel-ээс оруулах' }));
+    fireEvent.change(document.querySelector('input[type=file]') as HTMLInputElement, { target: { files: [new File(['x'], 'Б1.xlsx')] } });
+    await screen.findByText('Б1: одоогийн 1 мөрийг 1 мөрөөр солино');
+    fireEvent.change(screen.getByLabelText('«30%» эхний урьдчилгаа (%)'), { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Засварт оруулах (1 мөр)' }));
+    expect(screen.queryByDisplayValue('E3')).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('A')).toBeInTheDocument();
+    expect(screen.getByLabelText('2-р мөр Загвар')).toHaveValue('E6');
+    expect(screen.getByLabelText('2-р мөр м² үнэ (₮)')).toHaveValue('6800000');
+    expect(screen.getByLabelText('Эх сурвалж')).toHaveValue('Файл: Б1.xlsx');
+    expect(fetchMock.mock.calls.filter(([url, init]) => url === '/api/admin/pricing' && init?.method === 'PUT')).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Баталсан үнийг идэвхжүүлэх' })).toBeDisabled();
+});

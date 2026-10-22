@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import {
-    buildDailyReport, buildDailyReportChanges, dailyNoteText, flattenDailyNotes, readDailyReportConfig,
-    type BuildDailyReportInput, type DailyCountRow, type DailyMeetingRow, type DailyReportChangeRow, type DailyReportConflict,
+    buildDailyReport, buildDailyReportChanges, dailyNoteText, flattenDailyNotes, NEW_LEADS_SECTION_ENABLED, readDailyReportConfig,
+    type BuildDailyReportInput, type DailyCountRow, type DailyLeadRow, type DailyMeetingRow, type DailyReportChangeRow, type DailyReportConflict,
     type DailyReportNotes, type SaveDailyReportInput,
 } from '../src/lib/dashboard/daily-report';
 import type { DailyMeetingRequestBody } from '../src/lib/dashboard/daily-report-meetings';
@@ -58,6 +58,8 @@ async function setup(page: Page, mode: 'team' | 'personal') {
         ] as DailyMeetingRow[],
         // Цаг нь өнгөрсөн товлосон уулзалт («Болсон» товч идэвхтэй).
         pending: [{ id: 'p1', manager: KHON, type: 'new_customer', customer: 'Болд', scheduled_at: new Date(Date.now() - 30 * 60_000).toISOString() }],
+        // Өнөөдөр бүртгэгдсэн лид (нэг нь хариуцагчгүй — «Оноогдоогүй» багана).
+        leads: [{ manager: CHAN, source: 'facebook_ads' }, { manager: KHON, source: 'facebook_ads' }, { manager: KHON, source: 'phone' }, { manager: null, source: 'website' }] as DailyLeadRow[],
         changes: [] as DailyReportChangeRow[],
     };
     let nextChange = 1;
@@ -76,6 +78,8 @@ async function setup(page: Page, mode: 'team' | 'personal') {
         counts: state.counts,
         meetings: state.meetings,
         pendingMeetings: state.pending,
+        // loader-ийн дүрэм: «Шинэ лид» хэсэг унтраалттай бол лид уншихгүй (null).
+        leads: NEW_LEADS_SECTION_ENABLED ? state.leads : null,
         notes: state.notes,
         completed: state.completed,
         only: null,
@@ -192,6 +196,21 @@ test('багийн өдрийн тайлан: хүснэгт, хэн оруул�
     await expect(projectLine.locator('td[data-author="other"]')).toHaveCount(1);
     await expect(projectLine.locator('td[data-author="other"]')).toHaveAttribute('title', `Оруулсан: М. Хонгорзул · ${formatTime(`${today}T02:15:00.000Z`)}`);
     await expect(report.getByText('— өөр хүн оруулсан тоо (дээр нь очиж хэн оруулсныг харна)')).toBeVisible();
+    // Шинэ лид: системээс, эх үүсвэр × менежер, засагдахгүй (эзэмшигч 2026-10-22 түр нуусан).
+    const newLeads = report.getByRole('region', { name: 'Шинэ лид', exact: true });
+    if (NEW_LEADS_SECTION_ENABLED) {
+        await expect(newLeads.getByRole('rowheader', { name: 'Facebook Ads' })).toBeVisible();
+        await expect(newLeads.getByRole('rowheader', { name: 'Вэбсайт' })).toBeVisible();
+        await expect(newLeads.getByRole('columnheader', { name: '—' })).toHaveAttribute('title', 'Оноогдоогүй');
+        await expect(report.getByText('Нийт 4 лид бүртгэгдсэн.', { exact: true })).toBeVisible();
+    } else {
+        await expect(newLeads).toHaveCount(0);
+        await expect(report.getByText(/лид бүртгэгдсэн/)).toHaveCount(0);
+    }
+    // Утасны лидийн шалгалт түр унтраалттай (PHONE_LEAD_CHECK_ENABLED = false).
+    await expect(report.getByRole('region', { name: 'Дуудлага ба утасны лид', exact: true })).toHaveCount(0);
+    await expect(report.locator('td[data-flag="short"]')).toHaveCount(0);
+    await expect(page.getByText(/Утсаар лид бүртгэсэн ч дуудлагын тоо/)).toHaveCount(0);
     await page.screenshot({ path: 'test-results/e2e/daily-report-team.png', fullPage: true });
 
     // Зураг (PNG/JPEG): мессенжерт илгээх цагаан тайлан, 2x нягтрал, дэлгэцийн загвартай адил 2 баганатай (1180px → 2360px).
@@ -207,8 +226,8 @@ test('багийн өдрийн тайлан: хүснэгт, хэн оруул�
         expect(bytes.subarray(0, signature.length / 2).toString('hex')).toBe(signature);
         if (extension === 'png') {
             expect(bytes.readUInt32BE(16)).toBe(2360);
-            // Хүснэгтүүд хоёр баганаар тул зураг өргөнөөсөө намхан.
-            expect(bytes.readUInt32BE(20)).toBeLessThan(2360);
+            // Хүснэгтүүд (дуудлага ×2, уулзалт, чат, шинэ лид) хоёр баганаар: ~2800px; нэг баганаар бол ~3500px.
+            expect(bytes.readUInt32BE(20)).toBeLessThan(3100);
         }
         await expect(page.getByRole('button', { name: 'Зураг', exact: true })).toBeEnabled();
     }
@@ -267,6 +286,10 @@ test('ээлжийн менежер хамт олныхоо тоог оруул�
     await expect(report.getByText('Бат — Б2-58м2 10-30%; үлдэгдэл банк')).toBeVisible();
     await expect(page.getByText('Ээлжийн менежер бүх менежерийн дуудлага, чатын тоог оруулж болно', { exact: false })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Загвар', exact: true })).toHaveCount(0);
+    // Хонгорзул утсаар лид бүртгэсэн ч дуудлагаа оруулаагүй — шалгалт түр унтраалттай тул анхааруулахгүй.
+    const phoneGap = page.getByText(/Утсаар лид бүртгэсэн ч дуудлагын тоо/);
+    await expect(phoneGap).toHaveCount(0);
+    await expect(report.locator('td[data-flag="short"]')).toHaveCount(0);
     // Өөрийн багана хоосон тул шууд оруулах горим; өөрийн багана тодорсон, хамт олных засагдана.
     await expect(personalCalls.getByRole('columnheader', { name: 'Хон 9008 5678' })).toHaveAttribute('title', 'М. Хонгорзул — таны багана');
     const chanLine = page.getByRole('spinbutton', { name: 'Төслийн утас · 77862222 · Нийт · Р. Чанцалдулам' });
@@ -360,12 +383,15 @@ test('ээлжийн менежер хамт олныхоо тоог оруул�
     expect(copied).toContain('Менежерийн дуудлага: Нийт 9 дуудлага ирсэн');
     expect(copied).toContain('Бат — Б2-58м2 10-30%; үлдэгдэл банк');
     expect(copied).toContain('Тулга');
+    if (NEW_LEADS_SECTION_ENABLED) expect(copied).toContain('Шинэ лид: Нийт 4 лид бүртгэгдсэн (Чан 1, Хон 2, Оноогдоогүй 1).');
+    else expect(copied).not.toContain('Шинэ лид');
     expect(copied).toContain('Тайлан хийж гүйцэтгэсэн: М. Хонгорзул');
     expect(copied).toContain('Р. Чанцалдулам (8888 1234)');
     expect(copied).toContain('М. Хонгорзул (9008 5678)');
     expect(copied).not.toContain('Оруулсан');
     await page.emulateMedia({ media: 'print' });
     await expect(report.getByRole('region', { name: 'Менежерийн дуудлага', exact: true })).toBeVisible();
+    await expect(report.getByRole('region', { name: 'Дуудлага ба утасны лид', exact: true })).toBeHidden();
     await expect(personalCalls.getByText('9008 5678', { exact: true })).toBeVisible();
     await expect(report.getByText('— өөр хүн оруулсан тоо (дээр нь очиж хэн оруулсныг харна)')).toBeHidden();
     await expect(report.getByRole('button', { name: 'Уулзалт нэмэх', exact: true })).toBeHidden();
