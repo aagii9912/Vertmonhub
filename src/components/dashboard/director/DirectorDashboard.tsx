@@ -136,7 +136,7 @@ function SalesVsTarget({ data, loading, className, month }: { data?: ReturnType<
                         {s.unitsByType.length > 0 && <span className="text-muted-foreground"> · {s.unitsByType.map((u) => `${u.type} ${u.count}`).join(' · ')}</span>}
                     </div>
                     <p className="text-[12px] text-muted-foreground">
-                        Төслийн төлөвлөгөөнд хамаарах бүх гэрээ (Б1, Б2, зогсоол), захиалга өгсөн огноогоор, цуцлагдсаныг хассан.
+                        Төслийн төлөвлөгөөнд хамаарах гэрээ (Агуулах, Үйлчилгээг хассан; төлөвлөгөө блокоор задлаагүй сард бусад блокийн орон сууц орно), захиалга өгсөн огноогоор, цуцлагдсаныг хассан.
                         {s.undated > 0 && ` Огноогүй ${s.undated} гэрээ сарын дүнд ороогүй («+»).`}{' '}
                         <Link href="/dashboard/reports/plan" className="text-brand-strong hover:underline">Төлөвлөгөөний биелэлт</Link>
                     </p>

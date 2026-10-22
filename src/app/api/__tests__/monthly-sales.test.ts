@@ -107,6 +107,9 @@ describe('monthly sales API boundary', () => {
         expect(result.system.months[9].blocks.parking.contract).toEqual({ value: 70, lowerBound: false });
         expect(result.system.year.contract).toEqual({ value: 70, lowerBound: false });
         expect(result.computedActualSource).toContain('менежерээр шүүхгүй');
+        // Задаргаагүй сард бусад блокийн орон сууц нийтэд ордог тул «зөвхөн Б1, Б2, зогсоол» гэж хэлэхгүй.
+        expect(result.computedActualSource).toContain('Агуулах, Үйлчилгээг хассан');
+        expect(result.computedActualSource).not.toContain('Б1, Б2, зогсоол');
         expect(mocks.plan).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ shopId, year: 2026 }));
     });
 

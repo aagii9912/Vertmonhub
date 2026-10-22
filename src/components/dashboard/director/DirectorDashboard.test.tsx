@@ -34,6 +34,9 @@ describe('director sales vs plan card', () => {
         expect(screen.getByText('43%+')).toBeInTheDocument();
         expect(screen.getByText(/Огноогүй 10 гэрээ сарын дүнд ороогүй/)).toBeInTheDocument();
         expect(screen.queryByText('0%')).not.toBeInTheDocument();
+        // Төлөвлөгөөнд хамаарах гэрээний дүрэм: Б1/Б2/зогсоолоор хязгаарлахгүй (задаргаагүй сард бусад блок орно).
+        expect(screen.getByText(/Агуулах, Үйлчилгээг хассан; төлөвлөгөө блокоор задлаагүй сард бусад блокийн орон сууц орно/)).toBeInTheDocument();
+        expect(screen.queryByText(/\(Б1, Б2, зогсоол\)/)).not.toBeInTheDocument();
     });
 
     it('draws an unknown month as «—» and the current lower-bound month with «+», never as a zero bar', () => {

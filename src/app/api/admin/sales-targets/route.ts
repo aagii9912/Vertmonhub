@@ -26,7 +26,7 @@ const rosterSchema = z.object({
 
 function throwOnError(error: unknown): never { throw error; }
 
-const SYSTEM_ACTUAL_SOURCE = 'Төслийн бүх гэрээ (менежерээр шүүхгүй) · захиалга өгсөн огноогоор · цуцлагдсаныг хассан · Б1, Б2, зогсоол';
+const SYSTEM_ACTUAL_SOURCE = 'Төслийн бүх гэрээ (менежерээр шүүхгүй) · захиалга өгсөн огноогоор · цуцлагдсаныг хассан · Агуулах, Үйлчилгээг хассан (блокоор задлаагүй сард бусад блокийн орон сууц нийтэд орно)';
 
 const autoOf = (cells: PlanScopeCells) => Object.fromEntries(Object.entries(cells.metrics).map(([key, cell]) => [key, cell!.auto])) as Partial<Record<PlanMetricKey, PlanValue>>;
 
