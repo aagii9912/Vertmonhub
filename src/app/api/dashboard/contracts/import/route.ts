@@ -9,6 +9,7 @@ import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { ERP_LIMITS } from '@/lib/erp/import';
 import { ubDateStr } from '@/lib/utils/date';
+import { dateSchema } from '@/lib/marketing/performance';
 import {
     commitContractListImport, loadLatestContractListImport, previewContractListImport,
 } from '@/lib/services/ContractListImportService';
@@ -20,7 +21,8 @@ const noCache = { 'Cache-Control': 'no-store' };
 const flag = z.preprocess(value => value === 'true' || value === '1' || value === true, z.boolean());
 const FormSchema = z.object({
     action: z.enum(['preview', 'commit']),
-    reportDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    // Хуанлийн бодит огноо (2026-02-31 биш) — overdue_as_of болж хадгалагдана.
+    reportDate: dateSchema.optional(),
     requestId: z.string().uuid().optional(),
     planHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     acceptReview: flag,

@@ -154,6 +154,8 @@ describe('POST /api/dashboard/contracts/import — gates', () => {
         const unknownUnit = await preview(await fileOf([hubRow({ 'Тоот': 999 })]));
         expect((await unknownUnit.json()).errors).toEqual(['Мөр 2: Орон сууц Б1-999 байр олдсонгүй']);
         expect((await post({ action: 'delete' })).status).toBe(400);
+        // Хуанлид байхгүй огноо overdue_as_of болж урьдчилан харагдахгүй (RPC-ийн англи алдаа ч биш).
+        expect((await post({ action: 'preview', reportDate: '2026-02-31' })).status).toBe(400);
     });
 });
 
