@@ -35,7 +35,7 @@ import { contractStatusLabel } from '@/lib/contracts/labels';
 import { loadLatestContractListImport, NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
 import { summarizeContracts, type ContractSummaryRow } from '@/lib/contracts/summary';
 import { periodContractAmount, periodContractCount, undatedContractsHint } from '@/lib/dashboard/contract-dates';
-import { loadLatestErpProducts } from '@/lib/erp/snapshots';
+import { loadReportInventory } from '@/lib/inventory/report-inventory';
 import { parseUnitUpdate, unitFieldLabel, updateInventoryUnit } from '@/lib/inventory/unit-update';
 import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 
@@ -184,13 +184,14 @@ export async function fetchProperties(shopId: string, args: any, access: Propert
     if (args.name_search && !search) return { error: 'Хайх нэрээ тодорхой оруулна уу.' };
 
     try {
-        // Нөөц нь Лхагвын тайлантай адил төслийн хамгийн сүүлийн ERP бүтээгдэхүүний экспорт; экспорт
-        // байхгүй эсвэл ээлжээр шүүх үед (экспортод ээлж алга) байрны бүртгэл (`property_units`).
+        // Нөөц нь Лхагвын тайлантай нэг дүрэм (`lib/inventory/report-inventory.ts`): HUB гэрээний жагсаалт шинэ бол
+        // байрны бүртгэл + амьд гэрээ, эс бөгөөс сүүлийн ERP бүтээгдэхүүний экспорт; аль нь ч алга эсвэл ээлжээр шүүх үед
+        // (экспортод ээлж алга) байрны бүртгэл (`property_units`).
         const readInventory = !['house', 'land'].includes(args.type) && (status === 'all' || unitStatuses.includes(status));
         const readProjects = () => fetchAllRows<{ id: string; name: string; district: string | null }>((from, to) => supabaseAdmin
             .from('projects').select('id, name, district').eq('shop_id', shopId).order('id').range(from, to));
         const [erp, linkedProjects] = await Promise.all([
-            readInventory && !args.phase ? loadLatestErpProducts(supabaseAdmin, shopId, ubDateStr()) : null,
+            readInventory && !args.phase ? loadReportInventory(supabaseAdmin, shopId, ubDateStr(), { withErpPrice: true, unitsFallback: false }) : null,
             search || args.district || args.project_id ? readProjects() : null,
         ]);
         // Нэгжид байршил/төслийн нэр байхгүй; зөвхөн тухайн shop-ийн төслөөр холбоно.
@@ -256,7 +257,12 @@ export async function fetchProperties(shopId: string, args: any, access: Propert
         const project = projects.length === 1 ? projects[0] : null;
         const needle = search.toLowerCase();
         const canSeePrice = !!access.canSeeErpPrice;
-        const erpInfo = { as_of: erp?.info.date ?? null, source_name: erp?.info.source ?? null };
+        const erpSource = erp?.info.kind === 'contracts' ? 'hub_contracts' : 'erp_products';
+        const erpInfo = {
+            as_of: erp?.info.date ?? null, source_name: erp?.info.source ?? null,
+            // HUB горимд үнийг ERP экспортоос кодоор тааруулсан тул үнийн огноо тусдаа.
+            ...(erp?.info.kind === 'contracts' ? { price_as_of: erp.priceAsOf } : {}),
+        };
         const erpUnits = (erp?.rows ?? [])
             .filter(p => p.kind === category && inventoryStatusMatches(p.status, status)
                 && (args.rooms == null || p.rooms === Number(args.rooms))
@@ -267,7 +273,7 @@ export async function fetchProperties(shopId: string, args: any, access: Propert
             .sort((a, b) => (a.block ?? '').localeCompare(b.block ?? '', 'mn', { numeric: true })
                 || (a.floor ?? 0) - (b.floor ?? 0) || a.code.localeCompare(b.code, 'mn', { numeric: true }))
             .map(p => ({
-                source: 'erp_products', project_id: project?.id ?? null,
+                source: erpSource, project_id: project?.id ?? null,
                 name: [project?.name, p.block, p.code].filter(Boolean).join(' · '),
                 type: p.kind === 'residential' ? 'apartment' : p.kind, category: p.kind,
                 block: p.block, code: p.code, model: p.model, rooms: p.rooms, size_sqm: p.area, floor: p.floor,

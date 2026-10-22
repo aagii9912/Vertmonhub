@@ -1,16 +1,19 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import type { WeeklySalesReport } from '@/lib/dashboard/weekly-sales';
+import { floorTone, type FloorCell, type FloorTone, type WeeklySalesReport } from '@/lib/dashboard/weekly-sales';
 
 type FloorMapData = NonNullable<WeeklySalesReport['inventory']>['floorMaps'][number];
-type Cell = FloorMapData['floors'][number]['cells'][string][number];
 
 const shortName = (name: string | null) => name?.split('.')[0]?.trim() || null;
-const tone = (cell: Cell) => cell.barter && cell.status !== 'available' ? 'bg-status-neutral-soft text-fg-2'
-    : cell.status === 'sold' || cell.status === 'handed_over' ? 'bg-status-success-soft text-foreground'
-        : cell.status === 'available' ? 'bg-surface text-fg-2'
-            : 'bg-status-pending-soft text-foreground';
+const TONE_CLASS: Record<FloorTone, string> = {
+    sold: 'bg-status-success-soft text-foreground', available: 'bg-surface text-fg-2', barter: 'bg-status-neutral-soft text-fg-2',
+};
+/** Гэрээтэйд менежерийн нэр, бартерт менежер эсвэл «Бартер»; худалдаанд байгаа байранд нэр гаргахгүй. */
+const cellLabel = (cell: FloorCell) => {
+    const tone = floorTone(cell);
+    return tone === 'sold' ? shortName(cell.manager) : tone === 'barter' ? shortName(cell.manager) ?? 'Бартер' : null;
+};
 
 /** Давхрын зураглал: давхар × загвар, зарагдсан байранд менежерийн нэр (Лхагвагийн тайлангийн загвар). */
 export function FloorMap({ map, statusLabels }: { map: FloorMapData; statusLabels: Record<string, string> }) {
@@ -24,7 +27,6 @@ export function FloorMap({ map, statusLabels }: { map: FloorMapData; statusLabel
                         {map.models.map(model => <th key={model} scope="col" className="px-2 py-2 font-medium">{model}</th>)}
                         <th scope="col" className="border-l border-border px-2 py-2 font-medium">Гэрээтэй</th>
                         <th scope="col" className="px-2 py-2 font-medium">Худалдаанд</th>
-                        <th scope="col" className="px-2 py-2 font-medium">Бусад</th>
                         <th scope="col" className="px-2 py-2 font-medium">Бартер</th>
                     </tr>
                 </thead>
@@ -37,16 +39,15 @@ export function FloorMap({ map, statusLabels }: { map: FloorMapData; statusLabel
                                 return <td key={model} className="p-0.5 align-middle">
                                     {cells.map(cell => (
                                         <div key={cell.code} title={`${cell.code} · ${cell.statusLabel || statusLabels[cell.status ?? 'unknown']}${cell.barter ? ' · бартер' : ''}`}
-                                            className={cn('rounded px-1 py-1 leading-tight', tone(cell))}>
+                                            className={cn('rounded px-1 py-1 leading-tight', TONE_CLASS[floorTone(cell)])}>
                                             <span className="num font-medium">{cell.area !== null ? `${cell.area.toLocaleString('en-US', { maximumFractionDigits: 2 })} м²` : cell.code}</span>
-                                            {shortName(cell.manager) && cell.status !== 'available' && <span className="block truncate text-[10.5px] text-fg-2">{shortName(cell.manager)}</span>}
+                                            {cellLabel(cell) && <span className="block truncate text-[10.5px] text-fg-2">{cellLabel(cell)}</span>}
                                         </div>
                                     ))}
                                 </td>;
                             })}
                             <td className="num border-l border-border px-2">{row.counts.sold}</td>
                             <td className="num px-2">{row.counts.available}</td>
-                            <td className="num px-2">{row.counts.other}</td>
                             <td className="num px-2">{row.counts.barter}</td>
                         </tr>
                     ))}
@@ -56,7 +57,6 @@ export function FloorMap({ map, statusLabels }: { map: FloorMapData; statusLabel
                         <th scope="row" className="px-2 py-2 text-left" colSpan={map.models.length + 1}>Нийт</th>
                         <td className="num border-l border-border px-2">{map.totals.sold}</td>
                         <td className="num px-2">{map.totals.available}</td>
-                        <td className="num px-2">{map.totals.other}</td>
                         <td className="num px-2">{map.totals.barter}</td>
                     </tr>
                 </tfoot>
@@ -69,8 +69,7 @@ export function FloorMapLegend() {
     return (
         <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground" aria-label="Тайлбар">
             <li className="flex items-center gap-1.5"><span className="size-3 rounded-sm bg-status-success-soft ring-1 ring-border" />Гэрээтэй (зарагдсан, хүлээлгэсэн)</li>
-            <li className="flex items-center gap-1.5"><span className="size-3 rounded-sm bg-surface ring-1 ring-border" />Худалдаанд</li>
-            <li className="flex items-center gap-1.5"><span className="size-3 rounded-sm bg-status-pending-soft ring-1 ring-border" />Бусад (захиалсан, хадгалсан)</li>
+            <li className="flex items-center gap-1.5"><span className="size-3 rounded-sm bg-surface ring-1 ring-border" />Худалдаанд (захиалсан, хадгалсан орно)</li>
             <li className="flex items-center gap-1.5"><span className="size-3 rounded-sm bg-status-neutral-soft ring-1 ring-border" />Бартер</li>
         </ul>
     );

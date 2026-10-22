@@ -150,10 +150,11 @@ describe('buildWeeklySales', () => {
         const [map] = report.inventory!.floorMaps;
         expect(map.models).toEqual(['E1', 'E2', 'E3', 'E4']);
         expect(map.floors.map(row => [row.floor, row.counts])).toEqual([
-            [15, { sold: 0, available: 0, other: 0, barter: 2 }],
-            [2, { sold: 2, available: 1, other: 1, barter: 0 }],
+            [15, { sold: 0, available: 0, barter: 2 }],
+            // Хадгалсан (reserved) байр «Худалдаанд»-д орно (эзний шийдвэр W14).
+            [2, { sold: 2, available: 2, barter: 0 }],
         ]);
-        expect(map.totals).toEqual({ sold: 2, available: 1, other: 1, barter: 2 });
+        expect(map.totals).toEqual({ sold: 2, available: 2, barter: 2 });
         expect(map.floors[1].cells.E4).toEqual([expect.objectContaining({ code: 'Б1-4', status: 'handed_over', manager: 'Менежер.Б' })]);
     });
 });

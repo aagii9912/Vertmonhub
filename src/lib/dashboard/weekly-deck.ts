@@ -1,6 +1,6 @@
 import type PptxGenJS from 'pptxgenjs';
 import type { OperationsReport } from './operations-report';
-import type { WeeklySalesReport } from './weekly-sales';
+import { floorTone, type FloorCell, type FloorTone, type WeeklySalesReport } from './weekly-sales';
 import type { WeeklyContentPlan, WeeklyUpdate } from './weekly-review';
 import { formatReviewChange, updatePart } from './weekly-review';
 import { knownPeriodAmount, periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from './contract-dates';
@@ -375,14 +375,16 @@ function inventorySlide(pres: PptxGenJS, report: WeeklySalesReport) {
     });
 }
 
-type FloorMap = NonNullable<WeeklySalesReport['inventory']>['floorMaps'][number];
-type FloorCell = FloorMap['floors'][number]['cells'][string][number];
-const floorFill = (cell: FloorCell) => cell.barter && cell.status !== 'available' ? C.neutralSoft
-    : cell.status === 'sold' || cell.status === 'handed_over' ? C.successSoft
-        : cell.status === 'available' ? C.white : C.pendingSoft;
+const FLOOR_FILL: Record<FloorTone, string> = { sold: C.successSoft, available: C.white, barter: C.neutralSoft };
+/** Нүдний бичвэр: талбай (м²), гэрээтэйд менежерийн нэр, гэрээгүй бартерт «Бартер». */
+const floorCellText = (cell: FloorCell) => {
+    const tone = floorTone(cell);
+    const label = tone === 'sold' && cell.manager ? managerShort(cell.manager) : tone === 'barter' ? (cell.manager ? managerShort(cell.manager) : 'Бартер') : '';
+    return `${cell.area !== null ? `${area(cell.area)} м²` : cell.code}${label ? ` ${label}` : ''}`;
+};
 
 function legend(slide: Slide, y: number) {
-    const items: [string, string][] = [[C.successSoft, 'Гэрээтэй (зарагдсан, хүлээлгэсэн)'], [C.white, 'Худалдаанд'], [C.pendingSoft, 'Бусад (захиалсан, хадгалсан)'], [C.neutralSoft, 'Бартер']];
+    const items: [string, string][] = [[C.successSoft, 'Гэрээтэй (зарагдсан, хүлээлгэсэн)'], [C.white, 'Худалдаанд (захиалсан, хадгалсан орно)'], [C.neutralSoft, 'Бартер']];
     let x = M;
     for (const [color, label] of items) {
         slide.addShape('rect', { x, y: y + 0.06, w: 0.18, h: 0.18, fill: { color }, line: { color: C.line, width: 0.75 } });
@@ -391,10 +393,10 @@ function legend(slide: Slide, y: number) {
     }
 }
 
-/** Давхрын зураглал: давхар × загвар, худалдаанд байгаа байр цагаан, зарагдсанд менежерийн нэр. */
+/** Давхрын зураглал: давхар × загвар, худалдаанд байгаа байр цагаан, гэрээтэйд менежерийн нэр. */
 function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport) {
-    // Мөр ≥ 0.22" (8pt) байхаар хуваана: 21-ээс олон давхартай блок 2+ слайдад тэнцүү хуваагдана.
-    const maxFloors = Math.floor((BOTTOM - TOP) / 0.22) - 2;
+    // Мөр ≥ 0.2" (8pt) байхаар хуваана: 23 хүртэл давхартай блок нэг слайдад багтана, түүнээс олон бол тэнцүү хуваагдана.
+    const maxFloors = Math.floor((BOTTOM - TOP) / 0.2) - 2;
     for (const map of report.inventory?.floorMaps ?? []) {
         const chunks = Math.max(1, Math.ceil(map.floors.length / maxFloors));
         const chunkSize = Math.ceil(map.floors.length / chunks);
@@ -402,30 +404,34 @@ function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport) {
             const floors = map.floors.slice(chunk * chunkSize, (chunk + 1) * chunkSize);
             const slide = content(pres, 'Үлдэгдэл', `Орон сууцны үлдэгдэл — ${map.block} блок${chunks > 1 ? ` (${chunk + 1}/${chunks})` : ''}`);
             legend(slide, 1.3);
-            const countW = 1.0;
-            const floorW = 0.75;
-            const modelW = (CW - floorW - countW * 4) / Math.max(1, map.models.length);
+            const countW = 0.9;
+            const floorW = 0.85;
+            const modelW = (CW - floorW - countW * 3) / Math.max(1, map.models.length);
             const rowH = Math.min(0.42, (BOTTOM - TOP) / (floors.length + 2));
             const fontSize = rowH >= 0.3 ? 9 : 8;
-            const head = [headCell('Давхар'), ...map.models.map(model => headCell(model, 'center')), headCell('Гэрээтэй', 'center'), headCell('Худалдаанд', 'center'), headCell('Бусад', 'center'), headCell('Бартер', 'center')]
+            const head = [headCell('Давхар'), ...map.models.map(model => headCell(model, 'center')), headCell('Гэрээтэй', 'center'), headCell('Худалдаанд', 'center'), headCell('Бартер', 'center')]
                 .map(cell => ({ ...cell, options: { ...cell.options, fontSize: 8 } }));
             const rows = floors.map(row => [
-                bodyCell(`${row.floor}`, 'left', { bold: true, color: C.ink2 }),
+                bodyCell(`${row.floor} давхар`, 'left', { bold: true, color: C.ink2 }),
                 ...map.models.map(model => {
                     const cells = row.cells[model] ?? [];
                     if (!cells.length) return bodyCell('', 'center', { fill: { color: C.surface } });
-                    const text = cells.map(cell => `${cell.area !== null ? area(cell.area) : cell.code}${cell.status !== 'available' && cell.manager ? ` ${managerShort(cell.manager)}` : ''}`).join('\n');
-                    return bodyCell(text, 'center', { fill: { color: floorFill(cells[0]) }, color: cells[0].status === 'available' ? C.brand : C.ink, bold: cells[0].status === 'available' });
+                    const tone = floorTone(cells[0]);
+                    return bodyCell(cells.map(floorCellText).join('\n'), 'center', { fill: { color: FLOOR_FILL[tone] }, color: tone === 'available' ? C.brand : C.ink, bold: tone === 'available' });
                 }),
-                bodyCell(String(row.counts.sold), 'center'), bodyCell(String(row.counts.available), 'center', { bold: true, color: C.brand }), bodyCell(String(row.counts.other), 'center'), bodyCell(String(row.counts.barter), 'center'),
+                bodyCell(String(row.counts.sold), 'center'), bodyCell(String(row.counts.available), 'center', { bold: true, color: C.brand }), bodyCell(String(row.counts.barter), 'center'),
             ]);
             const last = chunk === chunks - 1;
-            const footer = [bodyCell('Нийт', 'left', { bold: true, colspan: map.models.length + 1 }), bodyCell(String(map.totals.sold), 'center', { bold: true }), bodyCell(String(map.totals.available), 'center', { bold: true, color: C.brand }), bodyCell(String(map.totals.other), 'center', { bold: true }), bodyCell(String(map.totals.barter), 'center', { bold: true })];
+            const footer = [bodyCell('НИЙТ', 'left', { bold: true, colspan: map.models.length + 1 }), bodyCell(String(map.totals.sold), 'center', { bold: true }), bodyCell(String(map.totals.available), 'center', { bold: true, color: C.brand }), bodyCell(String(map.totals.barter), 'center', { bold: true })];
             slide.addTable([head, ...rows, ...(last ? [footer] : [])], {
-                x: M, y: TOP, w: CW, colW: [floorW, ...map.models.map(() => modelW), countW, countW, countW, countW], rowH, fontFace: FONT, fontSize,
+                x: M, y: TOP, w: CW, colW: [floorW, ...map.models.map(() => modelW), countW, countW, countW], rowH, fontFace: FONT, fontSize,
                 border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.01, 0.03, 0.01, 0.03], autoPage: false,
             });
-            note(slide, [`${map.block} блок: гэрээтэй ${map.totals.sold}, худалдаанд ${map.totals.available}, бусад ${map.totals.other}, бартер ${map.totals.barter}.`, 'Цэнхэр тоо = худалдаанд байгаа байр (м²).']);
+            note(slide, [
+                `${map.block} блок: гэрээтэй ${map.totals.sold}, худалдаанд ${map.totals.available}, бартер ${map.totals.barter}.`,
+                'Цэнхэр тоо = худалдаанд байгаа байр (м²). Захиалсан, хадгалсан байр «Худалдаанд»-д орно.',
+                report.inventory?.source.kind === 'contracts' ? 'Ногоон = Хабын амьд гэрээтэй байр (HUB гэрээний жагсаалт). Гэрээтэй байрны талбай нь гэрээлсэн талбай.' : null,
+            ]);
         }
     }
 }

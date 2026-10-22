@@ -20,7 +20,7 @@ function fakeDb(tables: Record<string, Row[]>, calls: string[] = []) {
             is: (key: string, value: null) => { filters.push(row => (row[key] ?? null) === value); return query; },
             // Зөвхөн «цуцлаагүй» шүүлтийг дуурайна.
             or: (expression: string) => { if (expression.includes('neq.cancelled')) filters.push(row => row.contract_status !== 'cancelled'); return query; },
-            gte: () => query, order: () => query,
+            gte: () => query, order: () => query, limit: () => query,
             lte: (key: string, value: string) => { filters.push(row => String(row[key]) <= value); return query; },
             range: () => query,
             maybeSingle: async () => ({ data: (tables[table] ?? []).filter(row => filters.every(f => f(row)))[0] ?? null, error: null }),
@@ -78,7 +78,7 @@ describe('loadWeeklySales', () => {
         expect(report.sources.contracts).toBe('crm');
         expect(report.week).toMatchObject({ count: 1, total: 40 });
         expect(report.inventory!.source).toEqual({ date: '2026-06-24', source: 'Байрны бүртгэл (CRM)', kind: 'crm' });
-        expect(report.inventory!.floorMaps).toEqual([expect.objectContaining({ block: '203', models: ['A', 'B', 'C'], totals: { sold: 3, available: 0, other: 0, barter: 0 } })]);
+        expect(report.inventory!.floorMaps).toEqual([expect.objectContaining({ block: '203', models: ['A', 'B', 'C'], totals: { sold: 3, available: 0, barter: 0 } })]);
         expect(report.inventory!.blocks).toEqual([expect.objectContaining({ block: '203', kind: 'residential', total: 3, statuses: { sold: 1, handed_over: 2 } })]);
         expect(report.month.target).toBeNull();
         expect(report.sources.undatedContracts).toBe(0);

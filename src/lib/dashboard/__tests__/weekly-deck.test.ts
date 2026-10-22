@@ -356,6 +356,24 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(text.join(' ')).toContain('Контент календарь хэсэгт долоо хоногийн контентоо төлөвлөж');
     });
 
+    it('sales deck: a 22-floor block fits one floor-map slide with three columns (reserved folded into for sale, barter labelled)', async () => {
+        const units: ErpProduct[] = [];
+        for (let floor = 2; floor <= 23; floor++) for (const model of ['E3', 'E4']) units.push({
+            key: `u${floor}${model}`, code: `Б1-${floor}${model}`, block: 'Б1', floor, model, kind: 'residential', rooms: 3, area: 80.91, price: null,
+            status: floor === 12 && model === 'E3' ? 'sold' : floor === 5 ? 'reserved' : floor === 15 && model === 'E4' ? 'ordered' : 'available',
+            statusLabel: '', barter: floor === 15 && model === 'E4', manager: floor === 12 && model === 'E3' ? 'Ариунбилэг.Нямхүү' : null,
+        });
+        const report = buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [], monthTarget: null,
+            inventory: { info: { date: '2026-10-22', source: 'HUB гэрээ + байрны бүртгэл', kind: 'contracts' }, rows: units } });
+        expect(report.inventory!.floorMaps[0].totals).toEqual({ sold: 1, available: 42, barter: 1 });
+        const { text } = await render(input({ weeklySales: report }));
+        const maps = text.filter(slideText => slideText.includes('Орон сууцны үлдэгдэл'));
+        expect(maps).toHaveLength(1);
+        expect(maps[0]).not.toContain('(1/2)');
+        expect(maps[0]).not.toContain('Бусад');
+        for (const needle of ['23 давхар', '2 давхар', '80.91 м² Ариунбилэг', '80.91 м² Бартер', 'НИЙТ', 'Худалдаанд (захиалсан, хадгалсан орно)']) expect(maps[0]).toContain(needle);
+    });
+
     it('names each file after the project, part and meeting date without path characters', () => {
         expect(weeklyDeckFileName('Mandala 360/365: Tower', '2026-10-14', 'sales')).toBe('Mandala 360 365 Tower - Борлуулалт - Лхагва 2026-10-14.pptx');
         expect(weeklyDeckFileName('Elysium', '2026-10-14', 'marketing')).toBe('Elysium - Маркетинг - Лхагва 2026-10-14.pptx');
