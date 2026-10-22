@@ -130,7 +130,7 @@ export async function loadDailyReport(db: SupabaseClient, options: {
     const end = ubDateStart(shiftDate(to, 1)).toISOString();
     const settings = await loadDailyReportConfig(db, shopId, options.shopName);
 
-    const [roster, counts, meetings, pending, reportRows] = await Promise.all([
+    const [roster, counts, meetings, pending, leads, reportRows] = await Promise.all([
         loadRosterAccounts(db, shopId),
         allRows<DailyCountRow>((from, until) => {
             let query = db.from('daily_report_counts').select('manager_name, metric, value, updated_by, updated_by_name, updated_at')
@@ -150,6 +150,13 @@ export async function loadDailyReport(db: SupabaseClient, options: {
                 .eq('shop_id', shopId).is('deleted_at', null).eq('status', 'scheduled').gte('scheduled_at', start).lt('scheduled_at', end);
             if (only) query = query.eq('sales_manager_name', only);
             return query.order('scheduled_at').order('id').range(from, until);
+        }),
+        // Шинэ лид: тухайн УБ өдөр бүртгэгдсэн, устгаагүй — зөвхөн хариуцагч, эх үүсвэр (тоолоход; нэр, утас уншихгүй).
+        allRows<{ sales_manager_name: string | null; source: string | null }>((from, until) => {
+            let query = db.from('leads').select('sales_manager_name, source')
+                .eq('shop_id', shopId).is('deleted_at', null).gte('created_at', start).lt('created_at', end);
+            if (only) query = query.eq('sales_manager_name', only);
+            return query.order('created_at').order('id').range(from, until);
         }),
         db.from('daily_reports').select('report_date, notes, completed_by_name, completed_at').eq('shop_id', shopId)
             .gte('report_date', date).lte('report_date', to).order('report_date'),
@@ -196,6 +203,7 @@ export async function loadDailyReport(db: SupabaseClient, options: {
                 assigned: !!lead && !lead.deleted_at && !!lead.sales_manager_name?.trim(),
             };
         }),
+        leads: leads.map(row => ({ manager: row.sales_manager_name?.trim() || null, source: row.source })),
         // Хувийн горимд багийн тэмдэглэл, баталгаажуулалт харуулахгүй (зөвхөн өөрийн багана).
         notes,
         completed: !only && reportRow?.completed_at

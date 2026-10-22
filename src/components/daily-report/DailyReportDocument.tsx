@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
 import {
-    DAILY_COUNT_MAX, DAILY_LIMITS, formalManagerName, reportDateLabel, reportPeriodLabel,
+    DAILY_COUNT_MAX, DAILY_LIMITS, formalManagerName, reportDateLabel, reportPeriodLabel, UNASSIGNED,
     type DailyCellAuthor, type DailyGridSection, type DailyMeetingItem, type DailyPendingMeeting,
     type DailyReport, type DailyReportManager, type DailyReportNotes,
 } from '@/lib/dashboard/daily-report';
@@ -63,7 +63,7 @@ function AuthorDot({ className }: { className?: string }) {
 }
 
 /**
- * «Өдрийн тайлан»-гийн баримт (дэлгэц, хэвлэх/PDF ба зураг): толгой, шугам/уулзалт/чатын менежерийн хүснэгт,
+ * «Өдрийн тайлан»-гийн баримт (дэлгэц, хэвлэх/PDF ба зураг): толгой, шугам/уулзалт/чат/шинэ лидийн менежерийн хүснэгт,
  * товч дүгнэлт, уулзалтын жагсаалт, «Тайлан хийж гүйцэтгэсэн». `editing` өгвөл тооны нүд, тэмдэглэл засагдана;
  * `forImage` — PNG/JPEG: дэлгэцийн өргөн загвартай адил хүснэгтүүд 2 баганаар, холбоосгүй. Хэн оруулсны
  * тэмдэг, уулзалтын үйлдлүүд (`meetings`) зөвхөн дэлгэцэд — хэвлэх, зураг, хуулсан текстэд орохгүй.
@@ -106,6 +106,7 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
                     <CountTable title="Уулзалт" caption="Системээс" section={report.meetings} managers={managers} showAuthors={false} reportDate={report.date}
                         footer={forImage ? null : <Link href="/dashboard/viewings" className="inline-flex items-center gap-1 text-brand-strong hover:underline print:hidden">Уулзалт товлох<ArrowUpRight className="size-3.5" /></Link>} />
                     {report.chats.rows.length > 0 && <CountTable title="Чат" caption="Менежерийн чат" section={report.chats} managers={managers} editing={editing} showAuthors={showAuthors} reportDate={report.date} />}
+                    <CountTable title="Шинэ лид" caption="Системээс · эх үүсвэрээр" section={report.leads} managers={managers} showAuthors={false} reportDate={report.date} />
                 </section>
                 {marked && (
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground print:hidden">
@@ -127,6 +128,7 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
                         <SummaryRow label="Менежерийн чат" text={<>Нийт <SummaryTotal value={report.chats.total} /> чат харилцаа үүсгэсэн.</>} note={report.chats.note}
                             edit={editing?.notes ? { value: editing.notes.chats ?? '', onChange: value => editing.onNotes({ ...editing.notes, chats: value }) } : null} />
                     )}
+                    <SummaryRow label="Шинэ лид" text={<>Нийт <SummaryTotal value={report.leads.total} /> лид бүртгэгдсэн.</>} note="" edit={null} />
                 </dl>
             </section>
 
@@ -281,6 +283,8 @@ function CountTable({ title, caption, section, managers, editing, footer, showPh
     reportDate: string;
 }) {
     const showTotalRow = section.rows.length > 1;
+    // «Оноогдоогүй» багана зөвхөн тоотой хүснэгтэд (хариуцагчгүй лид/уулзалт); дуудлага, чатад хэзээ ч хоосон.
+    const columns = managers.filter(manager => manager.name !== UNASSIGNED || (section.byManager[UNASSIGNED] ?? 0) > 0);
     // Засах үед нийлбэр ноорогтой хамт шинэчлэгдэнэ (хадгалаагүй ч харагдана).
     const valueOf = (manager: string, row: DailyGridSection['rows'][number]): number | null => {
         const raw = editing?.draft[cellKey(manager, row.key)];
@@ -292,7 +296,7 @@ function CountTable({ title, caption, section, managers, editing, footer, showPh
         }
         return row.values[manager] ?? null;
     };
-    const rowTotal = (row: DailyGridSection['rows'][number]) => editing ? managers.reduce((sum, manager) => sum + (valueOf(manager.name, row) ?? 0), 0) : row.total;
+    const rowTotal = (row: DailyGridSection['rows'][number]) => editing ? columns.reduce((sum, manager) => sum + (valueOf(manager.name, row) ?? 0), 0) : row.total;
     const managerTotal = (manager: string) => editing ? section.rows.reduce((sum, row) => sum + (valueOf(manager, row) ?? 0), 0) : section.byManager[manager];
     const total = editing ? section.rows.reduce((sum, row) => sum + rowTotal(row), 0) : section.total;
     const isOwn = (manager: DailyReportManager) => !!editing?.own && editing.own === manager.name;
@@ -310,7 +314,7 @@ function CountTable({ title, caption, section, managers, editing, footer, showPh
                     <thead className="bg-surface-2 text-xs text-muted-foreground">
                         <tr>
                             <th scope="col" className="px-3 py-2 text-left font-medium"><span className="sr-only">Мөр</span></th>
-                            {managers.map(manager => (
+                            {columns.map(manager => (
                                 <th key={manager.name} scope="col" title={isOwn(manager) ? `${manager.title} — таны багана` : manager.title}
                                     className={cn('px-2 py-2 text-center font-medium', isOwn(manager) && 'bg-brand-soft text-brand-strong')}>
                                     <abbr className="no-underline" title={manager.title}>{manager.short}</abbr>
@@ -324,7 +328,7 @@ function CountTable({ title, caption, section, managers, editing, footer, showPh
                         {section.rows.map(row => (
                             <tr key={row.key} className="border-t border-border">
                                 <th scope="row" className={cn('whitespace-nowrap px-3 py-1.5 text-left', single ? 'text-[15px] font-bold text-foreground' : 'font-normal text-fg-2')}>{row.label}</th>
-                                {managers.map(manager => {
+                                {columns.map(manager => {
                                     const editable = !!editing?.editable.has(manager.name);
                                     const key = cellKey(manager.name, row.key);
                                     const saved = row.values[manager.name];
@@ -353,7 +357,7 @@ function CountTable({ title, caption, section, managers, editing, footer, showPh
                         {showTotalRow && (
                             <tr className="border-t-2 border-border-strong bg-surface-2 text-[15px] font-bold text-foreground">
                                 <th scope="row" className="px-3 py-2 text-left">Нийт</th>
-                                {managers.map(manager => <td key={manager.name} className="num px-1.5 py-2 text-center">{managerTotal(manager.name) || ''}</td>)}
+                                {columns.map(manager => <td key={manager.name} className="num px-1.5 py-2 text-center">{managerTotal(manager.name) || ''}</td>)}
                                 <td className="num bg-surface-3 px-3 py-2 text-right text-lg">{total}</td>
                             </tr>
                         )}

@@ -110,7 +110,8 @@ export async function getManagerActivityTool(shopId: string, args: Args, userId:
 
 const DAILY_GUIDANCE = 'Утасны шугамын дуудлага, чат = менежерүүдийн өдөр бүр гараар оруулсан тоо (CallPro, CRM-ийн лидийн дуудлага биш); '
     + 'missingManagers нь тоогоо оруулаагүй менежер — 0 гэж бүү тайлбарла. Уулзалт = системд «Болсон» гэж бүртгэсэн уулзалт (Шинэ/Давтан/Захиалагч); '
-    + 'pendingMeetings нь үр дүнгээ бүртгээгүй товлосон уулзалт (тайланд ороогүй). plainText-ийг хэрэглэгч мессенжерт хуулахад бэлэн — тоог бүү өөрчил.';
+    + 'pendingMeetings нь үр дүнгээ бүртгээгүй товлосон уулзалт (тайланд ороогүй). '
+    + 'newLeads = тухайн өдөр системд бүртгэгдсэн (устгаагүй) лидийн тоо, ОДООГИЙН хариуцагчаар, эх үүсвэрээр; «Оноогдоогүй» = хариуцагчгүй. plainText-ийг хэрэглэгч мессенжерт хуулахад бэлэн — тоог бүү өөрчил.';
 
 /** «Өдрийн тайлан» — API-тай ижил дүрэм: бүртгэлтэй менежер төслийн багийн тайланг харна. */
 export async function getDailyReportTool(shopId: string, args: Args, userId: string, perms: AssistantPerms, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
@@ -148,6 +149,10 @@ export async function getDailyReportTool(shopId: string, args: Args, userId: str
         chats: { total: report.chats.total, byManager: byManager(report.chats.byManager) },
         meetings: { total: report.meetings.total, byType: report.meetings.groups.map(group => ({ type: group.label, count: group.count })) },
         pendingMeetings: report.meetings.pending,
+        newLeads: {
+            total: report.leads.total, byManager: byManager(report.leads.byManager),
+            bySource: report.leads.rows.filter(row => row.total > 0).map(row => ({ source: row.label, count: row.total })),
+        },
         missingManagers: report.missing,
         completedBy: report.completed?.by ?? null,
         guidance: DAILY_GUIDANCE,

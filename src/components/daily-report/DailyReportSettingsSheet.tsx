@@ -63,7 +63,7 @@ export function DailyReportSettingsSheet({ open, onOpenChange, config, roster, s
             <SheetContent className="sm:max-w-xl">
                 <SheetHeader>
                     <SheetTitle>Өдрийн тайлангийн загвар</SheetTitle>
-                    <SheetDescription>Энэ төслийн утасны шугам, чатын суваг, менежерийн багана. Уулзалт системээс автоматаар орно.</SheetDescription>
+                    <SheetDescription>Энэ төслийн утасны шугам, чатын суваг, менежерийн багана. Уулзалт, шинэ лидийн тоо системээс автоматаар орно.</SheetDescription>
                 </SheetHeader>
                 <div className="flex-1 space-y-7 overflow-y-auto px-6 pb-6">
                     <label className="block space-y-1.5">
