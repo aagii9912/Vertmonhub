@@ -395,6 +395,8 @@ test('гэрээний Excel импорт: файл → шалгах (тоо, ш
     await expect(page.getByLabel('Файлын огноо', { exact: true })).toHaveValue(today);
     const check = page.getByRole('button', { name: 'Файл шалгах', exact: true });
     await expect(check).toBeDisabled();
+    // Файл сонгох талбар хүрээтэй (Preflight товчийг цэвэрлэсэн ч сонгох газар харагдана).
+    expect(await page.getByLabel('Файл', { exact: true }).evaluate(el => getComputedStyle(el).borderTopWidth)).not.toBe('0px');
     await shot(page, info, 'contracts-import-file-dark');
 
     // 1) Нэг байранд хоёр идэвхтэй мөр — батлах боломжгүй.
@@ -497,6 +499,8 @@ test('төлөвлөгөөний биелэлт: төлөвлөгөө / гүйц
     await expect(month(8).locator('td').nth(4)).toHaveText('79,700,000+*');
     await expect(month(8).locator('td').nth(5)).toHaveText('—');
     await expect(month(12).locator('td').nth(4)).toHaveText('—');
+    // Төлөвлөгөө оруулаагүй нүд бусад тодорхойгүйтэй адил бүдэг «—».
+    await expect(month(1).locator('td').nth(0).locator('span.text-muted-foreground')).toHaveText('—');
     await expect(table.locator('tfoot tr').filter({ hasText: 'Он эхнээс (1–10 сар)' })).toBeVisible();
     await expect(table.locator('tfoot tr').filter({ hasText: 'Төлөвлөгөөгүй' })).toContainText('Агуулах — 1 гэрээ · 30,000,000');
     await expect(page.getByText(/Огноогүй 1 гэрээ сарын гүйцэтгэлд ороогүй/)).toBeVisible();

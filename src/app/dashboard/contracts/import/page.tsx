@@ -215,7 +215,8 @@ function ImportWorkspace({ shopId }: { shopId: string }) {
                 <SectionCard title="Файл" icon={FileSpreadsheet} description="ERP-ээс татсан гэрээний жагсаалт (.xlsx, .csv), 4 MB хүртэл. Файл баганын нэрээрээ танигдана.">
                     <div className="mt-4 grid items-end gap-4 sm:grid-cols-[minmax(0,1fr)_200px]">
                         <label className="grid min-w-0 gap-1.5 text-sm">Файл
-                            <input className="w-full min-w-0 text-sm" type="file" accept=".xlsx,.csv,.tsv" disabled={busy}
+                            {/* Preflight нь файлын товчийг цэвэрлэдэг — талбарын хүрээ, харагдах товчтой (огнооны талбартай ижил өндөр). */}
+                            <Input className="cursor-pointer pl-1 file:mr-3 file:cursor-pointer file:rounded-md file:bg-surface-2 file:px-3" type="file" accept=".xlsx,.csv,.tsv" disabled={busy}
                                 onChange={event => { setFile(event.target.files?.[0] ?? null); setError(null); }} />
                         </label>
                         <label className="grid gap-1.5 text-sm">Файлын огноо

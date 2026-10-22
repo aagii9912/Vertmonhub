@@ -32,6 +32,8 @@ const ADVANCE_TOOLTIP = 'Тухайн сард захиалсан гэрээни
 const LOWER_BOUND_NOTE = '«+» — огноогүй гэрээ байгаа тул доод хязгаар; тухайн сард гэрээгүй бол «—».';
 
 const whole = (value: number) => Math.round(value).toLocaleString('en-US');
+/** Тодорхойгүй (төлөвлөгөө оруулаагүй) нүд — бусад «—»-тэй адил бүдэг. */
+const Missing = () => <span className="text-muted-foreground">—</span>;
 const scopeCells = (row: PlanMonthRow, segment: Segment): PlanScopeCells => segment === 'total' ? row.total : row.blocks[segment];
 
 function cellTitle(cell: PlanCell | undefined): string | undefined {
@@ -198,10 +200,10 @@ function PlanReport({ data, segment, segmentLabel }: { data: PlanResponse; segme
                                 <th scope="row" className="whitespace-nowrap border-b border-r border-border px-3 py-2 text-left font-medium">
                                     {row.month}-р сар{row.status === 'current' && <span className="ml-2 rounded bg-status-info-soft px-1.5 py-0.5 text-xs font-normal text-status-info">явцын</span>}
                                 </th>
-                                <td className="num border-b border-border px-3 py-2 text-right">{count?.plan === null || count?.plan === undefined ? '—' : whole(count.plan)}</td>
+                                <td className="num border-b border-border px-3 py-2 text-right">{count?.plan === null || count?.plan === undefined ? <Missing /> : whole(count.plan)}</td>
                                 <td className="num border-b border-border px-3 py-2 text-right"><Actual cell={count} /></td>
                                 <td className="num border-b border-r border-border px-3 py-2 text-right"><Pct pct={count?.pct ?? null} lowerBound={!!count?.lowerBound} /></td>
-                                <td className="num border-b border-border px-3 py-2 text-right">{amount?.plan === null || amount?.plan === undefined ? '—' : whole(amount.plan)}</td>
+                                <td className="num border-b border-border px-3 py-2 text-right">{amount?.plan === null || amount?.plan === undefined ? <Missing /> : whole(amount.plan)}</td>
                                 <td className="num border-b border-border px-3 py-2 text-right"><Actual cell={amount} /></td>
                                 <td className="num border-b border-r border-border px-3 py-2 text-right"><Pct pct={amount?.pct ?? null} lowerBound={!!amount?.lowerBound} /></td>
                                 <td className="num border-b border-l-2 border-border px-3 py-2 text-right text-muted-foreground">{cells.prepaymentDue === null ? '—' : whole(cells.prepaymentDue)}</td>
@@ -214,13 +216,13 @@ function PlanReport({ data, segment, segmentLabel }: { data: PlanResponse; segme
                             const amount = yearCellOf(data, segment, 'contract');
                             const plan = (cell: PlanYearCell | undefined) => kind === 'ytd' ? cell?.plan ?? null : cell?.yearPlan ?? null;
                             const pct = (cell: PlanYearCell | undefined) => kind === 'ytd' ? cell?.pct ?? null : cell?.yearPct ?? null;
-                            const actual = (cell: PlanYearCell | undefined) => cell?.actual === null || cell?.actual === undefined ? '—' : `${whole(cell.actual)}${cell.lowerBound ? '+' : ''}`;
+                            const actual = (cell: PlanYearCell | undefined) => cell?.actual === null || cell?.actual === undefined ? <Missing /> : `${whole(cell.actual)}${cell.lowerBound ? '+' : ''}`;
                             return <tr key={kind}>
                                 <th scope="row" className="whitespace-nowrap border-b border-r border-border px-3 py-2 text-left">{kind === 'ytd' ? (data.throughMonth ? `Он эхнээс (1–${data.throughMonth} сар)` : 'Он эхнээс') : 'Жилийн төлөвлөгөөнөөс'}</th>
-                                <td className="num border-b border-border px-3 py-2 text-right">{plan(count) === null ? '—' : whole(plan(count)!)}</td>
+                                <td className="num border-b border-border px-3 py-2 text-right">{plan(count) === null ? <Missing /> : whole(plan(count)!)}</td>
                                 <td className="num border-b border-border px-3 py-2 text-right">{actual(count)}</td>
                                 <td className="num border-b border-r border-border px-3 py-2 text-right"><Pct pct={pct(count)} lowerBound={!!count?.lowerBound} /></td>
-                                <td className="num border-b border-border px-3 py-2 text-right">{plan(amount) === null ? '—' : whole(plan(amount)!)}</td>
+                                <td className="num border-b border-border px-3 py-2 text-right">{plan(amount) === null ? <Missing /> : whole(plan(amount)!)}</td>
                                 <td className="num border-b border-border px-3 py-2 text-right">{actual(amount)}</td>
                                 <td className="num border-b border-r border-border px-3 py-2 text-right"><Pct pct={pct(amount)} lowerBound={!!amount?.lowerBound} /></td>
                                 <td className="border-b border-l-2 border-border px-3 py-2" />
@@ -282,15 +284,15 @@ function CashTable({ data, segment, segmentLabel }: { data: PlanResponse; segmen
                     const cell = scopeCells(row, segment).metrics.cashflow;
                     return <tr key={row.month} className={cn(row.status === 'future' && 'text-muted-foreground')}>
                         <th scope="row" className="whitespace-nowrap border-b border-r border-border px-3 py-2 text-left font-medium">{row.month}-р сар</th>
-                        <td className="num border-b border-border px-3 py-2 text-right">{cell?.plan === null || cell?.plan === undefined ? '—' : whole(cell.plan)}</td>
+                        <td className="num border-b border-border px-3 py-2 text-right">{cell?.plan === null || cell?.plan === undefined ? <Missing /> : whole(cell.plan)}</td>
                         <td className="num border-b border-border px-3 py-2 text-right"><Actual cell={cell} /></td>
                         <td className="num border-b border-border px-3 py-2 text-right"><Pct pct={cell?.pct ?? null} lowerBound={!!cell?.lowerBound} /></td>
                     </tr>;
                 })}</tbody>
                 <tfoot className="bg-surface-2 font-medium"><tr>
                     <th scope="row" className="whitespace-nowrap border-r border-border px-3 py-2 text-left">{data.throughMonth ? `Он эхнээс (1–${data.throughMonth} сар)` : 'Он эхнээс'}</th>
-                    <td className="num px-3 py-2 text-right">{ytd?.plan === null || ytd?.plan === undefined ? '—' : whole(ytd.plan)}</td>
-                    <td className="num px-3 py-2 text-right">{ytd?.actual === null || ytd?.actual === undefined ? '—' : `${whole(ytd.actual)}${ytd.lowerBound ? '+' : ''}`}</td>
+                    <td className="num px-3 py-2 text-right">{ytd?.plan === null || ytd?.plan === undefined ? <Missing /> : whole(ytd.plan)}</td>
+                    <td className="num px-3 py-2 text-right">{ytd?.actual === null || ytd?.actual === undefined ? <Missing /> : `${whole(ytd.actual)}${ytd.lowerBound ? '+' : ''}`}</td>
                     <td className="num px-3 py-2 text-right"><Pct pct={ytd?.pct ?? null} lowerBound={!!ytd?.lowerBound} /></td>
                 </tr></tfoot>
             </table>
