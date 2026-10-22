@@ -278,6 +278,9 @@ function OverdueAmount({ contract: c }: { contract: ContractRow }) {
  * «Захиалга өгсөн огноо»: хоосон бол бичих эрхтэй хэрэглэгч нэг удаа оруулна (PATCH `order_date`; сервер
  * хоосон үед л хүлээн авч, гэрээний огноо хоосон бол түүнийг ч бөглөнө). Оруулсны дараа энд солихгүй.
  */
+/** Захиалга өгсөн огнооны доод хязгаар (серверийн дүрэмтэй ижил — тайлангийн оны хүрээ). */
+const ORDER_DATE_MIN = '2000-01-01';
+
 function OrderDateField({ contract: c, canWrite }: { contract: ContractRow; canWrite: boolean }) {
     const setOrderDate = useSetContractOrderDate(c.id);
     const [editing, setEditing] = useState(false);
@@ -300,6 +303,7 @@ function OrderDateField({ contract: c, canWrite }: { contract: ContractRow; canW
     const save = async () => {
         if (!value) { toast.error('Захиалга өгсөн огноог сонгоно уу'); return; }
         if (value > today) { toast.error('Захиалга өгсөн огноо өнөөдрөөс хойш байж болохгүй'); return; }
+        if (value < ORDER_DATE_MIN) { toast.error('Захиалга өгсөн огноо 2000 оноос өмнө байж болохгүй'); return; }
         const ok = await confirmToast({
             title: `Захиалга өгсөн огноо ${value} гэж хадгалах уу?`,
             description: c.contract_date
@@ -316,7 +320,7 @@ function OrderDateField({ contract: c, canWrite }: { contract: ContractRow; canW
     };
     return (
         <span className="inline-flex flex-wrap items-center gap-1.5">
-            <input type="date" value={value} max={today} onChange={(e) => setValue(e.target.value)} aria-label="Захиалга өгсөн огноо"
+            <input type="date" value={value} min={ORDER_DATE_MIN} max={today} onChange={(e) => setValue(e.target.value)} aria-label="Захиалга өгсөн огноо"
                 className="num h-7 rounded-md border border-control bg-surface px-1.5 text-xs text-foreground" />
             <button type="button" onClick={() => void save()} disabled={setOrderDate.isPending || !value} aria-label="Огноо хадгалах"
                 className="inline-flex h-7 items-center gap-1 rounded-md bg-brand px-2 text-xs font-medium text-brand-fg hover:bg-brand-hover disabled:opacity-60 focus-ring">

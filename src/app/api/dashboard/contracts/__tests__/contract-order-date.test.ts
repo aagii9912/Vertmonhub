@@ -109,12 +109,21 @@ describe('PATCH /api/dashboard/contracts/[id] — «Огноо оруулах»'
 
     it.each([
         ['a future day', { order_date: '2999-01-01' }],
+        ['an implausibly old day', { order_date: '0202-10-01' }],
+        ['the day before 2000', { order_date: '1999-12-31' }],
         ['an impossible day', { order_date: '2026-02-30' }],
         ['a timestamp', { order_date: '2026-09-15T10:00:00Z' }],
         ['clearing it', { order_date: null }],
     ])('rejects %s', async (_label, body) => {
         expect((await patch(body)).status).toBe(400);
         expect(contractWrites()).toEqual([]);
+    });
+
+    it('names the 2000 lower bound and accepts its first day', async () => {
+        const old = await patch({ order_date: '1999-12-31' });
+        expect(await old.json()).toEqual({ error: 'Захиалга өгсөн огноо 2000 оноос өмнө байж болохгүй' });
+        expect((await patch({ order_date: '2000-01-01' })).status).toBe(200);
+        expect(stored().order_date).toBe('2000-01-01');
     });
 
     it('accepts today in Ulaanbaatar', async () => {

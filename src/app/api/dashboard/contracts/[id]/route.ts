@@ -12,6 +12,9 @@ const DateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
     const date = new Date(`${value}T00:00:00Z`);
     return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 });
+/** Захиалга өгсөн огнооны доод хязгаар — төлөвлөгөөний биелэлтийн тайлангийн оны хүрээ (2000–2100)-тэй ижил:
+ *  «0202-10-01» мэт алдаа гэрээг бүх тайлангаас чимээгүй хасах ба дараа нь энд солигдохгүй. */
+const ORDER_DATE_MIN = '2000-01-01';
 
 // Эзэмшигчийн нэрийг (customer_name) энд солихгүй — зөвхөн «Гэрээ шилжүүлэх» урсгалаар
 // (POST [id]/transfer → transfer_contract RPC) түүх, аудиттай солигдоно.
@@ -112,6 +115,9 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
     const settingOrderDate = updateData.order_date !== undefined;
     if (settingOrderDate && updateData.order_date! > ubDateStr()) {
         return NextResponse.json({ error: 'Захиалга өгсөн огноо өнөөдрөөс хойш байж болохгүй' }, { status: 400 });
+    }
+    if (settingOrderDate && updateData.order_date! < ORDER_DATE_MIN) {
+        return NextResponse.json({ error: 'Захиалга өгсөн огноо 2000 оноос өмнө байж болохгүй' }, { status: 400 });
     }
     // Аудитад өмнөх утгыг хадгална (утас зэрэг холбоо барих засвар түүхгүй алга болохгүй).
     const beforeColumns = [...new Set([...Object.keys(updateData), ...(settingOrderDate ? ['contract_date'] : [])])];

@@ -215,6 +215,18 @@ describe('ContractDetail HUB fields', () => {
         expect(mocks.confirm).not.toHaveBeenCalled();
     });
 
+    it('refuses an order date before 2000 (a mistyped year) before asking', async () => {
+        mocks.contract = loaded({ contract: { ...hub, order_date: null } });
+        render(<ContractDetail id="contract-1" />);
+        fireEvent.click(screen.getByRole('button', { name: /Огноо оруулах/ }));
+        const input = screen.getByLabelText('Захиалга өгсөн огноо');
+        expect(input).toHaveAttribute('min', '2000-01-01');
+        fireEvent.change(input, { target: { value: '0202-10-01' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Огноо хадгалах' }));
+        expect(mocks.toastError).toHaveBeenCalledWith('Захиалга өгсөн огноо 2000 оноос өмнө байж болохгүй');
+        expect(mocks.confirm).not.toHaveBeenCalled();
+    });
+
     it('does not offer the order-date entry to a read-only user', () => {
         mocks.user = reader;
         mocks.contract = loaded({ contract: { ...hub, order_date: null, contract_date: null } });
