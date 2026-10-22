@@ -63,8 +63,9 @@ describe('get_daily_report AI tool', () => {
         expect(result.pendingMeetings).toBe(1);
         expect(result.newLeads).toEqual({ total: 4, byManager: { 'М. Хонгорзул': 3, 'Р. Чанцалдулам': 1 }, bySource: [{ source: 'Утас', count: 2 }, { source: 'Facebook Ads', count: 2 }] });
         expect(result.plainText).toContain('Шинэ лид: Нийт 4 лид бүртгэгдсэн');
-        // Хонгорзул 4 дуудлага ≥ 1 утасны лид; Чанцалдулам дуудлага оруулаагүй.
-        expect(result.phoneLeadGaps).toEqual([{ manager: 'Р. Чанцалдулам', calls: null, phoneLeads: 1 }]);
+        // Утасны лидийн шалгалт түр унтраалттай (PHONE_LEAD_CHECK_ENABLED = false) — AI-д ч өгөхгүй.
+        expect(result.phoneLeadGaps).toBeUndefined();
+        expect(result.guidance).not.toContain('phoneLeadGaps');
         expect(result.plainText).toContain('ELYSIUM RESIDENCE БАГ — 2026.10.07');
         expect(result.plainText).toContain('1. Загдсүрэн — 10-50 хувь');
         expect(result.url).toBe('/dashboard/daily-report');

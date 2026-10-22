@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
 import {
-    DAILY_COUNT_MAX, DAILY_LIMITS, formalManagerName, phoneLeadChecks, reportDateLabel, reportPeriodLabel, UNASSIGNED,
+    DAILY_COUNT_MAX, DAILY_LIMITS, formalManagerName, PHONE_LEAD_CHECK_ENABLED, phoneLeadChecks, reportDateLabel, reportPeriodLabel, UNASSIGNED,
     type DailyCellAuthor, type DailyGridRow, type DailyGridSection, type DailyMeetingItem, type DailyPendingMeeting, type DailyPhoneLeadCheck,
     type DailyReport, type DailyReportManager, type DailyReportNotes,
 } from '@/lib/dashboard/daily-report';
@@ -26,8 +26,9 @@ export function draftCount(raw: string | undefined): number | null | undefined {
     return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
-/** Утасны лидийн шалгалт ноорогтой нь: засаж байхад анхааруулга шууд шинэчлэгдэнэ. */
-export function draftPhoneLeadChecks(report: DailyReport, draft: Record<string, string> | null | undefined): DailyPhoneLeadCheck[] {
+/** Утасны лидийн шалгалт ноорогтой нь: засаж байхад анхааруулга шууд шинэчлэгдэнэ. Унтраалттай бол хоосон. */
+export function draftPhoneLeadChecks(report: DailyReport, draft: Record<string, string> | null | undefined, enabled = PHONE_LEAD_CHECK_ENABLED): DailyPhoneLeadCheck[] {
+    if (!enabled) return [];
     return phoneLeadChecks(report, (manager, row: DailyGridRow) => {
         const value = draftCount(draft?.[cellKey(manager, row.key)]);
         return value !== undefined ? value : row.values[manager] ?? null;
@@ -86,11 +87,13 @@ function AuthorDot({ className }: { className?: string }) {
  * тэмдэг, уулзалтын үйлдлүүд (`meetings`) зөвхөн дэлгэцэд — хэвлэх, зураг, хуулсан текстэд орохгүй.
  * Мужийн тайланд (`report.to > report.date`) огноо нь хугацаа, уулзалтын мөр өдөртэйгээ гарна.
  */
-export function DailyReportDocument({ report, editing, forImage = false, meetings }: {
+export function DailyReportDocument({ report, editing, forImage = false, meetings, phoneCheck = PHONE_LEAD_CHECK_ENABLED }: {
     report: DailyReport;
     editing?: DailyReportEditing | null;
     forImage?: boolean;
     meetings?: DailyMeetingActions | null;
+    /** «Дуудлага ба утасны лид» шалгалт (анхдагч: `PHONE_LEAD_CHECK_ENABLED`). */
+    phoneCheck?: boolean;
 }) {
     const managers = report.managers;
     const people = managers.filter(manager => manager.inRoster);
@@ -101,7 +104,7 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
     const actions = forImage ? null : meetings ?? null;
     const titleOf = (name: string) => managers.find(manager => manager.name === name)?.title ?? (name ? formalManagerName(name) : 'Оноогдоогүй');
     // Утсаар бүртгэсэн лид дуудлагад орсон эсэх — оруулах туслах тул зөвхөн дэлгэцэд (хэвлэх, зурагт орохгүй).
-    const phoneChecks = forImage ? [] : draftPhoneLeadChecks(report, editing?.draft);
+    const phoneChecks = forImage ? [] : draftPhoneLeadChecks(report, editing?.draft, phoneCheck);
     return (
         <div className="space-y-6">
             <header className="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-border bg-surface-2 px-5 py-4">

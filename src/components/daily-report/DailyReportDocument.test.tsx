@@ -128,7 +128,10 @@ describe('DailyReportDocument', () => {
     it('compares phone leads with the calls entered on screen only, and updates while counts are being entered', () => {
         const leads = [...Array.from({ length: 5 }, () => ({ manager: CHAN, source: 'phone' })), { manager: KHON, source: 'phone' }];
         const report = buildDailyReport(input({ leads }));
+        // Эзэмшигч түр унтраасан (PHONE_LEAD_CHECK_ENABLED = false): анхдагчаар харагдахгүй.
         const { container, rerender } = render(<DailyReportDocument report={report} />);
+        expect(screen.queryByRole('region', { name: 'Дуудлага ба утасны лид' })).toBeNull();
+        rerender(<DailyReportDocument report={report} phoneCheck />);
         const region = screen.getByRole('region', { name: 'Дуудлага ба утасны лид' });
         expect(region.closest('.rounded-2xl')?.className).toContain('print:hidden');
         // Чан: 4 дуудлага < 5 утасны лид; Хон: 2 ≥ 1.
@@ -138,14 +141,14 @@ describe('DailyReportDocument', () => {
         expect(within(region).queryByRole('rowheader', { name: 'Нийт' })).toBeNull();
         expect(report.lines[0].total).toBe(6);
 
-        rerender(<DailyReportDocument report={report} editing={{
+        rerender(<DailyReportDocument report={report} phoneCheck editing={{
             editable: new Set([CHAN, KHON]), own: null, draft: { [`${CHAN}\u0000call.l1.total`]: '5' }, onCell: vi.fn(), notes: null, onNotes: vi.fn(),
         }} />);
         expect(container.querySelectorAll('td[data-flag="short"]')).toHaveLength(0);
 
-        rerender(<DailyReportDocument report={report} forImage />);
+        rerender(<DailyReportDocument report={report} phoneCheck forImage />);
         expect(screen.queryByRole('region', { name: 'Дуудлага ба утасны лид' })).toBeNull();
-        rerender(<DailyReportDocument report={buildDailyReport(input({ leads: [{ manager: CHAN, source: 'facebook' }] }))} />);
+        rerender(<DailyReportDocument report={buildDailyReport(input({ leads: [{ manager: CHAN, source: 'facebook' }] }))} phoneCheck />);
         expect(screen.queryByRole('region', { name: 'Дуудлага ба утасны лид' })).toBeNull();
     });
 
