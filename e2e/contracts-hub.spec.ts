@@ -521,7 +521,11 @@ test('төлөвлөгөөний биелэлт: төлөвлөгөө / гүйц
     // Санхүүтэй (super_admin): мөнгөн урсгал — 9-р сар гараар 190,000,000 / 250,000,000 = 76%.
     const cash = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Мөнгөн урсгал · Нийт' }) });
     await expect(cash).toBeVisible();
-    await expect(cash.getByText('Орсон мөнгө бүртгэгдээгүй', { exact: true })).toBeVisible();
+    // HUB-д төлсөн дүн алга, харин 9-р сард гараар оруулсан дүн бий — «бүртгэгдээгүй» биш (c9e92d6f).
+    await expect(cash.getByText('Зөвхөн гараар оруулсан орсон мөнгө', { exact: true })).toBeVisible();
+    await expect(cash.getByText('Орсон мөнгө бүртгэгдээгүй', { exact: true })).toHaveCount(0);
+    // Гэрээний хүснэгттэй адил «Жилийн төлөвлөгөөнөөс» мөр.
+    await expect(cash.getByRole('rowheader', { name: 'Жилийн төлөвлөгөөнөөс' })).toBeVisible();
     const cashSep = cash.locator('tbody tr').filter({ has: page.getByRole('rowheader', { name: '9-р сар', exact: true }) }).locator('td');
     await expect(cashSep.nth(0)).toHaveText('250,000,000');
     await expect(cashSep.nth(1)).toHaveText('190,000,000');
