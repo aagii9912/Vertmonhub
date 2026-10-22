@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildDailyReport, configMetrics, DailyReportConfigSchema, DEFAULT_DAILY_REPORT_CONFIG, defaultShortName, formalManagerName,
-    formatDailyReportText, meetingItemText, nextConfigKey, readDailyReportConfig, resolveReportManagers, SaveDailyReportSchema,
+    formatDailyReportText, joinDailyGeneralNotes, meetingItemText, nextConfigKey, readDailyReportConfig, reportPeriodLabel, resolveReportManagers,
+    SaveDailyReportSchema, sumDailyCounts,
     type BuildDailyReportInput, type DailyReportConfig,
 } from '../daily-report';
 
@@ -182,6 +183,53 @@ describe('buildDailyReport', () => {
         expect(report.lines[1].total).toBe(5);
         expect(report.meetings.total).toBe(2);
         expect(report.meetings.groups[0].items.map(item => item.text)).not.toContain('Бат — Б2-58м2 10-30%; үлдэгдэл банк');
+    });
+});
+
+describe('date range report', () => {
+    it('sums each manager × metric over the days and keeps other cells apart', () => {
+        expect(sumDailyCounts([
+            { manager_name: 'Чан', metric: 'call.l1.new', value: 2 },
+            { manager_name: 'Чан', metric: 'call.l1.new', value: 3 },
+            { manager_name: 'Хон', metric: 'call.l1.new', value: 1 },
+            { manager_name: 'Чан', metric: 'chat.personal', value: 0 },
+        ])).toEqual([
+            { manager_name: 'Чан', metric: 'call.l1.new', value: 5 },
+            { manager_name: 'Хон', metric: 'call.l1.new', value: 1 },
+            { manager_name: 'Чан', metric: 'chat.personal', value: 0 },
+        ]);
+    });
+
+    it('joins each day’s general note with its date, in date order', () => {
+        expect(joinDailyGeneralNotes([
+            { date: '2026-09-30', general: 'Toyota LC150 бартерийн санал' },
+            { date: '2026-09-28', general: '  ' },
+            { date: '2026-09-29', general: 'МК төслүүдтэй танилцсан' },
+        ])).toBe('2026.09.29: МК төслүүдтэй танилцсан\n2026.09.30: Toyota LC150 бартерийн санал');
+    });
+
+    it('labels the period, dates meeting items and counts confirmed days instead of one confirmer', () => {
+        const report = buildDailyReport(input({
+            date: '2026-09-24', to: '2026-09-30', completedDays: 3,
+            meetings: [meeting('a', 'Чанцалдулам.Раднаа', 'new_customer', 'Бат', 'Б2-58м2'), { ...meeting('bb', 'Хонгорзул.Мөнхгэрэл', 'new_customer', 'Сараа'), scheduled_at: '2026-09-24T18:00:00Z' }],
+        }));
+        expect(report).toMatchObject({ date: '2026-09-24', to: '2026-09-30', days: 7, weekday: '7 өдөр', completed: null, completedDays: 3 });
+        expect(reportPeriodLabel(report)).toBe('2026.09.24 – 2026.09.30');
+        // 2026-09-24T18:00Z = 09-25 02:00 (УБ); жагсаалт уулзалтын цагаар.
+        expect(report.meetings.groups[0].items.map(item => [item.text, item.day])).toEqual([['Сараа', '2026-09-25'], ['Бат — Б2-58м2', '2026-09-30']]);
+        const text = formatDailyReportText(report);
+        expect(text.split('\n')[0]).toBe('"ЭЛИЗИУМ РЕСИДЕНС" БАГ — 2026.09.24 – 2026.09.30 (7 өдөр)');
+        expect(text).toContain('1. 09.25 Сараа');
+        expect(text).toContain('2. 09.30 Бат — Б2-58м2');
+        expect(text).toContain('Баталгаажсан өдөр: 3/7');
+        expect(text).not.toContain('Тайлан хийж гүйцэтгэсэн');
+    });
+
+    it('keeps a single day unchanged', () => {
+        const report = buildDailyReport(input({ to: '2026-09-30' }));
+        expect(report).toMatchObject({ to: '2026-09-30', days: 1, weekday: 'Лхагва', completedDays: null });
+        expect(report.completed?.by).toBe('М. Хонгорзул');
+        expect(report.meetings.groups[0].items.every(item => item.day === null)).toBe(true);
     });
 });
 

@@ -306,7 +306,8 @@ const readDefinitions: ToolDefinition[] = [
         name: 'get_daily_report',
         description: 'Төслийн багийн «Өдрийн тайлан» (Mandala Garden, Elysium-ийн загвар): төслийн болон менежерийн утсанд ирсэн дуудлага, чат (менежерүүдийн оруулсан тоо), болсон уулзалт (Шинэ/Давтан/Захиалагч, тэмдэглэлтэй), тоо оруулаагүй менежер, «Тайлан хийж гүйцэтгэсэн». plainText нь мессенжерт хуулахад бэлэн. Төсөлдөө бүртгэлтэй менежер багийн бүх мэдээллийг харж, ээлжээр тайлангаа нэгтгэнэ.',
         parameters: { type: SchemaType.OBJECT, properties: {
-            date: { type: SchemaType.STRING, description: 'Өдөр YYYY-MM-DD (default: өнөөдөр, УБ); «өчигдрийн тайлан» бол өчигдрийн огноо' } } }
+            date: { type: SchemaType.STRING, description: 'Өдөр YYYY-MM-DD (default: өнөөдөр, УБ); «өчигдрийн тайлан» бол өчигдрийн огноо. Мужид эхлэх өдөр' },
+            to: { type: SchemaType.STRING, description: 'Огнооны мужаар нэгтгэх бол дуусах өдөр YYYY-MM-DD («энэ 7 хоногийн өдрийн тайлан»); нэг өдөрт орхи. Хамгийн ихдээ 92 хоног' } } }
     },
     {
         name: 'import_erp_file',

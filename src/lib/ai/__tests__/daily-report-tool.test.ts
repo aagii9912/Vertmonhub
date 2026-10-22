@@ -16,11 +16,11 @@ vi.mock('@/lib/dashboard/daily-report-load', async (importOriginal) => {
     const { buildDailyReport, readDailyReportConfig } = await import('@/lib/dashboard/daily-report');
     return {
         ...actual,
-        loadDailyReport: async (_db: unknown, options: { shopName: string; date: string; only: string | null }) => {
+        loadDailyReport: async (_db: unknown, options: { shopName: string; date: string; to?: string; only: string | null }) => {
             if (state.unavailable) throw new actual.DailyReportUnavailableError();
             state.loads.push(options);
             const report = buildDailyReport({
-                date: options.date, title: `${options.shopName} баг`, config: readDailyReportConfig(null, options.shopName).config,
+                date: options.date, to: options.to, completedDays: 2, title: `${options.shopName} баг`, config: readDailyReportConfig(null, options.shopName).config,
                 roster: [{ name: 'Хонгорзул.Мөнхгэрэл', is_active: true }, { name: 'Чанцалдулам.Раднаа', is_active: true }],
                 counts: [{ manager_name: 'Хонгорзул.Мөнхгэрэл', metric: 'call.l1.total', value: 4 }],
                 meetings: [{ id: 'm1', manager: 'Хонгорзул.Мөнхгэрэл', type: 'repeat_customer', customer: 'Загдсүрэн', property: null, notes: '10-50 хувь', feedback: null, scheduled_at: '2026-10-07T02:00:00Z' }],
@@ -76,6 +76,20 @@ describe('get_daily_report AI tool', () => {
         Object.assign(state, { isManager: false, rosterName: null });
         expect(await getDailyReportTool('shop', {}, 'u-x', { ...admin, role: 'viewer', modules: ['dashboard'] })).toEqual({ error: 'Багийн өдрийн тайланг харах эрхгүй' });
         expect(await getDailyReportTool('shop', {}, 'u-x', manager)).toMatchObject({ error: expect.stringContaining('холбогдоогүй') });
+    });
+
+    it('sums a date range for questions like «энэ 7 хоногийн өдрийн тайлан»', async () => {
+        const result = await getDailyReportTool('shop', { date: '2026-10-01', to: '2026-10-07' }, 'u-admin', admin) as Record<string, any>;
+        expect(state.loads[0]).toMatchObject({ date: '2026-10-01', to: '2026-10-07', only: null });
+        expect(result).toMatchObject({ date: '2026-10-01', to: '2026-10-07', days: 7, completedDays: 2 });
+        expect(result.plainText).toContain('ELYSIUM RESIDENCE БАГ — 2026.10.01 – 2026.10.07 (7 өдөр)');
+        expect(result.plainText).toContain('Баталгаажсан өдөр: 2/7');
+        expect(result.url).toBe('/dashboard/daily-report?from=2026-10-01&to=2026-10-07');
+
+        expect(await getDailyReportTool('shop', { date: '2026-10-07', to: '2026-10-01' }, 'u-admin', admin)).toMatchObject({ error: expect.stringContaining('Дуусах огноог') });
+        expect(await getDailyReportTool('shop', { date: '2026-10-01', to: '2026-10-08' }, 'u-admin', admin)).toEqual({ error: 'Ирээдүйн өдрийн тайлан гаргахгүй' });
+        expect(await getDailyReportTool('shop', { date: '2026-01-01', to: '2026-10-07' }, 'u-admin', admin)).toEqual({ error: 'Хугацаа 92 өдрөөс ихгүй байна' });
+        expect(state.loads).toHaveLength(1);
     });
 
     it('rejects bad or future dates and explains a missing migration', async () => {

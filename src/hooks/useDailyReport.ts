@@ -5,6 +5,8 @@ import type { DailyReport, DailyReportConfig, DailyRosterEntry } from '@/lib/das
 
 export interface DailyReportResponse {
     date: string;
+    /** Мужийн дуусах өдөр (нэг өдөрт `date`). */
+    to?: string;
     today: string;
     /** Хувийн горимтой боловч бүртгэлд холбогдоогүй (onboarding) бол null. */
     report: DailyReport | null;
@@ -23,7 +25,11 @@ export interface DailyReportResponse {
     };
 }
 
-/** «Өдрийн тайлан» (/api/dashboard/daily-report). Хадгалсны дараа `invalidateQueries({ queryKey: ['daily-report'] })`. */
-export function useDailyReport(date: string) {
-    return useDashboardQuery<DailyReportResponse>(['daily-report', date], `/api/dashboard/daily-report?date=${date}`, { keepPreviousData: true, staleTime: 15_000 });
+/**
+ * «Өдрийн тайлан» (/api/dashboard/daily-report). `to` өгвөл [date, to] мужийн нэгтгэл (зөвхөн унших).
+ * Хадгалсны дараа `invalidateQueries({ queryKey: ['daily-report'] })`.
+ */
+export function useDailyReport(date: string, to: string = date) {
+    const url = to === date ? `/api/dashboard/daily-report?date=${date}` : `/api/dashboard/daily-report?date=${date}&to=${to}`;
+    return useDashboardQuery<DailyReportResponse>(['daily-report', date, to], url, { keepPreviousData: true, staleTime: 15_000 });
 }

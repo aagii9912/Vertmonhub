@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { buildDailyReport, readDailyReportConfig, type BuildDailyReportInput, type DailyReportNotes, type SaveDailyReportInput } from '../src/lib/dashboard/daily-report';
+import { periodBounds, shiftDate } from '../src/lib/sales/activity';
 import { ubDateStr } from '../src/lib/utils/date';
 
 // «Өдрийн тайлан»: багийн харагдац (Elysium-ийн загвар) — тоо оруулж хадгалах, загвар засах;
@@ -23,7 +24,7 @@ const roster = [
 async function setup(page: Page, mode: 'team' | 'personal') {
     const today = ubDateStr();
     const state = {
-        puts: [] as unknown[], settings: [] as unknown[], errors: [] as string[],
+        puts: [] as unknown[], settings: [] as unknown[], errors: [] as string[], gets: [] as string[],
         counts: [
             { manager_name: 'Ариунбилэг.Нямхүү', metric: 'call.l1.total', value: 1 }, { manager_name: CHAN, metric: 'call.l1.total', value: 2 },
             { manager_name: KHON, metric: 'call.l1.total', value: 1 }, { manager_name: 'Ариунбилэг.Нямхүү', metric: 'call.personal.total', value: 2 },
@@ -59,10 +60,14 @@ async function setup(page: Page, mode: 'team' | 'personal') {
         if (path === '/api/dashboard/nav-counts') return reply({ leads: 0, inbox: 0, meetings: 0 });
         if (path === '/api/dashboard/daily-report' && request.method() === 'GET') {
             const date = url.searchParams.get('date') ?? today;
+            const to = url.searchParams.get('to') ?? date;
+            state.gets.push(url.search);
+            // Хугацааны нэгтгэл серверт зөвхөн унших (route-ийн дүрэм).
+            const ranged = to !== date;
             return reply({
-                date, today, report: buildDailyReport(input(date)), config, configSaved: true, configInvalid: false,
+                date, to, today, report: buildDailyReport({ ...input(date), to, completedDays: ranged ? 2 : undefined }), config, configSaved: true, configInvalid: false,
                 roster: mode === 'team' ? roster : [],
-                viewer: mode === 'team'
+                viewer: ranged ? { personal: mode === 'personal', onboarding: false, canEditTeam: false, editable: [] } : mode === 'team'
                     ? { personal: false, onboarding: false, canEditTeam: true, editable: ['Ариунбилэг.Нямхүү', CHAN, KHON] }
                     : { personal: true, onboarding: false, canEditTeam: true, editable: [KHON] },
             });
@@ -100,18 +105,22 @@ test('багийн өдрийн тайлан: хүснэгт, уулзалтын
     await expect(page.getByText(/товлосон 1 уулзалтын үр дүн бүртгэгдээгүй/)).toBeVisible();
     await page.screenshot({ path: 'test-results/e2e/daily-report-team.png', fullPage: true });
 
-    // Зураг (PNG/JPEG): мессенжерт илгээх цагаан тайлан, 2x нягтрал, нэг баганатай (760px → 1520px).
+    // Зураг (PNG/JPEG): мессенжерт илгээх цагаан тайлан, 2x нягтрал, дэлгэцийн загвартай адил 2 баганатай (1180px → 2360px).
     for (const [item, extension, signature] of [['PNG татах', 'png', '89504e47'], ['JPEG татах', 'jpg', 'ffd8ff']] as const) {
         await page.getByRole('button', { name: 'Зураг', exact: true }).click();
         const download = page.waitForEvent('download');
         await page.getByRole('menuitem', { name: item }).click();
         const file = await download;
-        expect(file.suggestedFilename()).toBe(`өдрийн_тайлан_${today}.${extension}`);
+        expect(file.suggestedFilename().normalize('NFC')).toBe(`өдрийн_тайлан_${today}.${extension}`);
         const path = `test-results/e2e/daily-report-image.${extension}`;
         await file.saveAs(path);
         const bytes = readFileSync(path);
         expect(bytes.subarray(0, signature.length / 2).toString('hex')).toBe(signature);
-        if (extension === 'png') expect(bytes.readUInt32BE(16)).toBe(1520);
+        if (extension === 'png') {
+            expect(bytes.readUInt32BE(16)).toBe(2360);
+            // Хүснэгтүүд хоёр баганаар тул зураг өргөнөөсөө намхан.
+            expect(bytes.readUInt32BE(20)).toBeLessThan(2360);
+        }
         await expect(page.getByRole('button', { name: 'Зураг', exact: true })).toBeEnabled();
     }
     await expect(page.locator('.paper-theme')).toHaveCount(0);
@@ -183,5 +192,57 @@ test('ээлжийн менежер багийн мэдээллийг харж, 
     await expect(report.getByRole('region', { name: 'Менежерийн дуудлага', exact: true })).toBeVisible();
     await expect(personalCalls.getByText('9008 5678', { exact: true })).toBeVisible();
     await page.screenshot({ path: 'test-results/e2e/daily-report-print.png', fullPage: true });
+    expect(state.errors).toEqual([]);
+});
+
+test('огнооны мужаар өдрийн тайлангуудыг нэгтгэж, зөвхөн харах горимоор зураг татна', async ({ page }) => {
+    const { state, today } = await setup(page, 'team');
+    await page.goto('/dashboard/daily-report');
+    const report = page.locator('article.daily-report');
+    await expect(report.getByText('"Элизиум Ресиденс" баг', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Хугацаа', exact: true }).click();
+    const from = shiftDate(today, -6);
+    await expect.poll(() => state.gets.at(-1)).toBe(`?date=${from}&to=${today}`);
+    await expect(page.getByLabel('Эхлэх өдөр', { exact: true })).toHaveValue(from);
+    await expect(page.getByLabel('Дуусах өдөр', { exact: true })).toHaveValue(today);
+    await expect(page.getByRole('button', { name: 'Сүүлийн 7 хоног', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(report.getByText(`${from.replaceAll('-', '.')} – ${today.replaceAll('-', '.')}`)).toBeVisible();
+    await expect(report.getByText('· 7 өдөр')).toBeVisible();
+    await expect(page.getByText(/7 өдрийн тайланг нэгтгэв/)).toBeVisible();
+    await expect(report.locator('footer')).toContainText('Баталгаажсан өдөр: 2/7');
+    // Мужид засах, баталгаажуулах үйлдэл алга; уулзалтын мөр өдөртэйгээ.
+    await expect(page.getByRole('button', { name: 'Засах', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Баталгаажуулах', exact: true })).toHaveCount(0);
+    await expect(report.getByRole('spinbutton')).toHaveCount(0);
+    await expect(report.getByText(today.slice(5).replace('-', '.')).first()).toBeVisible();
+    await page.screenshot({ path: 'test-results/e2e/daily-report-range.png', fullPage: true });
+
+    await page.getByRole('button', { name: 'Зураг', exact: true }).click();
+    const download = page.waitForEvent('download');
+    await page.getByRole('menuitem', { name: 'PNG татах' }).click();
+    const file = await download;
+    expect(file.suggestedFilename().normalize('NFC')).toBe(`өдрийн_тайлан_${from}_${today}.png`);
+    await file.saveAs('test-results/e2e/daily-report-range-image.png');
+
+    await page.getByRole('button', { name: 'Энэ сар', exact: true }).click();
+    const month = periodBounds(today, 'month');
+    await expect.poll(() => state.gets.at(-1)).toBe(month.from === today ? '?date=' + today : `?date=${month.from}&to=${today}`);
+
+    // Эхлэх өдрийг дуусахаас хойш сонгоход дуусах өдөр хамт шилжинэ.
+    await page.getByRole('button', { name: 'Сүүлийн 7 хоног', exact: true }).click();
+    await page.getByLabel('Дуусах өдөр', { exact: true }).fill(shiftDate(today, -3));
+    await page.getByLabel('Эхлэх өдөр', { exact: true }).fill(shiftDate(today, -1));
+    await expect(page.getByLabel('Дуусах өдөр', { exact: true })).toHaveValue(shiftDate(today, -1));
+
+    await page.getByRole('button', { name: 'Өдөр', exact: true }).click();
+    await expect.poll(() => state.gets.at(-1)).toBe(`?date=${shiftDate(today, -1)}`);
+    await expect(page.getByRole('button', { name: 'Засах', exact: true })).toBeVisible();
+
+    // AI-ийн холбоос (?from=&to=) хугацааны горимоор нээгдэнэ.
+    await page.goto(`/dashboard/daily-report?from=${shiftDate(today, -2)}&to=${today}`);
+    await expect(page.getByLabel('Эхлэх өдөр', { exact: true })).toHaveValue(shiftDate(today, -2));
+    await expect(report.getByText('· 3 өдөр')).toBeVisible();
+    expect(state.puts).toEqual([]);
     expect(state.errors).toEqual([]);
 });

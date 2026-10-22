@@ -3,9 +3,10 @@ import { withRoute } from '@/lib/api/route';
 import { getUserId } from '@/lib/auth/supabase-auth';
 import { resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
+import { daySpan } from '@/lib/sales/activity';
 import { ubDateStr } from '@/lib/utils/date';
 import {
-    configMetrics, DailyReportDateSchema, formalManagerName, SaveDailyReportSchema, UNASSIGNED,
+    configMetrics, DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, formalManagerName, SaveDailyReportSchema, UNASSIGNED,
 } from '@/lib/dashboard/daily-report';
 import {
     DailyReportUnavailableError, loadDailyReport, loadDailyReportConfig, loadDailyRoster, resolveDailyReportViewer, saveDailyReport,
@@ -28,7 +29,8 @@ async function viewerOf(shopId: string) {
 }
 
 /**
- * GET /api/dashboard/daily-report?date=YYYY-MM-DD — «Өдрийн тайлан» (анхдагч: өнөөдөр, УБ).
+ * GET /api/dashboard/daily-report?date=YYYY-MM-DD[&to=YYYY-MM-DD] — «Өдрийн тайлан» (анхдагч: өнөөдөр, УБ).
+ * `to` өгвөл [date, to] мужийн тоо, уулзалтыг нэгтгэсэн, зөвхөн унших тайлан (≤ DAILY_RANGE_MAX_DAYS өдөр).
  * • Багийн харагдац: super_admin эсвэл `reports` модультай, хувийн горимгүй хэрэглэгч — бүх менежер,
  *   уулзалтын жагсаалт, тэмдэглэл.
  * • Төсөлдөө бүртгэлтэй менежер: багийн бүх багана, уулзалт, тэмдэглэл; өөрийн тоог л засна.
@@ -42,6 +44,13 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
     if (!parsed.success) return NextResponse.json({ error: 'Огноо буруу байна' }, { status: 400 });
     const date = parsed.data;
     if (date > today) return NextResponse.json({ error: 'Ирээдүйн өдрийн тайлан гаргахгүй' }, { status: 400 });
+    const rawTo = request.nextUrl.searchParams.get('to');
+    const parsedTo = DailyReportDateSchema.safeParse(rawTo || date);
+    if (!parsedTo.success || parsedTo.data < date) return NextResponse.json({ error: 'Хугацааны дуусах огноо буруу байна' }, { status: 400 });
+    const to = parsedTo.data;
+    if (to > today) return NextResponse.json({ error: 'Ирээдүйн өдрийн тайлан гаргахгүй' }, { status: 400 });
+    if (daySpan(date, to) > DAILY_RANGE_MAX_DAYS) return NextResponse.json({ error: `Хугацаа ${DAILY_RANGE_MAX_DAYS} өдрөөс ихгүй байна` }, { status: 400 });
+    const ranged = to !== date;
 
     const resolved = await viewerOf(shop.id);
     if (!resolved) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
@@ -49,7 +58,7 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
     const writable = canWriteDashboard(permissions);
 
     if (viewer.personal && !viewer.ownManager) {
-        return NextResponse.json({ date, today, report: null, config: null, roster: [],
+        return NextResponse.json({ date, to, today, report: null, config: null, roster: [],
             viewer: { personal: true, onboarding: true, canEditTeam: false, editable: [] } }, { headers: NO_STORE });
     }
     if (!viewer.canViewTeam) {
@@ -57,19 +66,20 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
     }
 
     try {
-        const result = await loadDailyReport(supabaseAdmin(), { shopId: shop.id, shopName: shop.name || 'Төсөл', date, only: null });
+        const result = await loadDailyReport(supabaseAdmin(), { shopId: shop.id, shopName: shop.name || 'Төсөл', date, to, only: null });
         const rosterNames = new Set(result.roster.map(entry => entry.name));
-        const editable = !writable ? [] : viewer.ownManager ? [viewer.ownManager]
+        // Мужийн нэгтгэл зөвхөн унших: тоо, тэмдэглэлийг өдөр бүрээр засна.
+        const editable = !writable || ranged ? [] : viewer.ownManager ? [viewer.ownManager]
             : result.report.managers.map(manager => manager.name).filter(name => name !== UNASSIGNED && rosterNames.has(name));
         return NextResponse.json({
-            date, today,
+            date, to, today,
             report: result.report,
             config: result.config,
             configSaved: result.configSaved,
             configInvalid: result.configInvalid,
             // Бүртгэлийн жагсаалт зөвхөн загвар засахад; багийн нэрс тайланд өөрт нь бий.
             roster: viewer.personal ? [] : result.roster,
-            viewer: { personal: viewer.personal, onboarding: false, canEditTeam: writable, editable },
+            viewer: { personal: viewer.personal, onboarding: false, canEditTeam: writable && !ranged, editable },
         }, { headers: NO_STORE });
     } catch (error) {
         const response = unavailable(error);

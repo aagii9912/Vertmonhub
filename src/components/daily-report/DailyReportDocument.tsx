@@ -8,7 +8,7 @@ import { formatTime } from '@/lib/utils/date';
 import { formatStaffPhone } from '@/lib/admin/staff-profile';
 import { Textarea } from '@/components/ui/Textarea';
 import {
-    DAILY_COUNT_MAX, DAILY_LIMITS, reportDateLabel,
+    DAILY_COUNT_MAX, DAILY_LIMITS, reportDateLabel, reportPeriodLabel,
     type DailyGridSection, type DailyReport, type DailyReportManager, type DailyReportNotes,
 } from '@/lib/dashboard/daily-report';
 
@@ -28,7 +28,8 @@ export interface DailyReportEditing {
 /**
  * «Өдрийн тайлан»-гийн баримт (дэлгэц, хэвлэх/PDF ба зураг): толгой, шугам/уулзалт/чатын менежерийн хүснэгт,
  * товч дүгнэлт, уулзалтын жагсаалт, «Тайлан хийж гүйцэтгэсэн». `editing` өгвөл тооны нүд, тэмдэглэл засагдана;
- * `forImage` — PNG/JPEG-д зориулж хүснэгтүүд нэг баганаар, холбоосгүй.
+ * `forImage` — PNG/JPEG: дэлгэцийн өргөн загвартай адил хүснэгтүүд 2 баганаар, холбоосгүй.
+ * Мужийн тайланд (`report.to > report.date`) огноо нь хугацаа, уулзалтын мөр өдөртэйгээ гарна.
  */
 export function DailyReportDocument({ report, editing, forImage = false }: { report: DailyReport; editing?: DailyReportEditing | null; forImage?: boolean }) {
     const managers = report.managers;
@@ -39,7 +40,7 @@ export function DailyReportDocument({ report, editing, forImage = false }: { rep
                 <div>
                     <p className="text-xs text-muted-foreground">Өдрийн тайлан</p>
                     <h2 className="mt-1 text-xl font-semibold uppercase tracking-[0.06em]">{report.title}</h2>
-                    <p className="num mt-1 text-2xl font-semibold tracking-tight">{reportDateLabel(report.date)} <span className="text-sm font-normal text-muted-foreground">· {report.weekday}</span></p>
+                    <p className="num mt-1 text-2xl font-semibold tracking-tight">{reportPeriodLabel(report)} <span className="text-sm font-normal text-muted-foreground">· {report.weekday}</span></p>
                 </div>
                 {people.length > 0 && (
                     <ul className="space-y-0.5 text-right text-[13px] text-fg-2">
@@ -48,7 +49,7 @@ export function DailyReportDocument({ report, editing, forImage = false }: { rep
                 )}
             </header>
 
-            <section className={cn('grid gap-4', !forImage && 'lg:grid-cols-2 print:grid-cols-2 print:gap-3')} aria-label="Менежерийн тоон үзүүлэлт">
+            <section className={cn('grid gap-4', forImage ? 'grid-cols-2' : 'lg:grid-cols-2 print:grid-cols-2 print:gap-3')} aria-label="Менежерийн тоон үзүүлэлт">
                 {report.lines.map(line => (
                     <CountTable key={line.key} title={line.label} caption="Дуудлага" section={line} managers={managers} editing={editing} showPhones={line.key === 'personal'} />
                 ))}
@@ -74,14 +75,14 @@ export function DailyReportDocument({ report, editing, forImage = false }: { rep
             </section>
 
             <section className="space-y-4" aria-label="Уулзалт">
-                <h3 className="text-lg font-semibold">Уулзалт: <span className="num">{report.meetings.total}</span></h3>
+                <h3 className="num whitespace-nowrap text-lg font-semibold">Уулзалт: {report.meetings.total}</h3>
                 {report.meetings.groups.map(group => (
                     <div key={group.type} className="space-y-1.5">
-                        <h4 className="text-[15px] font-semibold">{group.heading} — <span className="num">{group.count}</span></h4>
+                        <h4 className="num whitespace-nowrap text-[15px] font-semibold">{group.heading} — {group.count}</h4>
                         {group.items.length > 0 ? (
                             <ol className="list-decimal space-y-1 pl-6 text-sm leading-relaxed">
                                 {group.items.map(item => (
-                                    <li key={item.id}>{item.text}{item.manager && managers.length > 1 && <span className="ml-1.5 text-xs text-muted-foreground">({item.manager})</span>}</li>
+                                    <li key={item.id}>{item.day && <span className="num mr-1.5 text-muted-foreground">{reportDateLabel(item.day).slice(5)}</span>}{item.text}{item.manager && managers.length > 1 && <span className="ml-1.5 text-xs text-muted-foreground">({item.manager})</span>}</li>
                                 ))}
                             </ol>
                         ) : <p className="pl-1 text-sm text-muted-foreground">—</p>}
@@ -99,6 +100,11 @@ export function DailyReportDocument({ report, editing, forImage = false }: { rep
                 </section>
             )}
 
+            {report.completedDays !== null && (
+                <footer className="border-t border-border pt-4 text-right text-sm">
+                    Баталгаажсан өдөр: <span className="num font-medium">{report.completedDays}/{report.days}</span>
+                </footer>
+            )}
             {report.completed && (
                 <footer className="border-t border-border pt-4 text-right text-sm">
                     Тайлан хийж гүйцэтгэсэн: <span className="font-medium">{report.completed.by || '—'}</span>
