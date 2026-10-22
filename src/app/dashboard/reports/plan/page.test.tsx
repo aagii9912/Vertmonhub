@@ -4,10 +4,11 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { emptyMonthlySales } from '@/lib/sales/monthly';
 import { buildPlanPerformance, type PlanContract, type PlanReceipt } from '@/lib/sales/plan-performance';
+import { DashboardApiError } from '@/lib/api/dashboardFetch';
 
 const transport = vi.hoisted(() => ({ json: vi.fn() }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ shop: { id: 'shop-1' }, user: { id: 'user-1', role: 'admin' } }) }));
-vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardJson: transport.json }));
+vi.mock('@/lib/api/dashboardFetch', async (importOriginal) => ({ ...await importOriginal<typeof import('@/lib/api/dashboardFetch')>(), dashboardJson: transport.json }));
 
 import PlanPerformancePage from './page';
 
@@ -78,6 +79,17 @@ describe('plan fulfilment page', () => {
         expect(screen.getByRole('heading', { name: 'Мөнгөн урсгал · Нийт' })).toBeInTheDocument();
         expect(screen.getByText('Оруулаагүй')).toBeInTheDocument();
         expect(screen.queryByText('0₮')).not.toBeInTheDocument();
+        cache.clear();
+    });
+
+    it('tells a restricted manager the team plan is for management, without a danger alert or a retry', async () => {
+        transport.json.mockRejectedValue(new DashboardApiError('Багийн төлөвлөгөө удирдлагад харагдана', 403));
+        const cache = new QueryClient();
+        render(<QueryClientProvider client={cache}><PlanPerformancePage /></QueryClientProvider>);
+        expect(await screen.findByText('Багийн төлөвлөгөөний биелэлт удирдлагад харагдана.')).toBeInTheDocument();
+        expect(screen.queryByText('Тайлан гарсангүй')).not.toBeInTheDocument();
+        expect(screen.queryByRole('group', { name: 'Блок' })).not.toBeInTheDocument();
+        expect(transport.json).toHaveBeenCalledTimes(1);
         cache.clear();
     });
 });

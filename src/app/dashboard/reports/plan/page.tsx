@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardJson } from '@/lib/api/dashboardFetch';
+import { DashboardApiError, dashboardJson } from '@/lib/api/dashboardFetch';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
@@ -80,15 +80,17 @@ function PlanContent() {
         queryFn: ({ signal }) => dashboardJson(`/api/dashboard/reports/plan-performance?year=${year}`, { signal }),
         enabled: !!shop?.id,
         staleTime: 60_000,
-        retry: 1,
+        // 403 = хязгаарлагдсан (хувийн горимын) хэрэглэгч — давтахгүй.
+        retry: (count, err) => !(err instanceof DashboardApiError && err.status === 403) && count < 1,
     });
+    const forbidden = error instanceof DashboardApiError && error.status === 403;
     const years = data?.years?.length ? data.years : [year];
     const segmentLabel = SEGMENTS.find(item => item.key === segment)!.label;
 
     return <div className="space-y-4">
         <PageHeader title="Төлөвлөгөөний биелэлт" subtitle="Сар, блок тус бүрийн гэрээ ба мөнгөн урсгалын төлөвлөгөө, гүйцэтгэл."
             secondaryActions={<Button variant="secondary" onClick={() => refetch()} disabled={isFetching || !shop?.id}><RefreshCw className="size-4" />Шинэчлэх</Button>} />
-        <div className="flex flex-wrap items-center gap-3">
+        {!forbidden && <div className="flex flex-wrap items-center gap-3">
             <Select value={String(year)} onValueChange={value => setYear(Number(value))}>
                 <SelectTrigger className="h-9 w-28 text-sm" aria-label="Он сонгох"><SelectValue /></SelectTrigger>
                 <SelectContent>{years.map(item => <SelectItem key={item} value={String(item)}>{item} он</SelectItem>)}</SelectContent>
@@ -97,9 +99,10 @@ function PlanContent() {
                 {SEGMENTS.map(item => <button key={item.key} type="button" aria-pressed={segment === item.key} onClick={() => setSegment(item.key)}
                     className={cn('h-full rounded px-3 text-sm', segment === item.key ? 'bg-surface-2 font-medium text-foreground' : 'text-muted-foreground hover:text-foreground')}>{item.label}</button>)}
             </div>
-        </div>
+        </div>}
         {!shop?.id && <Alert variant="info"><AlertDescription>Идэвхтэй төслөө сонгож тайлангаа харна уу.</AlertDescription></Alert>}
-        {error && <Alert variant="danger"><AlertTitle>Тайлан гарсангүй</AlertTitle><AlertDescription>{error.message}</AlertDescription></Alert>}
+        {forbidden && <Alert variant="info"><AlertDescription>Багийн төлөвлөгөөний биелэлт удирдлагад харагдана.</AlertDescription></Alert>}
+        {error && !forbidden && <Alert variant="danger"><AlertTitle>Тайлан гарсангүй</AlertTitle><AlertDescription>{error.message}</AlertDescription></Alert>}
         {isPending && shop?.id && !error && <p role="status" className="py-12 text-center text-muted-foreground">Тайлан нэгтгэж байна…</p>}
         {data && !error && <PlanReport data={data} segment={segment} segmentLabel={segmentLabel} />}
     </div>;
