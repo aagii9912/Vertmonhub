@@ -158,6 +158,31 @@ export function weeklySales() {
     });
 }
 
+/**
+ * Elysium-ийн бодит хэлбэрийн давхрын зураглал: Б1 7 загвар (E1–E7), Б2 8 загвар (E1, E2, A–F), 2–23 давхар; урт нэртэй
+ * менежер (Чанцалдулам, Номин-Эрдэнэ) гэрээтэй байр, бартер, нэг давхар × загварт хоёр байр (Б2 12 давхар A).
+ */
+export function elysiumFloorMaps() {
+    const models: Record<string, Array<[string, number]>> = {
+        'Б1': [['E1', 89.73], ['E2', 89.73], ['E3', 80.32], ['E4', 62.1], ['E5', 57.87], ['E6', 71.2], ['E7', 89.73]],
+        'Б2': [['E1', 89.73], ['E2', 89.73], ['A', 57.87], ['B', 62.1], ['C', 45.5], ['D', 71.2], ['E', 57.87], ['F', 80.32]],
+    };
+    const managers = ['Чанцалдулам.Раднаа', 'Номин-Эрдэнэ.Бат', 'Хонгорзул.Мөнхгэрэл'];
+    const units: ErpProduct[] = [];
+    for (const [block, list] of Object.entries(models)) for (let floor = 2; floor <= 23; floor++) for (const [model, size] of list) {
+        const index = units.length;
+        const sold = index % 3 === 0;
+        units.push({ key: `u${index}`, code: `${block}-${floor}${model}`, block, floor, model, kind: 'residential', rooms: 2, area: size, price: null,
+            status: sold ? 'sold' : 'available', statusLabel: '', barter: index === 10, manager: sold ? managers[index % managers.length] : null });
+    }
+    units.push({ key: 'double', code: 'Б2-12A2', block: 'Б2', floor: 12, model: 'A', kind: 'residential', rooms: 2, area: 57.87, price: null,
+        status: 'sold', statusLabel: '', barter: false, manager: managers[0] });
+    return buildWeeklySales({
+        range, sales: null, previousSales: null, monthTarget: null, crmContracts: [],
+        inventory: { info: { date: '2026-10-20', source: 'HUB гэрээ + байрны бүртгэл', kind: 'contracts' }, rows: units },
+    });
+}
+
 const slide = (id: string, over: Partial<WeeklySlide>): WeeklySlide => ({
     id, meeting_date: meetingDate, part: 'sales', section: 'event', title: '', note: '', image_paths: [], position: 0,
     author_id: user, author_name: 'Номин', updated_at: '2026-10-20T10:00:00Z', ...over,

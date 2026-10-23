@@ -5,8 +5,9 @@ import JSZip from 'jszip';
 import PptxGenJS from 'pptxgenjs';
 import { SaxesParser } from 'saxes';
 import { buildTeamDeck, teamDeckPeriod, wholePct, type TeamDeckInput } from '../team-deck';
-import { weeklyDeckFileName } from '../weekly-deck';
-import { CASH_NUMBERS, negotiations, plan, range, teamInput, weeklySales } from './team-deck-fixture';
+import { BOTTOM, weeklyDeckFileName } from '../weekly-deck';
+import { activity, CASH_NUMBERS, elysiumFloorMaps, negotiations, plan, range, teamInput, weeklySales } from './team-deck-fixture';
+import { lineOverflows, slideTables, wordOverflows } from './table-layout';
 
 async function render(deck: TeamDeckInput) {
     const pres = new PptxGenJS();
@@ -231,6 +232,38 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(meetings).toMatch(/<a:t>Нийт<\/a:t>[\s\S]*?<a:t>12<\/a:t>/);
     });
 
+    it('activity chart: a real 0 stays 0 in the editable workbook, unknown stays an empty cell; lower bounds are named under the chart', async () => {
+        const report = activity();
+        // 10/14–10/20-ны чат 0 (оруулсан), 10/07–10/13-ны менежер дугаар тодорхойгүй.
+        report.buckets = report.buckets.map(bucket => bucket.label === '10/14–10/20' ? { ...bucket, values: { ...bucket.values, chats: 0 } } : bucket);
+        const { zip, text } = await render(teamInput({ activity: report }));
+        const chart = (await Promise.all(Object.keys(zip.files).filter(name => /^ppt\/charts\/chart\d+\.xml$/.test(name))
+            .map(async name => [name, await zip.file(name)!.async('string')] as const))).find(([, body]) => body.includes('<c:barChart>'))!;
+        const rels = await zip.file(chart[0].replace('charts/', 'charts/_rels/') + '.rels')!.async('string');
+        const workbook = await JSZip.loadAsync(await zip.file(`ppt/${rels.match(/Target="\.\.\/(embeddings\/[^"]+\.xlsx)"/)![1]}`)!.async('uint8array'));
+        const sheet = await workbook.file('xl/worksheets/sheet1.xml')!.async('string');
+        // Багана: B = 10/01–10/06, C = 10/07–10/13, D = 10/14–10/20; мөр: 2 шугам, 3 менежер дугаар, 4 шинэ уулзалт, 5 чат.
+        expect(sheet).toContain('<c r="D5"><v>0</v></c>');
+        expect(sheet).toContain('<c r="C3"><v></v></c>');
+        expect(sheet).toContain('<c r="D2"><v>53</v></c>');
+        const series = chart[1].split('<c:ser>');
+        expect(series[3]).toContain('<c:pt idx="3"><c:v>0</c:v></c:pt>');
+        expect(series[2]).toContain('<c:pt idx="1"><c:v></c:v></c:pt>');
+        // 10/01–10/06-ны шинэ уулзалт (бүртгэл 10/05-нд эхэлсэн) — графикийн доор «N+».
+        expect(at(text, 'ТООН МЭДЭЭЛЭЛ')).toContain('Доод хязгаар (N+): 10/01–10/06 · Шинэ уулзалт 2+ — бүртгэл 7 хоногийн дунд эхэлсэн.');
+    });
+
+    it('negotiations exported after the meeting say on the slide that the list and prices are as of the export day', async () => {
+        const fresh = await render(teamInput());
+        expect(at(fresh.text, 'ЯРИГДАЖ БУЙ ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ')).toContain('2 лид · үнэ 2026.10.21-ний байдлаар');
+        const late = await render(teamInput({ negotiations: { ...negotiations(), asOf: '2026-10-23' } }));
+        const slide = at(late.text, 'ЯРИГДАЖ БУЙ ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ');
+        expect(slide).toContain('2 лид · 2026.10.23-ний төлөв, үнээр — хурлын (2026.10.21) дараа татсан');
+        expect(late.notes[late.text.indexOf(slide)]).toContain('Ярилцаж буй гэрээний жагсаалт түүхгүй: хурлын өдрийн (2026.10.21) биш, татсан өдрийн (2026.10.23) төлөв, үнээр');
+        const empty = await render(teamInput({ negotiations: { ...negotiations(true), asOf: '2026-10-23' } }));
+        expect(at(empty.text, 'ЯРИГДАЖ БУЙ ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ')).toContain('хурлын (2026.10.21) дараа татсан');
+    });
+
     it('uses the branding footer, cover image and logo; falls back to the project name and «ВЕРТМОН ПРОПЕРТИС»', async () => {
         const branded = await render(teamInput());
         const layouts = await Promise.all(Object.keys(branded.zip.files).filter(name => /slideLayout\d+\.xml$/.test(name)).map(name => branded.zip.file(name)!.async('string')));
@@ -268,6 +301,58 @@ describe('team-format Wednesday deck (.pptx)', () => {
         // Бусад эх сурвалж хэвээр.
         expect(at(text, 'ЯРИГДАЖ БУЙ ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ')).toContain('312,498,000₮');
         expect(at(text, 'НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ')).toContain('Ойрхон амьдардаг');
+    });
+
+    it('fits every table word in its column (PowerPoint breaks a longer word mid-word)', async () => {
+        // Он эхнээс прод-ын хэмжээний дүн (TARGET-DECK: 19,717,922,500+ / 39,635,304,000).
+        const year = plan();
+        const ytd = year.ytd.total.metrics;
+        year.ytd.total.metrics = {
+            ...ytd,
+            contract: { ...ytd.contract!, plan: 31_055_088_000, actual: 19_717_922_500, lowerBound: true, yearPlan: 39_635_304_000 },
+            cashflow: { ...ytd.cashflow!, plan: 9_316_526_400, actual: 5_959_387_658, lowerBound: true, yearPlan: 11_890_591_200 },
+        };
+        const report = weeklySales();
+        const residential = report.month.lines.find(line => line.kind === 'residential')!;
+        const long = { ...report, month: { ...report.month, lines: Array.from({ length: 14 }, (_, index) => ({ ...residential, key: `Б2-${index}`, unit: `Б2-${index}`, referral: 'Мандала Гарден ОС' })) } };
+        const talks = negotiations();
+        talks.rows = talks.rows.map(row => ({ ...row, referral: 'Мандала Гарден ОС' }));
+        for (const deck of [teamInput({ plan: year, negotiations: talks }), teamInput({ plan: year, weeklySales: long })]) {
+            const { xml, text } = await render(deck);
+            for (const [index, part] of xml.entries()) for (const table of slideTables(part)) expect(wordOverflows(table), text[index].slice(0, 60)).toEqual([]);
+        }
+        const { xml, text } = await render(teamInput({ plan: year, negotiations: talks }));
+        const yearSlide = xml[text.indexOf(at(text, 'ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ'))];
+        expect(yearSlide).toContain('19,717,922,500+');
+        // Дүн нэг мөрөнд (хувийн багана «Гүйцэтгэл»-ийг тасалдаггүй өргөнтэй).
+        const [yearTable] = slideTables(yearSlide);
+        expect(lineOverflows(yearTable, col => col >= 2 && (col - 2) % 3 !== 2).filter(line => /^"[^"]*\d/.test(line))).toEqual([]);
+        // «Сэжим»-ийн түгээмэл утга нэг мөрөнд.
+        const [talksTable] = slideTables(xml[text.indexOf(at(text, 'ЯРИГДАЖ БУЙ ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ'))]);
+        expect(lineOverflows(talksTable, col => col === 10)).toEqual([]);
+    });
+
+    it('keeps a 22-floor Elysium block on one slide: names shortened to one line, rows sized for stacked units', async () => {
+        const { xml, text, notes } = await render(teamInput({ weeklySales: elysiumFloorMaps() }));
+        for (const block of ['Б1', 'Б2']) {
+            const index = text.indexOf(at(text, `ДАВХРЫН ЗУРАГЛАЛ — ЭЛИЗИУМ ${block} БЛОК`));
+            expect(text[index]).not.toContain('(1/2)');
+            const [table] = slideTables(xml[index]);
+            // Нүд бүрийн мөр нэг мөрөнд багтана (урт нэр «…»-ээр товчилсон).
+            expect(lineOverflows(table)).toEqual([]);
+            for (const cell of table.cells) {
+                for (const line of cell.lines) expect(line.pt).toBeGreaterThanOrEqual(8);
+                // Хоёр байртай нүдний мөр өндөр нь хоёр мөрийн бичвэрт хүрнэ.
+                const needed = cell.lines.length * Math.max(0, ...cell.lines.map(line => line.pt)) * 1.2 / 72 + 0.02;
+                expect(table.rowH[cell.row] + 1e-6, `мөр ${cell.row}`).toBeGreaterThanOrEqual(needed);
+            }
+            // Хүснэгт хөл, слайдын дугаараас (7.02") дээш дуусна.
+            expect(table.y + table.rowH.reduce((sum, h) => sum + h, 0)).toBeLessThanOrEqual(BOTTOM + 1e-6);
+            expect(notes[index]).toContain('«…»-ээр товчилсон');
+        }
+        const b2 = xml[text.indexOf(at(text, 'ДАВХРЫН ЗУРАГЛАЛ — ЭЛИЗИУМ Б2 БЛОК'))];
+        expect(b2).toMatch(/<a:t>57\.87 м² Чанцал[^<]*…<\/a:t>/);
+        expect(slideTables(b2)[0].cells.some(cell => cell.lines.length === 2)).toBe(true);
     });
 
     it('names the file like the other decks', () => {

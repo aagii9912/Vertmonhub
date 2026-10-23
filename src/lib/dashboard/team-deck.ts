@@ -156,24 +156,33 @@ function coverSlide(pres: PptxGenJS, ctx: Ctx) {
 }
 
 // 2. Ярилцаж буй гэрээ (W13) + «Яригдаж буй гэрээ» сэдвийн нэмэлт слайд.
+/**
+ * Баганын өргөн (инч, нийт CW): толгойн үг бүр (10pt тод, захын зай 0.08") багана дотроо тасрахгүй, «Сэжим»-ийн түгээмэл
+ * утга («Мандала Гарден ОС») нэг мөрөнд — Arial-ийн өргөнөөр тест шалгана (`table-layout.ts`).
+ */
+const NEGOTIATION_W = [0.5, 0.7, 0.95, 0.75, 0.85, 1.1, 1.25, 1.45, 1.4, 1.25, 1.933];
 function negotiationSlides(pres: PptxGenJS, ctx: Ctx) {
     const title = 'ЯРИГДАЖ БУЙ ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ';
     const report = ctx.input.negotiations;
     if (!report) {
         unavailable(content(pres, ctx.name, title), ctx, 'negotiations', TOP - 0.2);
     } else {
+        // Жагсаалт (лидийн төлөв) түүхгүй — хурлын дараа татвал хурлын өдрийнх биш, татсан өдрийнх; слайд дээр ч хэлнэ.
+        const late = report.asOf > ctx.input.meetingDate;
+        const asOfText = late ? ` · ${dot(report.asOf)}-ний төлөв, үнээр — хурлын (${dot(ctx.input.meetingDate)}) дараа татсан` : '';
         const notes = [
             'Эх сурвалж: CRM — «Хэлэлцэж байна» / «Санал тавьсан» төлөвтэй, амьд гэрээгүй лид; блок, давхар, талбай, урьдчилгааны хувь = сүүлийн болсон уулзалтын сонирхол.',
+            late ? `Ярилцаж буй гэрээний жагсаалт түүхгүй: хурлын өдрийн (${dot(ctx.input.meetingDate)}) биш, татсан өдрийн (${dot(report.asOf)}) төлөв, үнээр — бусад слайд тайлант 7 хоногийнх.` : null,
             report.pricing
                 ? `Мкв үнэ, нийт үнэ, урьдчилгаа — өнөөдрийн үнээр (${dot(report.asOf)}, баталсан үнийн тохиргоо v${report.pricing.version}).`
                 : `Мкв үнэ, нийт үнэ, урьдчилгаа — өнөөдрийн үнээр (${dot(report.asOf)}); идэвхтэй үнийн тохиргоо алга бол «—».`,
             '«Урьдчилгаа нөхцөл» тодорхойлогдоогүй (W13) тул «—».',
             ...report.notes,
-        ];
+        ].filter((line): line is string => !!line);
         if (!report.rows.length) {
-            const slide = content(pres, ctx.name, title, `Үнийн өдөр ${dot(report.asOf)}`);
+            const slide = content(pres, ctx.name, title, late ? asOfText.slice(3) : `Үнийн өдөр ${dot(report.asOf)}`);
             muted(slide, 'Ярилцаж буй гэрээ алга.', TOP);
-            note(slide, notes.slice(0, 1).concat(report.notes));
+            note(slide, notes.slice(0, late ? 2 : 1).concat(report.notes));
         } else {
             const head = ['Д/д', 'Блок', 'Өрөөний тоо', 'Давхар', 'м.кв', 'Урьдчилгаа хувь', 'Мкв үнэ', 'Нийт үнэ', 'Урьдчилгаа', 'Урьдчилгаа нөхцөл', 'Сэжим']
                 .map((text, index) => headCell(text, [4, 6, 7, 8].includes(index) ? 'right' : index === 0 || index === 2 || index === 3 || index === 5 ? 'center' : 'left'));
@@ -189,8 +198,8 @@ function negotiationSlides(pres: PptxGenJS, ctx: Ctx) {
                 bodyCell(negotiationSumText(totals.advance, value => money(value)), 'right', { bold: true }), bodyCell(''), bodyCell(''),
             ];
             tableSlides(pres, {
-                kicker: ctx.name, title, subtitle: `${totals.count} лид · үнэ ${dot(report.asOf)}-ний байдлаар`, head, rows, footer,
-                colW: [0.5, 0.7, 0.95, 0.75, 0.85, 1.1, 1.45, 1.7, 1.6, 1.25, 1.283], perSlide: 12, fontSize: 10, notes,
+                kicker: ctx.name, title, subtitle: late ? `${totals.count} лид${asOfText}` : `${totals.count} лид · үнэ ${dot(report.asOf)}-ний байдлаар`, head, rows, footer,
+                colW: NEGOTIATION_W, perSlide: 12, fontSize: 10, notes,
             });
         }
     }
@@ -204,7 +213,8 @@ const salesSlides = (ctx: Ctx, sections: readonly WeeklySlideSection[]) =>
 const PARKING_HEAD = ['Д/д', 'Менежер', 'Тоот', 'Талбай', 'Нэр', 'Урьдчилгаа хувь', 'Нийт үнэ', 'Урьдчилгаа', 'Хүлээгдэж буй'];
 const PARKING_W = [0.5, 1.4, 1.4, 0.9, 2.0, 1.1, 1.6, 1.6, 1.633];
 const RESIDENTIAL_HEAD = ['Д/д', 'Менежер', 'Өрөө', 'Блок', 'Давхар', 'Талбай', 'Нэр', 'Урьдчилгаа хувь', 'Мкв үнэ', 'Нийт үнэ', 'Урьдчилгаа', 'Сэжим'];
-const RESIDENTIAL_W = [0.5, 1.2, 0.8, 0.6, 0.65, 0.75, 1.45, 0.95, 1.15, 1.4, 1.35, 1.333];
+/** «Давхар», «Урьдчилгаа» хуудасласан хүснэгтийн 0.08" захтай ч тасрахгүй; «Сэжим» түгээмэл утгаараа нэг мөрөнд. */
+const RESIDENTIAL_W = [0.45, 1.15, 0.75, 0.55, 0.7, 0.75, 1.45, 1.0, 1.1, 1.3, 1.3, 1.633];
 /** Нэг слайдад хоёр хүснэгт багтах мөрийн дээд тоо (толгой, хөл, гарчгийг оруулаад BOTTOM-оос дээш). */
 const MONTH_LINES_ONE_SLIDE = 10;
 const HEAD_H = 0.42;
@@ -440,6 +450,13 @@ function stretchSlide(pres: PptxGenJS, ctx: Ctx) {
 const CHART_METRICS: readonly ActivityMetric[] = ['hotline', 'managerLine', 'newMeetings', 'chats'];
 /** Хуучин → шинэ 7 хоног (хамгийн шинэ нь Hub-ийн цэнхэр). Hex, «#»-гүй. */
 const BUCKET_COLORS = ['D5DEF7', 'A9B8E8', '7F96E0', '5479DC', C.brand];
+const ACTIVITY_CHART_H = 2.85;
+/**
+ * Графикийн цэг: тодорхойгүй = null (хоосон нүд, dispBlanksAs=gap). pptxgenjs 4.0.1 баганан графикийн суулгасан Excel
+ * хүснэгтэд утгыг `value || ''` гэж бичдэг тул жинхэнэ 0 хоосон нүд болж («Edit Data»-гаар засвал тодорхойгүй болж)
+ * хувирна — «0» мөрөөр өгвөл кэш, хүснэгт хоёуланд `0` бичигдэнэ.
+ */
+const chartPoint = (value: number | null): number | null => (value === 0 ? '0' as unknown as number : value);
 
 function activitySlide(pres: PptxGenJS, ctx: Ctx) {
     const title = 'БОРЛУУЛАЛТЫН АЛБА-ТООН МЭДЭЭЛЭЛ';
@@ -456,13 +473,21 @@ function activitySlide(pres: PptxGenJS, ctx: Ctx) {
     const partial = report.buckets.some(bucket => ACTIVITY_METRICS.some(metric => bucket.partial[metric])) || ACTIVITY_METRICS.some(metric => report.month.metrics[metric].partial);
     if (charted.length) {
         const colors = BUCKET_COLORS.slice(-charted.length);
-        slide.addChart('bar', charted.map(bucket => ({ name: bucket.label, labels: categories, values: CHART_METRICS.map(metric => bucket.values[metric]) })), {
-            x: M, y: TOP - 0.05, w: CW, h: 3.15, barDir: 'col', barGrouping: 'clustered', barGapWidthPct: 60, chartColors: colors,
+        slide.addChart('bar', charted.map(bucket => ({ name: bucket.label, labels: categories, values: CHART_METRICS.map(metric => chartPoint(bucket.values[metric])) })), {
+            x: M, y: TOP - 0.05, w: CW, h: ACTIVITY_CHART_H, barDir: 'col', barGrouping: 'clustered', barGapWidthPct: 60, chartColors: colors,
             showValue: true, dataLabelPosition: 'outEnd', dataLabelFontSize: 9, dataLabelFontFace: FONT, dataLabelColor: C.ink,
             showLegend: true, legendPos: 'b', legendFontSize: 10, legendFontFace: FONT, legendColor: C.ink2,
             catAxisLabelFontSize: 11, catAxisLabelFontFace: FONT, catAxisLabelColor: C.ink2, valAxisHidden: true, valGridLine: { style: 'none' },
             displayBlanksAs: 'gap', altText: `Борлуулалтын албаны тоон мэдээлэл 7 хоногоор: ${categories.join(', ')}`,
         });
+        // Доод хязгаар (уулзалтын бүртгэл 7 хоногийн дунд эхэлсэн) — баганын шошго «N+» болж чадахгүй тул графикийн доор.
+        const lowerBounds = charted.flatMap(bucket => CHART_METRICS.filter(metric => bucket.partial[metric] && bucket.values[metric] !== null)
+            .map(metric => `${bucket.label} · ${categories[CHART_METRICS.indexOf(metric)]} ${count(bucket.values[metric])}+`));
+        if (lowerBounds.length) {
+            slide.addText(`Доод хязгаар (N+): ${lowerBounds.join('; ')} — бүртгэл 7 хоногийн дунд эхэлсэн.`, {
+                x: M, y: TOP - 0.05 + ACTIVITY_CHART_H + 0.02, w: CW, h: 0.3, fontFace: FONT, fontSize: 11, color: C.muted, margin: 0, valign: 'middle', isTextBox: true,
+            });
+        }
     } else {
         muted(slide, 'Сүүлийн 7 хоногуудад тоон мэдээлэл оруулаагүй — тодорхойгүй.', TOP + 0.6);
     }
@@ -481,9 +506,9 @@ function activitySlide(pres: PptxGenJS, ctx: Ctx) {
         `Шугам: «${hotline}» = өдрийн тайлангийн загварын эхний шугам, «${managerLine}» = хоёр дахь шугам; чат = ${report.lines.chats.join(', ') || 'суваггүй'}.`,
         `Өдрийн тайлангийн хамрах хүрээ (тоо оруулсан өдөр / нийт өдөр): ${report.buckets.map(bucket => `${bucket.label} ${bucket.knownDays}/${bucket.days}`).join(', ')}.`,
         `Төлөвлөгөө «хувь тэнцүүлсэн / сарын» = сарын төлөвлөгөө × min(өдөр, 30) / 30 (${dot(report.month.to)} хүртэл); биелэлт = гүйцэтгэл / хувь тэнцүүлсэн төлөвлөгөө.`,
-        blanks ? 'Графикийн хоосон багана = тодорхойгүй (тоо оруулаагүй), 0 биш. PowerPoint-ийн «Edit Data» хүснэгтэд хоосон нүд 0 болж харагдана.' : null,
+        blanks ? 'Графикийн хоосон багана = тодорхойгүй (тоо оруулаагүй), 0 биш; графикийн өгөгдлийн хүснэгтэд (Edit Data) хоосон нүд, жинхэнэ 0 нь 0.' : null,
         skipped.length ? `${skipped.map(bucket => bucket.label).join(', ')}: тоон мэдээлэл огт оруулаагүй тул графикт ороогүй.` : null,
-        partial ? '«N+» — уулзалтын бүртгэл хугацааны дунд эхэлсэн тул доод хязгаар (графикт мэдэгдэх тоо).' : null,
+        partial ? '«N+» — уулзалтын бүртгэл хугацааны дунд эхэлсэн тул доод хязгаар; графикт мэдэгдэх тоо, графикийн доорх мөрөнд «N+».' : null,
         ...report.notes,
     ]);
 }
@@ -582,6 +607,14 @@ function floorMaps(pres: PptxGenJS, ctx: Ctx) {
 }
 
 // 13. Оны төлөвлөгөө, гүйцэтгэл: сар, 1–N сар, бүтэн жил × блок × үзүүлэлт.
+/**
+ * Хувийн багана «Гүйцэтгэл» (10pt тод 0.69") тасрахгүй өргөнтэй; дүнгийн багана «19,717,922,500+» (тод 1.05") нэг мөрөнд.
+ * Захын зай 0.06" хоёр талд.
+ */
+const YEAR_LABEL_W = 0.85;
+const YEAR_METRIC_W = 1.2;
+const YEAR_PCT_W = 0.88;
+const YEAR_AMOUNT_W = (CW - YEAR_LABEL_W - YEAR_METRIC_W - 3 * YEAR_PCT_W) / 6;
 function yearTableSlide(pres: PptxGenJS, ctx: Ctx) {
     const slide = content(pres, ctx.name, `${ctx.year} ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ`, `Тайлант өдөр ${dot(ctx.input.range.to)} хүртэл · дүн ₮`);
     const plan = ctx.input.plan;
@@ -618,7 +651,7 @@ function yearTableSlide(pres: PptxGenJS, ctx: Ctx) {
         ];
     }));
     slide.addTable([head1, head2, ...body], {
-        x: M, y: TOP - 0.05, w: CW, colW: [1.05, 1.48, ...[0, 1, 2].flatMap(() => [1.25, 1.25, 0.7])], fontFace: FONT, fontSize: 10,
+        x: M, y: TOP - 0.05, w: CW, colW: [YEAR_LABEL_W, YEAR_METRIC_W, ...[0, 1, 2].flatMap(() => [YEAR_AMOUNT_W, YEAR_AMOUNT_W, YEAR_PCT_W])], fontFace: FONT, fontSize: 10,
         border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.03, 0.06, 0.03, 0.06], autoPage: false,
     });
     note(slide, [

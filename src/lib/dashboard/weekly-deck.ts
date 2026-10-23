@@ -1,6 +1,7 @@
 import type PptxGenJS from 'pptxgenjs';
 import type { OperationsReport } from './operations-report';
 import { floorTone, type FloorCell, type FloorTone, type WeeklySalesReport } from './weekly-sales';
+import { arialWidth } from './arial-metrics';
 import type { WeeklyContentPlan, WeeklyUpdate } from './weekly-review';
 import { formatReviewChange, updatePart } from './weekly-review';
 import { knownPeriodAmount, periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from './contract-dates';
@@ -388,12 +389,25 @@ function inventorySlide(pres: PptxGenJS, report: WeeklySalesReport) {
 }
 
 const FLOOR_FILL: Record<FloorTone, string> = { sold: C.successSoft, available: C.white, barter: C.neutralSoft };
-/** Нүдний бичвэр: талбай (м²), гэрээтэйд менежерийн нэр, гэрээгүй бартерт «Бартер». */
-const floorCellText = (cell: FloorCell) => {
+/** PowerPoint-ийн мөр таслалтын зөрүүнд үлдээх нөөц (нүдний ашиглах өргөний хувь). */
+const FIT_SAFETY = 0.97;
+/**
+ * Нүдний бичвэр: талбай (м²), гэрээтэйд менежерийн нэр, гэрээгүй бартерт «Бартер». Нэг мөрөнд багтахгүй бол нэрийг
+ * «…»-ээр товчилно — мөр хоёр болбол хүснэгт хөл, слайдын дугаар руу (22 давхар нэг слайдад) урсана.
+ */
+function floorCellText(cell: FloorCell, maxWidth: number, fontSize: number): { text: string; clipped: boolean } {
     const tone = floorTone(cell);
     const label = tone === 'sold' && cell.manager ? managerShort(cell.manager) : tone === 'barter' ? (cell.manager ? managerShort(cell.manager) : 'Бартер') : '';
-    return `${cell.area !== null ? `${area(cell.area)} м²` : cell.code}${label ? ` ${label}` : ''}`;
-};
+    const base = cell.area !== null ? `${area(cell.area)} м²` : cell.code;
+    if (!label) return { text: base, clipped: false };
+    const fits = (text: string) => arialWidth(text, fontSize, tone === 'available') <= maxWidth * FIT_SAFETY;
+    if (fits(`${base} ${label}`)) return { text: `${base} ${label}`, clipped: false };
+    for (let length = label.length - 1; length >= 1; length--) {
+        const text = `${base} ${label.slice(0, length).trimEnd()}…`;
+        if (fits(text)) return { text, clipped: true };
+    }
+    return { text: base, clipped: true };
+}
 
 function legend(slide: Slide, y: number) {
     const items: [string, string][] = [[C.successSoft, 'Гэрээтэй (зарагдсан, хүлээлгэсэн)'], [C.white, 'Худалдаанд (захиалсан, хадгалсан орно)'], [C.neutralSoft, 'Бартер']];
@@ -410,21 +424,32 @@ function legend(slide: Slide, y: number) {
  * `options` (багийн загварын илтгэл): толгойн дээд шошго, гарчиг (блокоор; хуваагдвал «(1/2)» нэмнэ), нэмэлт тэмдэглэл.
  */
 export function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport, options: { kicker?: string; title?: (block: string) => string; notes?: string[] } = {}) {
-    // Мөр ≥ 0.2" (8pt) байхаар хуваана: 23 хүртэл давхартай блок нэг слайдад багтана, түүнээс олон бол тэнцүү хуваагдана.
-    const maxFloors = Math.floor((BOTTOM - TOP) / 0.2) - 2;
+    // Мөр ≥ 0.2" (8pt) байхаар хуваана: 23 хүртэл мөртэй блок нэг слайдад багтана, түүнээс олон бол тэнцүү хуваагдана.
+    // Нэг давхар × загварт хэд хэдэн байр бол тэр давхар байрны тоогоор мөр эзэлнэ (өндрийг урьдчилан тооцно).
+    const maxLines = Math.floor((BOTTOM - TOP) / 0.2) - 2;
     for (const map of report.inventory?.floorMaps ?? []) {
-        const chunks = Math.max(1, Math.ceil(map.floors.length / maxFloors));
-        const chunkSize = Math.ceil(map.floors.length / chunks);
-        for (let chunk = 0; chunk < chunks; chunk++) {
-            const floors = map.floors.slice(chunk * chunkSize, (chunk + 1) * chunkSize);
+        const lineCount = (row: (typeof map.floors)[number]) => Math.max(1, ...map.models.map(model => row.cells[model]?.length ?? 0));
+        const totalLines = map.floors.reduce((sum, row) => sum + lineCount(row), 0);
+        const target = Math.ceil(totalLines / Math.max(1, Math.ceil(totalLines / maxLines)));
+        const chunks: Array<typeof map.floors> = [];
+        let used = 0;
+        for (const row of map.floors) {
+            if (!chunks.length || (used + lineCount(row) > target && chunks[chunks.length - 1].length)) { chunks.push([]); used = 0; }
+            chunks[chunks.length - 1].push(row);
+            used += lineCount(row);
+        }
+        chunks.forEach((floors, chunk) => {
+            let clipped = false;
             const title = options.title ? options.title(map.block) : `Орон сууцны үлдэгдэл — ${map.block} блок`;
-            const slide = content(pres, options.kicker ?? 'Үлдэгдэл', `${title}${chunks > 1 ? ` (${chunk + 1}/${chunks})` : ''}`);
+            const slide = content(pres, options.kicker ?? 'Үлдэгдэл', `${title}${chunks.length > 1 ? ` (${chunk + 1}/${chunks.length})` : ''}`);
             legend(slide, 1.3);
             const countW = 0.9;
             const floorW = 0.85;
+            const margin = 0.03;
             const modelW = (CW - floorW - countW * 3) / Math.max(1, map.models.length);
-            const rowH = Math.min(0.42, (BOTTOM - TOP) / (floors.length + 2));
-            const fontSize = rowH >= 0.3 ? 9 : 8;
+            const lines = floors.map(lineCount);
+            const unit = Math.min(0.42, (BOTTOM - TOP) / (lines.reduce((sum, value) => sum + value, 0) + 2));
+            const fontSize = unit >= 0.3 ? 9 : 8;
             const head = [headCell('Давхар'), ...map.models.map(model => headCell(model, 'center')), headCell('Гэрээтэй', 'center'), headCell('Худалдаанд', 'center'), headCell('Бартер', 'center')]
                 .map(cell => ({ ...cell, options: { ...cell.options, fontSize: 8 } }));
             const rows = floors.map(row => [
@@ -433,23 +458,26 @@ export function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport, optio
                     const cells = row.cells[model] ?? [];
                     if (!cells.length) return bodyCell('', 'center', { fill: { color: C.surface } });
                     const tone = floorTone(cells[0]);
-                    return bodyCell(cells.map(floorCellText).join('\n'), 'center', { fill: { color: FLOOR_FILL[tone] }, color: tone === 'available' ? C.brand : C.ink, bold: tone === 'available' });
+                    const texts = cells.map(cell => floorCellText(cell, modelW - margin * 2, fontSize));
+                    clipped ||= texts.some(item => item.clipped);
+                    return bodyCell(texts.map(item => item.text).join('\n'), 'center', { fill: { color: FLOOR_FILL[tone] }, color: tone === 'available' ? C.brand : C.ink, bold: tone === 'available' });
                 }),
                 bodyCell(String(row.counts.sold), 'center'), bodyCell(String(row.counts.available), 'center', { bold: true, color: C.brand }), bodyCell(String(row.counts.barter), 'center'),
             ]);
-            const last = chunk === chunks - 1;
+            const last = chunk === chunks.length - 1;
             const footer = [bodyCell('НИЙТ', 'left', { bold: true, colspan: map.models.length + 1 }), bodyCell(String(map.totals.sold), 'center', { bold: true }), bodyCell(String(map.totals.available), 'center', { bold: true, color: C.brand }), bodyCell(String(map.totals.barter), 'center', { bold: true })];
             slide.addTable([head, ...rows, ...(last ? [footer] : [])], {
-                x: M, y: TOP, w: CW, colW: [floorW, ...map.models.map(() => modelW), countW, countW, countW], rowH, fontFace: FONT, fontSize,
-                border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.01, 0.03, 0.01, 0.03], autoPage: false,
+                x: M, y: TOP, w: CW, colW: [floorW, ...map.models.map(() => modelW), countW, countW, countW], rowH: [unit, ...lines.map(rowLines => rowLines * unit), ...(last ? [unit] : [])],
+                fontFace: FONT, fontSize, border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.01, margin, 0.01, margin], autoPage: false,
             });
             note(slide, [
                 `${map.block} блок: гэрээтэй ${map.totals.sold}, худалдаанд ${map.totals.available}, бартер ${map.totals.barter}.`,
                 'Цэнхэр тоо = худалдаанд байгаа байр (м²). Захиалсан, хадгалсан байр «Худалдаанд»-д орно.',
                 report.inventory?.source.kind === 'contracts' ? 'Ногоон = Хабын амьд гэрээтэй байр (HUB гэрээний жагсаалт). Гэрээтэй байрны талбай нь гэрээлсэн талбай.' : null,
+                clipped ? 'Нүдэнд нэг мөрөөр багтаагүй менежерийн нэрийг «…»-ээр товчилсон (бүтэн нэр — гэрээний жагсаалтад).' : null,
                 ...(options.notes ?? []),
             ]);
-        }
+        });
     }
 }
 
