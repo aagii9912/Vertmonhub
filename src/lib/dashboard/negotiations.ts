@@ -2,8 +2,9 @@
  * Лхагвын илтгэлийн «ЯРИГДАЖ БУЙ ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ» (багийн загварын 2-р слайд; эзний шийдвэр W13).
  * Client-safe, pure: сервер `negotiations-load.ts`.
  *  • Мөр = идэвхтэй (устгаагүй) лид, төлөв «Хэлэлцэж байна» эсвэл «Санал тавьсан», холбосон амьд гэрээгүй.
- *  • Блок, давхар, талбай, нөхцөл = лидийн сонирхол бүртгэсэн хамгийн сүүлийн уулзалтын ЭХНИЙ сонирхол;
- *    өрөө = сонгосон байрных, эс бөгөөс байрны бүртгэлийн блок + загвар (нэг утгатай бол).
+ *  • Блок, давхар, талбай, нөхцөл = лидийн сонирхол бүртгэсэн хамгийн сүүлийн БОЛСОН (`completed`, өнөөдрөөс
+ *    хойш биш) уулзалтын ЭХНИЙ сонирхол — товлосон, цуцалсан, ирээгүй уулзалтын сонголт болсон уулзалтыг
+ *    дарахгүй; өрөө = сонгосон байрных, эс бөгөөс байрны бүртгэлийн блок + загвар (нэг утгатай бол).
  *  • Мкв үнэ, нийт үнэ, урьдчилгаа = ӨНӨӨДРИЙН (УБ) идэвхтэй үнийн тохиргоогоор (`calculatePricing`);
  *    тохиргоогүй, хугацаа дууссан, дүрэм олдоогүй бол null («—»). Урьдчилгааг нөхцлийн нэрээс таахгүй.
  *  • «Урьдчилгаа нөхцөл» тодорхойлогдоогүй (W13) тул үргэлж null. Захиалагчийн нэр, утас гаргахгүй.
@@ -14,6 +15,8 @@ import { knownSum } from './weekly-sales';
 import { modelRooms, roomsOf } from './meeting-details';
 
 export const NEGOTIATION_STATUSES = ['negotiating', 'offered'] as const;
+/** Сонирхол авах уулзалтын төлөв: болсон уулзалт л. */
+export const HELD_MEETING_STATUS = 'completed';
 
 export interface NegotiationRow {
     leadId: string;
@@ -33,7 +36,7 @@ export interface NegotiationRow {
     conditionNote: null;
     /** «Сэжим (хаанаас ирсэн)» нэр; сонгоогүй эсвэл талбар алга бол null. */
     referral: string | null;
-    /** Сонирхол авсан уулзалтын УБ өдөр; сонирхолтой уулзалтгүй бол null. */
+    /** Сонирхол авсан (болсон) уулзалтын УБ өдөр; сонирхолтой болсон уулзалтгүй бол null. */
     viewedAt: string | null;
     /** Үнэ (эсвэл урьдчилгаа) тооцоогүй шалтгаан; бүрэн үнэтэй бол null. */
     priceReason: string | null;
@@ -45,6 +48,7 @@ export interface NegotiationsReport {
     asOf: string;
     rows: NegotiationRow[];
     totals: { count: number; area: NegotiationSum; total: NegotiationSum; advance: NegotiationSum };
+    /** Мөрийн үнийг тооцсон тохиргоо; мөргүй эсвэл идэвхтэй тохиргоогүй бол null. */
     pricing: { version: number; source: string } | null;
     notes: string[];
 }
@@ -54,7 +58,7 @@ export interface NegotiationsInput {
     leads: ReadonlyArray<{ id: string; status: string | null; sales_manager_name: string | null }>;
     /** Холбосон амьд (устгаагүй, цуцлаагүй) гэрээтэй лидүүд. */
     liveContractLeadIds: ReadonlySet<string>;
-    viewings: ReadonlyArray<{ id: string; lead_id: string | null; scheduled_at: string; sales_manager_name: string | null; interests: unknown }>;
+    viewings: ReadonlyArray<{ id: string; lead_id: string | null; scheduled_at: string; status: string | null; sales_manager_name: string | null; interests: unknown }>;
     units: ReadonlyArray<{ id: string; block: string | null; model: string | null; rooms: number | string | null }>;
     pricing: PricingConfig | null;
     referrals: { available: boolean; byViewing: ReadonlyMap<string, string | null> };
@@ -78,10 +82,11 @@ function readInterest(interests: unknown): NegotiationInterest | null {
 }
 
 type ViewingRow = NegotiationsInput['viewings'][number];
-/** Лид бүрийн сонирхол бүртгэсэн хамгийн сүүлийн уулзалт (эхний сонирхолтой нь). */
-export function latestInterestViewings(viewings: NegotiationsInput['viewings']): Map<string, { viewing: ViewingRow; interest: NegotiationInterest }> {
+/** Лид бүрийн сонирхол бүртгэсэн хамгийн сүүлийн болсон уулзалт (`today`-гоос хойш биш; эхний сонирхолтой нь). */
+export function latestInterestViewings(viewings: NegotiationsInput['viewings'], today: string): Map<string, { viewing: ViewingRow; interest: NegotiationInterest }> {
     const latest = new Map<string, { viewing: ViewingRow; interest: NegotiationInterest }>();
-    const sorted = [...viewings].sort((a, b) => b.scheduled_at.localeCompare(a.scheduled_at) || a.id.localeCompare(b.id));
+    const held = viewings.filter(viewing => viewing.status === HELD_MEETING_STATUS && ubDateStr(new Date(viewing.scheduled_at)) <= today);
+    const sorted = held.sort((a, b) => b.scheduled_at.localeCompare(a.scheduled_at) || a.id.localeCompare(b.id));
     for (const viewing of sorted) {
         if (!viewing.lead_id || latest.has(viewing.lead_id)) continue;
         const interest = readInterest(viewing.interests);
@@ -102,7 +107,7 @@ export function buildNegotiations(input: NegotiationsInput): NegotiationsReport 
     const notes: string[] = [];
     const rooms = modelRooms(input.units);
     const unitRooms = new Map(input.units.map(unit => [unit.id, unit.rooms === null ? null : Number(unit.rooms)]));
-    const latestByLead = latestInterestViewings(input.viewings);
+    const latestByLead = latestInterestViewings(input.viewings, input.today);
 
     const leads = input.leads.filter(lead => (NEGOTIATION_STATUSES as readonly string[]).includes(lead.status ?? ''));
     const contracted = leads.filter(lead => input.liveContractLeadIds.has(lead.id)).length;
@@ -115,7 +120,7 @@ export function buildNegotiations(input: NegotiationsInput): NegotiationsReport 
             leadId: lead.id, status: lead.status ?? '', manager, block: null, rooms: null, floor: null, area: null, condition: null,
             pricePerSqm: null, total: null, advance: null, conditionNote: null, referral: null, viewedAt: null, priceReason: null,
         };
-        if (!latest) { withoutInterest++; return { ...base, priceReason: 'Сонирхсон байр бүртгэгдээгүй' }; }
+        if (!latest) { withoutInterest++; return { ...base, priceReason: 'Болсон уулзалтад сонирхсон байр бүртгэгдээгүй' }; }
         const { viewing, interest } = latest;
         const unitRoom = interest.unit_id ? unitRooms.get(interest.unit_id) : undefined;
         const selection = PricingSelectionSchema.safeParse({
@@ -144,10 +149,14 @@ export function buildNegotiations(input: NegotiationsInput): NegotiationsReport 
         };
     }).sort((a, b) => (b.viewedAt ?? '').localeCompare(a.viewedAt ?? '') || a.leadId.localeCompare(b.leadId));
 
-    if (!input.pricing) notes.push('Баталсан (идэвхтэй) үнийн тохиргоо алга — мкв үнэ, нийт үнэ, урьдчилгаа «—».');
-    else notes.push(`Үнийг өнөөдрийн (${input.today}) баталсан үнийн тохиргоогоор (v${input.pricing.version}) тооцов.`);
-    if (input.pricing) for (const [reason, count] of reasons) notes.push(`Үнэ тооцоогүй (${count}): ${reason}.`);
-    if (withoutInterest) notes.push(`${withoutInterest} лидийн уулзалтад сонирхсон байр бүртгэгдээгүй.`);
+    // Үнийн тэмдэглэл мөртэй үед л: хоосон жагсаалтад үнийн тохиргоог уншдаггүй (loader) тул «алга» гэж хэлэхгүй.
+    const pricing = rows.length ? input.pricing : null;
+    if (rows.length && !input.pricing) notes.push('Баталсан (идэвхтэй) үнийн тохиргоо алга — мкв үнэ, нийт үнэ, урьдчилгаа «—».');
+    if (pricing) {
+        notes.push(`Үнийг өнөөдрийн (${input.today}) баталсан үнийн тохиргоогоор (v${pricing.version}) тооцов.`);
+        for (const [reason, count] of reasons) notes.push(`Үнэ тооцоогүй (${count}): ${reason}.`);
+    }
+    if (withoutInterest) notes.push(`${withoutInterest} лидийн болсон уулзалтад сонирхсон байр бүртгэгдээгүй.`);
     if (contracted) notes.push(`${contracted} лид амьд гэрээтэй тул жагсаалтад ороогүй.`);
     if (!input.referrals.available && rows.length) notes.push('«Сэжим (хаанаас ирсэн)» талбар хараахан нэмэгдээгүй.');
 
@@ -160,7 +169,7 @@ export function buildNegotiations(input: NegotiationsInput): NegotiationsReport 
             total: negotiationSum(rows.map(row => row.total)),
             advance: negotiationSum(rows.map(row => row.advance)),
         },
-        pricing: input.pricing ? { version: input.pricing.version, source: input.pricing.source } : null,
+        pricing: pricing ? { version: pricing.version, source: pricing.source } : null,
         notes,
     };
 }

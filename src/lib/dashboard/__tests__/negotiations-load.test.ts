@@ -57,9 +57,11 @@ const base = () => ({
         { id: 'c3', shop_id: 's', lead_id: 'L1', contract_status: 'active', deleted_at: '2026-10-10T00:00:00Z' },
     ],
     property_viewings: [
-        { id: 'v1', shop_id: 's', lead_id: 'L1', scheduled_at: '2026-10-15T03:00:00Z', sales_manager_name: 'Khongoroo', interests: interest, deleted_at: null, referral_source_id: 'r1' },
-        { id: 'v-del', shop_id: 's', lead_id: 'L1', scheduled_at: '2026-10-20T03:00:00Z', sales_manager_name: 'Khongoroo', interests: [{ ...interest[0], model: 'B' }], deleted_at: '2026-10-21T00:00:00Z' },
-        { id: 'v2', shop_id: 's', lead_id: 'L2', scheduled_at: '2026-10-16T03:00:00Z', sales_manager_name: 'Ариунбилэг', interests: interest, deleted_at: null },
+        { id: 'v1', shop_id: 's', lead_id: 'L1', scheduled_at: '2026-10-15T03:00:00Z', status: 'completed', sales_manager_name: 'Khongoroo', interests: interest, deleted_at: null, referral_source_id: 'r1' },
+        { id: 'v-del', shop_id: 's', lead_id: 'L1', scheduled_at: '2026-10-20T03:00:00Z', status: 'completed', sales_manager_name: 'Khongoroo', interests: [{ ...interest[0], model: 'B' }], deleted_at: '2026-10-21T00:00:00Z' },
+        // Ирэх товлолын өөр сонголт сүүлийн болсон уулзалтыг дарахгүй.
+        { id: 'v-next', shop_id: 's', lead_id: 'L1', scheduled_at: '2026-11-10T03:00:00Z', status: 'scheduled', sales_manager_name: 'Khongoroo', interests: [{ ...interest[0], floor: 20 }], deleted_at: null },
+        { id: 'v2', shop_id: 's', lead_id: 'L2', scheduled_at: '2026-10-16T03:00:00Z', status: 'completed', sales_manager_name: 'Ариунбилэг', interests: interest, deleted_at: null },
     ],
     property_units: [{ id: 'u1', shop_id: 's', category: 'residential', block: 'Б2', model: 'A', rooms: 2 }],
     project_pricing_configs: [
@@ -82,10 +84,10 @@ describe('loadNegotiations', () => {
         expect(JSON.stringify(report)).not.toContain('Нууц');
     });
 
-    it('applies the lead scope to the lead read', async () => {
+    it('applies the lead scope to the lead read and reads held meetings only', async () => {
         const calls: string[] = [];
         await loadNegotiations(fakeDb(base(), {}, calls), { shopId: 's', scope: { projectIds: ['p1'], managerName: 'Khongoroo' }, today: '2026-10-23' });
-        expect(calls).toEqual(expect.arrayContaining(['leads.in:project_id', 'leads.eq:sales_manager_name=Khongoroo']));
+        expect(calls).toEqual(expect.arrayContaining(['leads.in:project_id', 'leads.eq:sales_manager_name=Khongoroo', 'property_viewings.eq:status=completed']));
     });
 
     it('keeps «Сэжим» unknown when the referral column is missing and skips extra reads for an empty pipeline', async () => {
@@ -98,6 +100,7 @@ describe('loadNegotiations', () => {
         const empty = await loadNegotiations(fakeDb({ ...base(), leads: [] }, {}, calls), { shopId: 's', scope: UNRESTRICTED_SALES_SCOPE, today: '2026-10-23' });
         expect(empty.rows).toEqual([]);
         expect(calls.some(call => call.startsWith('project_pricing_configs') || call.startsWith('property_viewings'))).toBe(false);
+        expect(empty.notes.join(' ')).not.toContain('үнийн тохиргоо');
     });
 
     it('surfaces read errors instead of an empty pipeline', async () => {
