@@ -343,27 +343,39 @@ function contractHelper(contract: PlanCell | undefined, countCell: PlanCell | un
     return countCell?.actual != null && countCell.source === contract.source ? `${countCell.actual}${countCell.lowerBound ? '+' : ''} гэрээ · ${label}` : label;
 }
 
-/** «Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй)» — мэдээлэл, мөнгөн урсгал биш (W6). */
-const prepaymentText = (cells: PlanScopeCells) => cells.prepaymentDue === null ? '—' : `${formatMNT(cells.prepaymentDue)}${cells.prepaymentMissing ? '+' : ''}`;
+/**
+ * «Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй)» — мэдээлэл, мөнгөн урсгал биш (W6). Урьдчилгааны дүнгүй гэрээ
+ * эсвэл тухайн хүрээнд огноогүй гэрээ (энэ сарынх байж болох) байвал доод хязгаар «+» (`prepaymentLowerBound`).
+ */
+const prepaymentText = (cells: PlanScopeCells) => planValueText(cells.prepaymentDue, cells.prepaymentLowerBound, value => formatMNT(value));
+/** Урьдчилгааны «+»-ийн шалтгаан (тэмдэглэлд). */
+function prepaymentNote(cells: PlanScopeCells): string | null {
+    if (cells.prepaymentDue === null || !cells.prepaymentLowerBound) return null;
+    const reasons = [
+        cells.prepaymentMissing ? `урьдчилгааны дүнгүй ${cells.prepaymentMissing} гэрээ` : null,
+        cells.undated ? `энэ сарынх байж болох огноогүй ${cells.undated} гэрээ` : null,
+    ].filter(Boolean);
+    return `Энэ сарын урьдчилгаа доод хязгаар («+»): ${reasons.join(', ')}.`;
+}
 function prepaymentLine(slide: Slide, cells: PlanScopeCells, y: number) {
     slide.addText(`Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй): ${prepaymentText(cells)}`, { x: M, y, w: CW, h: 0.4, fontFace: FONT, fontSize: 14, color: C.ink2, margin: 0, isTextBox: true });
 }
 
-function planNotes(ctx: Ctx, plan: TeamPlanReport, cells: PlanScopeCells, undated: number): string[] {
+function planNotes(ctx: Ctx, plan: TeamPlanReport, cells: PlanScopeCells): string[] {
     const contract = cells.metrics.contract;
     return [
         `Эх сурвалж: «Төлөвлөгөөний биелэлт» — ${ctx.year} оны ${ctx.month}-р сар, тайлант өдөр (${ctx.input.range.to}) хүртэл.`,
         contractSource(contract),
         ctx.cashVisible ? cashSource(plan, cells.metrics.cashflow) : 'Мөнгөн урсгалын төлөвлөгөө, гүйцэтгэлийг санхүүгийн эрхтэй хүн харна.',
         contract?.lowerBound || (ctx.cashVisible && cells.metrics.cashflow?.lowerBound)
-            ? `«+» — доод хязгаар: ${undated ? `огноогүй ${undated} гэрээ` : 'дүн нь тодорхойгүй гэрээ'} байна; тухайн сард мэдэгдэх дүнгүй бол «—».` : null,
+            ? `«+» — доод хязгаар: ${cells.undated ? `огноогүй ${cells.undated} гэрээ` : 'дүн нь тодорхойгүй гэрээ'} байна; тухайн сард мэдэгдэх дүнгүй бол «—».` : null,
         'Хувь = гүйцэтгэл / төлөвлөгөө, бүхэл тоогоор.',
         '«Энэ сарын гэрээний урьдчилгаа» = тухайн сард захиалсан амьд гэрээний нөхцлөөр төлөх урьдчилгаа (орсон + хүлээгдэж буй) — мөнгөн урсгал биш, мөнгөн урсгалд нэмэхгүй (W6).',
-        cells.prepaymentMissing ? `Урьдчилгааны дүнгүй ${cells.prepaymentMissing} гэрээ — урьдчилгаа доод хязгаар («+»).` : null,
+        prepaymentNote(cells),
     ].filter((line): line is string => !!line);
 }
 
-function planCardSlide(pres: PptxGenJS, ctx: Ctx, title: string, pick: (row: PlanMonthRow) => PlanScopeCells, undated: (plan: TeamPlanReport) => number, extraNotes: (row: PlanMonthRow) => Array<string | null> = () => []) {
+function planCardSlide(pres: PptxGenJS, ctx: Ctx, title: string, pick: (row: PlanMonthRow) => PlanScopeCells, extraNotes: (row: PlanMonthRow) => Array<string | null> = () => []) {
     const slide = content(pres, ctx.name, title, `${ctx.month}-р сар · ${dot(ctx.monthRange.from)} – ${dot(ctx.monthRange.to)} хүртэл`);
     const plan = ctx.input.plan;
     const row = plan?.months[ctx.month - 1];
@@ -389,7 +401,7 @@ function planCardSlide(pres: PptxGenJS, ctx: Ctx, title: string, pick: (row: Pla
         muted(slide, CASH_HIDDEN, TOP + 1.95, 0.4, 13);
     }
     prepaymentLine(slide, cells, ctx.cashVisible ? TOP + 3.9 : TOP + 2.55);
-    note(slide, [...planNotes(ctx, plan, cells, undated(plan)), ...extraNotes(row)]);
+    note(slide, [...planNotes(ctx, plan, cells), ...extraNotes(row)]);
 }
 
 function stretchSlide(pres: PptxGenJS, ctx: Ctx) {
@@ -420,7 +432,7 @@ function stretchSlide(pres: PptxGenJS, ctx: Ctx) {
     prepaymentLine(slide, row.total, ctx.cashVisible ? TOP + 3.9 : TOP + 2.55);
     note(slide, [
         'Нэмэлт төлөвлөгөө — сарын нийт гэрээ (ба мөнгөн урсгал)-ний дүн, блокгүй (W8); /admin/sales-targets-д оруулна.',
-        ...planNotes(ctx, plan, row.total, plan.undated.count).slice(0, 4),
+        ...planNotes(ctx, plan, row.total),
     ]);
 }
 
@@ -613,7 +625,7 @@ function yearTableSlide(pres: PptxGenJS, ctx: Ctx) {
         `Эх сурвалж: «Төлөвлөгөөний биелэлт» — ${ctx.year} он, тайлант өдөр (${ctx.input.range.to}) хүртэл; гэрээ захиалга өгсөн огноогоор, цуцлагдсаныг хассан.`,
         `«${ctx.year} он»-ы гүйцэтгэл = 1–${ctx.month} сарын гүйцэтгэл; хувь = бүтэн жилийн төлөвлөгөөнөөс. Аль нэг сард төлөвлөгөө оруулаагүй бол нийт төлөвлөгөө «—».`,
         ctx.cashVisible ? cashSource(plan, row.total.metrics.cashflow) : 'Мөнгөн урсгалын мөрийг санхүүгийн эрхтэй хүн харна.',
-        plan.undated.count ? `«+» — огноогүй ${plan.undated.count} гэрээтэй тул доод хязгаар. ${undatedContractsHint(plan.undated.count)}` : null,
+        row.total.undated ? `«+» — огноогүй ${row.total.undated} гэрээтэй тул доод хязгаар. ${undatedContractsHint(row.total.undated)}` : null,
     ]);
 }
 
@@ -654,15 +666,14 @@ export function buildTeamDeck(pres: PptxGenJS, input: TeamDeckInput): PptxGenJS 
         monthRange: { from: `${month}-01`, to: input.range.to },
         cashVisible: !!input.plan && !input.plan.cashHidden && input.plan.cash !== null,
     };
-    const blockUndated = (block: MonthlySalesBlock) => (plan: TeamPlanReport) => plan.undated.byScope[block];
 
     coverSlide(pres, ctx);                                                       // 1
     negotiationSlides(pres, ctx);                                                // 2
     monthContractSlides(pres, ctx);                                              // 3
     for (const block of MONTHLY_SALES_BLOCKS) {                                  // 4–6
-        planCardSlide(pres, ctx, BLOCK_TITLE[block], row => row.blocks[block], blockUndated(block));
+        planCardSlide(pres, ctx, BLOCK_TITLE[block], row => row.blocks[block]);
     }
-    planCardSlide(pres, ctx, `${ctx.month}-Р САРЫН ГЭРЭЭНИЙ НИЙТ ТӨЛӨВЛӨГӨӨ`, row => row.total, plan => plan.undated.count, row => [  // 7
+    planCardSlide(pres, ctx, `${ctx.month}-Р САРЫН ГЭРЭЭНИЙ НИЙТ ТӨЛӨВЛӨГӨӨ`, row => row.total, row => [  // 7
         row.outside.count ? `Төлөвлөгөөнд хамаарахгүй ${row.outside.count} гэрээ (Агуулах, Үйлчилгээ г.м.) гүйцэтгэлд ороогүй.` : null,
     ]);
     stretchSlide(pres, ctx);                                                     // 8

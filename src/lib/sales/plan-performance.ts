@@ -137,6 +137,14 @@ export interface PlanScopeCells {
      */
     prepaymentDue: number | null;
     prepaymentMissing: number;
+    /**
+     * Энэ хүрээний огноогүй амьд гэрээ (аль ч сарынх байж болно) — гэрээний гүйцэтгэлийн «+»-тэй ижил дүрмээр энэ сарын
+     * урьдчилгааг доод хязгаар болгоно. Нийт = Б1 + Б2 + зогсоол (+ блокоор задлаагүй төлөвлөгөөтэй сард бусад блокийн
+     * орон сууц); «Төлөвлөгөөнд хамаарахгүй» орохгүй.
+     */
+    undated: number;
+    /** `prepaymentDue` доод хязгаар («+»): урьдчилгааны дүнгүй гэрээ (`prepaymentMissing`) эсвэл хүрээнд огноогүй гэрээ байна. */
+    prepaymentLowerBound: boolean;
 }
 
 /** Сарын нэмэлт (stretch) төлөвлөгөө — нийт дүн, блокгүй; null = оруулаагүй (мөнгө нь санхүүгийн эрхгүйд үргэлж null). */
@@ -431,10 +439,14 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
         if (availability === 'partial') return value ? { value, lowerBound: true } : { value: null, lowerBound: true };
         return { value, lowerBound: false };
     };
-    const prepayment = (rows: ScopeAgg[]) => {
+    const prepayment = (rows: ScopeAgg[], undated: number): Omit<PlanScopeCells, 'metrics'> => {
         const count = rows.reduce((sum, row) => sum + row.count, 0);
         const known = rows.reduce((sum, row) => sum + row.prepaymentKnown, 0);
-        return { prepaymentDue: known ? fromCents(rows.reduce((sum, row) => sum + row.prepaymentCents, 0)) : null, prepaymentMissing: count - known };
+        const prepaymentMissing = count - known;
+        return {
+            prepaymentDue: known ? fromCents(rows.reduce((sum, row) => sum + row.prepaymentCents, 0)) : null, prepaymentMissing,
+            undated, prepaymentLowerBound: prepaymentMissing > 0 || undated > 0,
+        };
     };
 
     const months: PlanMonthRow[] = input.months.map(row => {
@@ -442,10 +454,11 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
         const status = throughMonth === null || month > throughMonth ? 'future' : month === currentMonth ? 'current' : 'past';
         const future = status === 'future';
         const blockPlanned = hasBlockPlan(row.block_amounts);
-        const blockCells = Object.fromEntries(MONTHLY_SALES_BLOCKS.map(block => [block, { metrics: {}, ...prepayment([agg.get(`${month}|${block}`) ?? emptyAgg()]) }])) as Record<MonthlySalesBlock, PlanScopeCells>;
+        const blockCells = Object.fromEntries(MONTHLY_SALES_BLOCKS.map(block => [block, { metrics: {}, ...prepayment([agg.get(`${month}|${block}`) ?? emptyAgg()], undatedByScope[block]) }])) as Record<MonthlySalesBlock, PlanScopeCells>;
         const otherAgg = agg.get(`${month}|residential_other`) ?? emptyAgg();
         const totalRows = [...MONTHLY_SALES_BLOCKS.map(block => agg.get(`${month}|${block}`) ?? emptyAgg()), ...(blockPlanned ? [] : [otherAgg])];
-        const total: PlanScopeCells = { metrics: {}, ...prepayment(totalRows) };
+        const totalUndated = MONTHLY_SALES_BLOCKS.reduce((sum, block) => sum + undatedByScope[block], 0) + (blockPlanned ? 0 : undatedByScope.residential_other);
+        const total: PlanScopeCells = { metrics: {}, ...prepayment(totalRows, totalUndated) };
         for (const metric of metrics) {
             const autoBlocks = Object.fromEntries(MONTHLY_SALES_BLOCKS.map(block => [block,
                 metric.key === 'cashflow' ? cashOf(month, block) : contractAuto(month, block, metric.key === 'contract_count' ? 'count' : 'amount')])) as Record<MonthlySalesBlock, PlanValue>;

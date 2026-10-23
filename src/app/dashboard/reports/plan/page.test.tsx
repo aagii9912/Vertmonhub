@@ -75,6 +75,19 @@ describe('plan fulfilment page', () => {
         cache.clear();
     });
 
+    it('marks the advance of the month as a lower bound while an undated contract in the scope may belong to it', async () => {
+        const cache = open(report(null));
+        // «Нийт»: огноогүй зогсоолын гэрээ аль ч сарынх байж болох тул 9-р сарын урьдчилгаа «360+».
+        const row = (month: string) => screen.getByRole('rowheader', { name: month }).closest('tr')!;
+        await screen.findByRole('rowheader', { name: '9-р сар' });
+        expect(within(row('9-р сар')).getByText('360+')).toBeInTheDocument();
+        // Б1 блокт огноогүй гэрээгүй — бүрэн дүн.
+        fireEvent.click(screen.getByRole('button', { name: 'Б1' }));
+        expect(within(row('9-р сар')).getByText('360')).toBeInTheDocument();
+        expect(within(row('9-р сар')).queryByText('360+')).not.toBeInTheDocument();
+        cache.clear();
+    });
+
     it('says how many undated contracts the capped list leaves out', async () => {
         const data = report(null);
         const cache = open({ ...data, undated: { ...data.undated, count: 130 } });

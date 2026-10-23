@@ -180,6 +180,19 @@ describe('Elysium 2026 plan fulfilment (HUB fixtures)', () => {
         expect(month(10).blocks.b1).toMatchObject({ prepaymentDue: null, prepaymentMissing: 0 });
     });
 
+    it('marks the advance of the month as a lower bound while undated contracts of that scope may belong to it', () => {
+        // Огноогүй: Б1 6, Б2 1, зогсоол 2, агуулах 1 — агуулах «Нийт»-д нөлөөлөхгүй.
+        expect(month(10).total).toMatchObject({ prepaymentDue: 684_598_500, undated: 9, prepaymentLowerBound: true });
+        expect(month(10).blocks.b2).toMatchObject({ undated: 1, prepaymentLowerBound: true });
+        expect(month(10).blocks.parking).toMatchObject({ undated: 2, prepaymentLowerBound: true });
+        // Огноогүй гэрээгүй, урьдчилгаа бүрэн хүрээ — доод хязгааргүй.
+        const dated = buildPlanPerformance(base({ contracts: elysiumContracts().filter(row => row.contract_date) }));
+        expect(dated.months[9].total).toMatchObject({ undated: 0, prepaymentMissing: 0, prepaymentLowerBound: false });
+        // Урьдчилгааны дүнгүй гэрээ ч доод хязгаар болгоно.
+        const missing = buildPlanPerformance(base({ contracts: [...elysiumContracts().filter(row => row.contract_date), contract({ contract_date: '2026-10-12', prepayment_due: null })] }));
+        expect(missing.months[9].total).toMatchObject({ undated: 0, prepaymentMissing: 1, prepaymentLowerBound: true });
+    });
+
     it('sums the overdue stock of the latest file only, by block, and notes cancellations', () => {
         expect(report.overdue).toMatchObject({ available: true, amount: 2_482_828_893, count: 18, asOf: LATEST_IMPORT, stale: 0 });
         expect(report.overdue.byBlock).toEqual({

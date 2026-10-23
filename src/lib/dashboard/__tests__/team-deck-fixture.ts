@@ -53,7 +53,7 @@ const CONTRACTS: PlanContract[] = [
  * `cashHidden` = санхүүгийн эрхгүй хэрэглэгчийн хариу (мөнгөн урсгал огт ирэхгүй); `hubPaid` = HUB файлын «Нийт төлсөн дүн»
  * (Б1-ийн хоёр гэрээ, файлын огноо 2026-10-20) — үгүй бол дэвтэр (гэрээний төлсөн дүн тодорхойгүй).
  */
-export function plan({ cashHidden = false, stretch = true, hubPaid = false, manualCounts = true }: { cashHidden?: boolean; stretch?: boolean; hubPaid?: boolean; manualCounts?: boolean } = {}): TeamPlanReport {
+export function plan({ cashHidden = false, stretch = true, hubPaid = false, manualCounts = true, undated = false }: { cashHidden?: boolean; stretch?: boolean; hubPaid?: boolean; manualCounts?: boolean; undated?: boolean } = {}): TeamPlanReport {
     const rows = months();
     if (!stretch) rows[9] = { ...rows[9], stretch_target_amount: null, stretch_cashflow_target_amount: null };
     if (!manualCounts) {
@@ -61,7 +61,9 @@ export function plan({ cashHidden = false, stretch = true, hubPaid = false, manu
         rows[9] = { ...rows[9], block_amounts: Object.fromEntries(Object.entries(blocks).map(([block, cells]) => [block, { ...cells, manual_contract_count_actual: undefined }])) };
     }
     const report = buildPlanPerformance({
-        year: 2026, now: new Date('2026-10-20T12:00:00+08:00'), months: rows, planYears: [2026], contracts: CONTRACTS,
+        year: 2026, now: new Date('2026-10-20T12:00:00+08:00'), months: rows, planYears: [2026],
+        // `undated`: Б1, Б2-т огноогүй амьд гэрээ (прод-д HUB импортын дараа ч ~10 үлддэг) — аль ч сарынх байж болно.
+        contracts: undated ? [...CONTRACTS, contract('u-b2', { contract_date: null }), contract('u-b1', { contract_date: null, block_name: 'Б1' })] : CONTRACTS,
         receipts: cashHidden ? null : [], ledgerSince: cashHidden ? undefined : '2026-10-01', latestImportDate: null,
         hubPaid: hubPaid ? { asOf: '2026-10-20', paid: new Map([['b1-0', 169_204_650], ['b1-1', 112_803_100]]) } : null,
     });

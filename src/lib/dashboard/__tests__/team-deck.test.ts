@@ -92,6 +92,23 @@ describe('team-format Wednesday deck (.pptx)', () => {
         for (const needle of ['10-р сар', '1–10 сар', '2026 он', 'Нийт төлөвлөгөө', 'Гүйцэтгэл хувиар', 'Зогсоол', 'Мөнгөн урсгал']) expect(year).toContain(needle);
     });
 
+    it('marks the advance of the month «+» while undated contracts of that block may belong to the month', async () => {
+        const { text, notes } = await render(teamInput({ plan: plan({ undated: true }) }));
+        const line = (title: string) => at(text, title).match(/Энэ сарын гэрээний урьдчилгаа \(орсон \+ хүлээгдэж буй\): (\S+)/)![1];
+        // Б2-ийн дүн гараар оруулсан ч урьдчилгаа системийн гэрээнээс — огноогүй Б2 гэрээ энэ сарынх байж болно.
+        expect(line('Б2 БЛОК')).toBe('658,618,500₮+');
+        expect(line('Б1 БЛОК')).toBe('282,007,750₮+');
+        expect(line('ДУЛААН ЗОГСООЛ')).toBe('25,980,000₮');
+        expect(line('НИЙТ ТӨЛӨВЛӨГӨӨ')).toBe('966,606,250₮+');
+        expect(line('НЭМЭЛТ ТӨЛӨВЛӨГӨӨ')).toBe('966,606,250₮+');
+        expect(notes[text.indexOf(at(text, 'Б2 БЛОК'))]).toContain('Энэ сарын урьдчилгаа доод хязгаар («+»): энэ сарынх байж болох огноогүй 1 гэрээ.');
+        expect(notes[text.indexOf(at(text, 'НИЙТ ТӨЛӨВЛӨГӨӨ'))]).toContain('энэ сарынх байж болох огноогүй 2 гэрээ');
+        expect(notes[text.indexOf(at(text, 'ДУЛААН ЗОГСООЛ'))]).not.toContain('доод хязгаар («+»)');
+        // Огноогүй гэрээгүй бол бүрэн дүн.
+        const dated = await render(teamInput());
+        expect(at(dated.text, 'Б2 БЛОК')).toContain('Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй): 658,618,500₮ ');
+    });
+
     it('shows the contract count beside the amount only when both come from the same source', async () => {
         // Дүн гараар, тоо системийн (Б2-ийн 4 гэрээ): «4 гэрээ» бичихгүй, зөвхөн эх сурвалж.
         const { text } = await render(teamInput({ plan: plan({ manualCounts: false }) }));

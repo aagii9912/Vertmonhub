@@ -208,7 +208,7 @@ function PlanReport({ data, segment, segmentLabel }: { data: PlanResponse; segme
                                 <td className="num border-b border-border px-3 py-2 text-right">{amount?.plan === null || amount?.plan === undefined ? <Missing /> : whole(amount.plan)}</td>
                                 <td className="num border-b border-border px-3 py-2 text-right"><Actual cell={amount} /></td>
                                 <td className="num border-b border-r border-border px-3 py-2 text-right"><Pct pct={amount?.pct ?? null} lowerBound={!!amount?.lowerBound} /></td>
-                                <td className="num border-b border-l-2 border-border px-3 py-2 text-right text-muted-foreground">{cells.prepaymentDue === null ? '—' : whole(cells.prepaymentDue)}</td>
+                                <td className="num border-b border-l-2 border-border px-3 py-2 text-right text-muted-foreground">{planValueText(cells.prepaymentDue, cells.prepaymentLowerBound, whole)}</td>
                             </tr>;
                         })}
                     </tbody>
