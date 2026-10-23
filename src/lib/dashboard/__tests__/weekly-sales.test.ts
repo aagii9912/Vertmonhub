@@ -176,3 +176,47 @@ describe('contract line rooms', () => {
         expect(report.week.lines.map(row => [row.key, row.rooms])).toEqual([['a', 2], ['b', 3], ['c', 1], ['d', null]]);
     });
 });
+
+describe('month contract lines (slide 3)', () => {
+    it('lists the live contracts of the report month up to the report end, by date then key', () => {
+        const report = buildWeeklySales({
+            range: { from: '2026-10-14', to: '2026-10-20' },
+            sales: { info: { date: '2026-10-21', source: 'ERP' }, rows: [
+                sale('B|1', { orderDate: '2026-10-15', unitCode: 'Б2-171', block: 'Б2' }),
+                sale('A|1', { orderDate: '2026-10-15', unitCode: 'Б2-208', block: 'Б2' }),
+                sale('C|1', { orderDate: '2026-10-08', kind: 'parking', unitCode: 'Б1-13 (01)', model: 'A-1' }),
+                sale('X|1', { orderDate: '2026-10-04', status: 'cancelled', statusLabel: 'Цуцлагдсан' }),
+                // Хурлын өдрийн snapshot-д орсон, тайлант өдрөөс хойшхи гэрээ — энэ тайланд орохгүй.
+                sale('L|1', { orderDate: '2026-10-21' }),
+                sale('S|1', { orderDate: '2026-09-30' }),
+                sale('U|1', { orderDate: null }),
+            ] },
+            previousSales: null, crmContracts: null, monthTarget: null,
+            inventory: { info: { date: '2026-10-20', source: 'ERP', kind: 'erp' }, rows: [
+                unit('Б2-171', { block: 'Б2', floor: 12, rooms: 2 }), unit('Б2-208', { block: 'Б2', floor: 7, rooms: 4 }),
+                unit('Б1-13 (01)', { kind: 'parking', floor: null, rooms: null }),
+            ] },
+        });
+        expect(report.month.lines.map(line => [line.key, line.date, line.floor, line.rooms, line.referral])).toEqual([
+            ['C|1', '2026-10-08', null, null, null],
+            ['A|1', '2026-10-15', 7, 4, null],
+            ['B|1', '2026-10-15', 12, 2, null],
+        ]);
+        // Сарын тоо, дүн мөрүүдтэй таарна.
+        expect(report.month).toMatchObject({ count: 3, total: 300 });
+        expect(report.week.lines.map(line => line.key)).toEqual(['A|1', 'B|1']);
+    });
+
+    it('keeps the CRM floor and fills a missing one from the same-category unit', () => {
+        const line = (key: string, unitLabel: string, floor?: number | null) => ({
+            key, contractNumber: null, date: '2026-10-08', kind: 'residential' as const, kindLabel: '', block: 'Б2', unit: unitLabel, customer: 'Б.Мэндбаяр', floor,
+            area: 57.87, pricePerSqm: 7_600_000, advanceCondition: '10-30%', total: 1, advance: null, paid: null, manager: null, channel: null, status: 'active',
+        });
+        const report = buildWeeklySales({
+            range: { from: '2026-10-14', to: '2026-10-20' }, sales: null, previousSales: null, monthTarget: null,
+            crmContracts: [line('a', 'Б2-171', 12), line('b', 'Б2-208'), line('c', 'Б9-1')],
+            inventory: { info: { date: '2026-10-22', source: 'HUB', kind: 'erp' }, rows: [unit('Б2-171', { block: 'Б2', floor: 3 }), unit('Б2-208', { block: 'Б2', floor: 21 })] },
+        });
+        expect(report.month.lines.map(row => [row.key, row.floor, row.customer])).toEqual([['a', 12, 'Б.Мэндбаяр'], ['b', 21, 'Б.Мэндбаяр'], ['c', null, 'Б.Мэндбаяр']]);
+    });
+});
