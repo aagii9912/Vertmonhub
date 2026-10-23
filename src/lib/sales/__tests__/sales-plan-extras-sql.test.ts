@@ -15,6 +15,19 @@ const blocksMigration = read('20261008130000_team_sales_blocks.sql');
 const countsMigration = read('20261022120000_team_sales_contract_counts.sql');
 const dropOldCountsMigration = read('20261022160000_drop_old_contract_count_columns.sql');
 const extrasMigration = read('20261023150000_sales_targets_stretch_activity.sql');
+// Production-ий жинхэнэ trigger-ууд (хуучин body): лидийн хуваарилалтын хамгаалалт ба байрны updated_at тамга.
+const slice = (source: string, from: string, through: string) => {
+    const start = source.indexOf(from);
+    const end = source.indexOf(through, start);
+    if (start < 0 || end < 0) throw new Error(`migration section not found: ${from}`);
+    return source.slice(start, end + through.length);
+};
+const leadAssignmentTrigger = slice(read('20261001131000_sales_lead_scope.sql'),
+    'CREATE OR REPLACE FUNCTION private.enforce_sales_lead_assignment()', 'EXECUTE FUNCTION private.enforce_sales_lead_assignment();');
+const propertyTimestamp = slice(read('20260128210000_add_real_estate_tables.sql'),
+    'CREATE OR REPLACE FUNCTION update_property_timestamp()', '$$ LANGUAGE plpgsql;');
+const unitTimestampTrigger = slice(read('20260624120000_add_property_units.sql'),
+    'DROP TRIGGER IF EXISTS property_units_updated_at', 'EXECUTE FUNCTION update_property_timestamp();');
 const save = (months: unknown[], user = actor, shopId = shop) => db.query<{ saved: { months: Array<Record<string, unknown>> } }>(
     'SELECT save_team_monthly_sales($1,2026,$2::jsonb,$3) AS saved', [shopId, JSON.stringify(months), user],
 );
@@ -47,7 +60,7 @@ beforeEach(async () => {
         CREATE TABLE sales_kpi_months (shop_id uuid NOT NULL, year integer NOT NULL, month integer NOT NULL, manager_name text NOT NULL,
             PRIMARY KEY (shop_id, year, month, manager_name),
             FOREIGN KEY (shop_id, manager_name) REFERENCES sales_managers (shop_id, name) ON UPDATE CASCADE ON DELETE CASCADE);
-        CREATE TABLE leads (id serial PRIMARY KEY, shop_id uuid, sales_manager_name text, sales_handoff_at timestamptz, deleted_at timestamptz);
+        CREATE TABLE leads (id serial PRIMARY KEY, shop_id uuid, project_id uuid, sales_manager_name text, sales_handoff_at timestamptz, deleted_at timestamptz);
         CREATE TABLE property_viewings (id serial PRIMARY KEY, shop_id uuid, sales_manager_name text);
         CREATE TABLE property_contracts (id serial PRIMARY KEY, shop_id uuid, sales_manager text);
         CREATE TABLE customers (id serial PRIMARY KEY, shop_id uuid, sales_manager_name text);
@@ -56,7 +69,7 @@ beforeEach(async () => {
             value integer, updated_by_name text, PRIMARY KEY (shop_id, report_date, manager_name, metric));
         CREATE TABLE daily_report_settings (shop_id uuid PRIMARY KEY, config jsonb NOT NULL DEFAULT '{}'::jsonb);
         CREATE TABLE daily_report_changes (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, shop_id uuid, manager_name text, changed_by_name text);
-        CREATE TABLE property_units (id serial PRIMARY KEY, shop_id uuid, sales_manager text);
+        CREATE TABLE property_units (id serial PRIMARY KEY, shop_id uuid, sales_manager text, status text, updated_at timestamptz DEFAULT now());
         CREATE TABLE lead_activities (id serial PRIMARY KEY, shop_id uuid, created_by_name text);
         GRANT USAGE ON SCHEMA public TO service_role, authenticated;
         GRANT SELECT, UPDATE ON shops TO service_role;
@@ -68,7 +81,12 @@ beforeEach(async () => {
         GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO service_role;
         -- Append-only түүх: production-д service_role ч засах эрхгүй.
         GRANT SELECT, INSERT ON daily_report_changes TO service_role;
+        CREATE SCHEMA IF NOT EXISTS private;
+        GRANT USAGE ON SCHEMA private TO authenticated, service_role;
     `);
+    await db.exec(leadAssignmentTrigger);
+    await db.exec(propertyTimestamp);
+    await db.exec(unitTimestampTrigger);
     await db.query('INSERT INTO shops VALUES ($1,$2),($3,$2)', [shop, actor, otherShop]);
     await db.query("INSERT INTO user_roles VALUES ($1,'super_admin')", [actor]);
     await db.query('INSERT INTO team_sales_targets(shop_id,year,month,target_amount) VALUES ($1,2026,1,500)', [shop]);
@@ -158,14 +176,14 @@ describe('stretch and activity plans in save_team_monthly_sales', () => {
 describe('rename_sales_manager', () => {
     async function seed() {
         // Хуучин (хариуцуулалтын тамгагүй) лидүүдийг дуурайна; эхний лид өмнө нь тамгатай.
-        await db.exec('ALTER TABLE leads DISABLE TRIGGER leads_stamp_sales_handoff');
+        await db.exec('ALTER TABLE leads DISABLE TRIGGER USER');
         await db.query('INSERT INTO projects VALUES ($1,$2),($3,$4)', [project, shop, otherProject, otherShop]);
         for (const shopId of [shop, otherShop]) {
             const projectId = shopId === shop ? project : otherProject;
             await db.query("INSERT INTO sales_managers(shop_id,name,user_id) VALUES ($1,'Khongoroo',$2),($1,'Ариунбилэг',NULL)", [shopId, actor]);
             await db.query("INSERT INTO sales_manager_projects VALUES ($1,'Khongoroo',$2),($1,'Ариунбилэг',$2)", [shopId, projectId]);
             await db.query("INSERT INTO sales_kpi_months VALUES ($1,2026,10,'Khongoroo'),($1,2026,9,'Khongoroo')", [shopId]);
-            await db.query("INSERT INTO leads(shop_id,sales_manager_name) VALUES ($1,'Khongoroo'),($1,'Khongoroo'),($1,'Ариунбилэг'),($1,NULL)", [shopId]);
+            await db.query("INSERT INTO leads(shop_id,project_id,sales_manager_name) VALUES ($1,$2,'Khongoroo'),($1,$2,'Khongoroo'),($1,$2,'Ариунбилэг'),($1,$2,NULL)", [shopId, projectId]);
             await db.query("INSERT INTO property_viewings(shop_id,sales_manager_name) VALUES ($1,'Khongoroo'),($1,'Ариунбилэг')", [shopId]);
             await db.query("INSERT INTO property_contracts(shop_id,sales_manager) VALUES ($1,'Khongoroo'),($1,'Хонгорзул.Мөнхгэрэл'),($1,NULL)", [shopId]);
             await db.query("INSERT INTO customers(shop_id,sales_manager_name) VALUES ($1,'Khongoroo')", [shopId]);
@@ -176,11 +194,11 @@ describe('rename_sales_manager', () => {
                 { name: 'Ариунбилэг', short: 'Ари' }, { name: 'Хонгорзул.Мөнхгэрэл', short: 'Хуу' }, { name: 'Khongoroo', short: 'Хон' },
             ] })]);
             await db.query("INSERT INTO daily_report_changes(shop_id,manager_name,changed_by_name) VALUES ($1,'Khongoroo','Khongoroo')", [shopId]);
-            await db.query("INSERT INTO property_units(shop_id,sales_manager) VALUES ($1,'Khongoroo'),($1,'Чанцалдулам.Раднаа')", [shopId]);
+            await db.query("INSERT INTO property_units(shop_id,sales_manager,updated_at) VALUES ($1,'Khongoroo',$2),($1,'Чанцалдулам.Раднаа',$2)", [shopId, '2026-10-01T00:00:00Z']);
             await db.query("INSERT INTO lead_activities(shop_id,created_by_name) VALUES ($1,'Khongoroo')", [shopId]);
         }
         await db.query("UPDATE leads SET sales_handoff_at = '2026-10-01T00:00:00Z' WHERE id = (SELECT min(id) FROM leads WHERE shop_id = $1)", [shop]);
-        await db.exec('ALTER TABLE leads ENABLE TRIGGER leads_stamp_sales_handoff');
+        await db.exec('ALTER TABLE leads ENABLE TRIGGER USER');
     }
     const names = async (sql: string, shopId = shop) => (await db.query<{ name: string | null }>(sql, [shopId])).rows.map(item => item.name);
 
@@ -239,7 +257,7 @@ describe('rename_sales_manager', () => {
         await db.exec('COMMIT');
         expect((await db.query<{ stamped: boolean }>("SELECT sales_handoff_at IS NOT NULL AS stamped FROM leads WHERE shop_id = $1 AND sales_manager_name = 'Ариунбилэг.Нямхүү' ORDER BY id", [shop]))
             .rows.map(item => item.stamped)).toEqual([false, true]);
-        await db.query("INSERT INTO leads(shop_id,sales_manager_name) VALUES ($1,'Ариунбилэг.Нямхүү')", [shop]);
+        await db.query("INSERT INTO leads(shop_id,project_id,sales_manager_name) VALUES ($1,$2,'Ариунбилэг.Нямхүү')", [shop, project]);
         expect((await db.query('SELECT sales_handoff_at IS NOT NULL AS stamped FROM leads ORDER BY id DESC LIMIT 1')).rows).toEqual([{ stamped: true }]);
     });
 
@@ -275,6 +293,69 @@ describe('rename_sales_manager', () => {
         expect(await names('SELECT name FROM sales_managers WHERE shop_id = $1 ORDER BY name')).toEqual(['Khongoroo', 'Ариунбилэг']);
         expect(await names("SELECT sales_manager_name AS name FROM leads WHERE shop_id = $1 AND sales_manager_name = 'Khongoroo'")).toHaveLength(2);
         expect(await names("SELECT manager_name AS name FROM sales_manager_projects WHERE shop_id = $1 AND manager_name = 'Khongoroo'")).toHaveLength(1);
+        expect((await db.query('SELECT count(*)::int AS count FROM admin_audit_log')).rows).toEqual([{ count: 0 }]);
+    });
+
+    it('is not a new assignment: inactive managers, project-less and out-of-membership leads are renamed, real assignments stay guarded', async () => {
+        await seed();
+        const secondProject = '30000000-0000-4000-8000-000000000003';
+        await db.query('INSERT INTO projects VALUES ($1,$2)', [secondProject, shop]);
+        // Хуучин өгөгдөл (хамгаалалтаас өмнөх): төсөлгүй лид (устгасан ч), менежер нь бүртгэлгүй төслийн лид, төсөлгүй хариуцагчгүй лид.
+        await db.exec('ALTER TABLE leads DISABLE TRIGGER USER');
+        await db.query(`INSERT INTO leads(shop_id,project_id,sales_manager_name,deleted_at) VALUES ($1,NULL,'Khongoroo',now()),
+            ($1,$2,'Khongoroo',NULL),($1,NULL,'Ариунбилэг',NULL),($1,NULL,NULL,NULL)`, [shop, secondProject]);
+        await db.exec('ALTER TABLE leads ENABLE TRIGGER USER');
+        await db.query("UPDATE sales_managers SET is_active = false WHERE shop_id = $1 AND name = 'Ариунбилэг'", [shop]);
+
+        await db.exec('SET ROLE service_role');
+        expect((await rename('Khongoroo', 'Хонгорзул.Мөнхгэрэл')).rows[0].result.counts.leads).toBe(4);
+        expect((await rename('Ариунбилэг', 'Ариунбилэг.Нямхүү')).rows[0].result.counts.leads).toBe(2);
+        await db.exec('RESET ROLE');
+        expect(await names("SELECT sales_manager_name AS name FROM leads WHERE shop_id = $1 AND sales_manager_name IN ('Khongoroo', 'Ариунбилэг')")).toEqual([]);
+        expect((await db.query<{ project_id: string | null; name: string }>(
+            "SELECT project_id, sales_manager_name AS name FROM leads WHERE shop_id = $1 AND sales_manager_name IS NOT NULL ORDER BY id", [shop])).rows).toEqual([
+            { project_id: project, name: 'Хонгорзул.Мөнхгэрэл' }, { project_id: project, name: 'Хонгорзул.Мөнхгэрэл' }, { project_id: project, name: 'Ариунбилэг.Нямхүү' },
+            { project_id: null, name: 'Хонгорзул.Мөнхгэрэл' }, { project_id: secondProject, name: 'Хонгорзул.Мөнхгэрэл' }, { project_id: null, name: 'Ариунбилэг.Нямхүү' },
+        ]);
+
+        // Жинхэнэ хуваарилалт хуучин дүрмээрээ: идэвхгүй менежер, төсөлгүй лид, бүртгэлгүй төсөл — нэр солих тэмдэгтэй ч.
+        const guarded = async (sql: string, params: unknown[], flag: boolean) => {
+            await db.exec('BEGIN');
+            if (flag) await db.query("SELECT set_config('vertmonhub.manager_rename', 'on', true)");
+            await expect(db.query(sql, params)).rejects.toMatchObject({ code: '23514' });
+            await db.exec('ROLLBACK');
+        };
+        for (const flag of [false, true]) {
+            await guarded("UPDATE leads SET sales_manager_name = 'Ариунбилэг.Нямхүү' WHERE shop_id = $1 AND project_id = $2 AND sales_manager_name IS NULL", [shop, project], flag);
+            await guarded("UPDATE leads SET sales_manager_name = 'Хонгорзул.Мөнхгэрэл' WHERE shop_id = $1 AND project_id IS NULL AND sales_manager_name IS NULL", [shop], flag);
+            await guarded("UPDATE leads SET sales_manager_name = 'Ариунбилэг.Нямхүү' WHERE shop_id = $1 AND project_id = $2 AND sales_manager_name = 'Хонгорзул.Мөнхгэрэл'", [shop, project], flag);
+            await guarded("UPDATE leads SET project_id = $2 WHERE shop_id = $1 AND project_id = $3 AND sales_manager_name = 'Хонгорзул.Мөнхгэрэл'", [shop, secondProject, project], flag);
+        }
+        // Идэвхтэй, бүртгэлтэй менежерт хуваарилах хэвийн ажиллана.
+        await db.query("UPDATE leads SET sales_manager_name = 'Хонгорзул.Мөнхгэрэл' WHERE shop_id = $1 AND project_id = $2 AND sales_manager_name IS NULL", [shop, project]);
+    });
+
+    it('keeps the unit register date: renamed units keep updated_at, a later real edit in the same transaction still stamps it', async () => {
+        await seed();
+        await db.exec('BEGIN');
+        await rename('Khongoroo', 'Хонгорзул.Мөнхгэрэл');
+        await db.query("UPDATE property_units SET status = 'sold' WHERE shop_id = $1 AND sales_manager = 'Чанцалдулам.Раднаа'", [shop]);
+        await db.exec('COMMIT');
+        expect((await db.query(`SELECT sales_manager, updated_at = '2026-10-01T00:00:00Z'::timestamptz AS kept FROM property_units
+            WHERE shop_id = $1 ORDER BY id`, [shop])).rows).toEqual([
+            { sales_manager: 'Хонгорзул.Мөнхгэрэл', kept: true }, { sales_manager: 'Чанцалдулам.Раднаа', kept: false },
+        ]);
+        await db.query("UPDATE property_units SET status = 'reserved' WHERE shop_id = $1 AND sales_manager = 'Хонгорзул.Мөнхгэрэл'", [shop]);
+        expect((await db.query("SELECT updated_at = '2026-10-01T00:00:00Z'::timestamptz AS kept FROM property_units WHERE shop_id = $1 ORDER BY id LIMIT 1", [shop])).rows)
+            .toEqual([{ kept: false }]);
+    });
+
+    it('answers a check that refuses the new name in Mongolian, naming the table, and writes nothing', async () => {
+        await seed();
+        await db.exec('ALTER TABLE customers ADD CONSTRAINT customers_manager_short CHECK (char_length(sales_manager_name) <= 12)');
+        await expect(rename('Khongoroo', 'Хонгорзул.Мөнхгэрэл')).rejects.toMatchObject({ code: '23514', message: expect.stringContaining('харилцагч') });
+        expect(await names('SELECT name FROM sales_managers WHERE shop_id = $1 ORDER BY name')).toEqual(['Khongoroo', 'Ариунбилэг']);
+        expect(await names("SELECT sales_manager_name AS name FROM leads WHERE shop_id = $1 AND sales_manager_name = 'Khongoroo'")).toHaveLength(2);
         expect((await db.query('SELECT count(*)::int AS count FROM admin_audit_log')).rows).toEqual([{ count: 0 }]);
     });
 });

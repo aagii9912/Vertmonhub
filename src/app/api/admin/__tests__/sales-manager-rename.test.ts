@@ -52,9 +52,10 @@ describe('POST /api/admin/sales-targets/rename', () => {
         expect(mocks.rpc).not.toHaveBeenCalled();
     });
 
-    it('maps duplicate, unknown, invalid, forbidden and missing-function errors', async () => {
+    it('maps duplicate, refused-by-check, unknown, invalid, forbidden and missing-function errors', async () => {
         const cases: Array<[{ code: string; message: string }, number]> = [
             [{ code: '23505', message: 'Бүртгэлд «Ариунбилэг» нэртэй менежер аль хэдийн байна' }, 409],
+            [{ code: '23514', message: 'Нэр солих боломжгүй: «харилцагч» бүртгэлийн шалгалт шинэ нэрийг зөвшөөрсөнгүй. Юу ч өөрчлөгдсөнгүй.' }, 409],
             [{ code: 'P0002', message: 'Менежерийн бүртгэлд «Khongoroo» олдсонгүй' }, 404],
             [{ code: '22023', message: 'Шинэ нэр буруу' }, 400],
             [{ code: '42501', message: 'denied' }, 403],
@@ -69,6 +70,13 @@ describe('POST /api/admin/sales-targets/rename', () => {
             if (status === 409 || status === 404) expect(json.error).toBe(error.message);
             if (status === 500) expect(json.error).not.toContain('internal detail');
         }
+    });
+
+    it('never forwards a raw English constraint message for a refused check', async () => {
+        mocks.rpc.mockResolvedValueOnce({ data: null, error: { code: '23514', message: 'new row for relation "customers" violates check constraint "x"' } });
+        const response = await POST(request(body));
+        expect(response.status).toBe(409);
+        expect((await response.json()).error).toBe('Нэр солих боломжгүй: холбогдох бүртгэлийн шалгалт шинэ нэрийг зөвшөөрсөнгүй. Юу ч өөрчлөгдсөнгүй.');
     });
 
     it('describes an empty rename plainly', () => {

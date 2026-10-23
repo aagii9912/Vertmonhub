@@ -8,6 +8,8 @@
 -- • save_team_monthly_sales — дээрх гурван сарын талбарыг ижил хувилбар шалгалт, аудиттай хадгална.
 --   Блокийн түлхүүр b1/b2/parking хэвээр; блокийн нүдэнд нэмэлт талбар орохгүй.
 -- • rename_sales_manager — roster-ийн нэр ба тэр нэрийг түлхүүр болгон хадгалдаг баганыг нэг гүйлгээнд солино.
+--   Нэр солих нь шинэ хариуцуулалт биш: stamp_sales_handoff, private.enforce_sales_lead_assignment (20261001131000)
+--   ба update_property_timestamp нь гүйлгээний доторх `vertmonhub.manager_rename` тэмдгийг хүндэтгэнэ.
 --
 -- NULL = тодорхойгүй. Additive, дахин ажиллуулж болно. Browser хандахгүй: функцууд зөвхөн service_role.
 
@@ -272,6 +274,56 @@ BEGIN
   RETURN NEW;
 END $$;
 
+-- 20261001131000-ийн хуваарилалтын хамгаалалт (хамгийн сүүлийн body), нэг салаа нэмсэн: rename_sales_manager-ийн
+-- гүйлгээнд (тэмдэг асаалттай) байгууллага, төсөл хэвээр, хуучин нэр бүртгэлээс гарч шинэ нэр бүртгэлд орсон бол энэ нь
+-- ижил хүний нэр солих — шинэ хариуцуулалт биш (stamp_sales_handoff-ийн адил). Тэгэхгүй бол идэвхгүй менежерийн, төсөлгүй
+-- эсвэл харьяалалгүй болсон төслийн (/admin/history-ийн noProject) лид нэг л байхад нэр солих бүхэлдээ 23514-өөр зогсоно.
+-- Бусад бүх бичилт (тэмдэгтэй ч бодит хуваарилалт, төсөл солих) хуучин дүрмээрээ шалгагдана.
+CREATE OR REPLACE FUNCTION private.enforce_sales_lead_assignment()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW.shop_id IS NOT DISTINCT FROM OLD.shop_id
+        AND NEW.project_id IS NOT DISTINCT FROM OLD.project_id
+        AND NEW.sales_manager_name IS NOT DISTINCT FROM OLD.sales_manager_name THEN RETURN NEW; END IF;
+    IF TG_OP = 'UPDATE' AND pg_catalog.current_setting('vertmonhub.manager_rename', true) = 'on'
+        AND NEW.shop_id IS NOT DISTINCT FROM OLD.shop_id AND NEW.project_id IS NOT DISTINCT FROM OLD.project_id
+        AND nullif(btrim(OLD.sales_manager_name), '') IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM public.sales_managers WHERE shop_id = OLD.shop_id AND name = OLD.sales_manager_name)
+        AND EXISTS (SELECT 1 FROM public.sales_managers WHERE shop_id = NEW.shop_id AND name = NEW.sales_manager_name)
+    THEN RETURN NEW; END IF;
+    IF NEW.project_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM public.projects WHERE id = NEW.project_id AND shop_id = NEW.shop_id
+    ) THEN RAISE EXCEPTION 'Лидийн төсөл байгууллагад харьяалагдахгүй байна' USING ERRCODE = '23514'; END IF;
+    IF nullif(btrim(NEW.sales_manager_name), '') IS NULL THEN RETURN NEW; END IF;
+    IF NEW.project_id IS NULL OR NOT EXISTS (
+        SELECT 1 FROM public.sales_manager_projects AS membership
+        JOIN public.sales_managers AS manager ON manager.shop_id = membership.shop_id
+            AND manager.name = membership.manager_name AND manager.is_active
+        WHERE membership.shop_id = NEW.shop_id AND membership.project_id = NEW.project_id
+            AND membership.manager_name = NEW.sales_manager_name
+    ) THEN RAISE EXCEPTION 'Тухайн төслийн идэвхтэй борлуулалтын менежерийг сонгоно уу' USING ERRCODE = '23514'; END IF;
+    RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION private.enforce_sales_lead_assignment() FROM PUBLIC, anon, authenticated;
+
+-- Байрны бүртгэлийн огноо (report-inventory-ийн CRM fallback, AI list_properties-ийн as_of) нь max(property_units.updated_at):
+-- нэр солих нь төлөвийн шинэчлэлт биш тул тэмдэгтэй гүйлгээнд updated_at-ийг хэвээр үлдээнэ. properties-тэй хуваалцсан
+-- функц (20260128210000); тэмдэггүй бол өмнөх шигээ now().
+CREATE OR REPLACE FUNCTION public.update_property_timestamp()
+RETURNS trigger LANGUAGE plpgsql SET search_path = ''
+AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND pg_catalog.current_setting('vertmonhub.manager_rename', true) = 'on' THEN
+        NEW.updated_at := OLD.updated_at;
+        RETURN NEW;
+    END IF;
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$;
+
 /*
  * Менежерийн бүртгэлийн нэрийг солино (ижил хүн, жишээ нь «Khongoroo» → «Хонгорзул.Мөнхгэрэл»). Нэг гүйлгээнд:
  * бүртгэлийн мөр + энэ төслийн (shop) тэр нэрийг түлхүүр болгон хадгалдаг багана бүр. Багана бүрийн шийдвэр:
@@ -290,7 +342,9 @@ END $$;
  *     service_logs.assigned_to (дэлгэцийн чөлөөт текст); erp_imports / contract_list_imports.rows (импортын snapshot);
  *     marketing_*_owner_name (маркетингийн хариуцагч, борлуулалтын менежер биш).
  * Шинэ нэр бүртгэлд байвал 23505, хуучин нэр байхгүй бол P0002. Түлхүүртэй хүснэгтэд шинэ нэрээр мөр давхцвал 23505,
- * юу ч бичихгүй. admin_audit_log-д хүснэгт бүрийн тоог бичнэ.
+ * аль нэг хүснэгтийн шалгалт (CHECK, trigger) зөвшөөрөхгүй бол тэр хүснэгтийг нэрлэсэн 23514 — аль ч тохиолдолд юу ч бичихгүй.
+ * Лидийн хуваарилалтын хамгаалалт ба байрны updated_at нэр солих тэмдгийг хүндэтгэнэ (дээрх хоёр функц).
+ * admin_audit_log-д хүснэгт бүрийн тоог бичнэ.
  */
 CREATE OR REPLACE FUNCTION public.rename_sales_manager(
     p_shop_id uuid, p_old text, p_new text, p_actor uuid
@@ -301,6 +355,7 @@ DECLARE
     v_manager_id uuid;
     v_count integer;
     v_counts jsonb := '{}'::jsonb;
+    v_step text := 'менежерийн бүртгэл'; -- алдааны мессежид: аль хүснэгт зөвшөөрөөгүй (хувьсагч rollback-д үлдэнэ)
 BEGIN
     IF p_actor IS NULL OR NOT EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = p_actor AND role = 'super_admin') THEN
         RAISE EXCEPTION 'Менежерийн нэрийг зөвхөн super_admin солино' USING ERRCODE = '42501';
@@ -340,32 +395,39 @@ BEGIN
 
         UPDATE public.sales_managers SET name = p_new WHERE id = v_manager_id;
 
+        v_step := 'лид';
         UPDATE public.leads SET sales_manager_name = p_new WHERE shop_id = p_shop_id AND sales_manager_name = p_old;
         GET DIAGNOSTICS v_count = ROW_COUNT;
         v_counts := v_counts || jsonb_build_object('leads', v_count);
 
+        v_step := 'уулзалт';
         UPDATE public.property_viewings SET sales_manager_name = p_new WHERE shop_id = p_shop_id AND sales_manager_name = p_old;
         GET DIAGNOSTICS v_count = ROW_COUNT;
         v_counts := v_counts || jsonb_build_object('property_viewings', v_count);
 
+        v_step := 'гэрээ';
         UPDATE public.property_contracts SET sales_manager = p_new WHERE shop_id = p_shop_id AND sales_manager = p_old;
         GET DIAGNOSTICS v_count = ROW_COUNT;
         v_counts := v_counts || jsonb_build_object('property_contracts', v_count);
 
+        v_step := 'харилцагч';
         UPDATE public.customers SET sales_manager_name = p_new WHERE shop_id = p_shop_id AND sales_manager_name = p_old;
         GET DIAGNOSTICS v_count = ROW_COUNT;
         v_counts := v_counts || jsonb_build_object('customers', v_count);
 
+        v_step := 'санал гомдол';
         UPDATE public.service_logs SET manager_name = p_new WHERE shop_id = p_shop_id AND manager_name = p_old;
         GET DIAGNOSTICS v_count = ROW_COUNT;
         v_counts := v_counts || jsonb_build_object('service_logs', v_count);
 
+        v_step := 'өдрийн тайлангийн нүд';
         UPDATE public.daily_report_counts SET manager_name = p_new WHERE shop_id = p_shop_id AND manager_name = p_old;
         GET DIAGNOSTICS v_count = ROW_COUNT;
         v_counts := v_counts || jsonb_build_object('daily_report_counts', v_count);
 
         -- Баганын тохиргоо: хуучин нэрийн мөрийг байрлал, товчлолтой нь шинэ нэрээр; шинэ нэртэй хуучирсан мөр (бүртгэлгүй)
         -- байвал давхардал (strict схем загварыг хүчингүй болгоно) үүсгэхгүйн тулд хасна.
+        v_step := 'өдрийн тайлангийн загвар';
         UPDATE public.daily_report_settings AS settings SET config = jsonb_set(settings.config, '{managers}', (
             SELECT COALESCE(jsonb_agg(CASE WHEN entry->>'name' = p_old THEN jsonb_set(entry, '{name}', to_jsonb(p_new)) ELSE entry END
                 ORDER BY ord) FILTER (WHERE entry->>'name' IS DISTINCT FROM p_new), '[]'::jsonb)
@@ -376,21 +438,27 @@ BEGIN
         GET DIAGNOSTICS v_count = ROW_COUNT;
         v_counts := v_counts || jsonb_build_object('daily_report_settings', v_count);
 
+        v_step := 'байр';
         UPDATE public.property_units SET sales_manager = p_new WHERE shop_id = p_shop_id AND sales_manager = p_old;
         GET DIAGNOSTICS v_count = ROW_COUNT;
         v_counts := v_counts || jsonb_build_object('property_units', v_count);
 
         -- 20260701120000 зарим орчинд (production) үүсээгүй.
         IF to_regclass('public.sales_targets') IS NOT NULL THEN
+            v_step := 'хуучин төлөвлөгөө';
             UPDATE public.sales_targets SET sales_manager = p_new WHERE shop_id = p_shop_id AND sales_manager = p_old;
             GET DIAGNOSTICS v_count = ROW_COUNT;
             v_counts := v_counts || jsonb_build_object('sales_targets', v_count);
         END IF;
 
         PERFORM pg_catalog.set_config('vertmonhub.manager_rename', '', true);
-    EXCEPTION WHEN unique_violation THEN
-        RAISE EXCEPTION 'Шинэ нэрээр бүртгэгдсэн өгөгдөл (өдрийн тайлан, KPI эсвэл төлөвлөгөө) давхцаж байна. Юу ч өөрчлөгдсөнгүй.'
-            USING ERRCODE = '23505';
+    EXCEPTION
+        WHEN unique_violation THEN
+            RAISE EXCEPTION 'Шинэ нэрээр бүртгэгдсэн өгөгдөл (өдрийн тайлан, KPI эсвэл төлөвлөгөө) давхцаж байна. Юу ч өөрчлөгдсөнгүй.'
+                USING ERRCODE = '23505';
+        WHEN check_violation THEN
+            RAISE EXCEPTION 'Нэр солих боломжгүй: «%» бүртгэлийн шалгалт шинэ нэрийг зөвшөөрсөнгүй. Юу ч өөрчлөгдсөнгүй.', v_step
+                USING ERRCODE = '23514', DETAIL = SQLERRM;
     END;
 
     INSERT INTO public.admin_audit_log (actor_id, action, target_id, meta)

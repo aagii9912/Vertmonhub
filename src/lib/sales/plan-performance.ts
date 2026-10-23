@@ -164,7 +164,7 @@ export interface PlanPerformance {
     throughMonth: number | null;
     currentMonth: number | null;
     months: PlanMonthRow[];
-    /** stretch: 1–M сарын оруулсан нэмэлт төлөвлөгөөний нийлбэр; аль ч сард оруулаагүй бол null. */
+    /** stretch: 1–M сарын нэмэлт төлөвлөгөөний нийлбэр; аль нэг сард оруулаагүй бол null (үндсэн төлөвлөгөөний дүрэм). */
     ytd: { total: PlanYearScope; blocks: Record<MonthlySalesBlock, PlanYearScope>; stretch: PlanStretch };
     undated: {
         count: number;
@@ -281,11 +281,15 @@ export function resolveMonthMetric(
     return { value: total.actual, lowerBound: total.lowerBound, source: total.source };
 }
 
-/** Нэмэлт төлөвлөгөөний он эхнээс (1–M сар) нийлбэр: оруулсан саруудынх, аль нь ч оруулаагүй бол null. */
+/**
+ * Нэмэлт төлөвлөгөөний он эхнээс (1–M сар) нийлбэр — үндсэн төлөвлөгөөний дүрэм (yearCell-ийн sumPlan): 1–M сар бүгдэд
+ * оруулсан үед л; аль нэг сар дутуу бол null («—»), хэсэгчилсэн нийлбэрийг 1–M сарын гүйцэтгэлтэй харьцуулж хувь хөөргөхгүй.
+ */
 function stretchSum(months: PlanMonthRow[], key: keyof PlanStretch, throughMonth: number | null): number | null {
     if (throughMonth === null) return null;
-    const known = months.slice(0, throughMonth).map(row => row.stretch[key]).filter((value): value is number => value !== null);
-    return known.length ? fromCents(known.reduce((sum, value) => sum + cents(value), 0)) : null;
+    const span = months.slice(0, throughMonth).map(row => row.stretch[key]);
+    return span.length && span.every(value => value !== null)
+        ? fromCents(span.reduce((sum, value) => sum + cents(value ?? 0), 0)) : null;
 }
 
 /** Төлөвлөгөөний биелэлтийн цэвэр тооцоо. */

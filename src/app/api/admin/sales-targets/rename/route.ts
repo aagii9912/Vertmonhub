@@ -10,7 +10,8 @@ const NO_STORE = { 'Cache-Control': 'private, no-store' };
  * POST /api/admin/sales-targets/rename — body { shopId, oldName, newName } (зөвхөн super_admin).
  * Менежерийн бүртгэлийн нэр ба тэр нэрийг түлхүүр болгосон бүх бүртгэлийг (лид, уулзалт, гэрээ, өдрийн тайлан, KPI…)
  * `rename_sales_manager` RPC-ээр нэг гүйлгээнд солино, admin_audit_log-д хүснэгт бүрийн тоог бичнэ.
- * 409: шинэ нэр бүртгэлд байна эсвэл тэр нэрийн өгөгдөл давхцана; 404: хуучин нэр бүртгэлд алга.
+ * 409: шинэ нэр бүртгэлд байна, тэр нэрийн өгөгдөл давхцана эсвэл аль нэг хүснэгтийн шалгалт (23514, RPC хүснэгтийг нэрлэнэ)
+ * зөвшөөрөөгүй — юу ч өөрчлөгдөөгүй; 404: хуучин нэр бүртгэлд алга.
  */
 export async function POST(request: NextRequest) {
     try {
@@ -28,6 +29,12 @@ export async function POST(request: NextRequest) {
         if (error) {
             // RPC-ийн Mongolian мессежүүд нь хэрэглэгчид зориулагдсан (нэр орсон); бусад алдааг ерөнхий хариугаар.
             if (error.code === '23505') return NextResponse.json({ error: error.message || 'Шинэ нэртэй менежер бүртгэлд байна' }, { status: 409 });
+            if (error.code === '23514') {
+                // RPC шалгалтын алдааг Монгол мессежээр (хүснэгтийн нэртэй) ороодог; англи constraint текстийг дамжуулахгүй.
+                const message = /[\u0400-\u04FF]/.test(error.message ?? '') ? error.message
+                    : 'Нэр солих боломжгүй: холбогдох бүртгэлийн шалгалт шинэ нэрийг зөвшөөрсөнгүй. Юу ч өөрчлөгдсөнгүй.';
+                return NextResponse.json({ error: message }, { status: 409 });
+            }
             if (error.code === 'P0002') return NextResponse.json({ error: error.message || 'Менежер бүртгэлд олдсонгүй' }, { status: 404 });
             if (error.code === '22023') return NextResponse.json({ error: error.message || 'Менежерийн шинэ нэр буруу байна' }, { status: 400 });
             if (error.code === '42501') return NextResponse.json({ error: 'Энэ төсөлд менежерийн нэр солих эрхгүй' }, { status: 403 });
