@@ -69,8 +69,8 @@ describe('loadMeetingDetails', () => {
     it('reads completed meetings by Ulaanbaatar day (server in UTC), rooms from the register and «Сэжим» names', async () => {
         process.env.TZ = 'UTC';
         const report = await loadMeetingDetails(fakeDb(base()), { shopId: 's', meetingDate: '2026-10-21' });
-        expect(report.weeks[3]).toMatchObject({ total: 3, withoutInterest: 2, byModel: [{ key: 'Б1|E3', label: 'Б1 E3 · 85.19 м² · 3 өрөө', count: 1 }] });
-        expect(report.weeks[2]).toMatchObject({ total: 1, withoutInterest: 0, byModel: [{ key: 'Б2|A', label: 'Б2 A · 57.87 м² · 2 өрөө', count: 1 }] });
+        expect(report.weeks[3]).toMatchObject({ total: 3, withoutInterest: 2, byModel: [{ key: 'B1|E3', label: 'Б1 E3 · 85.19 м² · 3 өрөө', count: 1 }] });
+        expect(report.weeks[2]).toMatchObject({ total: 1, withoutInterest: 0, byModel: [{ key: 'B2|A', label: 'Б2 A · 57.87 м² · 2 өрөө', count: 1 }] });
         // Архивласан сэжим нэрээ хадгална.
         expect(report.referral).toEqual({ rows: [{ label: 'Бармаш түрээслэгч', count: 1 }, { label: 'Ойрхон амьдардаг', count: 1 }], unknown: 1, total: 3, available: true });
     });

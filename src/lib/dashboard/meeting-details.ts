@@ -2,7 +2,8 @@
  * Лхагвын илтгэлийн «НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ» (багийн загварын 10-р слайд). Client-safe, pure:
  * сервер `meeting-details-load.ts`.
  *  • Сонирхсон загвар 7 хоногоор: сүүлийн 4 Лхагва→Мягмар 7 хоног (range.to-оор дуусна), `completed`
- *    (ирээгүй, цуцалсан биш), устгаагүй бүх төрлийн уулзалт, уулзалтын ЭХНИЙ сонирхлын блок + загвараар.
+ *    (ирээгүй, цуцалсан биш), устгаагүй бүх төрлийн уулзалт, уулзалтын ЭХНИЙ сонирхлын блок + загвараар
+ *    (`pricingKey`-ээр: «Б1»/«B1», «E7»/«e7» нэг загвар; нэр нь байрны бүртгэлийнх, эс бөгөөс эхэлж бичигдсэн нь).
  *    Өрөө = байрны бүртгэлийн блок + загвар (нэг утгатай бол), талбай = тухайн 7 хоногийн хамгийн олон
  *    давтагдсан `area_sqm`. Сонирхолгүй уулзалт тусдаа (`withoutInterest`) — хасахгүй.
  *  • «Сэжим» (хаанаас ирсэн): тайлант 7 хоногийн ШИНЭ (`new_customer`) уулзалт сэжмийн нэрээр;
@@ -71,7 +72,19 @@ export function modelRooms(units: MeetingDetailsInput['units']): Map<string, num
     }
     return new Map([...values].map(([key, set]) => [key, set.size === 1 ? [...set][0] : null]));
 }
-export const roomsOf = (rooms: Map<string, number | null>, block: string, model: string) => rooms.get(`${pricingKey(block)}|${pricingKey(model)}`) ?? null;
+/** Блок + загварын түлхүүр (кирилл/латин «Б»/«B», «Е»/«E», том/жижиг үсэг ялгахгүй). */
+export const modelKey = (block: string, model: string) => `${pricingKey(block)}|${pricingKey(model)}`;
+export const roomsOf = (rooms: Map<string, number | null>, block: string, model: string) => rooms.get(modelKey(block, model)) ?? null;
+/** Түлхүүр → байрны бүртгэлд бичигдсэн блок, загварын нэр (эхний байрных). */
+export function registerModelNames(units: MeetingDetailsInput['units']): Map<string, { block: string; model: string }> {
+    const names = new Map<string, { block: string; model: string }>();
+    for (const unit of units) {
+        const block = unit.block?.trim();
+        const model = unit.model?.trim();
+        if (block && model && !names.has(modelKey(block, model))) names.set(modelKey(block, model), { block, model });
+    }
+    return names;
+}
 
 /** «Б1 E7 · 89.73 м² · 3 өрөө». */
 export function modelLabel(block: string, model: string, area: number | null, rooms: number | null): string {
@@ -81,6 +94,7 @@ export function modelLabel(block: string, model: string, area: number | null, ro
 export function buildMeetingDetails(input: MeetingDetailsInput): MeetingDetailsReport {
     const range = weeklyReviewRange(input.meetingDate);
     const rooms = modelRooms(input.units);
+    const registerNames = registerModelNames(input.units);
     const notes: string[] = [];
 
     const weeks = meetingDetailWeeks(input.meetingDate).map(week => {
@@ -90,8 +104,8 @@ export function buildMeetingDetails(input: MeetingDetailsInput): MeetingDetailsR
         for (const meeting of meetings) {
             const interest = firstInterest(meeting.interests);
             if (!interest) { withoutInterest++; continue; }
-            const key = `${interest.block}|${interest.model}`;
-            const group = groups.get(key) ?? { block: interest.block, model: interest.model, count: 0, areas: new Map() };
+            const key = modelKey(interest.block, interest.model);
+            const group = groups.get(key) ?? { ...(registerNames.get(key) ?? { block: interest.block, model: interest.model }), count: 0, areas: new Map() };
             group.count++;
             if (interest.area !== null) group.areas.set(interest.area, (group.areas.get(interest.area) ?? 0) + 1);
             groups.set(key, group);

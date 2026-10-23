@@ -60,10 +60,28 @@ describe('buildMeetingDetails', () => {
         expect(report.weeks.map(week => week.total)).toEqual([0, 0, 1, 5]);
         expect(report.weeks[3]).toMatchObject({
             withoutInterest: 1,
-            byModel: [{ key: 'Б1|E7', label: 'Б1 E7 · 89.73 м² · 3 өрөө', count: 3 }, { key: 'Б2|A', label: 'Б2 A · 57.87 м² · 2 өрөө', count: 1 }],
+            byModel: [{ key: 'B1|E7', label: 'Б1 E7 · 89.73 м² · 3 өрөө', count: 3 }, { key: 'B2|A', label: 'Б2 A · 57.87 м² · 2 өрөө', count: 1 }],
         });
-        expect(report.weeks[2].byModel).toEqual([{ key: 'Б2|X', label: 'Б2 X · 60 м²', count: 1 }]);
+        expect(report.weeks[2].byModel).toEqual([{ key: 'B2|X', label: 'Б2 X · 60 м²', count: 1 }]);
         expect(report.notes).toEqual(['1 уулзалтад сонирхсон загвар бүртгэгдээгүй («Сонголтгүй»).', '2 шинэ уулзалтад «Сэжим» сонгоогүй.']);
+    });
+
+    it('merges one model written in Cyrillic/Latin or another case into one slice, named as in the unit register', () => {
+        // Нэгийг байр сонгогчоос («Б1»/«E7»), нөгөөг AI-ийн schedule_viewing-ээс («B1»/«e7») хадгалсан.
+        const report = buildMeetingDetails({
+            meetingDate: '2026-10-21', units, referrals: none,
+            meetings: [
+                meeting('a', '2026-10-14', 'new_customer', interest('B1', 'e7', 89.73)),
+                meeting('b', '2026-10-15', 'new_customer', interest('Б1', 'E7', 89.73)),
+                // Бүртгэлд байхгүй загвар: эхэлж бичигдсэн нэрээр.
+                meeting('c', '2026-10-16', 'repeat_customer', interest('Б3', 'Е2', 70)),
+                meeting('d', '2026-10-17', 'repeat_customer', interest('b3', 'e2', 70)),
+            ],
+        });
+        expect(report.weeks[3].byModel).toEqual([
+            { key: 'B1|E7', label: 'Б1 E7 · 89.73 м² · 3 өрөө', count: 2 },
+            { key: 'B3|E2', label: 'Б3 Е2 · 70 м²', count: 2 },
+        ]);
     });
 
     it('counts this week\'s new meetings by «Сэжим» and keeps unselected ones as unknown', () => {
