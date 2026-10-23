@@ -39,6 +39,7 @@ import { loadReportInventory } from '@/lib/inventory/report-inventory';
 import { unitDisplayNumber } from '@/lib/inventory/labels';
 import { parseUnitUpdate, unitFieldLabel, updateInventoryUnit } from '@/lib/inventory/unit-update';
 import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
+import { REFERRAL_FIELD_LABEL } from '@/lib/sales/referral-sources';
 
 /** Timeline-д «хэн өөрчилсөн»-ийг тэмдэглэх (UI-ийн PATCH /leads/[id]-тэй ижил). */
 export interface LeadActor { userId?: string | null; userName?: string | null }
@@ -1584,13 +1585,15 @@ export async function scheduleViewing(shopId: string, args: any, confirm = false
     const input = { ...args, property_id: propertyId };
     const resolved = await resolveViewingInput(supabaseAdmin, shopId, input, scope);
     if (!resolved.ok) return { error: resolved.error };
-    const { input: p, lead, property, interests } = resolved.data;
+    const { input: p, lead, property, interests, referral } = resolved.data;
+    // «Сэжим»-ийн нэрийг (referral_source) id болгосон — баталгаажуулалт id-гаар дахин шалгана.
     const payload = { ...p, lead_id: lead?.id ?? null };
     const when = p.walk_in ? 'Ирсэн уулзалт' : `${formatShortDate(p.scheduled_at!)} ${formatTime(p.scheduled_at!)}`;
     const customer = lead ? leadDisplayName(lead) : p.customer_name;
     if (!confirm) return confirmNeeded('schedule_viewing', payload, `Уулзалт товлох: ${customer || property?.name || when}`, {
         Байр: viewingSelectionText(interests, property?.name) || 'Сонгоогүй', Огноо: when,
         Харилцагч: customer || '-', Менежер: salesManagerName || '-',
+        ...(referral ? { [REFERRAL_FIELD_LABEL]: referral.name } : {}),
         ...(interests?.length ? { Тооцоолол: interests.map(row => row.quote ?? row.quote_unavailable_reason) } : {}),
     });
     const identity = userId ? await resolveManagerIdentity(supabaseAdmin, shopId, userId) : null;

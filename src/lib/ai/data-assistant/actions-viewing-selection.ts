@@ -8,6 +8,8 @@ import { ViewingInterestsSchema, viewingSelectionText, type ViewingInterest } fr
 import { prepareViewingInterests } from '@/lib/viewings/prepare';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { updateViewing } from '@/lib/services/ViewingService';
+import { listReferralSources, resolveReferralSource } from '@/lib/sales/referral-sources-store';
+import { REFERRAL_FIELD_LABEL, isActiveReferral, referralNameMap } from '@/lib/sales/referral-sources';
 
 const OptionsSchema = z.object({ project_id: z.guid().optional(), block: z.string().optional(), model: z.string().optional(), floor: z.number().int().optional() }).strict();
 
@@ -16,7 +18,10 @@ export async function getViewingOptionsTool(shopId: string, args: unknown, scope
     const parsed = OptionsSchema.parse(args);
     const db = supabaseAdmin();
     const inventory = await loadViewingOptions(db, shopId, scope, parsed.project_id);
-    const pricing = await loadViewingPricingConditions(db, shopId, scope, undefined, { projectId: parsed.project_id, units: inventory });
+    const [pricing, referralSources] = await Promise.all([
+        loadViewingPricingConditions(db, shopId, scope, undefined, { projectId: parsed.project_id, units: inventory }),
+        listReferralSources(db, shopId),
+    ]);
     const units = inventory.filter(row => (!parsed.block || pricingKey(row.block) === pricingKey(parsed.block))
         && (!parsed.model || pricingKey(row.model) === pricingKey(parsed.model)) && (parsed.floor === undefined || row.floor === parsed.floor));
     const groups = new Map<string, { block: string; model: string; area_sqm: number; floors: (number | null)[]; count: number }>();
@@ -28,7 +33,8 @@ export async function getViewingOptionsTool(shopId: string, args: unknown, scope
         groups.set(key, group);
     }
     return { groups: [...groups.values()], units: parsed.model && parsed.floor !== undefined ? units : [], pricing,
-        guidance: 'Блок, загвар, талбайг энэ нөөцөөс сонгоно. Үнэ тооцохдоо calculate_viewing_quote ашиглана; нөхцөл болон урьдчилгааны хувийг таамаглахгүй.' };
+        referral_sources: referralSources.filter(isActiveReferral).map(source => source.name),
+        guidance: 'Блок, загвар, талбайг энэ нөөцөөс сонгоно. Үнэ тооцохдоо calculate_viewing_quote ашиглана; нөхцөл болон урьдчилгааны хувийг таамаглахгүй. Шинэ харилцагчийн уулзалтад «Сэжим (хаанаас ирсэн)»-ийг referral_sources-оос хэрэглэгчээр сонгуулж referral_source-д яг нэрээр өгнө.' };
 }
 
 export async function calculateViewingQuoteTool(shopId: string, args: unknown, scope: SalesProjectScope) {
@@ -41,25 +47,43 @@ const EditSchema = z.object({
     agent_notes: z.string().trim().max(4000).nullable().optional(),
     customer_feedback: z.string().trim().max(4000).nullable().optional(),
     meeting_type: z.enum(['new_customer', 'repeat_customer', 'existing_buyer']).optional(),
+    /** «Сэжим (хаанаас ирсэн)»-ийн нэр; null/'' = цэвэрлэх. */
+    referral_source: z.string().trim().max(200).nullable().optional(),
 }).strict().refine(row => Object.keys(row).length > 1, 'Өөрчлөх мэдээлэл оруулна уу');
 
 export async function updateViewingSelectionTool(shopId: string, args: unknown, confirm: boolean, userId: string, userName: string, scope: SalesProjectScope) {
-    const { viewing_id: id, ...patch } = EditSchema.parse(args);
+    const { viewing_id: id, referral_source: referralName, ...patch } = EditSchema.parse(args);
     const db = supabaseAdmin();
-    const { data, error } = await applyLeadScope(db.from('property_viewings')
-        .select(`id,interests,agent_notes,customer_feedback,meeting_type,${scope.projectIds === null ? 'leads' : 'leads!inner'}(project_id,sales_manager_name)`)
+    // referral_source_id багана migration-ий өмнө байхгүй: зөвхөн «Сэжим» засах үед уншина.
+    const editsReferral = referralName !== undefined;
+    const columns: string = `id,interests,agent_notes,customer_feedback,meeting_type,${editsReferral ? 'referral_source_id,' : ''}${scope.projectIds === null ? 'leads' : 'leads!inner'}(project_id,sales_manager_name)`;
+    const { data: row, error } = await applyLeadScope(db.from('property_viewings').select(columns)
         .eq('shop_id', shopId).eq('id', id).is('deleted_at', null), scope, 'leads.project_id', 'leads.sales_manager_name').maybeSingle();
     if (error) return { error: 'Уулзалтын мэдээлэл уншигдсангүй' };
-    if (!data) return { error: 'Уулзалт олдсонгүй' };
+    if (!row) return { error: 'Уулзалт олдсонгүй' };
+    type LeadRef = { project_id: string | null; sales_manager_name: string | null };
+    const data = row as unknown as {
+        interests: unknown; agent_notes: string | null; customer_feedback: string | null; meeting_type: string | null;
+        referral_source_id?: string | null; leads: LeadRef | LeadRef[] | null;
+    };
     const lead = Array.isArray(data.leads) ? data.leads[0] : data.leads;
+    let referral: { id: string | null; before: string | null; after: string | null } | null = null;
+    if (editsReferral) {
+        const current = data.referral_source_id ?? null;
+        const resolved = await resolveReferralSource(db, shopId, referralName ? { name: referralName } : { id: null }, { current });
+        if (!resolved.ok) return { error: resolved.error };
+        const names = referralNameMap(await listReferralSources(db, shopId, { includeArchived: true }));
+        referral = { id: resolved.referralSourceId, before: current ? names.get(current) ?? null : null, after: resolved.source?.name ?? null };
+    }
     const interests = patch.interests === undefined ? undefined : await prepareViewingInterests(db, shopId, lead?.project_id ?? await soleShopProjectId(db, shopId), patch.interests, scope, (data.interests ?? []) as ViewingInterest[]);
-    if (!confirm) return { requiresConfirmation: true, action: { tool: 'update_viewing', args: { viewing_id: id, ...patch } }, label: 'Уулзалтын мэдээлэл засах', preview: {
+    if (!confirm) return { requiresConfirmation: true, action: { tool: 'update_viewing', args: { viewing_id: id, ...patch, ...(editsReferral ? { referral_source: referralName } : {}) } }, label: 'Уулзалтын мэдээлэл засах', preview: {
         'Өмнөх байр': viewingSelectionText(data.interests as ViewingInterest[]) ?? 'Сонгоогүй',
         ...(interests !== undefined ? { 'Шинэ байр': viewingSelectionText(interests) ?? 'Сонгоогүй', Тооцоолол: interests.map(row => row.quote ?? row.quote_unavailable_reason) } : {}),
-        ...(patch.agent_notes !== undefined ? { 'Өмнөх сэжим': data.agent_notes, 'Шинэ сэжим': patch.agent_notes } : {}),
+        ...(patch.agent_notes !== undefined ? { 'Өмнөх тэмдэглэл': data.agent_notes, 'Шинэ тэмдэглэл': patch.agent_notes } : {}),
+        ...(referral ? { [`Өмнөх ${REFERRAL_FIELD_LABEL}`]: referral.before ?? '—', [`Шинэ ${REFERRAL_FIELD_LABEL}`]: referral.after ?? '—' } : {}),
         ...(patch.customer_feedback !== undefined ? { 'Өмнөх санал': data.customer_feedback, 'Шинэ санал': patch.customer_feedback } : {}),
         ...(patch.meeting_type !== undefined ? { 'Өмнөх төрөл': data.meeting_type, 'Шинэ төрөл': patch.meeting_type } : {}),
     } };
-    const result = await updateViewing(db, shopId, id, patch, { userId, managerName: userName || null, scope });
+    const result = await updateViewing(db, shopId, id, { ...patch, ...(referral ? { referral_source_id: referral.id } : {}) }, { userId, managerName: userName || null, scope });
     return result.ok ? { success: true, viewingId: id, message: result.warning ?? 'Уулзалтын мэдээлэл шинэчлэгдлээ' } : { error: result.error };
 }

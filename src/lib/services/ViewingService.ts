@@ -16,6 +16,8 @@ import { ViewingInterestsSchema, type ViewingInterest, type ViewingInterestInput
 import { prepareViewingInterests } from '@/lib/viewings/prepare';
 import { PricingSelectionError } from '@/lib/sales/pricing-store';
 import { formalManagerName } from '@/lib/dashboard/daily-report';
+import { isMissingReferralSchema, REFERRAL_UNAVAILABLE, resolveReferralSource } from '@/lib/sales/referral-sources-store';
+import type { ReferralSource } from '@/lib/sales/referral-sources';
 
 export interface Actor {
     userId: string | null;
@@ -33,6 +35,8 @@ export interface ViewingPatch {
     property_id?: string | null;
     meeting_type?: 'new_customer' | 'repeat_customer' | 'existing_buyer';
     interests?: ViewingInterestInput[];
+    /** «Сэжим (хаанаас ирсэн)»; null = цэвэрлэх. Засварт заавал биш. */
+    referral_source_id?: string | null;
     /** Зөвхөн дотоод soft-delete үйлдэл; API PATCH schema-д нээхгүй. */
     deleted_at?: string;
 }
@@ -54,6 +58,10 @@ export const CreateViewingSchema = z.object({
     interest_level: z.number().int().min(1).max(5).nullish(),
     feedback: z.string().trim().max(4000).nullish(),
     interests: ViewingInterestsSchema.optional(),
+    /** «Сэжим (хаанаас ирсэн)» — төслийн жагсаалтын id (UI). Шинэ харилцагчийн уулзалтад заавал (жагсаалттай төсөлд). */
+    referral_source_id: z.guid().nullish(),
+    /** «Сэжим»-ийн нэр (AI): id өгөөгүй үед жагсаалтаас яг таарсныг авна. */
+    referral_source: z.string().trim().max(200).nullish(),
 }).refine(p => p.walk_in || !!p.scheduled_at, { message: 'Уулзалтын огноо, цаг шаардлагатай' })
     .refine(p => !!(p.lead_id || p.customer_name || p.customer_phone || p.anonymous), { message: 'Лид эсвэл харилцагчийн мэдээлэл шаардлагатай' });
 
@@ -208,9 +216,16 @@ export async function resolveViewingInput(db: SupabaseClient, shopId: string, in
     }
     if (nameMissing) return { ok: false as const, error: PHONE_LEAD_NOT_FOUND, status: 400 };
     if (property && property.project_id !== projectId) return { ok: false as const, error: 'Лидийн төслийн байрыг сонгоно уу', status: 400 };
+    // «Сэжим (хаанаас ирсэн)»: шинэ харилцагчийн уулзалтад заавал (төсөлд идэвхтэй сонголт байгаа үед). Нэрийг (AI) id болгоно.
+    const referral = await resolveReferralSource(db, shopId,
+        { id: p.referral_source_id === undefined ? undefined : p.referral_source_id, name: p.referral_source },
+        { required: p.meeting_type === 'new_customer' });
+    if (!referral.ok) return { ok: false as const, error: referral.error, status: referral.status };
+    const resolvedInput = { ...p, referral_source_id: referral.referralSourceId, referral_source: undefined };
+    const referralSource: ReferralSource | null = referral.source;
     try {
         const interests = p.interests === undefined ? undefined : await prepareViewingInterests(db, shopId, projectId, p.interests, scope);
-        return { ok: true as const, data: { input: p, lead, property, projectId, interests } };
+        return { ok: true as const, data: { input: resolvedInput, lead, property, projectId, interests, referral: referralSource } };
     } catch (error) {
         if (error instanceof PricingSelectionError) return { ok: false as const, error: error.message, status: error.status };
         throw error;
@@ -252,6 +267,8 @@ export async function createViewing(db: SupabaseClient, shopId: string, input: u
                 meeting_type: p.meeting_type, agent_notes: p.notes || null, walk_in: p.walk_in,
                 interest_level: p.interest_level ?? null, customer_feedback: p.feedback || null,
                 ...(interests !== undefined ? { interests } : {}),
+                // Сэжимгүй үед түлхүүрийг илгээхгүй (migration-ий өмнөх RPC мэдэхгүй түлхүүрийг татгалздаг).
+                ...(p.referral_source_id ? { referral_source_id: p.referral_source_id } : {}),
             },
         });
         if (error || !viewing) {
@@ -270,6 +287,7 @@ export async function createViewing(db: SupabaseClient, shopId: string, input: u
         scheduled_at: scheduledAt, status: p.walk_in ? 'completed' : 'scheduled', meeting_type: p.meeting_type,
         agent_notes: p.notes || null, sales_manager_name: lead?.sales_manager_name || actor.managerName, completed_at: p.walk_in ? now : null,
         interest_level: p.walk_in ? p.interest_level ?? null : null, customer_feedback: p.walk_in ? p.feedback || null : null,
+        ...(p.referral_source_id ? { referral_source_id: p.referral_source_id } : {}),
     }).select('id, scheduled_at, status').single();
     if (error || !viewing) return { ok: false, status: 500, partialSuccess: createdLead, leadId: lead?.id,
         error: createdLead ? 'Лид үүссэн боловч уулзалт хадгалагдсангүй. Лидээ нээгээд уулзалтаа товлоно уу.' : 'Уулзалт хадгалсныг баталгаажуулж чадсангүй. Жагсаалтаа шалгана уу.' };
@@ -297,6 +315,16 @@ export async function updateViewing(db: SupabaseClient, shopId: string, viewingI
     const scope = actor.scope || UNRESTRICTED_SALES_SCOPE;
     let validatedPatch: Record<string, unknown> = { ...p };
     const editsSelection = p.interests !== undefined || p.property_id !== undefined || p.meeting_type !== undefined;
+    const editsReferral = p.referral_source_id !== undefined;
+    if (editsReferral) {
+        // Одоогийн (архивласан ч) сонголтоо хэвээр үлдээж болно; шинээр зөвхөн идэвхтэй. Хамрах хүрээг RPC шалгана.
+        const current = await db.from('property_viewings').select('referral_source_id').eq('id', viewingId).eq('shop_id', shopId).is('deleted_at', null).maybeSingle();
+        if (current.error) return { ok: false, error: isMissingReferralSchema(current.error) ? REFERRAL_UNAVAILABLE : 'Уулзалт шалгахад алдаа гарлаа', status: 503 };
+        if (!current.data) return { ok: false, error: 'Уулзалт олдсонгүй', status: 404 };
+        const referral = await resolveReferralSource(db, shopId, { id: p.referral_source_id }, { current: (current.data.referral_source_id as string | null) ?? null });
+        if (!referral.ok) return { ok: false, error: referral.error, status: referral.status };
+        validatedPatch = { ...validatedPatch, referral_source_id: referral.referralSourceId };
+    }
     if (editsSelection) {
         const current = await applyLeadScope(db.from('property_viewings')
             .select(`id,lead_id,scheduled_at,interests,${scope.projectIds === null ? 'leads' : 'leads!inner'}(project_id,sales_manager_name)`)
@@ -319,7 +347,7 @@ export async function updateViewing(db: SupabaseClient, shopId: string, viewingI
             }
         }
     }
-    if (scope.projectIds !== null || editsSelection) {
+    if (scope.projectIds !== null || editsSelection || editsReferral) {
         if (scope.projectIds !== null && !actor.userId) return { ok: false, error: 'Нэвтрэх шаардлагатай', status: 401 };
         if (scope.projectIds !== null && (!scope.managerName || !scope.projectIds.length)) return { ok: false, error: 'Уулзалт олдсонгүй', status: 404 };
         // Уншилтын дараах эзэмшигчийн өөрчлөлтөөс хамгаална. RPC лидийг түгжиж,

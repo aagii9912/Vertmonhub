@@ -6,6 +6,7 @@ import { getUserId } from '@/lib/auth/supabase-auth';
 import { recordAudit } from '@/lib/services/AuditService';
 import { resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { ubDateStr } from '@/lib/utils/date';
+import { isMissingReferralSchema, REFERRAL_UNAVAILABLE, resolveReferralSource } from '@/lib/sales/referral-sources-store';
 
 /** YYYY-MM-DD, хуанлийн жинхэнэ өдөр (2026-02-30 биш). */
 const DateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
@@ -31,6 +32,8 @@ const ContractPatchSchema = z.object({
     // «Огноо оруулах»: захиалга өгсөн огноо хоосон үед л нэг удаа (солих, арилгахгүй); гэрээний огноо
     // хоосон бол мөн энэ өдөр болно (HUB-ийн дүрэм: захиалга өгсөн огноо = борлуулалтын огноо).
     order_date: DateString.optional(),
+    // «Сэжим (хаанаас ирсэн)» — төслийн идэвхтэй жагсаалтаас (одоогийн архивласан сонголт хэвээр үлдэж болно); null = цэвэрлэх.
+    referral_source_id: z.guid().nullable().optional(),
 }).strict();
 
 /** numeric багана string/number аль аль хэлбэрээр ирж болно — аудитад жинхэнэ өөрчлөлтийг л бичнэ. */
@@ -128,9 +131,17 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
         .eq('shop_id', authShop.id))
         .is('deleted_at', null)
         .maybeSingle();
+    if (beforeError && 'referral_source_id' in updateData && isMissingReferralSchema(beforeError)) {
+        return NextResponse.json({ error: REFERRAL_UNAVAILABLE }, { status: 503 });
+    }
     if (beforeError) throw beforeError;
     if (!before) return NextResponse.json({ error: 'Гэрээ олдсонгүй' }, { status: 404 });
     const previous = { ...(before as unknown as Record<string, unknown>) };
+    if (updateData.referral_source_id !== undefined) {
+        const referral = await resolveReferralSource(supabase, authShop.id, { id: updateData.referral_source_id },
+            { current: (previous.referral_source_id as string | null | undefined) ?? null });
+        if (!referral.ok) return NextResponse.json({ error: referral.error }, { status: referral.status });
+    }
     const payload: Record<string, unknown> = { ...updateData };
     if (settingOrderDate) {
         if (previous.order_date) {

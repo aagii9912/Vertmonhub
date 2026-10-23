@@ -22,6 +22,8 @@ export interface ViewingRow {
     lead: { id: string; customer_name: string | null; customer_phone: string | null; status: string } | null;
     property: { id: string; name: string; district: string | null } | null;
     interests?: ViewingInterest[];
+    /** «Сэжим (хаанаас ирсэн)» (migration-ий өмнө байхгүй). */
+    referral_source_id?: string | null;
 }
 
 export type ViewingRange = 'today' | 'upcoming' | 'past' | 'all';
@@ -62,6 +64,8 @@ export interface CreateViewingInput {
     interest_level?: number | null;
     feedback?: string | null;
     interests?: ViewingInterestInput[];
+    /** «Сэжим (хаанаас ирсэн)»; шинэ харилцагчийн уулзалтад заавал (жагсаалттай төсөлд). */
+    referral_source_id?: string | null;
 }
 
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
@@ -95,6 +99,7 @@ export type ViewingPatch = Partial<{
     property_id: string | null;
     meeting_type: MeetingType;
     interests: ViewingInterestInput[];
+    referral_source_id: string | null;
 }>;
 
 export function useUpdateViewing() {

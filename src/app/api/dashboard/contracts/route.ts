@@ -5,6 +5,7 @@ import { fetchAllRows } from '@/lib/utils/pagination';
 import { contractIdsByPreviousHolder } from '@/lib/services/ContractService';
 import { summarizeContracts, type ContractSummaryRow } from '@/lib/contracts/summary';
 import { loadLatestContractListImport } from '@/lib/contracts/live';
+import { loadReferralNames } from '@/lib/sales/referral-sources-store';
 
 /** `?sortBy=` — зөвхөн эдгээр багана (өмнө нь дурын нэр `.order()`-т орж 500 өгдөг байв). */
 const SORTABLE = new Set([
@@ -28,6 +29,15 @@ const filterText = (value: string | null) => {
     const text = value?.trim();
     return text && text !== 'all' && text.length <= FILTER_TEXT_MAX ? text : null;
 };
+
+/**
+ * «Сэжим (хаанаас ирсэн)»-ийн нэрийг мөр бүрт `referral_source_name` болгож нэмнэ (нэг нэмэлт уншилт; хүснэгт
+ * байхгүй эсвэл сонгоогүй бол null). Илтгэл, экспорт id биш нэрийг хэвлэнэ.
+ */
+async function withReferralNames(supabase: ReturnType<typeof supabaseAdmin>, shopId: string, rows: Row[]): Promise<Row[]> {
+    const names = await loadReferralNames(supabase, shopId, rows.map(row => row.referral_source_id as string | null | undefined));
+    return rows.map(row => ({ ...row, referral_source_name: typeof row.referral_source_id === 'string' ? names.get(row.referral_source_id) ?? null : null }));
+}
 
 /** Шүүлтийн сонголт: төслийн гэрээнд байгаа блок, захиалгын нөхцөл, төрөл (эрэмбэлсэн). */
 function contractFacets(rows: Row[]) {
@@ -153,14 +163,14 @@ export const GET = withRoute({ module: 'contracts', error: 'Гэрээ тата�
         if (pageErr) throw pageErr;
         const total = count ?? 0;
         return NextResponse.json({
-            contracts: slice || [],
+            contracts: await withReferralNames(supabase, shopId, (slice || []) as unknown as Row[]),
             ...summaries,
             latestImport: summaries?.latestImport ?? latestImport,
             pagination: { total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), hasMore: page * pageSize < total },
         });
     }
 
-    const contracts = await fetchFiltered('*');
+    const contracts = await withReferralNames(supabase, shopId, await fetchFiltered('*'));
     return NextResponse.json({
         contracts,
         ...(withStats ? { stats: summarizeContracts(contracts as ContractSummaryRow[], { latestImportDate: latestDate }) } : {}),

@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils';
 import { formatTime } from '@/lib/utils/date';
 import { ANONYMOUS_LEAD_LABEL } from '@/lib/leads/labels';
 import { MEETING_TYPE_META, MEETING_TYPES, type MeetingType } from '@/lib/viewings/labels';
+import { REFERRAL_FIELD_LABEL, REFERRAL_REQUIRED_ERROR, isActiveReferral, referralRequired } from '@/lib/sales/referral-sources';
+import { useReferralSources } from '@/hooks/useReferralSources';
 import { formalManagerName, reportDateLabel, type DailyReportManager } from '@/lib/dashboard/daily-report';
 import {
     DAILY_MEETING_DEFAULT_TIME, dailyMeetingPhone, type DailyMeetingRequestBody, type DailyMeetingResponse,
@@ -50,13 +52,19 @@ export function DailyMeetingDialog({ open, onOpenChange, date, today, managers, 
     const [notes, setNotes] = useState('');
     const [feedback, setFeedback] = useState('');
     const [interest, setInterest] = useState<number | null>(null);
+    const [referral, setReferral] = useState('');
     const [saving, setSaving] = useState(false);
+    // «Сэжим (хаанаас ирсэн)»: уншиж чадаагүй / жагсаалтгүй бол бүртгэхийг хаахгүй (сервер мөн шалгана).
+    const referralQuery = useReferralSources({ inlineError: true, enabled: open });
+    const referralOptions = (referralQuery.data?.sources ?? []).filter(isActiveReferral);
+    const needsReferral = referralRequired(type, referralOptions.length);
 
     async function submit() {
         if (!manager) { toast.error('Менежерээ сонгоно уу'); return; }
         if (!dailyMeetingPhone(phone)) { toast.error('Утасны дугаараа бүтнээр оруулна уу'); return; }
         if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) { toast.error('Уулзалтын цагаа оруулна уу'); return; }
         if (date === today && time > formatTime(new Date())) { toast.error('Ирээдүйн цагийн уулзалтыг бүртгэхгүй. Цагаа шалгана уу.'); return; }
+        if (needsReferral && !referral) { toast.error(REFERRAL_REQUIRED_ERROR); return; }
         const body: DailyMeetingRequestBody = {
             action: 'record', date, manager, meeting_type: type, time,
             customer_phone: phone.trim(),
@@ -65,6 +73,7 @@ export function DailyMeetingDialog({ open, onOpenChange, date, today, managers, 
             notes: notes.trim() || null,
             feedback: feedback.trim() || null,
             interest_level: interest,
+            referral_source_id: referralOptions.some(item => item.id === referral) ? referral : null,
         };
         setSaving(true);
         try {
@@ -129,6 +138,17 @@ export function DailyMeetingDialog({ open, onOpenChange, date, today, managers, 
                         <Checkbox id="daily-meeting-anonymous" checked={anonymous} onCheckedChange={checked => { setAnonymous(checked === true); if (checked === true) setName(''); }} />
                         Нэр тодорхойгүй — нэргүй бүртгэх
                     </label>
+
+                    {referralOptions.length > 0 && (
+                        <FormField label={REFERRAL_FIELD_LABEL} htmlFor="daily-meeting-referral" required={needsReferral}>
+                            <Select value={referral || undefined} onValueChange={setReferral}>
+                                <SelectTrigger id="daily-meeting-referral" aria-label={REFERRAL_FIELD_LABEL}><SelectValue placeholder="Сонгох" /></SelectTrigger>
+                                <SelectContent>
+                                    {referralOptions.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </FormField>
+                    )}
 
                     <FormField label="Тэмдэглэл" htmlFor="daily-meeting-notes">
                         <Textarea id="daily-meeting-notes" rows={2} maxLength={4000} placeholder="Сонирхсон байр, нөхцөл…" value={notes} onChange={event => setNotes(event.target.value)} />
