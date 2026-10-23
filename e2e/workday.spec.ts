@@ -12,6 +12,7 @@ import { buildBudgetOverview } from '../src/lib/marketing/budget';
 import { summarizeSocialWeek } from '../src/lib/marketing/social-week';
 import { ubParts } from '../src/lib/utils/date';
 import { managerActivityFixture } from './support/manager-activity';
+import { teamDeckFixtures } from './support/team-deck';
 import { COMPACT_VIEWPORT } from './support/viewports';
 
 const userId = '00000000-0000-4000-8000-000000000001';
@@ -20,6 +21,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 const shopId = '00000000-0000-4000-8000-000000000002';
 const meetingDate = nextMeetingDate();
 const range = weeklyReviewRange(meetingDate);
+const teamDeck = teamDeckFixtures(meetingDate, shopId);
 
 // Synthetic ERP export (Elysium-like): 3 contracts this week, previous snapshot for cash, Б1 floor map.
 const sale = (key: string, overrides: Partial<ErpSale>): ErpSale => ({
@@ -141,6 +143,15 @@ async function setup(page: Page, restricted = false) {
             overview: buildBudgetOverview(Array(12).fill(10000000), Array.from({ length: 12 }, (_, index) => index < 9 ? 8000000 : 0), Array(12).fill(0)) });
         if (path === '/api/dashboard/kpi-report') return reply({ manager: { name: 'Номин', isSelf: true }, shopName: 'Vertmon · Туршилтын өгөгдөл', year: 2026, month: 10, onboarding: true });
         if (path === '/api/dashboard/reports/weekly-sales') return reply({ meetingDate, projectName: 'Vertmon · Туршилтын өгөгдөл', ...weeklySalesFixture() });
+        // «Борлуулалт (албаны загвар)» илтгэлийн эх сурвалж.
+        if (path === '/api/dashboard/reports/plan-performance') return reply(teamDeck.plan);
+        if (path === '/api/dashboard/reports/sales-activity') return reply(teamDeck.activity);
+        if (path === '/api/dashboard/reports/meeting-details') return reply(teamDeck.meetings);
+        if (path === '/api/dashboard/reports/negotiations') return reply(teamDeck.negotiations);
+        if (path === '/api/dashboard/report-branding') return reply(teamDeck.branding);
+        if (path === '/api/dashboard/report-branding/media') {
+            return teamDeck.brandingPaths.includes(url.searchParams.get('path') || '') ? route.fulfill({ status: 200, contentType: 'image/png', body: PNG }) : reply({ error: 'Зураг олдсонгүй' }, 404);
+        }
         if (path === '/api/marketing/performance') {
             const selected = { from: url.searchParams.get('from')!, to: url.searchParams.get('to')! };
             const prior = previousRange(selected);
@@ -440,6 +451,42 @@ test('маркетинг өөрийн контент төлөвлөгөөгөө�
     expect(state.errors).toEqual([]);
 });
 
+test('борлуулалтын албаны загварын слайд: албаны дараалал, брэнд, мөнгөн урсгалгүй', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    // Fixture GoTrue Supabase Realtime-ийг дуурайдаггүй (501) — хуудас realtime-гүйгээр ажиллана (contracts-hub.spec.ts-тэй ижил).
+    const realtimeNoise = /WebSocket connection to 'ws:\/\/127\.0\.0\.1:\d+\/realtime\/v1\/websocket/;
+    const consoleErrors: string[] = [];
+    page.on('console', message => { if (message.type() === 'error' && !realtimeNoise.test(message.text())) consoleErrors.push(message.text()); });
+    const state = await setup(page);
+    await page.goto('/dashboard/weekly');
+    const button = page.getByRole('button', { name: 'Борлуулалт (албаны загвар)', exact: true });
+    await expect(button).toBeEnabled();
+    const download = page.waitForEvent('download');
+    await button.click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe(`Vertmon · Туршилтын өгөгдөл - Борлуулалт (албаны загвар) - Лхагва ${meetingDate}.pptx`);
+    mkdirSync('output/workday', { recursive: true });
+    await file.saveAs('output/workday/weekly-sales-team.pptx');
+    await expect(page.getByText('Борлуулалтын албаны загварын слайд (.pptx) татагдлаа')).toBeVisible();
+    const deck = await pptxText('output/workday/weekly-sales-team.pptx');
+    const month = Number(range.to.slice(5, 7));
+    for (const needle of [`${range.to.slice(0, 4)} оны ${range.from.slice(5).replace('-', '.')}-${range.to.slice(5).replace('-', '.')} хүртэлх тайлан`,
+        'ЯРИГДАЖ БУЙ ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ', '312,498,000₮', `${month}-Р САР ЗАХИАЛГЫН ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ`, 'Дулаан зогсоол', 'Орон сууц',
+        'Б2 БЛОК', '2,245,776,000₮', '2,195,395,000₮', '98%', 'Мөнгөн урсгалыг санхүүгийн эрхтэй ажилтан харна.',
+        'БОРЛУУЛАЛТЫН АЛБА-ТООН МЭДЭЭЛЭЛ', 'НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ', 'Ойрхон амьдардаг', 'ДАВХРЫН ЗУРАГЛАЛ — ТУРШИЛТ Б1 БЛОК',
+        `${range.to.slice(0, 4)} ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ`, `${month}-р сарын бусад ажлын төлөвлөгөө`, 'Анхаарал хандуулсанд баярлалаа.']) {
+        expect(deck.text, needle).toContain(needle);
+    }
+    // Хуучин борлуулалтын илтгэлийн хэсэг, нэмэлт төлөвлөгөөгүй сарын слайд орохгүй.
+    for (const needle of ['Борлуулалтын тойм', 'Энэ хурлаар шийдэх', 'НЭМЭЛТ ТӨЛӨВЛӨГӨӨ']) expect(deck.text).not.toContain(needle);
+    // Нүүрний зураг, лого (брэнд) орно.
+    expect(deck.media.length).toBeGreaterThanOrEqual(2);
+    for (const path of ['/api/dashboard/reports/plan-performance', '/api/dashboard/reports/sales-activity', '/api/dashboard/reports/meeting-details',
+        '/api/dashboard/reports/negotiations', '/api/dashboard/report-branding', '/api/dashboard/report-branding/media']) expect(state.requests).toContain(path);
+    expect(state.errors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+});
+
 test('хувийн эрхтэй хэрэглэгч нэгдсэн тайлан дуудахгүй', async ({ page }) => {
     const state = await setup(page, true);
     await page.goto('/dashboard/weekly');
@@ -449,6 +496,7 @@ test('хувийн эрхтэй хэрэглэгч нэгдсэн тайлан �
     expect(state.requests).not.toContain('/api/dashboard/weekly-slides');
     expect(state.requests).not.toContain('/api/dashboard/marketing/social-week');
     await expect(page.getByRole('button', { name: 'Слайд нэмэх' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Борлуулалт (албаны загвар)' })).toHaveCount(0);
     expect(state.errors).toEqual([]);
 });
 

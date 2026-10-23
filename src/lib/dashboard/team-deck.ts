@@ -276,8 +276,9 @@ function monthContractSlides(pres: PptxGenJS, ctx: Ctx) {
     const empty = undated ? `Огноотой гэрээ алга — огноогүй ${undated} гэрээтэй тул тоо тодорхойгүй.` : 'Энэ сард гэрээ бүртгэгдээгүй.';
     if (parking.length + residential.length > MONTH_LINES_ONE_SLIDE) {
         // Урт бол хүснэгт бүр өөрийн слайдад (tableSlides-ийн «(1/2)» хуудаслалт).
+        const missing = kinds.filter(item => !item.lines.length).map(item => `${item.label}: ${empty}`);
         for (const kind of kinds.filter(item => item.lines.length)) {
-            tableSlides(pres, { kicker: ctx.name, title, subtitle: `${kind.label} · ${subtitle}`, ...kind.table, colW: kind.colW, perSlide: 12, fontSize: 10, notes });
+            tableSlides(pres, { kicker: ctx.name, title, subtitle: `${kind.label} · ${subtitle}`, ...kind.table, colW: kind.colW, perSlide: 12, fontSize: 10, notes: [...notes, ...missing] });
         }
         return;
     }
@@ -329,6 +330,16 @@ function contractSource(cell: PlanCell | undefined): string | null {
         : 'Гэрээний гүйцэтгэл: системийн гэрээ (захиалга өгсөн огноогоор, цуцлагдсаныг хассан).';
 }
 
+/**
+ * Гүйцэтгэлийн картын тайлбар: эх сурвалж (Гараар / Систем / Холимог); гэрээний тоо нь дүнтэй ижил эх сурвалжтай бол л
+ * («Гараар» дүнгийн хажууд системийн «0 гэрээ» бичихгүй).
+ */
+function contractHelper(contract: PlanCell | undefined, countCell: PlanCell | undefined): string | undefined {
+    if (!contract?.source || contract.actual === null) return undefined;
+    const label = PLAN_SOURCE_LABEL[contract.source];
+    return countCell?.actual != null && countCell.source === contract.source ? `${countCell.actual}${countCell.lowerBound ? '+' : ''} гэрээ · ${label}` : label;
+}
+
 /** «Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй)» — мэдээлэл, мөнгөн урсгал биш (W6). */
 const prepaymentText = (cells: PlanScopeCells) => cells.prepaymentDue === null ? '—' : `${formatMNT(cells.prepaymentDue)}${cells.prepaymentMissing ? '+' : ''}`;
 function prepaymentLine(slide: Slide, cells: PlanScopeCells, y: number) {
@@ -360,8 +371,7 @@ function planCardSlide(pres: PptxGenJS, ctx: Ctx, title: string, pick: (row: Pla
     sectionLabel(slide, TOP - 0.05, 'Гэрээний дүн');
     statRow(slide, TOP + 0.28, [
         { label: 'ТӨЛӨВЛӨГӨӨ', value: money(contract?.plan), tone: 'gold' },
-        { label: 'ГҮЙЦЭТГЭЛ', value: actualText(contract),
-            helper: countCell?.actual != null ? `${countCell.actual}${countCell.lowerBound ? '+' : ''} гэрээ${contract?.source ? ` · ${PLAN_SOURCE_LABEL[contract.source]}` : ''}` : undefined },
+        { label: 'ГҮЙЦЭТГЭЛ', value: actualText(contract), helper: contractHelper(contract, countCell) },
         { label: 'ГҮЙЦЭТГЭЛИЙН ХУВЬ', value: cellPct(contract) },
     ], 1.45);
     if (ctx.cashVisible) {

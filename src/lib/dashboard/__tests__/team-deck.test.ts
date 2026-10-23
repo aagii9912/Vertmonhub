@@ -6,7 +6,7 @@ import PptxGenJS from 'pptxgenjs';
 import { SaxesParser } from 'saxes';
 import { buildTeamDeck, teamDeckPeriod, wholePct, type TeamDeckInput } from '../team-deck';
 import { weeklyDeckFileName } from '../weekly-deck';
-import { CASH_NUMBERS, negotiations, plan, range, teamInput } from './team-deck-fixture';
+import { CASH_NUMBERS, negotiations, plan, range, teamInput, weeklySales } from './team-deck-fixture';
 
 async function render(deck: TeamDeckInput) {
     const pres = new PptxGenJS();
@@ -92,6 +92,13 @@ describe('team-format Wednesday deck (.pptx)', () => {
         for (const needle of ['10-р сар', '1–10 сар', '2026 он', 'Нийт төлөвлөгөө', 'Гүйцэтгэл хувиар', 'Зогсоол', 'Мөнгөн урсгал']) expect(year).toContain(needle);
     });
 
+    it('shows the contract count beside the amount only when both come from the same source', async () => {
+        // Дүн гараар, тоо системийн (Б2-ийн 4 гэрээ): «4 гэрээ» бичихгүй, зөвхөн эх сурвалж.
+        const { text } = await render(teamInput({ plan: plan({ manualCounts: false }) }));
+        expect(at(text, 'Б2 БЛОК')).toMatch(/ГҮЙЦЭТГЭЛ 2,195,395,000₮ Гараар ГҮЙЦЭТГЭЛИЙН ХУВЬ 98%/);
+        expect(at(text, 'Б2 БЛОК')).not.toContain('гэрээ · ');
+    });
+
     it('prints «—» for unknown values and never «0₮»', async () => {
         const { text } = await render(teamInput());
         const b1 = at(text, 'Б1 БЛОК');
@@ -162,6 +169,20 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const note = notes[text.indexOf(slide)];
         expect(note).toContain('Нөхцлөөр төлөх урьдчилгаа — орсон мөнгө биш');
         expect(note).toContain('Хүснэгтэд ороогүй: Агуулах 1 гэрээ (10,700,000₮)');
+    });
+
+    it('month contracts: a long month splits each table over pages with «Нийт» on the last page', async () => {
+        const report = weeklySales();
+        const residential = report.month.lines.find(line => line.kind === 'residential')!;
+        const lines = Array.from({ length: 14 }, (_, index) => ({ ...residential, key: `Б2-${index}`, unit: `Б2-${index}` }));
+        const { text, notes } = await render(teamInput({ weeklySales: { ...report, month: { ...report.month, lines } } }));
+        const pages = text.filter(slide => slide.includes('ЗАХИАЛГЫН ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ'));
+        expect(pages).toHaveLength(2);
+        expect(pages[0]).toContain('10-Р САР ЗАХИАЛГЫН ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ (1/2)');
+        expect(pages[0]).toContain('Орон сууц · 2026.10.01 – 2026.10.20 · 14 гэрээ');
+        expect(pages[0]).not.toMatch(/Нийт \d/);
+        expect(pages[1]).toMatch(/Нийт 810\.18 4,374,972,000₮ 1,312,491,600₮/);
+        expect(notes[text.indexOf(pages[1])]).toContain('Дулаан зогсоол: Энэ сард гэрээ бүртгэгдээгүй.');
     });
 
     it('adds native charts: the activity column chart and the weekly model pies', async () => {

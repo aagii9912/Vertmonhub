@@ -53,9 +53,13 @@ const CONTRACTS: PlanContract[] = [
  * `cashHidden` = санхүүгийн эрхгүй хэрэглэгчийн хариу (мөнгөн урсгал огт ирэхгүй); `hubPaid` = HUB файлын «Нийт төлсөн дүн»
  * (Б1-ийн хоёр гэрээ, файлын огноо 2026-10-20) — үгүй бол дэвтэр (гэрээний төлсөн дүн тодорхойгүй).
  */
-export function plan({ cashHidden = false, stretch = true, hubPaid = false }: { cashHidden?: boolean; stretch?: boolean; hubPaid?: boolean } = {}): TeamPlanReport {
+export function plan({ cashHidden = false, stretch = true, hubPaid = false, manualCounts = true }: { cashHidden?: boolean; stretch?: boolean; hubPaid?: boolean; manualCounts?: boolean } = {}): TeamPlanReport {
     const rows = months();
     if (!stretch) rows[9] = { ...rows[9], stretch_target_amount: null, stretch_cashflow_target_amount: null };
+    if (!manualCounts) {
+        const blocks = rows[9].block_amounts!;
+        rows[9] = { ...rows[9], block_amounts: Object.fromEntries(Object.entries(blocks).map(([block, cells]) => [block, { ...cells, manual_contract_count_actual: undefined }])) };
+    }
     const report = buildPlanPerformance({
         year: 2026, now: new Date('2026-10-20T12:00:00+08:00'), months: rows, planYears: [2026], contracts: CONTRACTS,
         receipts: cashHidden ? null : [], ledgerSince: cashHidden ? undefined : '2026-10-01', latestImportDate: null,
