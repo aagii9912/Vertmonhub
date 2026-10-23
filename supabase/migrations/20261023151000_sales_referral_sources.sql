@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS public.sales_referral_sources (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     shop_id uuid NOT NULL REFERENCES public.shops(id) ON DELETE CASCADE,
     name text NOT NULL CHECK (name = btrim(name) AND char_length(name) BETWEEN 1 AND 80),
-    sort_order integer NOT NULL DEFAULT 0 CHECK (sort_order BETWEEN 0 AND 1000),
+    -- Дээд хязгааргүй: архивласан мөр хуримтлагдсан ч шинэ мөр сүүлд орж, эрэмбэ давхцахгүй (10, 20, …).
+    sort_order integer NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
     -- NULL = идэвхтэй; утгатай = архивласан (шинэ мөрөнд сонгогдохгүй).
     archived_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),

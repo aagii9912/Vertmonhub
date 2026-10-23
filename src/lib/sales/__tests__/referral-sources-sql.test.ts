@@ -109,6 +109,9 @@ it('creates a server-only, idempotent pick list with one active name per project
         await expect(source(db, 'ОЙРХОН  АМЬДАРДАГ')).rejects.toMatchObject(code('23505'));
         await expect(source(db, ' Танил')).rejects.toMatchObject(code('23514'));
         await expect(source(db, 'x'.repeat(81))).rejects.toMatchObject(code('23514'));
+        // Эрэмбэ дээд хязгааргүй (архивласан мөр олон болсон ч шинэ мөр 1000-д бөөгнөрөхгүй), сөрөг биш.
+        await db.query(`INSERT INTO public.sales_referral_sources(shop_id, name, sort_order) VALUES ($1, 'Билбоард', 1010)`, [shop]);
+        await expect(db.query(`INSERT INTO public.sales_referral_sources(shop_id, name, sort_order) VALUES ($1, 'Сөрөг', -10)`, [shop])).rejects.toMatchObject(code('23514'));
         await expect(db.query('DELETE FROM public.sales_referral_sources WHERE id = $1', [facebook])).rejects.toThrow(/permission denied/);
         // Өөр төсөл ижил нэртэй байж болно; архивласан нэрийг дахин нэмж болно.
         const foreignFacebook = await source(db, 'Facebook', otherShop);

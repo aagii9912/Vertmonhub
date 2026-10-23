@@ -24,7 +24,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { Checkbox } from '@/components/ui/Checkbox';
 import { ANONYMOUS_LEAD_LABEL, ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
 import { useReferralSources } from '@/hooks/useReferralSources';
-import { REFERRAL_FIELD_LABEL, REFERRAL_REQUIRED_ERROR, isActiveReferral, referralNameMap, referralOptionLabel, referralRequired } from '@/lib/sales/referral-sources';
+import { REFERRAL_FIELD_LABEL, REFERRAL_LIST_FAILED, isActiveReferral, referralNameMap, referralOptionLabel, referralRequired, referralSubmitError } from '@/lib/sales/referral-sources';
 
 /**
  * «Уулзалт» v2 — өдрөөр бүлэглэсэн нягт жагсаалт; товлох ба үр дүн бүртгэх
@@ -224,9 +224,12 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
     const [interests, setInterests] = useState<ViewingInterestInput[]>([]);
     const [draftInterest, setDraftInterest] = useState<ViewingInterestInput | null>(null);
     const [referralId, setReferralId] = useState('');
-    // «Сэжим (хаанаас ирсэн)»: уншиж чадаагүй / жагсаалтгүй бол товлохыг хаахгүй (сервер мөн шалгана).
+    // «Сэжим (хаанаас ирсэн)»: жагсаалтгүй төсөлд товлохыг хаахгүй. Ачаалж байгаа / уншиж чадаагүй үед шинэ
+    // харилцагчийн уулзалтыг илгээхгүй (сервер жагсаалттай төсөлд шаардана) — алдааг энд харуулж дахин оролдуулна.
     const referralQuery = useReferralSources({ inlineError: true });
     const referralOptions = (referralQuery.data?.sources ?? []).filter(isActiveReferral);
+    const referralLoading = referralQuery.isLoading;
+    const referralFailed = referralQuery.isError && !referralQuery.data;
     const projectScope = leadId ? leadDetail?.lead.project_id ?? null : projectId || null;
     const options = useViewingOptions(projectScope);
     const units = options.data?.units ?? [];
@@ -245,7 +248,10 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
         if (!leadId && !anonymous && !normalizeLeadName(name)) { toast.error(LEAD_NAME_OR_ANONYMOUS); return; }
         if (!leadId && anonymous && phone.replace(/\D/g, '').length < 8) { toast.error(ANONYMOUS_MEETING_PHONE); return; }
         if (!walkIn && !when) { toast.error('Огноо, цаг сонгоно уу'); return; }
-        if (needsReferral && !referralId) { toast.error(REFERRAL_REQUIRED_ERROR); return; }
+        const referralError = referralSubmitError(type, {
+            loading: referralLoading, failed: referralFailed, activeCount: referralOptions.length, selected: referralOptions.some(item => item.id === referralId),
+        });
+        if (referralError) { toast.error(referralError); return; }
         try {
             const result = await create.mutateAsync({
                 lead_id: leadId,
@@ -268,6 +274,8 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
             onClose();
         } catch (e) {
             toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй');
+            // Жагсаалт хуучирсан байж болно (админ дөнгөж нэмсэн / архивласан): маягтыг хаалгүй шинэчилнэ.
+            void referralQuery.refetch();
         }
     };
 
@@ -363,9 +371,13 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                     </div>
                 </Field>
 
-                {referralOptions.length > 0 && <Field label={REFERRAL_FIELD_LABEL} required={needsReferral}>
-                    <select aria-label={REFERRAL_FIELD_LABEL} value={referralId} onChange={e => setReferralId(e.target.value)} className={inputCls}>
-                        <option value="">Сонгох</option>
+                {/* Алдааны үед <label> (Field) биш: товч цорын ганц удирдлага тул шошгыг товшиход дахин ачаалахгүй. */}
+                {referralFailed ? <div className="flex flex-col gap-1.5">
+                    <span className="text-[11.5px] font-medium text-muted-foreground">{REFERRAL_FIELD_LABEL}</span>
+                    <p role="alert" className="text-xs text-status-danger">{REFERRAL_LIST_FAILED} <button type="button" className="underline" disabled={referralQuery.isFetching} onClick={() => void referralQuery.refetch()}>Дахин оролдох</button></p>
+                </div> : (referralLoading || referralOptions.length > 0) && <Field label={REFERRAL_FIELD_LABEL} required={needsReferral}>
+                    <select aria-label={REFERRAL_FIELD_LABEL} value={referralId} onChange={e => setReferralId(e.target.value)} disabled={referralLoading} className={inputCls}>
+                        <option value="">{referralLoading ? 'Ачаалж байна…' : 'Сонгох'}</option>
                         {referralOptions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                     </select>
                 </Field>}

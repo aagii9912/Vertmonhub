@@ -5,14 +5,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 type Source = { id: string; name: string; sort_order: number; archived_at: string | null };
 const mocks = vi.hoisted(() => ({
     referrals: undefined as { sources: Source[]; available: boolean } | undefined,
+    referralState: 'ready' as 'ready' | 'loading' | 'error', refetch: vi.fn(), openChange: vi.fn(),
     mutate: vi.fn(), toastError: vi.fn(), toastSuccess: vi.fn(),
 }));
 vi.mock('sonner', () => ({ toast: { success: (...args: unknown[]) => mocks.toastSuccess(...args), error: (...args: unknown[]) => mocks.toastError(...args) } }));
 vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardMutate: (...args: unknown[]) => mocks.mutate(...args) }));
 vi.mock('@/hooks/useDailyReport', () => ({ invalidateDailyMeetingQueries: async () => {} }));
-vi.mock('@/hooks/useReferralSources', () => ({ useReferralSources: () => ({ data: mocks.referrals }) }));
+vi.mock('@/hooks/useReferralSources', () => ({ useReferralSources: () => ({
+    data: mocks.referrals, isLoading: mocks.referralState === 'loading', isError: mocks.referralState === 'error', isFetching: false, refetch: mocks.refetch,
+}) }));
 
 import { DailyMeetingDialog } from './DailyMeetingDialog';
+import { REFERRAL_LIST_LOADING } from '@/lib/sales/referral-sources';
 
 // jsdom-д ResizeObserver байхгүй (Radix Select).
 vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
@@ -22,7 +26,7 @@ function renderDialog() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     return render(
         <QueryClientProvider client={client}>
-            <DailyMeetingDialog open onOpenChange={() => {}} date="2026-10-17" today="2026-10-19" managers={managers as never} defaultManager="Чанцалдулам.Раднаа" />
+            <DailyMeetingDialog open onOpenChange={mocks.openChange} date="2026-10-17" today="2026-10-19" managers={managers as never} defaultManager="Чанцалдулам.Раднаа" />
         </QueryClientProvider>,
     );
 }
@@ -34,6 +38,7 @@ const fill = () => {
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.referrals = undefined;
+    mocks.referralState = 'ready';
     mocks.mutate.mockResolvedValue({ ok: true, viewing_id: 'viewing', lead_id: 'lead', lead_created: true });
 });
 
@@ -78,5 +83,43 @@ describe('daily report «Уулзалт нэмэх» — «Сэжим (хаан�
         fireEvent.click(screen.getByRole('button', { name: 'Бүртгэх' }));
         await waitFor(() => expect(mocks.mutate).toHaveBeenCalledWith(expect.any(String), 'POST', expect.objectContaining({ meeting_type: 'new_customer' })));
         expect(mocks.mutate.mock.calls[0][2]).not.toHaveProperty('referral_source_id');
+    });
+
+    it('holds a new-customer meeting while the list loads or failed, with an inline retry', async () => {
+        mocks.referralState = 'loading';
+        const first = renderDialog();
+        fill();
+        expect(screen.getByRole('combobox', { name: 'Сэжим (хаанаас ирсэн)' })).toBeDisabled();
+        expect(screen.getByText('Ачаалж байна…')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Бүртгэх' }));
+        expect(mocks.toastError).toHaveBeenCalledWith(REFERRAL_LIST_LOADING);
+        expect(mocks.mutate).not.toHaveBeenCalled();
+        first.unmount();
+
+        mocks.referralState = 'error';
+        renderDialog();
+        fill();
+        expect(screen.getByText(/«Сэжим \(хаанаас ирсэн\)»-ийн жагсаалтыг уншиж чадсангүй/)).toHaveAttribute('role', 'alert');
+        fireEvent.click(screen.getByRole('button', { name: 'Дахин оролдох' }));
+        expect(mocks.refetch).toHaveBeenCalledTimes(1);
+        fireEvent.click(screen.getByRole('button', { name: 'Бүртгэх' }));
+        expect(mocks.toastError).toHaveBeenLastCalledWith(expect.stringContaining('«Дахин оролдох»'));
+        expect(mocks.mutate).not.toHaveBeenCalled();
+        // Давтан харилцагчид заавал биш тул жагсаалтыг хүлээхгүй.
+        fireEvent.click(screen.getByRole('button', { name: 'Давтан' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Бүртгэх' }));
+        await waitFor(() => expect(mocks.mutate).toHaveBeenCalledWith(expect.any(String), 'POST', expect.objectContaining({ meeting_type: 'repeat_customer' })));
+    });
+
+    it('refreshes a stale list when the server asks for the referral, keeping the dialog open', async () => {
+        mocks.referrals = { sources: [], available: true };
+        mocks.mutate.mockRejectedValueOnce(new Error('Шинэ харилцагчийн уулзалтад «Сэжим (хаанаас ирсэн)»-ийг сонгоно уу. Боломжтой: Facebook.'));
+        renderDialog();
+        fill();
+        fireEvent.click(screen.getByRole('button', { name: 'Бүртгэх' }));
+        await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+        expect(mocks.toastError).toHaveBeenCalledWith(expect.stringContaining('Боломжтой: Facebook.'));
+        expect(mocks.openChange).not.toHaveBeenCalledWith(false);
+        expect(screen.getByPlaceholderText('9909 1122')).toHaveValue('9911 2233');
     });
 });

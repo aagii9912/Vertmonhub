@@ -74,7 +74,7 @@ export async function recordDailyMeeting(
         throw error;
     }
     // «Сэжим (хаанаас ирсэн)»: шинэ харилцагчийн уулзалтад заавал (төсөлд идэвхтэй сонголт байгаа үед).
-    const referral = await resolveReferralSource(db, shopId, { id: input.referral_source_id }, { required: input.meeting_type === 'new_customer' });
+    const referral = await resolveReferralSource(db, shopId, { id: input.referral_source_id }, { newMeetingType: input.meeting_type });
     if (!referral.ok) return fail(referral.status, referral.error);
 
     let matches: ProjectPhoneLead[] | null;

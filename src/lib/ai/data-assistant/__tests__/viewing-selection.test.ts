@@ -13,7 +13,7 @@ vi.mock('@/lib/sales/referral-sources-store', async (original) => {
     const actual = await original<typeof import('@/lib/sales/referral-sources-store')>();
     const sources = (options: { includeArchived?: boolean } = {}) => mocks.referrals.filter(item => options.includeArchived || !item.archived_at);
     const db = { from: () => {
-        const chain: Record<string, unknown> = { select: () => chain, eq: () => chain, is: () => chain, order: () => chain, limit: () => chain,
+        const chain: Record<string, unknown> = { select: () => chain, eq: () => chain, is: () => chain, order: () => chain, limit: () => chain, range: () => chain,
             then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: mocks.referrals, error: null }).then(resolve) };
         return chain;
     } };

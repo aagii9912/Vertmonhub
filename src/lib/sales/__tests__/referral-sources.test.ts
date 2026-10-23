@@ -2,8 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-    DEFAULT_REFERRAL_SOURCES, REFERRAL_REQUIRED_ERROR, availableReferralText, missingDefaultReferralSources, normalizeReferralName,
-    referralNameKey, referralNameMap, referralOptionLabel, referralRequired,
+    DEFAULT_REFERRAL_SOURCES, REFERRAL_LIST_LOADING, REFERRAL_REQUIRED_ERROR, availableReferralText, missingDefaultReferralSources, normalizeReferralName,
+    referralNameKey, referralNameMap, referralOptionLabel, referralRequired, referralSubmitError,
 } from '@/lib/sales/referral-sources';
 import {
     CreateReferralSourceSchema, REFERRAL_UNAVAILABLE, UpdateReferralSourceSchema, addDefaultReferralSources, createReferralSource,
@@ -67,6 +67,19 @@ describe('referral source labels and rules', () => {
         expect(referralRequired('existing_buyer', 3)).toBe(false);
         expect(availableReferralText([])).toContain('идэвхтэй сонголт алга');
     });
+
+    it('holds a new-customer form until the list has loaded, and asks for a retry when it failed', () => {
+        const ready = { loading: false, failed: false, activeCount: 3, selected: false };
+        expect(referralSubmitError('new_customer', { ...ready, loading: true, activeCount: 0 })).toBe(REFERRAL_LIST_LOADING);
+        expect(referralSubmitError('new_customer', { ...ready, failed: true, activeCount: 0 })).toContain('«Дахин оролдох»');
+        expect(referralSubmitError('new_customer', ready)).toBe(REFERRAL_REQUIRED_ERROR);
+        expect(referralSubmitError(undefined, ready)).toBe(REFERRAL_REQUIRED_ERROR);
+        expect(referralSubmitError('new_customer', { ...ready, selected: true })).toBeNull();
+        expect(referralSubmitError('new_customer', { ...ready, activeCount: 0 })).toBeNull();
+        // Давтан/захиалагч: заавал биш тул жагсаалтыг хүлээхгүй.
+        expect(referralSubmitError('repeat_customer', { ...ready, loading: true })).toBeNull();
+        expect(referralSubmitError('existing_buyer', { ...ready, failed: true })).toBeNull();
+    });
 });
 
 describe('reading the list', () => {
@@ -105,15 +118,19 @@ describe('resolving a referral for a meeting or contract', () => {
 
     it('clears with null and enforces the new-customer requirement only when the project has an active list', async () => {
         expect(await resolveReferralSource(client(), 'shop-1', { id: null })).toMatchObject({ ok: true, referralSourceId: null });
-        expect(await resolveReferralSource(client(), 'shop-1', {}, { required: true })).toMatchObject({ ok: false, status: 400, error: expect.stringContaining(REFERRAL_REQUIRED_ERROR) });
-        expect(await resolveReferralSource(client(), 'shop-1', { id: null }, { required: true })).toMatchObject({ ok: false, status: 400 });
+        expect(await resolveReferralSource(client(), 'shop-1', {}, { newMeetingType: 'new_customer' })).toMatchObject({ ok: false, status: 400, error: expect.stringContaining(REFERRAL_REQUIRED_ERROR) });
+        expect(await resolveReferralSource(client(), 'shop-1', { id: null }, { newMeetingType: 'new_customer' })).toMatchObject({ ok: false, status: 400 });
+        // Маягттай ижил дүрэм (`referralRequired`): бусад төрөл, засвар, гэрээнд заавал биш.
+        for (const options of [{ newMeetingType: 'repeat_customer' }, { newMeetingType: 'existing_buyer' }, {}, { current: null }]) {
+            expect(await resolveReferralSource(client(), 'shop-1', {}, options)).toMatchObject({ ok: true, referralSourceId: null });
+        }
         db.tables.sales_referral_sources = db.tables.sales_referral_sources.map(row => ({ ...row, archived_at: row.archived_at ?? '2026-10-21T00:00:00Z' }));
-        expect(await resolveReferralSource(client(), 'shop-1', {}, { required: true })).toMatchObject({ ok: true, referralSourceId: null, available: true });
+        expect(await resolveReferralSource(client(), 'shop-1', {}, { newMeetingType: 'new_customer' })).toMatchObject({ ok: true, referralSourceId: null, available: true });
     });
 
     it('does not block meetings before the migration, but refuses to store a referral it cannot check', async () => {
         db.failNext.sales_referral_sources = missingTable;
-        expect(await resolveReferralSource(client(), 'shop-1', {}, { required: true })).toEqual({ ok: true, referralSourceId: null, source: null, available: false });
+        expect(await resolveReferralSource(client(), 'shop-1', {}, { newMeetingType: 'new_customer' })).toEqual({ ok: true, referralSourceId: null, source: null, available: false });
         db.failNext.sales_referral_sources = missingTable;
         expect(await resolveReferralSource(client(), 'shop-1', { id: facebook })).toEqual({ ok: false, status: 503, error: REFERRAL_UNAVAILABLE });
         db.failNext.sales_referral_sources = { code: '57014', message: 'timeout' };
@@ -175,5 +192,48 @@ describe('settings writes', () => {
         expect(first.created.map(source => source.sort_order)).toEqual([40, 50, 60, 70, 80, 90]);
         expect(await addDefaultReferralSources(client(), 'shop-1', 'admin-1')).toEqual({ ok: true, created: [], skipped: DEFAULT_REFERRAL_SOURCES.length });
         expect((await addDefaultReferralSources(client(), 'shop-3', 'admin-1') as { created: unknown[] }).created).toHaveLength(9);
+    });
+});
+
+describe('large projects: archived rows never cut the list', () => {
+    const guid = (index: number) => `71000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+    const tosgon = guid(9001);
+    const tanil = guid(9002);
+    beforeEach(() => {
+        // 1 005 архивласан мөр (нэг хуудаснаас олон), бүгд хуучин 1000-ийн дээд эрэмбэд бөөгнөрсөн; тэдний ард
+        // идэвхтэй «Тосгон» ба архивласан санал болгосон «Танил» (нэрээрээ сүүлд эрэмбэлэгдэнэ).
+        db.tables.sales_referral_sources.push(
+            ...Array.from({ length: 1005 }, (_, index) => ({
+                id: guid(index), shop_id: 'shop-1', name: `Архив ${String(index).padStart(4, '0')}`, sort_order: 1000, archived_at: '2026-10-01T00:00:00Z',
+            })),
+            { id: tosgon, shop_id: 'shop-1', name: 'Тосгон', sort_order: 1000, archived_at: null },
+            { id: tanil, shop_id: 'shop-1', name: 'Танил', sort_order: 1000, archived_at: '2026-10-02T00:00:00Z' },
+        );
+    });
+
+    it('reads every row, so names, validation and the defaults see the ones past the first page', async () => {
+        const read = await readReferralSources(client(), 'shop-1', { includeArchived: true });
+        expect(read.sources).toHaveLength(1010);
+        expect(new Set(read.sources.map(source => source.id)).size).toBe(1010);
+        expect((await listReferralSources(client(), 'shop-1')).map(source => source.name)).toEqual(['Facebook', 'Ойрхон амьдардаг', 'Тосгон']);
+        expect((await loadReferralNames(client(), 'shop-1', [tosgon, tanil])).get(tanil)).toBe('Танил');
+        expect(await resolveReferralSource(client(), 'shop-1', { id: tosgon }, { newMeetingType: 'new_customer' })).toMatchObject({ ok: true, referralSourceId: tosgon });
+        expect(await resolveReferralSource(client(), 'shop-1', { id: tanil })).toMatchObject({ ok: false, status: 400, error: expect.stringContaining('архивлагдсан') });
+        // Архивласан «Танил»-ыг дахин нэмэхгүй (админ санаатай хассан).
+        const defaults = await addDefaultReferralSources(client(), 'shop-1', 'admin-1');
+        expect(defaults.ok && defaults.created.map(source => source.name)).toEqual(['Инстаграм', 'Монкон', 'Мандала Гарден ОС', 'Ажилтан', 'Бусад']);
+    });
+
+    it('keeps adding after the last one and reorders without capping, so the order stays distinct', async () => {
+        db.tables.sales_referral_sources = db.tables.sales_referral_sources.slice(0, 150);
+        expect(await createReferralSource(client(), 'shop-1', { name: 'Билбоард' }, 'admin-1')).toMatchObject({ ok: true, source: { sort_order: 1010 } });
+        const all = (await readReferralSources(client(), 'shop-1', { includeArchived: true })).sources;
+        const result = await reorderReferralSources(client(), 'shop-1', all.map(source => source.id).reverse(), 'admin-1');
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        const orders = result.sources.map(source => source.sort_order);
+        expect(new Set(orders).size).toBe(all.length);
+        expect(orders.at(-1)).toBe(all.length * 10);
+        expect(db.tables.sales_referral_sources.find(row => row.id === all[0].id)?.sort_order).toBe(all.length * 10);
     });
 });

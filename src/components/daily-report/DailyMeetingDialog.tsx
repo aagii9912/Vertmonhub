@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { formatTime } from '@/lib/utils/date';
 import { ANONYMOUS_LEAD_LABEL } from '@/lib/leads/labels';
 import { MEETING_TYPE_META, MEETING_TYPES, type MeetingType } from '@/lib/viewings/labels';
-import { REFERRAL_FIELD_LABEL, REFERRAL_REQUIRED_ERROR, isActiveReferral, referralRequired } from '@/lib/sales/referral-sources';
+import { REFERRAL_FIELD_LABEL, REFERRAL_LIST_FAILED, isActiveReferral, referralRequired, referralSubmitError } from '@/lib/sales/referral-sources';
 import { useReferralSources } from '@/hooks/useReferralSources';
 import { formalManagerName, reportDateLabel, type DailyReportManager } from '@/lib/dashboard/daily-report';
 import {
@@ -54,9 +54,12 @@ export function DailyMeetingDialog({ open, onOpenChange, date, today, managers, 
     const [interest, setInterest] = useState<number | null>(null);
     const [referral, setReferral] = useState('');
     const [saving, setSaving] = useState(false);
-    // «Сэжим (хаанаас ирсэн)»: уншиж чадаагүй / жагсаалтгүй бол бүртгэхийг хаахгүй (сервер мөн шалгана).
+    // «Сэжим (хаанаас ирсэн)»: жагсаалтгүй төсөлд бүртгэхийг хаахгүй. Ачаалж байгаа / уншиж чадаагүй үед шинэ
+    // харилцагчийн уулзалтыг илгээхгүй (сервер жагсаалттай төсөлд шаардана) — алдааг энд харуулж дахин оролдуулна.
     const referralQuery = useReferralSources({ inlineError: true, enabled: open });
     const referralOptions = (referralQuery.data?.sources ?? []).filter(isActiveReferral);
+    const referralLoading = referralQuery.isLoading;
+    const referralFailed = referralQuery.isError && !referralQuery.data;
     const needsReferral = referralRequired(type, referralOptions.length);
 
     async function submit() {
@@ -64,7 +67,10 @@ export function DailyMeetingDialog({ open, onOpenChange, date, today, managers, 
         if (!dailyMeetingPhone(phone)) { toast.error('Утасны дугаараа бүтнээр оруулна уу'); return; }
         if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) { toast.error('Уулзалтын цагаа оруулна уу'); return; }
         if (date === today && time > formatTime(new Date())) { toast.error('Ирээдүйн цагийн уулзалтыг бүртгэхгүй. Цагаа шалгана уу.'); return; }
-        if (needsReferral && !referral) { toast.error(REFERRAL_REQUIRED_ERROR); return; }
+        const referralError = referralSubmitError(type, {
+            loading: referralLoading, failed: referralFailed, activeCount: referralOptions.length, selected: referralOptions.some(item => item.id === referral),
+        });
+        if (referralError) { toast.error(referralError); return; }
         const body: DailyMeetingRequestBody = {
             action: 'record', date, manager, meeting_type: type, time,
             customer_phone: phone.trim(),
@@ -85,6 +91,8 @@ export function DailyMeetingDialog({ open, onOpenChange, date, today, managers, 
             onOpenChange(false);
         } catch (error) {
             toast.error(error instanceof Error ? error.message : 'Уулзалтыг хадгалж чадсангүй. Дахин оролдоно уу.');
+            // Жагсаалт хуучирсан байж болно (админ дөнгөж нэмсэн / архивласан): маягтыг хаалгүй шинэчилнэ.
+            void referralQuery.refetch();
         } finally {
             setSaving(false);
         }
@@ -140,10 +148,17 @@ export function DailyMeetingDialog({ open, onOpenChange, date, today, managers, 
                         Нэр тодорхойгүй — нэргүй бүртгэх
                     </label>
 
-                    {referralOptions.length > 0 && (
+                    {referralFailed ? (
+                        <FormField label={REFERRAL_FIELD_LABEL}>
+                            <p role="alert" className="text-xs text-status-danger">
+                                {REFERRAL_LIST_FAILED}{' '}
+                                <button type="button" className="underline" disabled={referralQuery.isFetching} onClick={() => void referralQuery.refetch()}>Дахин оролдох</button>
+                            </p>
+                        </FormField>
+                    ) : (referralLoading || referralOptions.length > 0) && (
                         <FormField label={REFERRAL_FIELD_LABEL} htmlFor="daily-meeting-referral" required={needsReferral}>
-                            <Select value={referral || undefined} onValueChange={setReferral}>
-                                <SelectTrigger id="daily-meeting-referral" aria-label={REFERRAL_FIELD_LABEL}><SelectValue placeholder="Сонгох" /></SelectTrigger>
+                            <Select value={referral || undefined} onValueChange={setReferral} disabled={referralLoading}>
+                                <SelectTrigger id="daily-meeting-referral" aria-label={REFERRAL_FIELD_LABEL}><SelectValue placeholder={referralLoading ? 'Ачаалж байна…' : 'Сонгох'} /></SelectTrigger>
                                 <SelectContent>
                                     {referralOptions.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
                                 </SelectContent>

@@ -11,9 +11,10 @@
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { recordAudit } from '@/lib/services/AuditService';
+import { fetchAllRows } from '@/lib/utils/pagination';
 import {
-    DEFAULT_REFERRAL_SOURCES, REFERRAL_FIELD_LABEL, REFERRAL_REQUIRED_ERROR, REFERRAL_SOURCE_ACTIVE_LIMIT, REFERRAL_SOURCE_NAME_MAX, REFERRAL_SOURCE_READ_LIMIT,
-    availableReferralText, isActiveReferral, missingDefaultReferralSources, normalizeReferralName, referralNameKey, referralNameMap,
+    DEFAULT_REFERRAL_SOURCES, REFERRAL_FIELD_LABEL, REFERRAL_REQUIRED_ERROR, REFERRAL_SOURCE_ACTIVE_LIMIT, REFERRAL_SOURCE_NAME_MAX, REFERRAL_SOURCE_REORDER_MAX,
+    availableReferralText, isActiveReferral, missingDefaultReferralSources, normalizeReferralName, referralNameKey, referralNameMap, referralRequired,
     type ReferralSource,
 } from '@/lib/sales/referral-sources';
 
@@ -35,20 +36,23 @@ export function isMissingReferralSchema(error: { code?: string; message?: string
 /* ── Унших ─────────────────────────────────────────────────────────────── */
 
 /**
- * Төслийн сонголтууд (эрэмбээр). Хүснэгт байхгүй бол `available: false` ба хоосон жагсаалт;
- * бусад алдааг шидэнэ — хоосон жагсаалт болгож нуухгүй.
+ * Төслийн БҮХ сонголт (эрэмбээр; хуудаслан уншина — архивласан нь хэдэн ч байсан нэр, шалгалтаас алга болохгүй).
+ * Хүснэгт байхгүй бол `available: false` ба хоосон жагсаалт; бусад алдааг шидэнэ — хоосон жагсаалт болгож нуухгүй.
  */
 export async function readReferralSources(
     db: SupabaseClient, shopId: string, options: { includeArchived?: boolean } = {},
 ): Promise<{ sources: ReferralSource[]; available: boolean }> {
-    let query = db.from('sales_referral_sources').select(COLUMNS).eq('shop_id', shopId);
-    if (!options.includeArchived) query = query.is('archived_at', null);
-    const { data, error } = await query.order('sort_order', { ascending: true }).order('name', { ascending: true }).limit(REFERRAL_SOURCE_READ_LIMIT);
-    if (error) {
-        if (isMissingReferralSchema(error)) return { sources: [], available: false };
-        throw new Error(error.message);
-    }
-    return { sources: (data ?? []) as ReferralSource[], available: true };
+    let missing = false;
+    const sources = await fetchAllRows<ReferralSource>(async (from, to) => {
+        let query = db.from('sales_referral_sources').select(COLUMNS).eq('shop_id', shopId);
+        if (!options.includeArchived) query = query.is('archived_at', null);
+        // id нь хуудаслалтын тогтвортой дараалал (ижил эрэмбэ, нэртэй мөр давтагдах/алгасагдахгүй).
+        const { data, error } = await query.order('sort_order', { ascending: true }).order('name', { ascending: true })
+            .order('id', { ascending: true }).range(from, to);
+        if (error && isMissingReferralSchema(error)) { missing = true; return { data: [], error: null }; }
+        return { data: (data ?? []) as ReferralSource[], error };
+    });
+    return missing ? { sources: [], available: false } : { sources, available: true };
 }
 
 /** Нийтлэг уншигч (S1/S5 илтгэл, гэрээний жагсаалт): хүснэгт байхгүй бол хоосон жагсаалт. */
@@ -75,14 +79,15 @@ export interface ReferralInput {
 
 /**
  * «Сэжим»-ийг шалгаж `referralSourceId`-г буцаана (null = бүртгээгүй). `current` — мөрийн одоогийн сонголт
- * (архивласан ч хэвээр үлдэнэ). `required` — шинэ харилцагчийн шинэ уулзалт: төсөлд идэвхтэй сонголт байвал
- * заавал. Хүснэгт байхгүй үед утга өгөөгүй бол null (хаахгүй), өгсөн бол 503.
+ * (архивласан ч хэвээр үлдэнэ). `newMeetingType` — ШИНЭ уулзалт үүсгэж байна: заавал эсэхийг маягттай ижил
+ * `referralRequired` шийднэ (шинэ харилцагч + төсөлд идэвхтэй сонголт). Засвар, гэрээ үүнийг өгөхгүй.
+ * Хүснэгт байхгүй үед утга өгөөгүй бол null (хаахгүй), өгсөн бол 503.
  */
 export async function resolveReferralSource(
     db: SupabaseClient,
     shopId: string,
     input: ReferralInput,
-    options: { current?: string | null; required?: boolean } = {},
+    options: { current?: string | null; newMeetingType?: string } = {},
 ): Promise<ReferralResult<{ referralSourceId: string | null; source: ReferralSource | null; available: boolean }>> {
     const name = normalizeReferralName(input.name);
     const given = (input.id !== undefined && input.id !== null && input.id !== '') || !!name;
@@ -112,7 +117,7 @@ export async function resolveReferralSource(
     if (source && !usable(source)) {
         return failure(400, `«${source.name}» архивлагдсан тул шинээр сонгохгүй. ${availableReferralText(read.sources)}`);
     }
-    if (!source && options.required && read.sources.some(isActiveReferral)) {
+    if (!source && options.newMeetingType !== undefined && referralRequired(options.newMeetingType, read.sources.filter(isActiveReferral).length)) {
         return failure(400, `${REFERRAL_REQUIRED_ERROR}. ${availableReferralText(read.sources)}`);
     }
     return { ok: true, referralSourceId: source?.id ?? null, source, available: true };
@@ -138,7 +143,7 @@ export type UpdateReferralSourceInput = z.infer<typeof UpdateReferralSourceSchem
 export const ReorderReferralSourcesSchema = z.object({
     order: z.array(z.guid({ error: 'Буруу сонголт' }), { error: 'Эрэмбийн жагсаалт буруу' })
         .min(1, 'Эрэмбийн жагсаалт хоосон байна')
-        .max(REFERRAL_SOURCE_READ_LIMIT, 'Эрэмбийн жагсаалт буруу')
+        .max(REFERRAL_SOURCE_REORDER_MAX, `Нэг удаад ${REFERRAL_SOURCE_REORDER_MAX}-аас олон сонголт эрэмбэлэхгүй`)
         .refine((ids) => new Set(ids).size === ids.length, 'Эрэмбийн жагсаалтад сонголт давхардсан байна'),
 }).strict();
 
@@ -174,7 +179,8 @@ const activeDuplicate = (sources: readonly ReferralSource[], name: string, excep
     const key = referralNameKey(name);
     return sources.find((source) => source.id !== exceptId && isActiveReferral(source) && referralNameKey(source.name) === key);
 };
-const nextSortOrder = (sources: readonly ReferralSource[]) => Math.min(1000, sources.reduce((max, source) => Math.max(max, source.sort_order), 0) + 10);
+// Дээд хязгааргүй (DB: sort_order >= 0): шинэ мөр хамгийн сүүлд орж, олон мөртэй төсөлд эрэмбэ давхцахгүй.
+const nextSortOrder = (sources: readonly ReferralSource[]) => sources.reduce((max, source) => Math.max(max, source.sort_order), 0) + 10;
 
 export async function createReferralSource(
     db: SupabaseClient, shopId: string, input: CreateReferralSourceInput, actorId: string | null,
@@ -245,7 +251,7 @@ export async function reorderReferralSources(
     if (order.length !== loaded.sources.length || new Set(order).size !== order.length || order.some((id) => !byId.has(id))) {
         return failure(409, 'Жагсаалт өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу.');
     }
-    const sources = order.map((id, index) => ({ ...byId.get(id)!, sort_order: Math.min(1000, (index + 1) * 10) }));
+    const sources = order.map((id, index) => ({ ...byId.get(id)!, sort_order: (index + 1) * 10 }));
     const changes = sources.filter((source) => byId.get(source.id)!.sort_order !== source.sort_order);
     const results = await Promise.all(changes.map((source) => db.from('sales_referral_sources')
         .update({ sort_order: source.sort_order }).eq('shop_id', shopId).eq('id', source.id)));
@@ -273,7 +279,7 @@ export async function addDefaultReferralSources(
     const room = Math.max(0, REFERRAL_SOURCE_ACTIVE_LIMIT - loaded.sources.filter(isActiveReferral).length);
     const start = nextSortOrder(loaded.sources);
     const rows = missing.slice(0, room).map((name, index) => ({
-        shop_id: shopId, name, sort_order: Math.min(1000, start + index * 10), created_by: actorId,
+        shop_id: shopId, name, sort_order: start + index * 10, created_by: actorId,
     }));
     if (!rows.length) return { ok: true, created: [], skipped: DEFAULT_REFERRAL_SOURCES.length };
     const { data, error } = await db.from('sales_referral_sources').insert(rows).select(COLUMNS);

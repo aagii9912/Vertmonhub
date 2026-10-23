@@ -217,7 +217,7 @@ export async function resolveViewingInput(db: SupabaseClient, shopId: string, in
     if (nameMissing) return { ok: false as const, error: PHONE_LEAD_NOT_FOUND, status: 400 };
     if (property && property.project_id !== projectId) return { ok: false as const, error: 'Лидийн төслийн байрыг сонгоно уу', status: 400 };
     // «Сэжим (хаанаас ирсэн)»: шинэ харилцагчийн уулзалтад заавал (төсөлд идэвхтэй сонголт байгаа үед). Нэрийг (AI) id болгоно.
-    const referral = await resolveReferralSource(db, shopId, { id: p.referral_source_id, name: p.referral_source }, { required: p.meeting_type === 'new_customer' });
+    const referral = await resolveReferralSource(db, shopId, { id: p.referral_source_id, name: p.referral_source }, { newMeetingType: p.meeting_type });
     if (!referral.ok) return { ok: false as const, error: referral.error, status: referral.status };
     const resolvedInput = { ...p, referral_source_id: referral.referralSourceId, referral_source: undefined };
     const referralSource: ReferralSource | null = referral.source;

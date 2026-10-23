@@ -22,7 +22,7 @@ function fakeDb(responses: Record<string, Result[]>, rpcResponse: Result = { dat
         queries.push(query);
         const result = () => responses[table]?.shift() ?? { data: null, error: null };
         const chain: Record<string, any> = {
-            select: () => chain, limit: () => chain, order: () => chain,
+            select: () => chain, limit: () => chain, range: () => chain, order: () => chain,
             in: (...args: unknown[]) => { query.filters.push(args); return chain; },
             eq: (...args: unknown[]) => { query.filters.push(args); return chain; },
             is: (...args: unknown[]) => { query.filters.push(args); return chain; },

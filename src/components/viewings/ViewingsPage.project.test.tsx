@@ -2,12 +2,14 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ViewingsPage } from './ViewingsPage';
 import { ANONYMOUS_LEAD_LABEL, ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS } from '@/lib/leads/labels';
+import { REFERRAL_LIST_LOADING } from '@/lib/sales/referral-sources';
 import type { ViewingRow } from '@/hooks/useViewings';
 import type { ViewingUnitOption, ViewingCondition } from '@/lib/viewings/interests';
 import { elysiumViewingConditions } from '@/lib/sales/viewing-conditions';
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), error: vi.fn(), units: [] as ViewingUnitOption[], conditions: [] as ViewingCondition[], viewings: [] as ViewingRow[],
-    referrals: undefined as { sources: Array<{ id: string; name: string; sort_order: number; archived_at: string | null }>; available: boolean } | undefined }));
+    referrals: undefined as { sources: Array<{ id: string; name: string; sort_order: number; archived_at: string | null }>; available: boolean } | undefined,
+    referralState: 'ready' as 'ready' | 'loading' | 'error', refetchReferrals: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: { role: 'admin', permissions: { modules: ['viewings'], canWrite: true } } }) }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: mocks.error } }));
@@ -22,9 +24,11 @@ vi.mock('@/hooks/useViewings', () => ({
     useViewingOptions: () => ({ data: { units: mocks.units, conditions: mocks.conditions, reason: 'Үнэ батлагдаагүй' }, isLoading: false }),
     useViewingQuote: () => ({ data: { available: false, reason: 'Тохиргоо алга' }, isFetching: false }),
 }));
-vi.mock('@/hooks/useReferralSources', () => ({ useReferralSources: () => ({ data: mocks.referrals }) }));
+vi.mock('@/hooks/useReferralSources', () => ({ useReferralSources: () => ({
+    data: mocks.referrals, isLoading: mocks.referralState === 'loading', isError: mocks.referralState === 'error', isFetching: false, refetch: mocks.refetchReferrals,
+}) }));
 
-beforeEach(() => { vi.clearAllMocks(); mocks.units = []; mocks.conditions = []; mocks.viewings = []; mocks.referrals = undefined; mocks.create.mockResolvedValue({ viewing: { id: 'meeting' } }); mocks.update.mockResolvedValue({ viewing: { id: 'meeting' } }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.units = []; mocks.conditions = []; mocks.viewings = []; mocks.referrals = undefined; mocks.referralState = 'ready'; mocks.create.mockResolvedValue({ viewing: { id: 'meeting' } }); mocks.update.mockResolvedValue({ viewing: { id: 'meeting' } }); });
 
 describe('viewing project selection', () => {
     it('selects and saves a payment condition without an active price, even if the selection was not explicitly added', async () => {
@@ -140,6 +144,42 @@ describe('viewing project selection', () => {
                 expect(mocks.create.mock.calls[0][0]).not.toHaveProperty('referral_source_id');
                 cleanup();
             }
+        });
+
+        it('holds a new-customer meeting while the list loads or failed, with an inline retry', async () => {
+            mocks.referralState = 'loading';
+            let dialog = openCreate();
+            const loading = dialog.getByRole('combobox', { name: 'Сэжим (хаанаас ирсэн)' });
+            expect(loading).toBeDisabled();
+            expect(within(loading).getByRole('option')).toHaveTextContent('Ачаалж байна…');
+            fireEvent.click(dialog.getByRole('button', { name: 'Товлох' }));
+            expect(mocks.error).toHaveBeenCalledWith(REFERRAL_LIST_LOADING);
+            expect(mocks.create).not.toHaveBeenCalled();
+            cleanup();
+
+            mocks.referralState = 'error';
+            dialog = openCreate();
+            expect(dialog.getByText(/«Сэжим \(хаанаас ирсэн\)»-ийн жагсаалтыг уншиж чадсангүй/)).toHaveAttribute('role', 'alert');
+            fireEvent.click(dialog.getByRole('button', { name: 'Дахин оролдох' }));
+            expect(mocks.refetchReferrals).toHaveBeenCalledTimes(1);
+            fireEvent.click(dialog.getByRole('button', { name: 'Товлох' }));
+            expect(mocks.error).toHaveBeenLastCalledWith(expect.stringContaining('«Дахин оролдох»'));
+            expect(mocks.create).not.toHaveBeenCalled();
+            // Давтан харилцагчид заавал биш тул жагсаалтыг хүлээхгүй.
+            fireEvent.click(dialog.getByRole('button', { name: 'Давтан' }));
+            fireEvent.click(dialog.getByRole('button', { name: 'Товлох' }));
+            await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ meeting_type: 'repeat_customer' })));
+        });
+
+        it('refreshes a stale list when the server asks for the referral, keeping the form filled in', async () => {
+            mocks.referrals = { sources: [], available: true };
+            mocks.create.mockRejectedValueOnce(new Error('Шинэ харилцагчийн уулзалтад «Сэжим (хаанаас ирсэн)»-ийг сонгоно уу. Боломжтой: Facebook.'));
+            const dialog = openCreate();
+            fireEvent.click(dialog.getByRole('button', { name: 'Товлох' }));
+            await waitFor(() => expect(mocks.refetchReferrals).toHaveBeenCalledTimes(1));
+            expect(mocks.error).toHaveBeenCalledWith(expect.stringContaining('Боломжтой: Facebook.'));
+            expect(screen.getByRole('dialog')).toBeInTheDocument();
+            expect(dialog.getByPlaceholderText('Б. Болд')).toHaveValue('Болд');
         });
 
         it('shows the referral on the row and edits it optionally, keeping the current archived choice', async () => {

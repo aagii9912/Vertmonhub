@@ -14,8 +14,8 @@ export const REFERRAL_FIELD_LABEL = 'Сэжим (хаанаас ирсэн)';
 export const REFERRAL_SOURCE_NAME_MAX = 80;
 /** Төсөлд нэгэн зэрэг идэвхтэй байж болох сонголтын тоо (архивласан нь тоологдохгүй). */
 export const REFERRAL_SOURCE_ACTIVE_LIMIT = 40;
-/** Төслийн бүх сонголтын (архивласан орно) уншилтын дээд хязгаар. */
-export const REFERRAL_SOURCE_READ_LIMIT = 200;
+/** Эрэмбийн нэг хүсэлтийн хэмжээний хамгаалалт (архивласан орно). Уншилт хуудаслан бүгдийг авна — тасдахгүй. */
+export const REFERRAL_SOURCE_REORDER_MAX = 1000;
 
 /** W12-ын анхны жагсаалт (дарааллаараа). Тайланд Facebook + Инстаграм-ыг «Сошиал медиа» гэж нийлүүлж болно. */
 export const DEFAULT_REFERRAL_SOURCES = [
@@ -63,11 +63,30 @@ export function missingDefaultReferralSources(sources: readonly Pick<ReferralSou
 }
 
 /**
- * Шинэ уулзалтад «Сэжим» заавал эсэх: шинэ харилцагчийн уулзалт ба төсөлд идэвхтэй сонголт байгаа үед.
- * Жагсаалтгүй төсөл (эсвэл migration ороогүй) уулзалт бүртгэхийг хаахгүй.
+ * Шинэ уулзалтад «Сэжим» заавал эсэх — маягт ба сервер (`resolveReferralSource`) хоёулаа ЭНЭ дүрмийг хэрэглэнэ:
+ * шинэ харилцагчийн уулзалт ба төсөлд идэвхтэй сонголт байгаа үед. Жагсаалтгүй төсөл (эсвэл migration ороогүй)
+ * уулзалт бүртгэхийг хаахгүй — анхны жагсаалтыг админ нэмэх хүртэл (W12) менежер өөрөө засаж чадахгүй алдаа гаргахгүй.
  */
 export function referralRequired(meetingType: string | null | undefined, activeCount: number): boolean {
     return (meetingType ?? 'new_customer') === 'new_customer' && activeCount > 0;
+}
+
+export const REFERRAL_LIST_LOADING = `«${REFERRAL_FIELD_LABEL}»-ийн жагсаалт ачаалж байна. Түр хүлээгээд дахин оролдоно уу.`;
+export const REFERRAL_LIST_FAILED = `«${REFERRAL_FIELD_LABEL}»-ийн жагсаалтыг уншиж чадсангүй.`;
+
+/**
+ * Маягтын илгээхийн өмнөх шалгалт (null = илгээж болно). Шинэ харилцагчийн уулзалтыг жагсаалт ачаалж дуусаагүй,
+ * эсвэл уншиж чадаагүй үед илгээхгүй: сервер жагсаалттай төсөлд «Сэжим»-ийг шаардах тул хэрэглэгч сонгох талбаргүй
+ * 400 авч, бөглөсөн маягтаа хаах ёсгүй. `loading`/`failed` нь өгөгдөлгүй үеийн төлөв (cache-тэй бол жагсаалтаа ашиглана).
+ */
+export function referralSubmitError(
+    meetingType: string | null | undefined,
+    state: { loading: boolean; failed: boolean; activeCount: number; selected: boolean },
+): string | null {
+    if ((meetingType ?? 'new_customer') !== 'new_customer') return null;
+    if (state.loading) return REFERRAL_LIST_LOADING;
+    if (state.failed) return `${REFERRAL_LIST_FAILED} «Дахин оролдох»-ыг дарна уу.`;
+    return referralRequired(meetingType, state.activeCount) && !state.selected ? REFERRAL_REQUIRED_ERROR : null;
 }
 
 /** Идэвхтэй сонголтын нэрсийн жагсаалт (алдааны мессеж, AI-д). */
