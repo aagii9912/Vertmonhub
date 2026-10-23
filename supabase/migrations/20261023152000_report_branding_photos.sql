@@ -5,8 +5,8 @@
 -- • report_branding — төсөл (= shop) бүрийн илтгэлийн брэнд: харагдах нэр («ЭЛИЗИУМ»), хөл бичвэр
 --   («ВЕРТМОН ПРОПЕРТИС»), нүүрний зураг, лого. Зураг нь хувийн `report-media` bucket-д
 --   `branding/<shop_id>/<uuid>.<jpg|png>` замаар (bucket, RESTRICTIVE policy нь 20261013140000-д бий);
---   /api/dashboard/report-branding/media татах бүрд нэвтрэлт, shop-ийн гишүүнчлэл, `reports` модулийг шалгана.
---   Унших = reports, бичих = settings write (API шалгана).
+--   /api/dashboard/report-branding/media татах бүрд нэвтрэлт, shop-ийн гишүүнчлэл, `reports` (эсвэл `settings`) модулийг
+--   шалгана. Унших = reports эсвэл settings (засагч PUT-аар бүхэлд нь солих утгаа харна), бичих = settings write (API шалгана).
 --
 -- Additive, дахин ажиллуулж болно. Browser шууд хандахгүй: API эрх, shop шалгаад service_role-оор бичнэ.
 
