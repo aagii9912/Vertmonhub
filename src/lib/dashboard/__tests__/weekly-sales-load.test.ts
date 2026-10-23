@@ -85,6 +85,23 @@ describe('loadWeeklySales', () => {
         expect(calls.some(call => call.startsWith('erp_imports:id, datasets'))).toBe(false);
     });
 
+    it('returns the month lines with the CRM floor and masks their customers like the week lines', async () => {
+        const db = fakeDb({
+            erp_imports: [],
+            property_contracts: [
+                { id: 'm1', shop_id: 's', contract_date: '2026-10-08', product_type: 'residential', block_name: 'Б2', floor: '12', unit_label: 'Б2-171', total_price: '439812000',
+                    contract_status: 'active', customer_first_name: 'Мэндбаяр', customer_last_name: 'Болд', customer_name: 'Болд Мэндбаяр' },
+                { id: 'm2', shop_id: 's', contract_date: '2026-10-15', product_type: 'parking', block_name: 'Б1', floor: 'B1', unit_label: 'Б1-13 (01)', total_price: '86600000', contract_status: null },
+                { id: 'm3', shop_id: 's', contract_date: '2026-10-04', product_type: 'residential', block_name: 'Б2', floor: '05', total_price: '1', contract_status: 'cancelled' },
+            ],
+        });
+        const hidden = await loadWeeklySales(db, { shopId: 's', meetingDate: '2026-10-21', canSeeCustomers: false });
+        expect(hidden.month.lines.map(line => [line.key, line.floor, line.customer, line.referral])).toEqual([['m1', 12, null, null], ['m2', null, null, null]]);
+        expect(hidden.month).toMatchObject({ count: 2, total: 526412000 });
+        const visible = await loadWeeklySales(db, { shopId: 's', meetingDate: '2026-10-21', canSeeCustomers: true });
+        expect(visible.month.lines[0].customer).toBe('Б.Мэндбаяр');
+    });
+
     it('counts undated CRM contracts so the week and month are reported as unknown, not zero', async () => {
         // Elysium: гэрээ нь ERP-ийн байрны экспортоос үүссэн, гэрээ байгуулсан огноогүй.
         const db = fakeDb({

@@ -55,6 +55,10 @@ export interface ContractLine {
     customer: string | null;
     /** Өрөөний тоо: гэрээнд байвал түүнийг, эс бөгөөс үлдэгдлийн байрнаас (ижил ангилал + код). */
     rooms?: number | null;
+    /** Давхар (тоо): гэрээнд байвал түүнийг, эс бөгөөс үлдэгдлийн байрнаас; «B1» зэрэг тоон бус давхар → null. */
+    floor?: number | null;
+    /** «Сэжим» (хаанаас ирсэн) — нэгтгэгч холбох хүртэл үргэлж null. */
+    referral?: string | null;
     area: number | null;
     pricePerSqm: number | null;
     advanceCondition: string | null;
@@ -65,6 +69,9 @@ export interface ContractLine {
     channel: string | null;
     status: string;
 }
+
+/** Тайлангийн гэрээний мөр: өрөө, давхар, сэжим үргэлж бөглөгдсөн (тодорхойгүй бол null). */
+export type ReportContractLine = ContractLine & { rooms: number | null; floor: number | null; referral: string | null };
 
 export interface SnapshotInfo { date: string; source: string }
 
@@ -133,15 +140,20 @@ export function buildWeeklySales(input: WeeklySalesInput) {
     const notes: string[] = [];
 
     // Гэрээ: ERP байвал түүнээс, үгүй бол CRM-ээс. Цуцлагдсан гэрээг тоолохгүй.
-    const unitRooms = new Map((input.inventory?.rows ?? []).map(unit => [`${unit.kind}|${unit.code}`, unit.rooms]));
-    const withRooms = (line: ContractLine): ContractLine => line.rooms != null || !line.unit ? line
-        : { ...line, rooms: unitRooms.get(`${line.kind}|${line.unit.split(',')[0].trim()}`) ?? null };
+    // Өрөө, давхар дутуу бол үлдэгдлийн ижил ангилал + кодтой байрнаас (HUB/ERP гэрээнд байдаггүй).
+    const units = new Map((input.inventory?.rows ?? []).map(unit => [`${unit.kind}|${unit.code}`, unit]));
+    const enrich = (line: ContractLine): ReportContractLine => {
+        const unit = line.unit && (line.rooms == null || line.floor == null) ? units.get(`${line.kind}|${line.unit.split(',')[0].trim()}`) : undefined;
+        return { ...line, rooms: line.rooms ?? unit?.rooms ?? null, floor: line.floor ?? unit?.floor ?? null, referral: line.referral ?? null };
+    };
     const allLines = (input.sales
         ? input.sales.rows.filter(sale => sale.status !== 'cancelled').map(saleToLine)
-        : input.crmContracts ?? []).map(withRooms);
+        : input.crmContracts ?? []).map(enrich);
     if (!input.sales) notes.push(input.crmContracts ? 'ERP гэрээний экспорт оруулаагүй тул CRM-ийн гэрээг ашиглав.' : 'Гэрээний мэдээлэл алга.');
-    const weekLines = allLines.filter(line => within(line.date, range.from, range.to)).sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || a.key.localeCompare(b.key));
-    const monthLines = allLines.filter(line => line.date?.startsWith(month));
+    const byDate = (a: ContractLine, b: ContractLine) => (a.date ?? '').localeCompare(b.date ?? '') || a.key.localeCompare(b.key);
+    const weekLines = allLines.filter(line => within(line.date, range.from, range.to)).sort(byDate);
+    // Сарын эхнээс тайлант өдөр (range.to) хүртэл — хурлын өдрийн snapshot-д орсон дараагийн гэрээг тоолохгүй.
+    const monthLines = allLines.filter(line => within(line.date, `${month}-01`, range.to));
     const previousWeek = { from: shift(range.from, -7), to: shift(range.to, -7) };
     const undated = input.sales ? allLines.filter(line => !line.date).length : input.crmUndated ?? 0;
     // Төлөвлөгөөтэй харьцуулахдаа зөвхөн төлөвлөгөөнд хамаарах гэрээ («Төлөвлөгөөний биелэлт»-тэй нэг дүрэм) —
@@ -256,7 +268,8 @@ export function buildWeeklySales(input: WeeklySalesInput) {
     const previousWeekLines = allLines.filter(line => within(line.date, previousWeek.from, previousWeek.to));
     return {
         range,
-        month: { month, weeks, ...monthSummary, byWeek: monthByWeek,
+        // `lines` — сарын амьд гэрээ огноо, түлхүүрээр (Лхагвын илтгэлийн сарын гэрээний хүснэгт).
+        month: { month, weeks, ...monthSummary, lines: [...monthLines].sort(byDate), byWeek: monthByWeek,
             planCount: planLines.length, planTotal, outsidePlanCount: monthLines.length - planLines.length,
             target: input.monthTarget, attainmentPct: input.monthTarget && knownPeriodAmount(planTotal, planLines.length, undatedPlan) !== null ? Math.round(planTotal / input.monthTarget * 100) : null },
         week: { ...week, lines: weekLines },
