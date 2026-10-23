@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
+import { migrationVerifyQuery } from '@/test/migration-verify';
 import { PGlite } from '@electric-sql/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -98,6 +99,12 @@ beforeEach(async () => {
         FOR EACH ROW EXECUTE FUNCTION stamp_sales_handoff();`);
 });
 afterEach(async () => { await db.close(); });
+
+describe('apply-migrations VERIFY', () => {
+    it('passes on the migrated schema', async () => {
+        expect((await db.query<{ ok: boolean }>(migrationVerifyQuery('20261023150000'))).rows[0].ok).toBe(true);
+    });
+});
 
 describe('stretch and activity plans in save_team_monthly_sales', () => {
     it('stores month-level stretch and activity plans with the revision and audit, and keeps the old patches working', async () => {

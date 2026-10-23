@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
+import { migrationVerifyQuery } from '@/test/migration-verify';
 import { PGlite } from '@electric-sql/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -38,6 +39,12 @@ beforeEach(async () => {
     await db.exec(migration); // Дахин ажиллуулж болно.
 });
 afterEach(async () => { await db.close(); });
+
+describe('apply-migrations VERIFY', () => {
+    it('passes on the migrated schema', async () => {
+        expect((await db.query<{ ok: boolean }>(migrationVerifyQuery('20261023152000'))).rows[0].ok).toBe(true);
+    });
+});
 
 describe('meeting slide photos (W17)', () => {
     it('allows up to 9 images and the construction section, keeps old rows and the content rule', async () => {

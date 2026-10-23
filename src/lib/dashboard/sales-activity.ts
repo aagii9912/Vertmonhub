@@ -17,7 +17,7 @@
  *  • Төлөвлөгөө = төслийн багийн сарын төлөвлөгөө (`team_sales_targets.activity_targets`). Хувь тэнцүүлсэн
  *    төлөвлөгөө = round(сарын × min(тайлант өдөр, 30) / 30), хувь = round(гүйцэтгэл / хувь тэнцүүлсэн × 100) (W11).
  */
-import { z } from 'zod';
+import { readActivityTargets as readMonthActivityTargets, type ActivityTargetKey } from '@/lib/sales/monthly';
 import { daySpan, shiftDate } from '@/lib/sales/activity';
 import { chatMetric, configMetrics, lineMetrics, type DailyReportConfig, type DailyReportLine } from './daily-report';
 import { monthWeeks } from './weekly-sales';
@@ -30,7 +30,7 @@ export const ACTIVITY_METRIC_LABEL: Record<ActivityMetric, string> = {
     hotline: 'Төслийн утас', managerLine: 'Менежерийн дугаар', newMeetings: 'Шинэ уулзалт', repeatMeetings: 'Давтан уулзалт', chats: 'Чат',
 };
 /** `team_sales_targets.activity_targets` jsonb-ийн түлхүүр. */
-export const ACTIVITY_TARGET_KEY: Record<ActivityMetric, string> = {
+export const ACTIVITY_TARGET_KEY: Record<ActivityMetric, ActivityTargetKey> = {
     hotline: 'hotline', managerLine: 'manager_line', newMeetings: 'meetings_new', repeatMeetings: 'meetings_repeat', chats: 'chats',
 };
 export const SALES_ACTIVITY_BUCKETS = 5;
@@ -89,14 +89,10 @@ export interface SalesActivityInput {
     today?: string;
 }
 
-const PlanValue = z.number().int().min(0).max(ACTIVITY_TARGET_MAX);
-/** Сарын идэвхжлийн төлөвлөгөө: мэдэгдэх түлхүүр бүрийн бүхэл тоо (≥ 0); бусад/буруу утга → null. */
+/** Сарын идэвхжлийн төлөвлөгөө үзүүлэлт бүрээр — `team_sales_targets.activity_targets`-ийн нэг уншигч (`lib/sales/monthly.ts`); буруу/хоосон → null. */
 export function readActivityTargets(raw: unknown): Record<ActivityMetric, number | null> {
-    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
-    return Object.fromEntries(ACTIVITY_METRICS.map(metric => {
-        const parsed = PlanValue.safeParse(source[ACTIVITY_TARGET_KEY[metric]]);
-        return [metric, parsed.success ? parsed.data : null];
-    })) as Record<ActivityMetric, number | null>;
+    const plans = readMonthActivityTargets(raw) ?? {};
+    return Object.fromEntries(ACTIVITY_METRICS.map(metric => [metric, plans[ACTIVITY_TARGET_KEY[metric]] ?? null])) as Record<ActivityMetric, number | null>;
 }
 
 /** Хувь тэнцүүлсэн төлөвлөгөө: round(сарын × min(өдөр, 30) / 30); төлөвлөгөөгүй бол null. */

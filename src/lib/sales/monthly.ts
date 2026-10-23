@@ -79,11 +79,17 @@ export const ActivityTargetsPatchSchema = ActivityTargetsSchema
     .refine(row => Object.values(row).some(value => value !== undefined), { message: 'Идэвхжлийн төлөвлөгөөг оруулна уу' });
 export type ActivityTargetsPatch = z.infer<typeof ActivityTargetsPatchSchema>;
 
-/** Уншигчдад (идэвхжлийн тайлан): оруулсан түлхүүрүүд, юу ч оруулаагүй эсвэл буруу бол null («—»). */
+/**
+ * Уншигчдад (идэвхжлийн тайлан): түлхүүр бүрийг тусад нь — мэдэгдэх түлхүүрийн бүхэл тоо (0–1,000,000); танихгүй түлхүүр,
+ * буруу утгыг алгасна. Юу ч оруулаагүй эсвэл объект биш бол null («—»).
+ */
 export function readActivityTargets(raw: unknown): Partial<Record<ActivityTargetKey, number>> | null {
-    const parsed = ActivityTargetsSchema.safeParse(raw);
-    if (!parsed.success) return null;
-    const entered = Object.fromEntries(Object.entries(parsed.data).filter(([, value]) => typeof value === 'number'));
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const source = raw as Record<string, unknown>;
+    const entered = Object.fromEntries(ACTIVITY_TARGET_KEYS.flatMap(key => {
+        const parsed = MonthlySalesCountSchema.safeParse(source[key]);
+        return parsed.success && parsed.data !== null ? [[key, parsed.data]] : [];
+    }));
     return Object.keys(entered).length ? entered : null;
 }
 const values = {

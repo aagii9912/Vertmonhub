@@ -8,7 +8,7 @@ const productColumns = ['Код', 'Бүтээгдэхүүний төрөл', 'Б
 const saleRow = (paid: string) => ({ 'Гэрээний дугаар': 'EL-1', 'Бүтээгдэхүүн': 'Б1-2, E2, Орон сууц, ЭЛИЗИУМ', 'Нийт дүн': '100', 'Нийт төлсөн дүн': paid,
     'Захиалга өгсөн огноо': '2026-09-17', 'Төлөв': 'Гэрээ үүссэн', 'Үндсэн захиалагч': 'Тест.Хүн АА12345678' });
 
-function fakeDb(tables: Record<string, Row[]>, calls: string[] = []) {
+function fakeDb(tables: Record<string, Row[]>, calls: string[] = [], options: { missingColumn?: string } = {}) {
     return { from(table: string) {
         const filters: Array<(row: Row) => boolean> = [];
         let selected = '';
@@ -25,6 +25,8 @@ function fakeDb(tables: Record<string, Row[]>, calls: string[] = []) {
             range: () => query,
             maybeSingle: async () => ({ data: (tables[table] ?? []).filter(row => filters.every(f => f(row)))[0] ?? null, error: null }),
             then: (resolve: (value: unknown) => unknown) => {
+                if (options.missingColumn && selected.includes(options.missingColumn))
+                    return Promise.resolve({ data: null, error: { code: '42703', message: `column ${table}.${options.missingColumn} does not exist` } }).then(resolve);
                 let rows = (tables[table] ?? []).filter(row => filters.every(f => f(row)));
                 if (head) return Promise.resolve({ data: null, count: rows.length, error: null }).then(resolve);
                 if (table === 'erp_imports' && selected.includes('columns:datasets->0->columns'))
@@ -100,6 +102,28 @@ describe('loadWeeklySales', () => {
         expect(hidden.month).toMatchObject({ count: 2, total: 526412000 });
         const visible = await loadWeeklySales(db, { shopId: 's', meetingDate: '2026-10-21', canSeeCustomers: true });
         expect(visible.month.lines[0].customer).toBe('Б.Мэндбаяр');
+    });
+
+    it('names each month line\'s «Сэжим» and still reads contracts before the referral migration', async () => {
+        const tables = {
+            erp_imports: [],
+            property_contracts: [
+                { id: 'r1', shop_id: 's', contract_date: '2026-10-08', product_type: 'residential', block_name: 'Б2', unit_label: 'Б2-171', total_price: '1', contract_status: 'active', referral_source_id: 'ref-near' },
+                { id: 'r2', shop_id: 's', contract_date: '2026-10-09', product_type: 'residential', block_name: 'Б2', unit_label: 'Б2-172', total_price: '1', contract_status: 'active', referral_source_id: null },
+            ],
+            sales_referral_sources: [{ id: 'ref-near', shop_id: 's', name: 'Ойрхон амьдардаг', sort_order: 10, archived_at: '2026-10-20T00:00:00Z' }],
+        };
+        const report = await loadWeeklySales(fakeDb(tables), { shopId: 's', meetingDate: '2026-10-21', canSeeCustomers: true });
+        // Архивласан сонголтын нэр ч хадгалагдсан мөрөнд харагдана.
+        expect(report.month.lines.map(line => [line.key, line.referral])).toEqual([['r1', 'Ойрхон амьдардаг'], ['r2', null]]);
+        // Migration ороогүй: эхний уншилт баганагүй алдаа өгнө → сэжимгүйгээр дахин уншина (тайлан унахгүй).
+        const calls: string[] = [];
+        const legacyRows = tables.property_contracts.map(({ referral_source_id: _ref, ...row }) => row);
+        const before = await loadWeeklySales(fakeDb({ ...tables, property_contracts: legacyRows }, calls, { missingColumn: 'referral_source_id' }),
+            { shopId: 's', meetingDate: '2026-10-21', canSeeCustomers: true });
+        expect(before.month.lines.map(line => [line.key, line.referral])).toEqual([['r1', null], ['r2', null]]);
+        const contractReads = calls.filter(call => call.startsWith('property_contracts:id, contract_number'));
+        expect(contractReads.map(call => call.includes('referral_source_id'))).toEqual([true, false]);
     });
 
     it('counts undated CRM contracts so the week and month are reported as unknown, not zero', async () => {

@@ -4,6 +4,7 @@ import { listErpSnapshots, loadErpDatasets, snapshotRecords } from '@/lib/erp/sn
 import { loadReportInventory } from '@/lib/inventory/report-inventory';
 import { customerShortName } from '@/lib/contracts/list-format';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { isMissingReferralSchema, loadReferralNames } from '@/lib/sales/referral-sources-store';
 import { hasBlockPlan } from '@/lib/sales/plan-performance';
 import { buildWeeklySales, type ContractLine } from './weekly-sales';
 import { shiftReviewDate, weeklyReviewRange } from './weekly-review';
@@ -14,6 +15,7 @@ type CrmContract = {
     prepayment_condition: string | null; total_price: number | string | null; prepayment_due: number | string | null;
     paid_amount: number | string | null; sales_manager: string | null; sales_channel: string | null; contract_status: string | null; customer_name: string | null;
     customer_first_name: string | null; customer_last_name: string | null; rooms: number | null; floor: string | null;
+    referral_source_id?: string | null;
 };
 
 const money = (value: number | string | null) => value === null || value === '' ? null : erpNumber(String(value));
@@ -61,10 +63,18 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
         crmUndated = undatedRows.length;
         crmUndatedLines = undatedRows.map(row => ({ kind: crmKind(row.product_type), block: row.block_name }));
         const earliest = [`${month}-01`, shiftReviewDate(range.from, -7)].sort()[0];
-        const rows = await fetchAllRows<CrmContract>((from, to) => db.from('property_contracts')
-            .select('id, contract_number, contract_date, product_type, block_name, floor, unit_label, unit_number, contracted_area, price_per_sqm, prepayment_condition, total_price, prepayment_due, paid_amount, sales_manager, sales_channel, contract_status, customer_name, customer_first_name, customer_last_name, rooms')
+        const contractFields = 'id, contract_number, contract_date, product_type, block_name, floor, unit_label, unit_number, contracted_area, price_per_sqm, prepayment_condition, total_price, prepayment_due, paid_amount, sales_manager, sales_channel, contract_status, customer_name, customer_first_name, customer_last_name, rooms';
+        type ContractPage = PromiseLike<{ data: CrmContract[] | null; error: { message: string } | null }>;
+        const readContracts = (withReferral: boolean) => fetchAllRows<CrmContract>((from, to) => db.from('property_contracts')
+            .select(withReferral ? `${contractFields}, referral_source_id` : contractFields)
             .eq('shop_id', shopId).is('deleted_at', null).gte('contract_date', earliest).lte('contract_date', range.to)
-            .order('contract_date').order('id').range(from, to));
+            .order('contract_date').order('id').range(from, to) as unknown as ContractPage);
+        // «Сэжим» (migration 20261023151000): багана алга бол сэжимгүйгээр уншина.
+        const rows = await readContracts(true).catch(async (error: unknown) => {
+            if (!isMissingReferralSchema({ message: error instanceof Error ? error.message : String(error) })) throw error;
+            return readContracts(false);
+        });
+        const referralNames = await loadReferralNames(db, shopId, rows.map(row => row.referral_source_id));
         crmContracts = rows.filter(row => row.contract_status !== 'cancelled').map(row => {
             const kind = crmKind(row.product_type);
             return {
@@ -74,6 +84,7 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
                 area: money(row.contracted_area), pricePerSqm: money(row.price_per_sqm), advanceCondition: row.prepayment_condition,
                 total: money(row.total_price), advance: money(row.prepayment_due), paid: money(row.paid_amount),
                 manager: row.sales_manager, channel: row.sales_channel, status: row.contract_status ?? '',
+                referral: row.referral_source_id ? referralNames.get(row.referral_source_id) ?? null : null,
             };
         });
     }

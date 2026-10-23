@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
+import { migrationVerifyQuery } from '@/test/migration-verify';
 import { PGlite } from '@electric-sql/pglite';
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 const shop = '60000000-0000-4000-8000-000000000001';
 const otherShop = '60000000-0000-4000-8000-000000000002';
@@ -73,6 +74,15 @@ async function setup() {
 }
 
 const code = (value: string) => ({ code: value });
+
+describe('apply-migrations VERIFY', () => {
+    it('passes on the migrated schema', async () => {
+        const db = await setup();
+        try {
+            expect((await db.query<{ ok: boolean }>(migrationVerifyQuery('20261023151000'))).rows[0].ok).toBe(true);
+        } finally { await db.close(); }
+    });
+});
 
 async function source(db: PGlite, name: string, shopId = shop, archived = false) {
     return (await db.query<{ id: string }>(`INSERT INTO public.sales_referral_sources(shop_id, name, archived_at)
