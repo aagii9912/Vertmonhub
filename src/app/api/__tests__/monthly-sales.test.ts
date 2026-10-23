@@ -124,4 +124,30 @@ describe('monthly sales API boundary', () => {
         mocks.load.mockRejectedValue(new Error('missing migration'));
         expect((await GET(new NextRequest(`http://localhost/api/admin/sales-targets?shopId=${shopId}&year=2026`))).status).toBe(503);
     });
+
+    it('passes month-level stretch and activity plans and reports a missing migration as 503, not a validation error', async () => {
+        const body = { ...payload(), months: [{ month: 10, expectedRevision: 7, stretch_target_amount: 7_152_996_000, activity_targets: { hotline: 380, chats: null } }] };
+        expect((await POST(request(body))).status).toBe(200);
+        expect(mocks.save).toHaveBeenCalledWith(expect.anything(), shopId, 2026, body.months, mocks.userId);
+        mocks.save.mockResolvedValue({ data: null, error: { code: 'MONTHLY_SALES_EXTRAS_UNAVAILABLE', message: 'missing' } });
+        const response = await POST(request(body));
+        expect(response.status).toBe(503);
+        expect(await response.json()).toMatchObject({ code: 'MONTHLY_SALES_EXTRAS_UNAVAILABLE' });
+        for (const months of [[{ month: 10, expectedRevision: 7, activity_targets: { calls: 1 } }],
+            [{ month: 10, expectedRevision: 7, block_amounts: { b1: { stretch_target_amount: 1 } } }]]) {
+            expect((await POST(request({ ...payload(), months }))).status).toBe(400);
+        }
+    });
+
+    it('tells the page whether the stretch and activity columns exist', async () => {
+        const url = `http://localhost/api/admin/sales-targets?shopId=${shopId}&year=2026`;
+        expect(await (await GET(new NextRequest(url))).json()).toMatchObject({ extrasAvailable: true });
+        mocks.load.mockImplementation(async (_db: unknown, _shop: unknown, _year: unknown, options?: { onExtrasUnavailable?: () => void }) => {
+            options?.onExtrasUnavailable?.();
+            return emptyMonthlySales();
+        });
+        const response = await GET(new NextRequest(url));
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ extrasAvailable: false, months: expect.any(Array) });
+    });
 });

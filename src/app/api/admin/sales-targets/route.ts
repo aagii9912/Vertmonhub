@@ -3,7 +3,7 @@ import { supabaseAdmin, getUserId, assertShopAccess } from '@/lib/auth/supabase-
 import { getAdminUser } from '@/lib/admin/auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { getTeamMonthlySales, getMonthlyActualsByManager, sumYear, saveTeamMonthlySales } from '@/lib/sales/targets';
-import { MonthlySalesWriteSchema, SalesYearSchema, summarizeMonthlySales } from '@/lib/sales/monthly';
+import { MONTHLY_SALES_EXTRAS_UNAVAILABLE, MonthlySalesWriteSchema, SalesYearSchema, summarizeMonthlySales } from '@/lib/sales/monthly';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { z } from 'zod';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
@@ -54,8 +54,10 @@ function systemActuals(plan: PlanPerformance) {
  * GET  ?shopId=&year=
  *      → багийн 12 сарын төлөвлөгөө + гүйцэтгэл, бүртгэлтэй менежерүүд
  *        (идэвхтэй эсэх + жилийн борлуулалт), акаунт холбох багийн гишүүд.
- * POST body:{ shopId, year, months:[{month, expectedRevision, ...changedAmounts}] }
- *      → дөрвөн үзүүлэлтийн өөрчилсөн нүдийг хувилбар шалгаж, аудиттай хадгална.
+ *      extrasAvailable=false бол нэмэлт ба идэвхжлийн төлөвлөгөөний багана (migration 20261023150000) алга.
+ * POST body:{ shopId, year, months:[{month, expectedRevision, ...changedAmounts, stretch_*?, activity_targets?}] }
+ *      → өөрчилсөн нүд (блок), сарын нэмэлт ба идэвхжлийн төлөвлөгөөг хувилбар шалгаж, аудиттай хадгална.
+ * Менежерийн нэр солих: POST /api/admin/sales-targets/rename.
  * PUT  body:{ shopId, managers:[{name, is_active, user_id, project_ids?}] }
  *      → менежерийн бүртгэл + төслийн харьяаллыг нэг гүйлгээгээр хадгална.
  *        project_ids байхгүй бол өмнөх харьяаллыг хадгална; [] бол цэвэрлэнэ.
@@ -107,8 +109,9 @@ export async function GET(request: NextRequest) {
             logger.warn('[Sales targets] System actuals unavailable', { error });
             return null;
         });
+        let extrasAvailable = true;
         const [months, byManager, rosterRes, teamMembers, projects, memberships, systemActual] = await Promise.all([
-            getTeamMonthlySales(supabase, shopId!, year),
+            getTeamMonthlySales(supabase, shopId!, year, { onExtrasUnavailable: () => { extrasAvailable = false; } }),
             getMonthlyActualsByManager(supabase, shopId!, year, throwOnError),
             supabase.from('sales_managers').select('name, user_id, is_active').eq('shop_id', shopId),
             loadMembers(supabase, shopId!),
@@ -142,7 +145,7 @@ export async function GET(request: NextRequest) {
         const teamActual = systemActual ? systemActual.months.map(row => row.total.contract?.value ?? null) : null;
         const teamCount = systemActual ? systemActual.months.map(row => row.total.contract_count?.value ?? null) : null;
         const teamTarget = months.map(row => row.target_amount ?? 0);
-        return NextResponse.json({ year, months, summary: summarizeMonthlySales(months), teamTarget, teamActual, teamCount,
+        return NextResponse.json({ year, months, extrasAvailable, summary: summarizeMonthlySales(months), teamTarget, teamActual, teamCount,
             system: systemActual, computedActualSource: SYSTEM_ACTUAL_SOURCE, managers, teamMembers, projects }, {
             headers: { 'Cache-Control': 'private, no-store' },
         });
@@ -162,6 +165,7 @@ export async function POST(request: NextRequest) {
         if (!await assertShopAccess(shopId)) return NextResponse.json({ error: 'Энэ төсөлд хандах эрхгүй' }, { status: 403 });
         const { data, error } = await saveTeamMonthlySales(supabaseAdmin(), shopId, year, months, gate.userId!);
         if (error?.code === '40001') return NextResponse.json({ error: 'Энэ сарын мэдээллийг өөр хэрэглэгч өөрчилсөн. Шинэ мэдээллийг авч дахин оруулна уу.', code: 'MONTHLY_SALES_CONFLICT' }, { status: 409 });
+        if (error?.code === MONTHLY_SALES_EXTRAS_UNAVAILABLE) return NextResponse.json({ error: 'Нэмэлт болон идэвхжлийн төлөвлөгөө хадгалах өгөгдлийн сангийн шинэчлэл хийгдээгүй байна. Бусад дүнг хадгалж болно.', code: MONTHLY_SALES_EXTRAS_UNAVAILABLE }, { status: 503 });
         if (error?.code === '42501') return NextResponse.json({ error: 'Энэ төсөлд төлөвлөгөө хадгалах эрхгүй' }, { status: 403 });
         if (error?.code === '22023') return NextResponse.json({ error: 'Блокийн дүн, сарын нийлбэрийг шалгана уу. Задаргаатай дүнг зөвхөн блокийн нүдээр засна.' }, { status: 400 });
         if (error) return safeErrorResponse(error, 'Төлөвлөгөө, гүйцэтгэл хадгалахад алдаа гарлаа');

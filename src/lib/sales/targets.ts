@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getUserId } from '@/lib/auth/supabase-auth';
 import {
-    emptyMonthlySales, MONTHLY_SALES_FIELDS, MonthlySalesMonthSchema, MonthlySalesWriteSchema, SalesYearSchema,
-    type MonthlySalesMonth, type MonthlySalesPatch,
+    emptyMonthlySales, hasMonthlySalesExtras, MONTHLY_SALES_EXTRAS_UNAVAILABLE, MONTHLY_SALES_FIELDS, MONTHLY_SALES_STRETCH_FIELDS, MonthlySalesMonthSchema, MonthlySalesWriteSchema,
+    SalesYearSchema, type MonthlySalesMonth, type MonthlySalesPatch,
 } from './monthly';
 
 /**
@@ -57,27 +57,58 @@ function monthlyRow(row: Record<string, unknown>): MonthlySalesMonth {
         month: Number(row.month), revision: Number(row.revision),
         block_amounts: row.block_amounts ?? {},
         ...Object.fromEntries(MONTHLY_SALES_FIELDS.map(field => [field, row[field] == null ? null : Number(row[field])])),
+        // Багана байхгүй (migration 20261023150000 ороогүй) бол null.
+        ...Object.fromEntries(MONTHLY_SALES_STRETCH_FIELDS.map(field => [field, row[field] == null ? null : Number(row[field])])),
+        activity_targets: row.activity_targets ?? null,
     });
 }
 
-/** Гэрээний тоо, гэрээ/орсон мөнгөний төлөвлөгөө ба гар гүйцэтгэл. CRM/ERP-ийн дүнг нэмэхгүй. */
-export async function getTeamMonthlySales(supabase: SupabaseClient, shopId: string, year: number): Promise<MonthlySalesMonth[]> {
+const MONTHLY_COLUMNS = 'month, revision, target_amount, cashflow_target_amount, manual_contract_actual_amount, manual_cashflow_actual_amount, contract_count_target, manual_contract_count_actual, block_amounts';
+const EXTRA_COLUMNS = 'stretch_target_amount, stretch_cashflow_target_amount, activity_targets';
+
+/** Нэмэлт/идэвхжлийн төлөвлөгөөний багана байхгүй (migration 20261023150000 ороогүй). */
+export function isMissingSalesExtrasSchema(error: { code?: string; message?: string } | null | undefined): boolean {
+    if (!error) return false;
+    return ['42703', 'PGRST204'].includes(error.code ?? '') || /does not exist|could not find/i.test(error.message ?? '');
+}
+
+/**
+ * Гэрээний тоо, гэрээ/орсон мөнгөний төлөвлөгөө ба гар гүйцэтгэл, сарын нэмэлт ба идэвхжлийн төлөвлөгөө.
+ * CRM/ERP-ийн дүнг нэмэхгүй. Нэмэлт багана байхгүй бол тэдгээр нь null, `onExtrasUnavailable` дуудагдана.
+ */
+export async function getTeamMonthlySales(
+    supabase: SupabaseClient, shopId: string, year: number, options: { onExtrasUnavailable?: () => void } = {},
+): Promise<MonthlySalesMonth[]> {
     SalesYearSchema.parse(year);
-    const { data, error } = await supabase.from('team_sales_targets')
-        .select('month, revision, target_amount, cashflow_target_amount, manual_contract_actual_amount, manual_cashflow_actual_amount, contract_count_target, manual_contract_count_actual, block_amounts')
-        .eq('shop_id', shopId).eq('year', year);
+    const read = (columns: string) => supabase.from('team_sales_targets').select(columns).eq('shop_id', shopId).eq('year', year);
+    let { data, error } = await read(`${MONTHLY_COLUMNS}, ${EXTRA_COLUMNS}`);
+    if (error && isMissingSalesExtrasSchema(error)) {
+        ({ data, error } = await read(MONTHLY_COLUMNS));
+        if (!error) options.onExtrasUnavailable?.();
+    }
     if (error) throw error;
     const months = emptyMonthlySales();
-    for (const row of data || []) {
+    for (const row of (data || []) as unknown as Record<string, unknown>[]) {
         const parsed = monthlyRow(row);
         months[parsed.month - 1] = parsed;
     }
     return months;
 }
 
-/** Service-only RPC: cell patch, stale revision check and monetary audit commit atomically. */
-export async function saveTeamMonthlySales(supabase: SupabaseClient, shopId: string, year: number, months: MonthlySalesPatch[], actorId: string) {
+/**
+ * Service-only RPC: cell patch, stale revision check and monetary audit commit atomically.
+ * Нэмэлт талбартай patch-ийг багана байхгүй үед илгээхгүй: `MONTHLY_SALES_EXTRAS_UNAVAILABLE` (API 503).
+ */
+export async function saveTeamMonthlySales(
+    supabase: SupabaseClient, shopId: string, year: number, months: MonthlySalesPatch[], actorId: string,
+): Promise<{ data: MonthlySalesMonth[] | null; error: { code?: string; message: string } | null }> {
     const input = MonthlySalesWriteSchema.parse({ shopId, year, months });
+    if (input.months.some(hasMonthlySalesExtras)) {
+        const probe = await supabase.from('team_sales_targets').select(EXTRA_COLUMNS).eq('shop_id', input.shopId).limit(1);
+        if (probe.error && isMissingSalesExtrasSchema(probe.error)) {
+            return { data: null, error: { code: MONTHLY_SALES_EXTRAS_UNAVAILABLE, message: 'Нэмэлт ба идэвхжлийн төлөвлөгөөний migration (20261023150000) ороогүй байна' } };
+        }
+    }
     const { data, error } = await supabase.rpc('save_team_monthly_sales', {
         p_shop_id: input.shopId, p_year: input.year, p_months: input.months, p_actor: actorId,
     });

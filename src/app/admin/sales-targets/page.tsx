@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2, Save, TrendingUp, Users, Check, Plus } from 'lucide-react';
+import { Loader2, Save, TrendingUp, Users, Check, Plus, Pencil } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/dashboard/PageHeader';
@@ -20,7 +20,10 @@ import {
     emptyMonthlySales, MONTHLY_SALES_FIELDS, MONTHLY_SALES_LABELS, MONTHLY_SALES_METRICS, MonthlySalesMonthSchema,
     MONTHLY_SALES_BLOCKS, MONTHLY_SALES_BLOCK_LABELS, MONTHLY_SALES_COUNT_MAX, hasMonthlySalesBreakdown, isMonthlySalesCount,
     monthlySalesAttainment, monthlySalesWithBlockTotals, monthlySalesPatches, parseMonthlySalesValue, summarizeMonthlySales,
+    MONTHLY_SALES_STRETCH_FIELDS, MONTHLY_SALES_STRETCH_LABELS, ACTIVITY_TARGET_KEYS, ACTIVITY_TARGET_LABELS,
+    parseMonthlySalesAmount, parseMonthlySalesCount,
     type MonthlySalesBlock, type MonthlySalesField, type MonthlySalesMetric, type MonthlySalesMonth,
+    type MonthlySalesStretchField, type ActivityTargetKey,
 } from '@/lib/sales/monthly';
 
 type SystemValue = { value: number | null; lowerBound: boolean };
@@ -46,6 +49,8 @@ interface ManagerRow {
 
 interface SalesTargetsData {
     months: MonthlySalesMonth[];
+    /** false = нэмэлт ба идэвхжлийн төлөвлөгөөний багана (migration 20261023150000) алга. */
+    extrasAvailable: boolean;
     system: SystemActuals | null;
     computedActualSource: string;
     managers: ManagerRow[];
@@ -58,7 +63,13 @@ const NO_TEAM_MEMBERS: SalesTargetsData['teamMembers'] = [];
 const NO_PROJECTS: SalesTargetsData['projects'] = [];
 const NO_SHOPS: Array<{ id: string; name: string }> = [];
 const NO_MONTHLY_SALES = emptyMonthlySales();
-type MonthInputs = { month: number; blocks: Record<MonthlySalesBlock, Record<MonthlySalesField, string>> };
+type MonthInputs = {
+    month: number;
+    blocks: Record<MonthlySalesBlock, Record<MonthlySalesField, string>>;
+    /** Сарын түвшний нэмэлт төлөвлөгөө ба идэвхжлийн төлөвлөгөө (блокгүй). */
+    stretch: Record<MonthlySalesStretchField, string>;
+    activity: Record<ActivityTargetKey, string>;
+};
 type TargetDraft = { before: MonthlySalesMonth[]; inputs: MonthInputs[] };
 const TABLE_COLUMNS = MONTHLY_SALES_METRICS.flatMap(metric => [
     { kind: 'plan', field: metric.plan, metric }, { kind: 'actual', field: metric.actual, metric }, { kind: 'pct', field: metric.actual, metric },
@@ -78,8 +89,26 @@ function monthInputs(months: MonthlySalesMonth[]): MonthInputs[] {
                 row.block_amounts?.[block]?.[field]?.toLocaleString('en-US', { maximumFractionDigits: 2 }) ?? '',
             ])),
         ])),
+        stretch: Object.fromEntries(MONTHLY_SALES_STRETCH_FIELDS.map(field => [field,
+            row[field]?.toLocaleString('en-US', { maximumFractionDigits: 2 }) ?? ''])),
+        activity: Object.fromEntries(ACTIVITY_TARGET_KEYS.map(key => [key, row.activity_targets?.[key]?.toLocaleString('en-US') ?? ''])),
     })) as MonthInputs[];
 }
+
+/** Сарын нэмэлт талбарууд: хоосон = оруулаагүй; идэвхжлийн бүх нүд хоосон бол null. Буруу текст = undefined (хадгалахгүй). */
+function monthExtras(row: MonthInputs): Pick<MonthlySalesMonth, MonthlySalesStretchField | 'activity_targets'> {
+    const activity = ACTIVITY_TARGET_KEYS.flatMap(key => {
+        const value = parseMonthlySalesCount(row.activity[key]);
+        return typeof value === 'number' ? [[key, value] as const] : [];
+    });
+    return {
+        stretch_target_amount: parseMonthlySalesAmount(row.stretch.stretch_target_amount) ?? null,
+        stretch_cashflow_target_amount: parseMonthlySalesAmount(row.stretch.stretch_cashflow_target_amount) ?? null,
+        activity_targets: activity.length ? Object.fromEntries(activity) : null,
+    };
+}
+const invalidExtraInputs = (row: MonthInputs) => MONTHLY_SALES_STRETCH_FIELDS.some(field => parseMonthlySalesAmount(row.stretch[field]) === undefined)
+    || ACTIVITY_TARGET_KEYS.some(key => parseMonthlySalesCount(row.activity[key]) === undefined);
 
 export default function SalesTargetsAdminPage() {
     const queryClient = useQueryClient();
@@ -97,7 +126,10 @@ export default function SalesTargetsAdminPage() {
 
     const [savingTarget, setSavingTarget] = useState(false);
     const [savingRoster, setSavingRoster] = useState(false);
-    const saving = savingTarget || savingRoster;
+    // Менежерийн бүртгэлийн нэр солих (бүх лавлагаатай нь, RPC).
+    const [renaming, setRenaming] = useState<{ name: string; value: string } | null>(null);
+    const [savingRename, setSavingRename] = useState(false);
+    const saving = savingTarget || savingRoster || savingRename;
 
     const nowYear = new Date().getFullYear();
     const yearOptions = [nowYear - 1, nowYear, nowYear + 1];
@@ -132,6 +164,7 @@ export default function SalesTargetsAdminPage() {
             if (!parsedMonths.success) throw new Error('Сарын төлөвлөгөөний мэдээлэл дутуу байна. Дахин ачаална уу.');
             return {
                 months: parsedMonths.data,
+                extrasAvailable: d.extrasAvailable !== false,
                 system: d.system ?? null,
                 computedActualSource: d.computedActualSource || 'Төслийн бүх гэрээ',
                 managers: (d.managers || []).map((manager: ManagerRow) => ({ ...manager, project_ids: manager.project_ids || [] })),
@@ -153,12 +186,16 @@ export default function SalesTargetsAdminPage() {
         setTargetDraft(null);
         setTargetConflict(false);
         setManagersDraft(null);
+        setRenaming(null);
     }
 
     const originalMonths = targetDraft?.before ?? data?.months ?? NO_MONTHLY_SALES;
     const inputs = targetDraft?.inputs ?? monthInputs(originalMonths);
-    const invalidCells = inputs.some(row => MONTHLY_SALES_BLOCKS.some(block => MONTHLY_SALES_FIELDS.some(field =>
+    const invalidBlockCells = inputs.some(row => MONTHLY_SALES_BLOCKS.some(block => MONTHLY_SALES_FIELDS.some(field =>
         parseMonthlySalesValue(field, row.blocks[block][field]) === undefined)));
+    const invalidExtras = inputs.some(invalidExtraInputs);
+    const invalidCells = invalidBlockCells || invalidExtras;
+    const extrasAvailable = data?.extrasAvailable ?? true;
     const months = inputs.map((row, index) => {
         const original = originalMonths[index];
         const block_amounts = { ...original.block_amounts };
@@ -170,11 +207,12 @@ export default function SalesTargetsAdminPage() {
                 }
             }
         }
-        return monthlySalesWithBlockTotals({ ...original, block_amounts });
+        return monthlySalesWithBlockTotals({ ...original, block_amounts, ...monthExtras(row) });
     });
     const invalidTotals = months.some(row => MONTHLY_SALES_FIELDS.some(field =>
         (row[field] ?? 0) > (isMonthlySalesCount(field) ? MONTHLY_SALES_COUNT_MAX : 1e13)));
     const invalidAmounts = invalidCells || invalidTotals;
+    const invalidBlockAmounts = invalidBlockCells || invalidTotals;
     const patches = targetDraft && !invalidAmounts ? monthlySalesPatches(targetDraft.before, months) : [];
     const summary = summarizeMonthlySales(months);
     const system = data?.system ?? null;
@@ -196,6 +234,14 @@ export default function SalesTargetsAdminPage() {
             return { ...draft, inputs: draft.inputs.map(row => row.month === month ? {
                 ...row, blocks: { ...row.blocks, [block]: { ...row.blocks[block], [field]: value } },
             } : row) };
+        });
+    }
+
+    function setMonthExtra(month: number, kind: 'stretch' | 'activity', key: MonthlySalesStretchField | ActivityTargetKey, value: string) {
+        if (!scopeReady || saving || !extrasAvailable) return;
+        setTargetDraft(previous => {
+            const draft = previous ?? { before: data!.months, inputs: monthInputs(data!.months) };
+            return { ...draft, inputs: draft.inputs.map(row => row.month === month ? { ...row, [kind]: { ...row[kind], [key]: value } } : row) };
         });
     }
 
@@ -328,6 +374,40 @@ export default function SalesTargetsAdminPage() {
             toast.error(cause instanceof Error ? cause.message : 'Менежер нэмэгдсэнгүй');
         } finally {
             setSavingRoster(false);
+        }
+    }
+
+    /** Бүртгэлийн нэр ба тэр нэрийн бүх лавлагааг (лид, уулзалт, гэрээ, өдрийн тайлан…) нэг гүйлгээнд солино. */
+    async function renameManager() {
+        if (!renaming || !scopeReady || saving) return;
+        const oldName = renaming.name;
+        const newName = renaming.value.trim();
+        if (!newName || newName === oldName) return;
+        if (managersDraft) {
+            toast.error('Хадгалаагүй өөрчлөлт байна. Эхлээд «Менежерийн бүртгэл хадгалах» дарна уу.');
+            return;
+        }
+        if (managers.some((m) => m.name === newName)) {
+            toast.error(`«${newName}» нэртэй менежер бүртгэлд аль хэдийн байна`);
+            return;
+        }
+        setSavingRename(true);
+        try {
+            const res = await fetch('/api/admin/sales-targets/rename', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ shopId, oldName, newName }),
+            });
+            const result = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(result.error || 'Менежерийн нэр солигдсонгүй');
+            setRenaming(null);
+            // Нэр лид, уулзалт, тайлан бүрт гардаг тул бүх кэшийг шинэчилнэ.
+            await queryClient.invalidateQueries();
+            toast.success(`«${oldName}» → «${newName}»${result.summary ? `: ${result.summary}` : ''}`);
+        } catch (cause) {
+            toast.error(cause instanceof Error ? cause.message : 'Менежерийн нэр солигдсонгүй');
+        } finally {
+            setSavingRename(false);
         }
     }
 
@@ -489,7 +569,71 @@ export default function SalesTargetsAdminPage() {
                             {originalMonths.some(row => MONTHLY_SALES_FIELDS.some(field => row[field] !== null && !hasMonthlySalesBreakdown(row, field))) && (
                                 <p className="text-xs text-muted-foreground">Өмнө оруулсан задаргаагүй нийт дүн хэвээр харагдана. Тухайн баганад блокийн дүн оруулахад нийлбэрээр шинэчлэгдэнэ.</p>
                             )}
-                            {invalidAmounts && <p role="alert" className="text-xs text-status-danger">Гэрээний тоо 0–1,000,000 хооронд бүхэл тоо; дүн болон сарын нийлбэр 0–10,000,000,000,000₮ хооронд, хамгийн ихдээ хоёр орны бутархайтай байна.</p>}
+                            {invalidBlockAmounts && <p role="alert" className="text-xs text-status-danger">Гэрээний тоо 0–1,000,000 хооронд бүхэл тоо; дүн болон сарын нийлбэр 0–10,000,000,000,000₮ хооронд, хамгийн ихдээ хоёр орны бутархайтай байна.</p>}
+
+                            {/* Сарын нэмэлт (stretch) ба багийн идэвхжлийн төлөвлөгөө — блокгүй, ижил хадгалах товчоор. */}
+                            <section aria-labelledby="sales-extras-title" className="space-y-2 border-t border-border pt-4">
+                                <div>
+                                    <p id="sales-extras-title" className="text-sm font-semibold text-foreground">Нэмэлт төлөвлөгөө ба идэвхжлийн төлөвлөгөө</p>
+                                    <p className="text-xs text-muted-foreground">
+                                        Сарын нийт дүн, блокоор задлахгүй. Нэмэлт төлөвлөгөөг үндсэн төлөвлөгөөн дээр нэмэх зөрүүгээр биш, бүтэн дүнгээр оруулна.
+                                        Идэвхжлийн төлөвлөгөө нь багийн сарын тоо (дуудлага, уулзалт, чат); тайланд өнгөрсөн өдрөөр (сар ÷ 30) хувь тэнцүүлнэ.
+                                    </p>
+                                </div>
+                                {!extrasAvailable && (
+                                    <div role="status" className="rounded-lg border border-status-pending/30 bg-status-pending-soft p-3 text-sm text-status-pending">
+                                        Өгөгдлийн сангийн шинэчлэл хийгдээгүй тул нэмэлт ба идэвхжлийн төлөвлөгөөг одоогоор хадгалах боломжгүй. Бусад дүнг хадгалж болно.
+                                    </div>
+                                )}
+                                <div className="max-h-[50vh] overflow-auto rounded-lg border border-border">
+                                    <table className="w-full min-w-[1080px] border-separate border-spacing-0 text-sm">
+                                        <caption className="sr-only">{year} оны сарын нэмэлт төлөвлөгөө ба багийн идэвхжлийн төлөвлөгөө</caption>
+                                        <thead className="sticky top-0 z-10 bg-surface-2 text-foreground">
+                                            <tr>
+                                                <th rowSpan={2} scope="col" className="w-24 border-b border-r border-border px-3 py-3 text-left">Сар</th>
+                                                <th colSpan={MONTHLY_SALES_STRETCH_FIELDS.length} scope="colgroup" className="border-b border-r border-border px-3 py-2 text-center">Сарын нийт, ₮</th>
+                                                <th colSpan={ACTIVITY_TARGET_KEYS.length} scope="colgroup" className="border-b border-border px-3 py-2 text-center">Идэвхжлийн төлөвлөгөө (багийн, сарын)</th>
+                                            </tr>
+                                            <tr>
+                                                {MONTHLY_SALES_STRETCH_FIELDS.map(field => (
+                                                    <th key={field} scope="col" className="border-b border-r border-border bg-status-success-soft px-3 py-2 text-center text-status-success">{MONTHLY_SALES_STRETCH_LABELS[field]}</th>
+                                                ))}
+                                                {ACTIVITY_TARGET_KEYS.map(key => (
+                                                    <th key={key} scope="col" className="border-b border-r border-border px-3 py-2 text-center last:border-r-0">{ACTIVITY_TARGET_LABELS[key]}</th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {inputs.map(row => {
+                                                const monthLabel = `${year} оны ${MONTHS[row.month - 1]} сар`;
+                                                const cellClass = (invalid: boolean, wide: boolean) => `num w-full rounded border bg-transparent px-2 py-2 text-right text-sm text-foreground ${wide ? 'min-w-32' : 'min-w-20'} ${invalid ? 'border-status-danger' : 'border-control'}`;
+                                                return (
+                                                    <tr key={row.month}>
+                                                        <th scope="row" className="border-b border-r border-border bg-surface-2 px-3 py-2 text-left font-semibold">{MONTHS[row.month - 1]} сар</th>
+                                                        {MONTHLY_SALES_STRETCH_FIELDS.map(field => {
+                                                            const invalid = parseMonthlySalesAmount(row.stretch[field]) === undefined;
+                                                            return <td key={field} className="border-b border-r border-border bg-status-success-soft p-1.5">
+                                                                <input type="text" inputMode="decimal" aria-label={`${monthLabel} ${MONTHLY_SALES_STRETCH_LABELS[field]}`}
+                                                                    aria-invalid={invalid} disabled={saving || !extrasAvailable} value={row.stretch[field]} placeholder="—"
+                                                                    onChange={event => setMonthExtra(row.month, 'stretch', field, event.target.value)} className={cellClass(invalid, true)} />
+                                                            </td>;
+                                                        })}
+                                                        {ACTIVITY_TARGET_KEYS.map(key => {
+                                                            const invalid = parseMonthlySalesCount(row.activity[key]) === undefined;
+                                                            return <td key={key} className="border-b border-r border-border p-1.5 last:border-r-0">
+                                                                <input type="text" inputMode="numeric" aria-label={`${monthLabel} ${ACTIVITY_TARGET_LABELS[key]}`}
+                                                                    aria-invalid={invalid} disabled={saving || !extrasAvailable} value={row.activity[key]} placeholder="—"
+                                                                    onChange={event => setMonthExtra(row.month, 'activity', key, event.target.value)} className={cellClass(invalid, false)} />
+                                                            </td>;
+                                                        })}
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {invalidExtras && <p role="alert" className="text-xs text-status-danger">Нэмэлт төлөвлөгөө 0–10,000,000,000,000₮ хооронд, хамгийн ихдээ хоёр орны бутархайтай; идэвхжлийн төлөвлөгөө 0–1,000,000 хооронд бүхэл тоо байна.</p>}
+                            </section>
                             {targetConflict && (
                                 <div role="alert" className="rounded-lg border border-status-pending/30 bg-status-pending-soft p-3 text-sm">
                                     <p>Өөр хэрэглэгч сарын мэдээллийг өөрчилсөн. Таны засвар хадгалагдаагүй.</p>
@@ -581,12 +725,39 @@ export default function SalesTargetsAdminPage() {
                                                 {m.is_active ? 'Идэвхтэй' : 'Идэвхгүй'}
                                             </span>
                                         </button>
-                                        {m.user_id && <div className="flex justify-end px-3 pt-2">
-                                            <button type="button" onClick={() => unlinkManager(m.name)} disabled={!scopeReady || saving}
+                                        <div className="flex justify-end gap-4 px-3 pt-2">
+                                            <button type="button" onClick={() => setRenaming({ name: m.name, value: m.name })} disabled={!scopeReady || saving}
+                                                aria-expanded={renaming?.name === m.name}
+                                                className="inline-flex items-center gap-1 text-2xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50">
+                                                <Pencil className="h-3 w-3" aria-hidden /> Нэр солих
+                                            </button>
+                                            {m.user_id && <button type="button" onClick={() => unlinkManager(m.name)} disabled={!scopeReady || saving}
                                                 className="text-2xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50">
                                                 Акаунтын холбоос салгах
-                                            </button>
-                                        </div>}
+                                            </button>}
+                                        </div>
+                                        {renaming?.name === m.name && (
+                                            <form className="space-y-2 px-3 pb-3 pt-2" onSubmit={(event) => { event.preventDefault(); void renameManager(); }}>
+                                                <label htmlFor="rename-manager" className="block text-xs font-medium text-foreground">«{m.name}» — шинэ нэр</label>
+                                                <input
+                                                    id="rename-manager" type="text" maxLength={120} autoFocus disabled={savingRename}
+                                                    value={renaming.value}
+                                                    onChange={(event) => setRenaming({ name: m.name, value: event.target.value })}
+                                                    className="w-full rounded-md border border-control bg-surface-2 px-3 py-2 text-sm text-foreground"
+                                                />
+                                                <p className="text-xs text-muted-foreground">
+                                                    Лид, уулзалт, гэрээ, өдрийн тайлан, санал гомдол, KPI ба төслийн харьяаллын бүртгэлд байгаа энэ нэр бүгд шинэ нэрээр солигдоно.
+                                                    «Хэн оруулсан» тэмдэглэл, өөрчлөлтийн түүх хуучин нэрээрээ үлдэнэ.
+                                                </p>
+                                                <div className="flex justify-end gap-2">
+                                                    <Button type="button" variant="secondary" size="sm" disabled={savingRename} onClick={() => setRenaming(null)}>Болих</Button>
+                                                    <Button type="submit" variant="primary" size="sm" isLoading={savingRename}
+                                                        disabled={!scopeReady || saving || !renaming.value.trim() || renaming.value.trim() === m.name}>
+                                                        Нэрийг солих
+                                                    </Button>
+                                                </div>
+                                            </form>
+                                        )}
                                         {projects.length !== 1 && <fieldset disabled={!scopeReady || saving} className="space-y-2 px-3 pb-3 pt-2">
                                             <legend className="sr-only">{m.name} — төслийн харьяалал</legend>
                                             <p className="text-2xs text-muted-foreground">

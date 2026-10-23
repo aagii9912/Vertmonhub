@@ -216,7 +216,7 @@ describe('rename_sales_manager', () => {
         expect(await names('SELECT manager_name AS name FROM daily_report_changes WHERE shop_id = $1')).toEqual(['Khongoroo']);
         expect(await names('SELECT created_by_name AS name FROM lead_activities WHERE shop_id = $1')).toEqual(['Khongoroo']);
         // Нэр солих нь шинэ хариуцуулалт биш: тамгагүй лид тамгагүй, тамгатай нь хэвээр.
-        expect((await db.query('SELECT sales_handoff_at IS NOT NULL AS stamped FROM leads WHERE shop_id = $1 ORDER BY id', [shop])).rows.map(item => item.stamped))
+        expect((await db.query<{ stamped: boolean }>('SELECT sales_handoff_at IS NOT NULL AS stamped FROM leads WHERE shop_id = $1 ORDER BY id', [shop])).rows.map(item => item.stamped))
             .toEqual([true, false, false, false]);
 
         // Өөр төсөл огт өөрчлөгдөөгүй.
@@ -237,7 +237,7 @@ describe('rename_sales_manager', () => {
         await rename('Ариунбилэг', 'Ариунбилэг.Нямхүү');
         await db.query("UPDATE leads SET sales_manager_name = 'Ариунбилэг.Нямхүү' WHERE shop_id = $1 AND sales_manager_name IS NULL", [shop]);
         await db.exec('COMMIT');
-        expect((await db.query("SELECT sales_handoff_at IS NOT NULL AS stamped FROM leads WHERE shop_id = $1 AND sales_manager_name = 'Ариунбилэг.Нямхүү' ORDER BY id", [shop]))
+        expect((await db.query<{ stamped: boolean }>("SELECT sales_handoff_at IS NOT NULL AS stamped FROM leads WHERE shop_id = $1 AND sales_manager_name = 'Ариунбилэг.Нямхүү' ORDER BY id", [shop]))
             .rows.map(item => item.stamped)).toEqual([false, true]);
         await db.query("INSERT INTO leads(shop_id,sales_manager_name) VALUES ($1,'Ариунбилэг.Нямхүү')", [shop]);
         expect((await db.query('SELECT sales_handoff_at IS NOT NULL AS stamped FROM leads ORDER BY id DESC LIMIT 1')).rows).toEqual([{ stamped: true }]);

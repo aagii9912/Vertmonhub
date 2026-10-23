@@ -125,11 +125,15 @@ export interface PlanScopeCells {
     prepaymentMissing: number;
 }
 
+/** Сарын нэмэлт (stretch) төлөвлөгөө — нийт дүн, блокгүй; null = оруулаагүй (мөнгө нь санхүүгийн эрхгүйд үргэлж null). */
+export interface PlanStretch { contract: number | null; cashflow: number | null }
+
 export interface PlanMonthRow {
     month: number;
     key: string;
     status: 'past' | 'current' | 'future';
     blockPlanned: boolean;
+    stretch: PlanStretch;
     total: PlanScopeCells;
     blocks: Record<MonthlySalesBlock, PlanScopeCells>;
     /** Б1/Б2-оос бусад блокийн орон сууц: задаргаагүй төлөвлөгөөтэй сард нийтэд орсон. */
@@ -160,7 +164,8 @@ export interface PlanPerformance {
     throughMonth: number | null;
     currentMonth: number | null;
     months: PlanMonthRow[];
-    ytd: { total: PlanYearScope; blocks: Record<MonthlySalesBlock, PlanYearScope> };
+    /** stretch: 1–M сарын оруулсан нэмэлт төлөвлөгөөний нийлбэр; аль ч сард оруулаагүй бол null. */
+    ytd: { total: PlanYearScope; blocks: Record<MonthlySalesBlock, PlanYearScope>; stretch: PlanStretch };
     undated: {
         count: number;
         amount: number;
@@ -274,6 +279,13 @@ export function resolveMonthMetric(
     const metric = MONTHLY_SALES_METRICS.find(item => item.key === key)!;
     const { total } = resolveMetric(row, metric, autoBlocks, extra, false);
     return { value: total.actual, lowerBound: total.lowerBound, source: total.source };
+}
+
+/** Нэмэлт төлөвлөгөөний он эхнээс (1–M сар) нийлбэр: оруулсан саруудынх, аль нь ч оруулаагүй бол null. */
+function stretchSum(months: PlanMonthRow[], key: keyof PlanStretch, throughMonth: number | null): number | null {
+    if (throughMonth === null) return null;
+    const known = months.slice(0, throughMonth).map(row => row.stretch[key]).filter((value): value is number => value !== null);
+    return known.length ? fromCents(known.reduce((sum, value) => sum + cents(value), 0)) : null;
 }
 
 /** Төлөвлөгөөний биелэлтийн цэвэр тооцоо. */
@@ -404,6 +416,7 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
         const cancelledRow = cancelled.get(month) ?? { count: 0, amountCents: 0 };
         return {
             month, key: `${year}-${String(month).padStart(2, '0')}`, status, blockPlanned, total, blocks: blockCells,
+            stretch: { contract: row.stretch_target_amount ?? null, cashflow: cashVisible ? row.stretch_cashflow_target_amount ?? null : null },
             otherResidential: { count: otherAgg.count, amount: fromCents(otherAgg.amountCents), inTotal: !blockPlanned },
             outside: {
                 count: outsideRows.reduce((sum, item) => sum + item.count, 0), amount: fromCents(outsideRows.reduce((sum, item) => sum + item.amountCents, 0)),
@@ -436,6 +449,7 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
         blocks: Object.fromEntries(MONTHLY_SALES_BLOCKS.map(block => [block, { metrics: Object.fromEntries(metrics.map(metric => [metric.key,
             yearCell(row => row.blocks[block].metrics[metric.key], month => metricNumber(month, block, metric.plan),
                 month => hasMonthlySalesBreakdown(month, metric.plan) ? month[metric.plan] : null)])) }])),
+        stretch: { contract: stretchSum(months, 'contract', throughMonth), cashflow: stretchSum(months, 'cashflow', throughMonth) },
     } as PlanPerformance['ytd'];
 
     // Төлбөр хоцролт: сүүлийн HUB файлын огноотой snapshot (гэрээний жагсаалтын хавтан, AI-тай нэг дүрэм).
