@@ -46,6 +46,8 @@ function database(initial: Row | null, options: { missing?: boolean; uniqueOnIns
     return { db: { from } as unknown as SupabaseClient, writes, current: () => row };
 }
 
+/** Storage: шинээр сонгосон зураг байгаа эсэх (тестэд бүгд байна). */
+const exists = async () => true;
 const save = (over: Partial<Record<string, unknown>> = {}) => ReportBrandingSaveSchema.parse({
     displayName: 'ЭЛИЗИУМ', footerText: 'ВЕРТМОН ПРОПЕРТИС', coverImagePath: image(1), logoPath: null, expectedUpdatedAt: null, ...over,
 });
@@ -82,22 +84,41 @@ describe('report branding store', () => {
 
     it('creates once, updates only with the read version, and returns replaced images for cleanup', async () => {
         const { db, current } = database(null);
-        const created = await saveReportBranding(db, shop, actor, save());
+        const created = await saveReportBranding(db, shop, actor, save(), exists);
         expect(created).toMatchObject({ ok: true, removed: [], branding: { displayName: 'ЭЛИЗИУМ', coverImagePath: image(1) } });
         expect(current()).toMatchObject({ shop_id: shop, updated_by: actor, display_name: 'ЭЛИЗИУМ' });
         const version = (created as { branding: { updatedAt: string } }).branding.updatedAt;
         // Хуучин хувилбараар (эсвэл шинэ гэж) хадгалбал юу ч бичихгүй.
-        expect(await saveReportBranding(db, shop, actor, save({ expectedUpdatedAt: null }))).toEqual({ conflict: true });
-        expect(await saveReportBranding(db, shop, actor, save({ expectedUpdatedAt: '2020-01-01T00:00:00Z' }))).toEqual({ conflict: true });
-        const updated = await saveReportBranding(db, shop, actor, save({ coverImagePath: image(2), logoPath: image(3), expectedUpdatedAt: version }));
+        expect(await saveReportBranding(db, shop, actor, save({ expectedUpdatedAt: null }), exists)).toEqual({ conflict: true });
+        expect(await saveReportBranding(db, shop, actor, save({ expectedUpdatedAt: '2020-01-01T00:00:00Z' }), exists)).toEqual({ conflict: true });
+        const updated = await saveReportBranding(db, shop, actor, save({ coverImagePath: image(2), logoPath: image(3), expectedUpdatedAt: version }), exists);
         expect(updated).toMatchObject({ ok: true, removed: [image(1)], branding: { coverImagePath: image(2), logoPath: image(3) } });
-        const cleared = await saveReportBranding(db, shop, actor, save({ coverImagePath: image(2), logoPath: null, displayName: null, expectedUpdatedAt: current()!.updated_at }));
+        const cleared = await saveReportBranding(db, shop, actor, save({ coverImagePath: image(2), logoPath: null, displayName: null, expectedUpdatedAt: current()!.updated_at }), exists);
         expect(cleared).toMatchObject({ ok: true, removed: [image(3)], branding: { displayName: null, logoPath: null } });
     });
 
+    it('refuses a new image path that is not in storage, so a stale draft never removes a colleague\'s image', async () => {
+        // A, B хоёр лого = image(1) үед нээсэн. B image(2) оруулж хадгалсан (image(1) storage-оос устсан).
+        const { db, current } = database({ shop_id: shop, display_name: null, footer_text: null, cover_image_path: null, logo_path: image(2), updated_at: '2026-10-23T03:00:00.5+00:00', updated_by: actor });
+        const inStorage = new Set([image(2), image(3)]);
+        const checked: string[] = [];
+        const storage = async (path: string) => { checked.push(path); return inStorage.has(path); };
+        // A хуучин нооргоор (image(1)), шинэ хувилбартай хадгалвал — татгалзана, юу ч бичихгүй, юу ч устгахгүй.
+        expect(await saveReportBranding(db, shop, actor, save({ coverImagePath: null, logoPath: image(1), expectedUpdatedAt: '2026-10-23T03:00:00.5+00:00' }), storage))
+            .toEqual({ invalid: expect.stringMatching(/олдсонгүй/) });
+        expect(current()).toMatchObject({ logo_path: image(2) });
+        // Хуучин хувилбартай бол эхлээд 409 (зураг шалгахгүй).
+        expect(await saveReportBranding(db, shop, actor, save({ coverImagePath: null, logoPath: image(1), expectedUpdatedAt: '2026-10-23T02:00:00+00:00' }), storage)).toEqual({ conflict: true });
+        expect(checked).toEqual([image(1)]);
+        // Хадгалагдсан зургийг дахин шалгахгүй; шинэ, storage-д байгаа зураг болно.
+        const saved = await saveReportBranding(db, shop, actor, save({ coverImagePath: image(3), logoPath: image(2), expectedUpdatedAt: '2026-10-23T03:00:00.5+00:00' }), storage);
+        expect(saved).toMatchObject({ ok: true, removed: [], branding: { coverImagePath: image(3), logoPath: image(2) } });
+        expect(checked).toEqual([image(1), image(3)]);
+    });
+
     it('refuses another shop\'s image, answers a concurrent first save as a conflict and a missing table as unavailable', async () => {
-        expect(await saveReportBranding(database(null).db, shop, actor, save({ coverImagePath: image(1, otherShop) }))).toEqual({ invalid: expect.any(String) });
-        expect(await saveReportBranding(database(null, { uniqueOnInsert: true }).db, shop, actor, save())).toEqual({ conflict: true });
-        expect(await saveReportBranding(database(null, { missing: true }).db, shop, actor, save())).toEqual({ unavailable: true });
+        expect(await saveReportBranding(database(null).db, shop, actor, save({ coverImagePath: image(1, otherShop) }), exists)).toEqual({ invalid: expect.any(String) });
+        expect(await saveReportBranding(database(null, { uniqueOnInsert: true }).db, shop, actor, save(), exists)).toEqual({ conflict: true });
+        expect(await saveReportBranding(database(null, { missing: true }).db, shop, actor, save(), exists)).toEqual({ unavailable: true });
     });
 });

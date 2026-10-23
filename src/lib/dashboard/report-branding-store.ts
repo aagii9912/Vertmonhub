@@ -31,6 +31,14 @@ export async function loadReportBranding(db: SupabaseClient, shopId: string): Pr
     return (await readReportBranding(db, shopId)).branding;
 }
 
+/** Уншсан хувилбар одоогийнхтой ижил эсэх (PostgREST-ийн ижил мөр, эсвэл ижил агшин). */
+function sameVersion(expected: string | null, current: string | null): boolean {
+    if (expected === null || current === null) return false;
+    if (expected === current) return true;
+    const a = Date.parse(expected);
+    return Number.isFinite(a) && a === Date.parse(current);
+}
+
 export type SaveBrandingResult =
     | { ok: true; branding: ReportBranding; removed: string[] }
     | { invalid: string }
@@ -40,8 +48,12 @@ export type SaveBrandingResult =
 /**
  * Брэндийг бүхэлд нь солино. Зураг зөвхөн энэ shop-ийн `branding/` замд. `expectedUpdatedAt` уншсан үеийнхтэй таарахгүй
  * бол (өөр хүн хадгалсан) юу ч бичихгүй — `conflict`. Солигдсон/арилгасан зургийн замыг буцаана (route storage-оос устгана).
+ * Одоо хадгалагдсанаас өөр (шинэ) зураг storage-д байх ёстой (`imageExists`): хуучин ноорог устгагдсан зургийн замыг
+ * буцааж бичээд, хамтрагчийн шинэ зургийг «солигдсон» гэж устгуулахгүй.
  */
-export async function saveReportBranding(db: SupabaseClient, shopId: string, actorId: string, input: ReportBrandingSave): Promise<SaveBrandingResult> {
+export async function saveReportBranding(
+    db: SupabaseClient, shopId: string, actorId: string, input: ReportBrandingSave, imageExists: (path: string) => Promise<boolean>,
+): Promise<SaveBrandingResult> {
     for (const path of [input.coverImagePath, input.logoPath]) {
         if (path && parseBrandingMediaPath(path)?.shopId !== shopId) return { invalid: 'Зургийг энэ төслийн брэндэд дахин оруулна уу.' };
     }
@@ -51,13 +63,18 @@ export async function saveReportBranding(db: SupabaseClient, shopId: string, act
         throw new Error(current.error.message);
     }
     const before = current.data as ReportBrandingRow | null;
+    // Хувилбарыг эхлээд: зэрэг засвар бол 409 (зураг шалгахаас өмнө). Бичихдээ DB-ийн нөхцлөөр дахин шалгана.
+    if (before ? !sameVersion(input.expectedUpdatedAt, before.updated_at) : input.expectedUpdatedAt !== null) return { conflict: true };
+    const stored = new Set([before?.cover_image_path, before?.logo_path].filter((path): path is string => !!path));
+    for (const path of new Set([input.coverImagePath, input.logoPath])) {
+        if (path && !stored.has(path) && !await imageExists(path)) return { invalid: 'Зураг олдсонгүй — зургаа дахин оруулаад хадгална уу.' };
+    }
     const values = {
         display_name: input.displayName, footer_text: input.footerText, cover_image_path: input.coverImagePath, logo_path: input.logoPath,
         updated_at: new Date().toISOString(), updated_by: actorId,
     };
     let saved: ReportBrandingRow | null;
     if (!before) {
-        if (input.expectedUpdatedAt !== null) return { conflict: true };
         const { data, error } = await db.from('report_branding').insert({ shop_id: shopId, ...values }).select(REPORT_BRANDING_COLUMNS).single();
         if (error) {
             if (error.code === '23505') return { conflict: true };
@@ -66,7 +83,7 @@ export async function saveReportBranding(db: SupabaseClient, shopId: string, act
         }
         saved = data as ReportBrandingRow;
     } else {
-        if (input.expectedUpdatedAt === null || before.updated_at === null) return { conflict: true };
+        if (input.expectedUpdatedAt === null) return { conflict: true };
         const { data, error } = await db.from('report_branding').update(values)
             .eq('shop_id', shopId).eq('updated_at', input.expectedUpdatedAt).select(REPORT_BRANDING_COLUMNS).maybeSingle();
         if (error) throw new Error(error.message);

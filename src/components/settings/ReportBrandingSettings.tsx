@@ -39,22 +39,20 @@ export function ReportBrandingSettings() {
         queryFn: ({ signal }) => dashboardJson('/api/dashboard/report-branding', { signal, shopId: shop?.id }),
         enabled: !!shop?.id && visible, staleTime: 60_000, retry: 1,
     });
-    // Засаагүй бол серверийн утга; засвар эхэлбэл түр төлөв (хадгалсны дараа дахин серверийнх).
-    const [edited, setEdited] = useState<Draft | null>(null);
+    // Зөвхөн хэрэглэгчийн өөрчилсөн талбар; бусад нь үргэлж серверийн утга. Зэрэг засвар (409)-ын дараа шинэ утга
+    // ачаалагдахад засаагүй талбар (хамтрагчийн шинэ зураг) шинэчлэгдэнэ — хуучин зургийн замыг буцааж илгээхгүй.
+    const [changes, setChanges] = useState<Partial<Draft>>({});
     const [uploading, setUploading] = useState(0);
     const saved = query.data ? draftOf(query.data.branding) : null;
-    const draft = edited ?? saved;
-    const patch = (change: Partial<Draft>) => setEdited(current => {
-        const base = current ?? saved;
-        return base && { ...base, ...change };
-    });
+    const draft = saved && { ...saved, ...changes };
+    const patch = (change: Partial<Draft>) => setChanges(current => ({ ...current, ...change }));
     const save = useMutation({
         mutationFn: (value: Draft) => dashboardMutate<ReportBrandingResponse>('/api/dashboard/report-branding', 'PUT', {
             ...value, expectedUpdatedAt: query.data?.branding.updatedAt ?? null,
         }, { shopId: shop?.id }),
         onSuccess: result => {
             queryClient.setQueryData(['report-branding', shop?.id], result);
-            setEdited(null);
+            setChanges({});
             toast.success('Тайлангийн брэнд хадгалагдлаа');
         },
         onError: () => { void queryClient.invalidateQueries({ queryKey: ['report-branding', shop?.id] }); },

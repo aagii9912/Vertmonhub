@@ -50,6 +50,29 @@ describe('report branding settings', () => {
         cache.clear();
     });
 
+    it('after a conflict keeps only the user\'s own edits and takes a colleague\'s new image from the server', async () => {
+        const logo = (n: number) => `branding/${shop}/40000000-0000-4000-8000-00000000000${n}.png`;
+        const opened = { available: true, branding: { ...saved.branding, logoPath: logo(1) } };
+        // B хадгалсны дараах серверийн утга: лого image 2, шинэ хувилбар.
+        const afterColleague = { available: true, branding: { ...saved.branding, logoPath: logo(2), updatedAt: '2026-10-23T04:00:00+00:00' } };
+        mocks.json.mockResolvedValueOnce(opened).mockResolvedValue(afterColleague);
+        mocks.mutate.mockRejectedValueOnce(new Error('Брэндийг өөр хүн өөрчилсөн байна. Шинэчлээд дахин оролдоно уу.'))
+            .mockResolvedValueOnce({ available: true, branding: { ...afterColleague.branding, footerText: 'А', updatedAt: '2026-10-23T05:00:00+00:00' } });
+        const cache = open();
+        await screen.findByDisplayValue('ЭЛИЗИУМ');
+        fireEvent.change(screen.getByLabelText('Хөл бичвэр'), { target: { value: 'А' } });
+        fireEvent.click(screen.getByRole('button', { name: /Хадгалах/ }));
+        expect(await screen.findByText(/өөр хүн өөрчилсөн/)).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole('img', { name: 'Лого' })).toHaveAttribute('src', `/api/dashboard/report-branding/media?path=${encodeURIComponent(logo(2))}`));
+        expect(screen.getByLabelText('Хөл бичвэр')).toHaveValue('А');
+        fireEvent.click(screen.getByRole('button', { name: /Хадгалах/ }));
+        await waitFor(() => expect(mocks.mutate).toHaveBeenCalledTimes(2));
+        expect(mocks.mutate).toHaveBeenLastCalledWith('/api/dashboard/report-branding', 'PUT', {
+            displayName: 'ЭЛИЗИУМ', footerText: 'А', coverImagePath: cover, logoPath: logo(2), expectedUpdatedAt: '2026-10-23T04:00:00+00:00',
+        }, { shopId: shop });
+        cache.clear();
+    });
+
     it('is read-only without settings write and explains a missing table', async () => {
         mocks.permissions = { modules: ['settings', 'reports'], canWrite: false, canDelete: false };
         const cache = open();

@@ -10,7 +10,8 @@ import { readReportBranding, saveReportBranding } from '@/lib/dashboard/report-b
 /**
  * GET /api/dashboard/report-branding — төслийн илтгэлийн брэнд (харагдах нэр, хөл бичвэр, нүүрний зураг, лого).
  * Унших: reports (илтгэл бэлтгэгч) эсвэл settings (тохиргооны хуудсанд засагч). Хүснэгт байхгүй бол бүх талбар null.
- * PUT — бүх талбарыг солино (settings write, strict Zod, `expectedUpdatedAt`-аар зэрэг засварыг 409).
+ * PUT — бүх талбарыг солино (settings write, strict Zod, `expectedUpdatedAt`-аар зэрэг засварыг 409; одоогийнхоос
+ * өөр зураг storage-д байхгүй бол 400 — устгагдсан зургийн замыг бичихгүй).
  */
 const headers = { 'Cache-Control': 'private, no-store' };
 
@@ -25,7 +26,9 @@ export const PUT = withRoute({ module: 'settings', access: 'write', error: 'Ил
     const userId = await getUserId();
     if (!userId) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
     const db = supabaseAdmin();
-    const result = await saveReportBranding(db, shop.id, userId, parsed.data);
+    // Шинээр сонгосон зураг storage-д байгаа эсэх (404 → false; бусад алдаа шидэгдэж 500).
+    const imageExists = async (path: string) => (await db.storage.from(REPORT_MEDIA_BUCKET).exists(path)).data === true;
+    const result = await saveReportBranding(db, shop.id, userId, parsed.data, imageExists);
     if ('invalid' in result) return NextResponse.json({ error: result.invalid }, { status: 400 });
     if ('conflict' in result) return NextResponse.json({ error: 'Брэндийг өөр хүн өөрчилсөн байна. Шинэчлээд дахин оролдоно уу.' }, { status: 409 });
     if ('unavailable' in result) return NextResponse.json({ error: 'Илтгэлийн брэнд хадгалах хэсэг хараахан идэвхжээгүй байна. Админд хандаж шинэчлэлийг суулгана уу.' }, { status: 503 });

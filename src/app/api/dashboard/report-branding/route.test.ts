@@ -55,7 +55,8 @@ vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({
     storage: { from: () => ({
         upload: async (path: string, body: Uint8Array, options?: { contentType?: string }) => { state.uploads.push({ path, type: options?.contentType }); state.stored.set(path, new Blob([body as BlobPart], { type: options?.contentType })); return { error: null }; },
         download: async (path: string) => state.stored.has(path) ? { data: state.stored.get(path), error: null } : { data: null, error: { message: 'missing' } },
-        remove: async (paths: string[]) => { state.removed.push(...paths); return { error: null }; },
+        exists: async (path: string) => (state.stored.has(path) ? { data: true, error: null } : { data: false, error: { message: 'Object not found' } }),
+        remove: async (paths: string[]) => { state.removed.push(...paths); for (const path of paths) state.stored.delete(path); return { error: null }; },
     }) },
 }) }));
 
@@ -91,6 +92,7 @@ describe('report branding API', () => {
     });
 
     it('saves with settings write only, stamps the actor and the shop from the session, and removes replaced images', async () => {
+        for (const n of [1, 2]) state.stored.set(image(n), new Blob([PNG], { type: 'image/png' }));
         state.modules = ['dashboard', 'reports'];
         expect((await put(body())).status).toBe(403);
         Object.assign(state, { modules: ['settings'], canWrite: false });
@@ -103,6 +105,25 @@ describe('report branding API', () => {
         expect((await put(body({ coverImagePath: image(2), expectedUpdatedAt: '2020-01-01T00:00:00Z' }))).status).toBe(409);
         expect((await put(body({ coverImagePath: image(2), expectedUpdatedAt: version }))).status).toBe(200);
         expect(state.removed).toEqual([image(1)]);
+    });
+
+    it('a stale draft retried after a conflict never writes a deleted image or removes a colleague\'s new one', async () => {
+        for (const n of [1, 2]) state.stored.set(image(n), new Blob([PNG], { type: 'image/png' }));
+        const first = await (await put(body({ coverImagePath: null, logoPath: image(1) }))).json();
+        const opened = first.branding.updatedAt as string;
+        // B: лого image(2) болгож хадгална — image(1) storage-оос устна.
+        const b = await put(body({ coverImagePath: null, logoPath: image(2), expectedUpdatedAt: opened }));
+        expect(b.status).toBe(200);
+        const fresh = (await b.json()).branding.updatedAt as string;
+        expect(state.removed).toEqual([image(1)]);
+        // A: хөл бичвэрээ засаад хуучин нооргоор (лого image(1)) хадгална — 409; шинэ хувилбараар давтвал 400.
+        expect((await put(body({ footerText: 'A', coverImagePath: null, logoPath: image(1), expectedUpdatedAt: opened }))).status).toBe(409);
+        const retry = await put(body({ footerText: 'A', coverImagePath: null, logoPath: image(1), expectedUpdatedAt: fresh }));
+        expect(retry.status).toBe(400);
+        expect((await retry.json()).error).toMatch(/олдсонгүй/);
+        expect(state.row).toMatchObject({ logo_path: image(2), footer_text: 'ВЕРТМОН ПРОПЕРТИС' });
+        expect(state.removed).toEqual([image(1)]);
+        expect(state.stored.has(image(2))).toBe(true);
     });
 
     it('rejects unknown fields, another shop\'s image and answers a missing table with 503', async () => {
