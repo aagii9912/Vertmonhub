@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 type Row = Record<string, unknown>;
@@ -64,7 +64,13 @@ import { GET, PUT } from './route';
 import { GET as MEDIA_GET, POST as MEDIA_POST } from './media/route';
 
 const PNG = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'));
-const put = (body: unknown) => PUT(new NextRequest('http://localhost/api/dashboard/report-branding', { method: 'PUT', body: JSON.stringify(body) }));
+// Хадгалалт бүр шинэ хувилбар (updated_at = new Date()): хурдан машинд дараалсан хоёр хадгалалт нэг миллисекундэд
+// таарвал хуучин хувилбарын шалгалт тодорхойгүй болдог — хадгалалт бүрийн өмнө цагийг 1 секундээр урагшлуулна.
+let clock = Date.parse('2026-10-20T10:00:00Z');
+const put = (body: unknown) => {
+    vi.setSystemTime(clock += 1000);
+    return PUT(new NextRequest('http://localhost/api/dashboard/report-branding', { method: 'PUT', body: JSON.stringify(body) }));
+};
 const get = () => GET(new NextRequest('http://localhost/api/dashboard/report-branding'));
 const body = (over: Row = {}) => ({ displayName: 'ЭЛИЗИУМ', footerText: 'ВЕРТМОН ПРОПЕРТИС', coverImagePath: image(1), logoPath: null, expectedUpdatedAt: null, ...over });
 const upload = (bytes: Uint8Array) => {
@@ -74,7 +80,9 @@ const upload = (bytes: Uint8Array) => {
 };
 const media = (path: string) => MEDIA_GET(new NextRequest(`http://localhost/api/dashboard/report-branding/media?path=${encodeURIComponent(path)}`));
 
+afterEach(() => { vi.useRealTimers(); });
 beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
     Object.assign(state, { role: 'admin', modules: ['dashboard', 'settings'], canWrite: true, member: true, row: null, missing: false, uploads: [], removed: [], stored: new Map() });
 });
 
