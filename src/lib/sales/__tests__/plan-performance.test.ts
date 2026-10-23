@@ -197,7 +197,7 @@ describe('Elysium 2026 plan fulfilment (HUB fixtures)', () => {
         expect(report.cash).toBeNull();
         expect(month(9).total.metrics.cashflow).toBeUndefined();
         const withFinance = buildPlanPerformance(base({ receipts: [] }));
-        expect(withFinance.cash).toEqual({ availability: 'none', unknownPaid: 88, liveContracts: 88, ledgerSince: null });
+        expect(withFinance.cash).toEqual({ availability: 'none', unknownPaid: 88, liveContracts: 88, ledgerSince: null, source: 'ledger', hubPaidAsOf: null });
         expect(withFinance.months[8].total.metrics.cashflow).toMatchObject({ plan: 1_251_032_400, actual: null, pct: null });
         expect(withFinance.ytd.total.metrics.cashflow).toMatchObject({ plan: 9_316_526_400, yearPlan: 11_890_591_200, actual: null });
     });
@@ -290,7 +290,7 @@ describe('projects without a block plan and cash receipts', () => {
             { month: '2026-09', contractId: null, amount: 7 }, { month: '2026-09', contractId: 'k3', amount: 5 },
         ];
         const full = buildPlanPerformance(base({ contracts, receipts, ledgerSince: '2025-11-03' }));
-        expect(full.cash).toEqual({ availability: 'full', unknownPaid: 0, liveContracts: 3, ledgerSince: '2025-11-03' });
+        expect(full.cash).toEqual({ availability: 'full', unknownPaid: 0, liveContracts: 3, ledgerSince: '2025-11-03', source: 'ledger', hubPaidAsOf: null });
         expect(full.months[8].blocks.b1.metrics.cashflow).toMatchObject({ actual: 30, lowerBound: false });
         expect(full.months[8].blocks.parking.metrics.cashflow).toMatchObject({ actual: 20 });
         // Гэрээгүй төлбөр нийтэд л, агуулахын төлбөр төлөвлөгөөнөөс гадуур.
@@ -308,7 +308,7 @@ describe('projects without a block plan and cash receipts', () => {
         const contracts = [contract({ id: 'k1', paid_amount: 50 }), contract({ id: 'k2', bucket: 'parking', paid_amount: 0 })];
         for (const input of [{ receipts: [] }, { receipts: [], ledgerSince: null }]) {
             const report = buildPlanPerformance(base({ contracts, ...input }));
-            expect(report.cash).toEqual({ availability: 'no_ledger', unknownPaid: 0, liveContracts: 2, ledgerSince: null });
+            expect(report.cash).toEqual({ availability: 'no_ledger', unknownPaid: 0, liveContracts: 2, ledgerSince: null, source: 'ledger', hubPaidAsOf: null });
             expect(report.months[8].total.metrics.cashflow).toMatchObject({ actual: null, pct: null });
             expect(report.months[8].blocks.b1.metrics.cashflow).toMatchObject({ actual: null });
             expect(report.months[8].outside.cash).toBeNull();

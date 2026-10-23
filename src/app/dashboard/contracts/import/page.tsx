@@ -385,7 +385,7 @@ function ReviewStep({ preview, busy, acceptReview, onAcceptReview, allowOlder, o
             {(preview.skipped.length > 0 || preview.ignoredColumns.length > 0 || preview.extraColumns.length > 0) && (
                 <SectionCard title="Импортлоогүй">
                     {preview.ignoredColumns.length > 0 && <p className="mt-2 text-sm">Импортлохгүй багана: {preview.ignoredColumns.join(', ')}</p>}
-                    {preview.extraColumns.length > 0 && <p className="mt-2 text-sm text-muted-foreground">Нэмэлт багана танигдлаа: {preview.extraColumns.join(', ')}. «Нийт төлсөн дүн» гэрээнд бичигдэхгүй — зөвхөн импортын түүхэнд.</p>}
+                    {preview.extraColumns.length > 0 && <p className="mt-2 text-sm text-muted-foreground">Нэмэлт багана танигдлаа: {preview.extraColumns.join(', ')}. «Нийт төлсөн дүн» гэрээнд бичигдэхгүй — импортын түүхэнд хадгалагдаж, «Төлөвлөгөөний биелэлт»-ийн орсон мөнгийг (тухайн сард захиалсан гэрээнээс, файлын огноогоор) тооцоход ашиглагдана.</p>}
                     {preview.skipped.length > 0 && <Table head={['Мөр', 'Шалтгаан']} rows={preview.skipped.map(item => [String(item.row), item.reason])} />}
                 </SectionCard>
             )}

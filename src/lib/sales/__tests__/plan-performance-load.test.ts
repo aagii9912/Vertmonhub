@@ -178,3 +178,42 @@ describe('ledgerReceipts', () => {
         ]);
     });
 });
+
+describe('HUB paid totals as cash (W5/W6)', () => {
+    const hubRow = (unitLabel: string, orderDate: string, paidTotal: number | null) => ({ productType: 'residential', unitLabel, orderDate, status: 'active', paidTotal });
+
+    it('uses the latest import up to the report date and pairs its paid totals with live contracts', async () => {
+        const { db, calls } = database({
+            property_contracts: [
+                contract({ id: 'a', unit_label: 'Б1-1', contract_date: '2026-10-08', paid_amount: null }),
+                contract({ id: 'b', unit_label: 'Б1-2', contract_date: '2026-10-13', paid_amount: null }),
+            ],
+            team_sales_targets: [{ year: 2026, month: 10, revision: 1, target_amount: 1_000, cashflow_target_amount: 500, block_amounts: {} }],
+            contract_list_imports: [{ report_date: '2026-10-20', rows: [hubRow('Б1-1', '2026-10-08', 40), hubRow('Б1-2', '2026-10-13', 60)] }],
+        });
+        const { now: _now, ...rest } = options;
+        const report = await loadPlanPerformance(db, { ...rest, now: new Date('2026-10-22T04:00:00Z'), through: '2026-10-20' });
+        expect(report.cash).toMatchObject({ source: 'hub_paid', hubPaidAsOf: '2026-10-20', availability: 'full', unknownPaid: 0 });
+        expect(report.months[9].blocks.b1.metrics.cashflow).toMatchObject({ actual: 100, lowerBound: false });
+        expect(report.months[9].total.metrics.cashflow).toMatchObject({ actual: 100, plan: 500, pct: 20 });
+        const hub = calls.find(call => call.table === 'contract_list_imports' && call.columns.includes('rows'))!;
+        expect(hub.filters).toEqual([['shop_id', 'shop-a'], ['lte:report_date', '2026-10-20']]);
+    });
+
+    it('keeps the ledger rule when the file has no paid column, the table is missing or finance is not granted', async () => {
+        const noPaid = database({
+            property_contracts: [contract({ paid_amount: null })],
+            contract_list_imports: [{ report_date: '2026-10-20', rows: [hubRow('Б1-1', '2026-09-03', null)] }],
+        });
+        expect((await loadPlanPerformance(noPaid.db, options)).cash).toMatchObject({ source: 'ledger', availability: 'none', hubPaidAsOf: null });
+        expect(noPaid.calls.find(call => call.columns.includes('rows'))!.filters).toContainEqual(['lte:report_date', '2026-10-22']);
+
+        const missing = database({ property_contracts: [contract()] }, { missingImports: true });
+        expect((await loadPlanPerformance(missing.db, options)).cash).toMatchObject({ source: 'ledger' });
+
+        const hidden = database({ property_contracts: [contract()], contract_list_imports: [{ report_date: '2026-10-20', rows: [hubRow('Б1-1', '2026-09-03', 5)] }] });
+        const report = await loadPlanPerformance(hidden.db, { ...options, canReadFinance: false });
+        expect(report.cash).toBeNull();
+        expect(hidden.calls.some(call => call.columns.includes('rows'))).toBe(false);
+    });
+});

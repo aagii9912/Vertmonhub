@@ -871,3 +871,73 @@ export function summarizeFileTotals(rows: readonly HubRow[]): ContractListFileTo
             prepaymentDue: sum(row => row.prepaymentDue), overdue: sum(row => row.overdue) }];
     });
 }
+
+// ---------------------------------------------------------------- Орсон мөнгө (W5/W6)
+
+/** Хадгалсан мөрийн (contract_list_imports.rows) «Нийт төлсөн дүн»-д хэрэгтэй хэсэг. */
+export interface HubPaidRow { productType: string; unitLabel: string; orderDate: string; status: ContractListStatus; paidTotal: number | null }
+
+/** Хадгалсан мөрүүдийг (JSON) шалгаж уншина; байр тулгагдаагүй, хэлбэр буруу мөрийг алгасна. Сөрөг дүн = хоосон. */
+export function storedHubPaidRows(rows: unknown): HubPaidRow[] {
+    if (!Array.isArray(rows)) return [];
+    return rows.flatMap((value): HubPaidRow[] => {
+        if (!value || typeof value !== 'object') return [];
+        const row = value as Record<string, unknown>;
+        const productType = textOrNull(row.productType);
+        const unitLabel = textOrNull(row.unitLabel);
+        const orderDate = dateOf(row.orderDate);
+        const status = row.status === 'active' || row.status === 'closed' || row.status === 'cancelled' ? row.status : null;
+        if (!productType || !unitLabel || !orderDate || !status) return [];
+        const paid = typeof row.paidTotal === 'number' && Number.isFinite(row.paidTotal) && row.paidTotal >= 0 ? roundMoney(row.paidTotal) : null;
+        return [{ productType, unitLabel, orderDate, status, paidTotal: paid }];
+    });
+}
+
+/** Файлд «Нийт төлсөн дүн» тоогоор бөглөгдсөн мөр байгаа эсэх (багана байхгүй бол бүгд null). */
+export const hasHubPaidTotals = (rows: readonly HubPaidRow[]) => rows.some(row => row.paidTotal !== null);
+
+/** Тулгалтад хэрэгтэй гэрээний баганууд. */
+export interface HubPaidContract {
+    id: string; product_type?: string | null; unit_label?: string | null; contract_status?: string | null; contract_date?: string | null; order_date?: string | null;
+}
+
+/**
+ * Файлын амьд мөрийг амьд гэрээтэй импортын түлхүүрээр (`${product_type}|${unit_label}`) тулгаж «Нийт төлсөн дүн»-г
+ * гэрээгээр буцаана — импортын дараалал: ижил огноогоор эхэлж, дараа нь шинэ ↔ шинэ. Map-д байхгүй гэрээ = файлд
+ * тулгагдаагүй (тодорхойгүй); null = мөр байгаа ч дүн хоосон. Цуцалсан мөр, цуцалсан гэрээ оролцохгүй.
+ */
+export function hubPaidByContract(rows: readonly HubPaidRow[], contracts: readonly HubPaidContract[]): Map<string, number | null> {
+    const rowsByUnit = new Map<string, HubPaidRow[]>();
+    for (const row of rows) {
+        if (row.status === 'cancelled') continue;
+        const key = unitKeyOf(row.productType, row.unitLabel);
+        if (!key) continue;
+        const list = rowsByUnit.get(key);
+        if (list) list.push(row); else rowsByUnit.set(key, [row]);
+    }
+    const contractsByUnit = new Map<string, HubPaidContract[]>();
+    for (const contract of contracts) {
+        if (!isLive(contract.contract_status)) continue;
+        const key = unitKeyOf(contract.product_type, contract.unit_label);
+        if (!key || !rowsByUnit.has(key)) continue;
+        const list = contractsByUnit.get(key);
+        if (list) list.push(contract); else contractsByUnit.set(key, [contract]);
+    }
+    const contractDate = (contract: HubPaidContract) => dateOf(contract.order_date) ?? dateOf(contract.contract_date);
+    const paid = new Map<string, number | null>();
+    for (const [key, unitContracts] of contractsByUnit) {
+        const unitRows = [...rowsByUnit.get(key)!].sort((a, b) => byDateDesc(a.orderDate, b.orderDate));
+        const free = [...unitContracts].sort((a, b) => byDateDesc(contractDate(a), contractDate(b)) || a.id.localeCompare(b.id));
+        const take = (row: HubPaidRow, contract: HubPaidContract) => { paid.set(contract.id, row.paidTotal); free.splice(free.indexOf(contract), 1); };
+        const left: HubPaidRow[] = [];
+        for (const row of unitRows) {
+            const match = free.find(contract => contractDate(contract) === row.orderDate);
+            if (match) take(row, match); else left.push(row);
+        }
+        for (const row of left) {
+            if (!free.length) break;
+            take(row, free[0]);
+        }
+    }
+    return paid;
+}
