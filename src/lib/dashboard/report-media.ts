@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Хувийн `report-media` bucket-ийн зам (хурлын нэмэлт слайд, маркетингийн контентын постер).
+ * Хувийн `report-media` bucket-ийн зам (хурлын нэмэлт слайд, маркетингийн контентын постер, төслийн илтгэлийн брэнд).
  * Хамааралгүй жижиг модуль — weekly-slides ↔ weekly-review ↔ content-plan импортын тойрог үүсгэхгүй.
  */
 export const REPORT_MEDIA_BUCKET = 'report-media';
@@ -22,5 +22,28 @@ export function parseReportMediaPath(value: unknown): { path: string; shopId: st
 
 export function reportMediaUrl(path: string): string {
     return `${REPORT_MEDIA_ENDPOINT}?path=${encodeURIComponent(path)}`;
+}
+
+/** Файлын эхний байтаас JPEG/PNG-г тогтооно (нэр, Content-Type-д итгэхгүй). */
+export function sniffReportImage(bytes: Uint8Array): keyof typeof REPORT_MEDIA_TYPES | null {
+    if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+    const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    if (bytes.length > png.length && png.every((byte, index) => bytes[index] === byte)) return 'image/png';
+    return null;
+}
+
+/** Төслийн илтгэлийн брэнд зураг (нүүр, лого) — мөн bucket-д `branding/<shop_id>/<uuid>.<jpg|png>`. */
+export const REPORT_BRANDING_MEDIA_ENDPOINT = '/api/dashboard/report-branding/media';
+const BRANDING_PATTERN = /^branding\/([0-9a-f-]{36})\/([0-9a-f-]{36})\.(jpg|png)$/;
+
+export function parseBrandingMediaPath(value: unknown): { path: string; shopId: string; ext: 'jpg' | 'png' } | null {
+    if (typeof value !== 'string' || value.length > 200) return null;
+    const match = BRANDING_PATTERN.exec(value);
+    if (!match || ![match[1], match[2]].every(id => uuid.safeParse(id).success)) return null;
+    return { path: value, shopId: match[1], ext: match[3] as 'jpg' | 'png' };
+}
+
+export function brandingMediaUrl(path: string): string {
+    return `${REPORT_BRANDING_MEDIA_ENDPOINT}?path=${encodeURIComponent(path)}`;
 }
 

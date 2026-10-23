@@ -23,6 +23,7 @@ vi.mock('@/hooks/usePushNotifications', () => ({
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 // Лидийн ангиллын хэсэг өөрийн тесттэй (react-query) — энд төслийн талбар, push-ийг шалгана.
 vi.mock('@/components/settings/LeadCategoriesSettings', () => ({ LeadCategoriesSettings: () => null }));
+vi.mock('@/components/settings/ReportBrandingSettings', () => ({ ReportBrandingSettings: () => null }));
 
 type Call = { url: string; init?: RequestInit };
 const calls: Call[] = [];
