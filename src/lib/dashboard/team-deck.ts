@@ -164,7 +164,9 @@ function negotiationSlides(pres: PptxGenJS, ctx: Ctx) {
     } else {
         const notes = [
             'Эх сурвалж: CRM — «Хэлэлцэж байна» / «Санал тавьсан» төлөвтэй, амьд гэрээгүй лид; блок, давхар, талбай, урьдчилгааны хувь = сүүлийн болсон уулзалтын сонирхол.',
-            `Мкв үнэ, нийт үнэ, урьдчилгаа — өнөөдрийн үнээр (${dot(report.asOf)}, баталсан үнийн тохиргоо${report.pricing ? ` v${report.pricing.version}` : ''}).`,
+            report.pricing
+                ? `Мкв үнэ, нийт үнэ, урьдчилгаа — өнөөдрийн үнээр (${dot(report.asOf)}, баталсан үнийн тохиргоо v${report.pricing.version}).`
+                : `Мкв үнэ, нийт үнэ, урьдчилгаа — өнөөдрийн үнээр (${dot(report.asOf)}); идэвхтэй үнийн тохиргоо алга бол «—».`,
             '«Урьдчилгаа нөхцөл» тодорхойлогдоогүй (W13) тул «—».',
             ...report.notes,
         ];
@@ -248,7 +250,8 @@ function monthContractSlides(pres: PptxGenJS, ctx: Ctx) {
         unavailable(content(pres, ctx.name, title), ctx, 'weeklySales', TOP - 0.2);
         return;
     }
-    const lines = report.month.lines;
+    // Хуучин (сарын мөргүй) хариу ирвэл хоосон гэж үзнэ.
+    const lines = report.month.lines ?? [];
     const parking = lines.filter(line => line.kind === 'parking');
     const residential = lines.filter(line => line.kind === 'residential');
     const others = lines.filter(line => line.kind !== 'parking' && line.kind !== 'residential');
