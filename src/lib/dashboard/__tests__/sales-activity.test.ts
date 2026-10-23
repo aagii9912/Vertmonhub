@@ -106,7 +106,7 @@ describe('buildSalesActivity', () => {
     it('keeps a metric with no entered cell unknown even on days other metrics were entered', () => {
         const report = buildSalesActivity(input({ counts: [cell('2026-10-15', 'call.l1.new', 5)] }));
         expect(report.buckets[4].values).toMatchObject({ hotline: 5, managerLine: null, chats: null });
-        expect(report.month.metrics.managerLine).toEqual({ actual: null, plan: null, planToDate: null, pct: null });
+        expect(report.month.metrics.managerLine).toEqual({ actual: null, plan: null, planToDate: null, pct: null, partial: false });
     });
 
     it('counts completed new and repeat meetings from the first recorded meeting onward', () => {
@@ -118,18 +118,40 @@ describe('buildSalesActivity', () => {
         expect(report.buckets.map(bucket => [bucket.values.newMeetings, bucket.values.repeatMeetings])).toEqual([
             [null, null], [null, null], [null, null], [1, 1], [2, 0],
         ]);
-        expect(report.month.metrics.newMeetings.actual).toBe(3);
-        expect(report.month.metrics.repeatMeetings.actual).toBe(1);
+        // 10/07-нд эхэлсэн хэсэг бүрэн мэдэгдэнэ.
+        expect(report.buckets.every(bucket => !bucket.partial.newMeetings && !bucket.partial.repeatMeetings)).toBe(true);
         expect(report.dataSince).toBe('2026-10-07');
         expect(report.notes).toEqual(expect.arrayContaining([expect.stringContaining('2026-10-07-нээс эхэлсэн')]));
-
-        // Бүртгэл хэсгийн дунд эхэлсэн бол тэр хэсгийн тоо (0 ч) гарна; бүртгэлгүй бол бүгд тодорхойгүй.
-        const partial = buildSalesActivity(input({ meetings, meetingsSince: '2026-10-03' }));
-        expect(partial.buckets[2].values.newMeetings).toBe(0);
         const none = buildSalesActivity(input({ meetings: [], meetingsSince: null }));
         expect(none.buckets.every(bucket => bucket.values.newMeetings === null)).toBe(true);
         expect(none.month.metrics.newMeetings.actual).toBeNull();
         expect(none.notes).toEqual(expect.arrayContaining(['Уулзалт бүртгэгдээгүй тул уулзалтын тоо тодорхойгүй.']));
+    });
+
+    it('marks counts that straddle the first recorded meeting as lower bounds and drops their attainment', () => {
+        // Elysium: анхны уулзалт 10/07; 10/21-ний хурлын сар 10/01–10/20 — 6 өдөр нь бүртгэлгүй.
+        const meetings = [
+            { day: '2026-10-07', type: 'new_customer' }, { day: '2026-10-09', type: 'repeat_customer' }, { day: '2026-10-15', type: 'new_customer' },
+        ];
+        const report = buildSalesActivity(input({ meetings, meetingsSince: '2026-10-07', targets: { meetings_new: 110, meetings_repeat: 30 } }));
+        expect(report.month.metrics.newMeetings).toEqual({ actual: 2, plan: 110, planToDate: 73, pct: null, partial: true });
+        expect(report.month.metrics.repeatMeetings).toEqual({ actual: 1, plan: 30, planToDate: 20, pct: null, partial: true });
+        expect(report.month.metrics.hotline.partial).toBe(false);
+        expect(report.notes).toEqual(expect.arrayContaining(['2026-10 сарын уулзалтын тоо 2026-10-07-нээс хойшхи бүртгэлээр тул биелэлтийн хувь «—».']));
+
+        // Хэсгийн дунд эхэлсэн: олдсон бол «N+», олдоогүй бол null (0 биш); бүртгэлээс өмнө дууссан хэсэг null.
+        const midBucket = buildSalesActivity(input({ meetings: [{ day: '2026-10-04', type: 'new_customer' }, ...meetings], meetingsSince: '2026-10-03' }));
+        expect(midBucket.buckets[2]).toMatchObject({
+            from: '2026-10-01', to: '2026-10-06',
+            values: { newMeetings: 1, repeatMeetings: null }, partial: { newMeetings: true, repeatMeetings: false, hotline: false },
+        });
+        expect(midBucket.buckets[1].values.newMeetings).toBeNull();
+        expect(midBucket.buckets[3]).toMatchObject({ values: { newMeetings: 1, repeatMeetings: 1 }, partial: { newMeetings: false, repeatMeetings: false } });
+
+        // Бүртгэл сарын 1-нд эхэлсэн бол сар бүрэн, хувь тооцогдоно.
+        const full = buildSalesActivity(input({ meetings, meetingsSince: '2026-10-01', targets: { meetings_new: 110 } }));
+        expect(full.month.metrics.newMeetings).toEqual({ actual: 2, plan: 110, planToDate: 73, pct: 3, partial: false });
+        expect(full.notes.join(' ')).not.toContain('биелэлтийн хувь «—»');
     });
 
     it('pro-rates the monthly team plan to the report end and computes attainment', () => {
@@ -139,11 +161,11 @@ describe('buildSalesActivity', () => {
             targets: { hotline: 550, manager_line: 300, meetings_new: 110, chats: 85 },
         }));
         // 10-20 → 20/30.
-        expect(report.month.metrics.hotline).toEqual({ actual: 100, plan: 550, planToDate: 367, pct: 27 });
-        expect(report.month.metrics.chats).toEqual({ actual: 120, plan: 85, planToDate: 57, pct: 211 });
-        expect(report.month.metrics.newMeetings).toEqual({ actual: 1, plan: 110, planToDate: 73, pct: 1 });
-        expect(report.month.metrics.repeatMeetings).toEqual({ actual: 0, plan: null, planToDate: null, pct: null });
-        expect(report.month.metrics.managerLine).toEqual({ actual: null, plan: 300, planToDate: 200, pct: null });
+        expect(report.month.metrics.hotline).toEqual({ actual: 100, plan: 550, planToDate: 367, pct: 27, partial: false });
+        expect(report.month.metrics.chats).toEqual({ actual: 120, plan: 85, planToDate: 57, pct: 211, partial: false });
+        expect(report.month.metrics.newMeetings).toEqual({ actual: 1, plan: 110, planToDate: 73, pct: 1, partial: false });
+        expect(report.month.metrics.repeatMeetings).toEqual({ actual: 0, plan: null, planToDate: null, pct: null, partial: false });
+        expect(report.month.metrics.managerLine).toEqual({ actual: null, plan: 300, planToDate: 200, pct: null, partial: false });
     });
 
     it('leaves plans unknown when the targets column is missing or the month has none', () => {

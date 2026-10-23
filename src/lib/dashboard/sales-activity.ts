@@ -11,7 +11,8 @@
  *  • Хугацаанд тухайн үзүүлэлтийн нэг ч нүд оруулаагүй бол null («—»), 0 биш (хэн ч 0 гэж бичдэггүй).
  *  • Шинэ / давтан уулзалт = `completed`, устгаагүй `property_viewings`-ийн `meeting_type`
  *    (`new_customer` / `repeat_customer`), уулзалтын УБ өдрөөр. Өөр төслийн худалдан авагчийг «Шинэ»-ээр
- *    бүртгэдэг (W10) тул тусгай дүрэмгүй. Уулзалтын бүртгэл эхэлсэн өдрөөс (`dataSince`) өмнө null.
+ *    бүртгэдэг (W10) тул тусгай дүрэмгүй. Уулзалтын бүртгэл эхэлсэн өдрөөс (`dataSince`) өмнө null; бүртгэл
+ *    хугацааны дунд эхэлсэн бол тоо нь доод хязгаар («N+», `partial`), олдоогүй бол null, хувь нь null.
  *  • 7 хоног = Лхагва→Мягмар (W1), сарын хилээр тасална (`monthWeeks`), сар дамжина; сүүлийн 5 хэсэг.
  *  • Төлөвлөгөө = төслийн багийн сарын төлөвлөгөө (`team_sales_targets.activity_targets`). Хувь тэнцүүлсэн
  *    төлөвлөгөө = round(сарын × min(тайлант өдөр, 30) / 30), хувь = round(гүйцэтгэл / хувь тэнцүүлсэн × 100) (W11).
@@ -42,13 +43,16 @@ export interface ActivityBucket {
     from: string;
     to: string;
     values: Record<ActivityMetric, number | null>;
+    /** Утга нь доод хязгаар («N+»): хэсэг бүртгэл эхлэхээс (уулзалт: `dataSince`) өмнө эхэлсэн. */
+    partial: Record<ActivityMetric, boolean>;
     /** «Тайлан хийж гүйцэтгэсэн» гэж баталгаажуулсан өдөр. */
     confirmedDays: number;
     /** Аль нэг менежер ямар нэг нүд оруулсан өдөр. */
     knownDays: number;
     days: number;
 }
-export interface ActivityMonthMetric { actual: number | null; plan: number | null; planToDate: number | null; pct: number | null }
+/** `partial` — `actual` доод хязгаар («N+»; сар бүртгэл эхлэхээс өмнө эхэлсэн), тиймээс `pct` null. */
+export interface ActivityMonthMetric { actual: number | null; plan: number | null; planToDate: number | null; pct: number | null; partial: boolean }
 export interface SalesActivityReport {
     meetingDate: string;
     range: { from: string; to: string };
@@ -139,6 +143,8 @@ export function salesActivityWindow(meetingDate: string) {
 
 const emptyValues = (): Record<ActivityMetric, number | null> =>
     Object.fromEntries(ACTIVITY_METRICS.map(metric => [metric, null])) as Record<ActivityMetric, number | null>;
+const completeValues = (): Record<ActivityMetric, boolean> =>
+    Object.fromEntries(ACTIVITY_METRICS.map(metric => [metric, false])) as Record<ActivityMetric, boolean>;
 
 export function buildSalesActivity(input: SalesActivityInput): SalesActivityReport {
     const { config } = input;
@@ -173,20 +179,34 @@ export function buildSalesActivity(input: SalesActivityInput): SalesActivityRepo
         return found ? total : null;
     };
     const since = input.meetingsSince;
-    const countMeetings = (type: string, from: string, to: string): number | null => {
-        if (!since || to < since) return null;
-        return input.meetings.filter(meeting => meeting.type === type && meeting.day >= from && meeting.day <= to).length;
+    /**
+     * Уулзалт: бүртгэл эхлэхээс өмнө дууссан хугацаа → null. Бүртгэл хугацааны дунд эхэлсэн бол эхэлснээс хойшхи
+     * тоо нь доод хязгаар («N+», `partial`); нэг ч олдоогүй бол null (өмнөх өдрүүд тодорхойгүй тул 0 биш).
+     */
+    const countMeetings = (type: string, from: string, to: string): { value: number | null; partial: boolean } => {
+        if (!since || to < since) return { value: null, partial: false };
+        const count = input.meetings.filter(meeting => meeting.type === type && meeting.day >= from && meeting.day <= to).length;
+        if (from >= since) return { value: count, partial: false };
+        return count ? { value: count, partial: true } : { value: null, partial: false };
     };
-    const valuesFor = (from: string, to: string): Record<ActivityMetric, number | null> => ({
-        ...emptyValues(),
-        hotline: sumCounts(metricKeys.hotline, from, to),
-        managerLine: sumCounts(metricKeys.managerLine, from, to),
-        newMeetings: countMeetings('new_customer', from, to),
-        repeatMeetings: countMeetings('repeat_customer', from, to),
-        chats: sumCounts(metricKeys.chats, from, to),
-    });
+    const valuesFor = (from: string, to: string) => {
+        const fresh = countMeetings('new_customer', from, to);
+        const repeat = countMeetings('repeat_customer', from, to);
+        const values: Record<ActivityMetric, number | null> = {
+            ...emptyValues(),
+            hotline: sumCounts(metricKeys.hotline, from, to),
+            managerLine: sumCounts(metricKeys.managerLine, from, to),
+            newMeetings: fresh.value,
+            repeatMeetings: repeat.value,
+            chats: sumCounts(metricKeys.chats, from, to),
+        };
+        return { values, partial: { ...completeValues(), newMeetings: fresh.partial, repeatMeetings: repeat.partial } };
+    };
     if (!since) notes.push('Уулзалт бүртгэгдээгүй тул уулзалтын тоо тодорхойгүй.');
-    else if (since > window.from) notes.push(`Уулзалтын бүртгэл ${since}-нээс эхэлсэн — түүнээс өмнөх уулзалт тодорхойгүй.`);
+    else if (since > window.from) notes.push(`Уулзалтын бүртгэл ${since}-нээс эхэлсэн — түүнээс өмнөх уулзалт тодорхойгүй, тэр өдрийг агуулсан хугацааны тоо доод хязгаар («N+»).`);
+    if (since && since > window.month.from && since <= window.month.to) {
+        notes.push(`${window.month.month} сарын уулзалтын тоо ${since}-нээс хойшхи бүртгэлээр тул биелэлтийн хувь «—».`);
+    }
     if (input.today && window.range.to > input.today) notes.push(`Тайлант 7 хоног (${window.range.from} – ${window.range.to}) хараахан дуусаагүй байна.`);
 
     const countDates = new Set(input.counts.map(row => row.report_date));
@@ -194,7 +214,7 @@ export function buildSalesActivity(input: SalesActivityInput): SalesActivityRepo
         const inBucket = (date: string) => date >= bucket.from && date <= bucket.to;
         return {
             ...bucket,
-            values: valuesFor(bucket.from, bucket.to),
+            ...valuesFor(bucket.from, bucket.to),
             confirmedDays: new Set(input.confirmedDates.filter(inBucket)).size,
             knownDays: [...countDates].filter(inBucket).length,
             days: daySpan(bucket.from, bucket.to),
@@ -208,7 +228,10 @@ export function buildSalesActivity(input: SalesActivityInput): SalesActivityRepo
     const metrics = Object.fromEntries(ACTIVITY_METRICS.map(metric => {
         const plan = targets[metric];
         const planToDate = proratedPlan(plan, window.month.to);
-        return [metric, { actual: actual[metric], plan, planToDate, pct: attainmentPct(actual[metric], planToDate) }];
+        const partial = actual.partial[metric];
+        // Доод хязгаарыг бүтэн сарын хувь тэнцүүлсэн төлөвлөгөөнд хуваавал биелэлт дутуу харагдана — хувь «—».
+        const pct = partial ? null : attainmentPct(actual.values[metric], planToDate);
+        return [metric, { actual: actual.values[metric], plan, planToDate, pct, partial }];
     })) as Record<ActivityMetric, ActivityMonthMetric>;
 
     return {

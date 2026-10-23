@@ -93,8 +93,9 @@ describe('loadSalesActivity', () => {
         // Уулзалтын бүртгэл эхэлсэн өдөр: устгаагүй, ямар ч төлөвтэй хамгийн эртний (УБ 10-07).
         expect(report.dataSince).toBe('2026-10-07');
         expect(report.buckets[2].values.newMeetings).toBeNull();
-        expect(report.month.metrics.hotline).toEqual({ actual: 2, plan: 550, planToDate: 367, pct: 1 });
-        expect(report.month.metrics.repeatMeetings).toEqual({ actual: 1, plan: 30, planToDate: 20, pct: 5 });
+        expect(report.month.metrics.hotline).toEqual({ actual: 2, plan: 550, planToDate: 367, pct: 1, partial: false });
+        // Уулзалтын бүртгэл 10/07-нд эхэлсэн тул сарын тоо доод хязгаар, хувь «—».
+        expect(report.month.metrics.repeatMeetings).toEqual({ actual: 1, plan: 30, planToDate: 20, pct: null, partial: true });
         expect(report.lines.hotline).toBe('7786-2222');
         expect(calls).toContain('daily_report_counts:report_date, manager_name, metric, value');
     });
