@@ -50,6 +50,8 @@ async function fixtures(page: Page) {
             pagination: { total: state.lead ? 1 : 0, page: 1, pageSize: 25, totalPages: 1, hasMore: false } });
         if (path === '/api/dashboard/properties/search') return reply({ properties: [] });
         if (path === '/api/dashboard/viewings/options') return reply({ project_id: projectId, units: [], conditions: [], reason: 'Баталсан үнийн тохиргоо байхгүй' });
+        // «Сэжим (хаанаас ирсэн)»: жагсаалтгүй төсөл — уулзалт бүртгэхийг хаахгүй.
+        if (path === '/api/dashboard/referral-sources') return reply({ sources: [], available: true });
         if (path === '/api/dashboard/viewings' && request.method() === 'POST') {
             const body = request.postDataJSON();
             state.requests.push({ path, body });

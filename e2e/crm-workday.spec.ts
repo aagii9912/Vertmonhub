@@ -108,6 +108,8 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
             Object.assign(item!, request.postDataJSON());
             return reply({ viewing: item });
         }
+        // «Сэжим (хаанаас ирсэн)»: жагсаалтгүй төсөл — уулзалт бүртгэхийг хаахгүй.
+        if (path === '/api/dashboard/referral-sources') return reply({ sources: [], available: true });
         if (path === '/api/dashboard/viewings') return reply({ viewings: state.viewings, counts: { today: 0, upcoming: 2, past: 0 } });
         const contractPath = path.match(/^\/api\/dashboard\/contracts\/([^/]+)(?:\/(payments|transfer))?$/);
         if (contractPath && contractPath[1] !== 'stats') {

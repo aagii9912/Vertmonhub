@@ -149,6 +149,8 @@ async function setup(page: Page, mode: 'team' | 'personal') {
             setCount(change.manager_name!, change.metric!, change.old_value, change.id);
             return reply({ ok: true });
         }
+        // «Сэжим (хаанаас ирсэн)»: жагсаалтгүй төсөл — уулзалт бүртгэхийг хаахгүй.
+        if (path === '/api/dashboard/referral-sources') return reply({ sources: [], available: true });
         if (path === '/api/dashboard/daily-report/meetings') {
             const body = request.postDataJSON() as DailyMeetingRequestBody;
             state.meetingPosts.push(body);

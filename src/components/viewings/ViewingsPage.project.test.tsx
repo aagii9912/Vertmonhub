@@ -126,7 +126,8 @@ describe('viewing project selection', () => {
             let dialog = openCreate();
             fireEvent.click(dialog.getByRole('button', { name: 'Давтан' }));
             fireEvent.click(dialog.getByRole('button', { name: 'Товлох' }));
-            await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ meeting_type: 'repeat_customer', referral_source_id: null })));
+            await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ meeting_type: 'repeat_customer' })));
+            expect(mocks.create.mock.calls[0][0]).not.toHaveProperty('referral_source_id');
             cleanup();
 
             for (const referrals of [{ sources: [], available: true }, { sources: [], available: false }, undefined]) {
@@ -135,7 +136,8 @@ describe('viewing project selection', () => {
                 dialog = openCreate();
                 expect(dialog.queryByRole('combobox', { name: 'Сэжим (хаанаас ирсэн)' })).not.toBeInTheDocument();
                 fireEvent.click(dialog.getByRole('button', { name: 'Товлох' }));
-                await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ meeting_type: 'new_customer', referral_source_id: null })));
+                await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ meeting_type: 'new_customer' })));
+                expect(mocks.create.mock.calls[0][0]).not.toHaveProperty('referral_source_id');
                 cleanup();
             }
         });

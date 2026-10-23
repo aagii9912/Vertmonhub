@@ -73,7 +73,8 @@ export function DailyMeetingDialog({ open, onOpenChange, date, today, managers, 
             notes: notes.trim() || null,
             feedback: feedback.trim() || null,
             interest_level: interest,
-            referral_source_id: referralOptions.some(item => item.id === referral) ? referral : null,
+            // Сонгоогүй бол түлхүүрийг илгээхгүй (хуучин серверийн strict схем мэдэхгүй түлхүүрийг татгалздаг).
+            ...(referralOptions.some(item => item.id === referral) ? { referral_source_id: referral } : {}),
         };
         setSaving(true);
         try {

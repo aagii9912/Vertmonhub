@@ -280,3 +280,38 @@ describe('POST /api/dashboard/daily-report/meetings — reassign', () => {
         expect((await response.json()).error).toBe('Тухайн төслийн идэвхтэй борлуулалтын менежерийг сонгоно уу');
     });
 });
+
+describe('POST /api/dashboard/daily-report/meetings — «Сэжим (хаанаас ирсэн)»', () => {
+    const FACEBOOK = '00000000-0000-4000-8000-0000000000f1';
+    const ARCHIVED = '00000000-0000-4000-8000-0000000000b1';
+    const FOREIGN = '00000000-0000-4000-8000-0000000000c1';
+    beforeEach(() => {
+        state.db.tables.sales_referral_sources = [
+            { id: FACEBOOK, shop_id: 'shop-1', name: 'Facebook', sort_order: 10, archived_at: null },
+            { id: ARCHIVED, shop_id: 'shop-1', name: 'Бармаш түрээслэгч', sort_order: 20, archived_at: '2026-10-18T00:00:00Z' },
+            { id: FOREIGN, shop_id: 'shop-2', name: 'Монкон', sort_order: 10, archived_at: null },
+        ];
+    });
+
+    it('requires an active referral for a new customer when the project has a list and passes it to the RPC', async () => {
+        const missing = await post(record());
+        expect(missing.status).toBe(400);
+        expect((await missing.json()).error).toContain('Шинэ харилцагчийн уулзалтад «Сэжим (хаанаас ирсэн)»-ийг сонгоно уу');
+        for (const id of [ARCHIVED, FOREIGN]) expect((await post(record({ referral_source_id: id }))).status).toBe(400);
+        expect((await post(record({ referral_source_id: 'Facebook' }))).status).toBe(400);
+        expect(calls('record_daily_report_meeting')).toHaveLength(0);
+
+        expect((await post(record({ referral_source_id: FACEBOOK }))).status).toBe(201);
+        expect(calls('record_daily_report_meeting')[0].args.p_input).toMatchObject({ meeting_type: 'new_customer', referral_source_id: FACEBOOK });
+    });
+
+    it('keeps it optional for repeat customers and for projects without a list or before the migration', async () => {
+        expect((await post(record({ meeting_type: 'repeat_customer' }))).status).toBe(201);
+        expect(calls('record_daily_report_meeting')[0].args.p_input).not.toHaveProperty('referral_source_id');
+        state.db.tables.sales_referral_sources = [];
+        expect((await post(record())).status).toBe(201);
+        state.db.failNext.sales_referral_sources = { code: 'PGRST205', message: "Could not find the table 'public.sales_referral_sources'" };
+        expect((await post(record())).status).toBe(201);
+        expect(calls('record_daily_report_meeting').map(call => 'referral_source_id' in call.args.p_input)).toEqual([false, false, false]);
+    });
+});

@@ -261,7 +261,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                 interest_level: walkIn && interest ? interest : null,
                 feedback: walkIn ? feedback.trim() || null : null,
                 interests: includeDraftInterest(interests, draftInterest),
-                referral_source_id: referralOptions.some(item => item.id === referralId) ? referralId : null,
+                ...(referralOptions.some(item => item.id === referralId) ? { referral_source_id: referralId } : {}),
             });
             if (result.warning) toast.warning(result.warning);
             else toast.success(walkIn ? 'Ирсэн уулзалт бүртгэгдлээ' : 'Уулзалт товлогдлоо');
