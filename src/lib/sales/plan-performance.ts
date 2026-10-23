@@ -71,6 +71,8 @@ const fromCents = (value: number) => value / 100;
 export interface PlanContract extends PlanBucketSource {
     id: string;
     contract_date: string | null;
+    /** Захиалгын огноо — зөвхөн HUB «Нийт төлсөн дүн»-ийн тулгалтад (cohort-ын сар = contract_date). */
+    order_date?: string | null;
     contract_status: string | null;
     total_price: number | string | null;
     prepayment_due?: number | string | null;

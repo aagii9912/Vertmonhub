@@ -8,7 +8,8 @@ import { buildPlanPerformance, type PlanContract, type PlanPerformance, type Pla
 import { isMissingContractListSchema, readLatestContractListImport } from '@/lib/contracts/live';
 import { hasHubPaidTotals, hubPaidByContract, storedHubPaidRows } from '@/lib/contracts/list-import';
 
-const CONTRACT_COLUMNS = 'id, contract_date, contract_status, product_type, block_name, unit_label, total_price, prepayment_due, paid_amount';
+// order_date: HUB «Нийт төлсөн дүн»-г импортын огноогоор (order_date ?? contract_date) тулгахад.
+const CONTRACT_COLUMNS = 'id, contract_date, order_date, contract_status, product_type, block_name, unit_label, total_price, prepayment_due, paid_amount';
 const OVERDUE_COLUMNS = ', overdue_amount, overdue_as_of';
 type DbError = { code?: string; message: string } | null;
 const missingColumn = (error: DbError, column: string) => !!error && ['42703', 'PGRST204'].includes(error.code ?? '') && error.message.includes(column);
@@ -101,7 +102,7 @@ export async function loadPlanPerformance(db: SupabaseClient, options: {
         options.canReadFinance ? hubImport() : Promise.resolve(null),
     ]);
     const hubRows = hubFile ? storedHubPaidRows(hubFile.rows) : [];
-    const hubPaid = hubFile && hasHubPaidTotals(hubRows) ? { asOf: hubFile.asOf, paid: hubPaidByContract(hubRows, contracts) } : null;
+    const hubPaid = hubFile && hasHubPaidTotals(hubRows) ? { asOf: hubFile.asOf, paid: hubPaidByContract(hubRows, contracts, hubFile.asOf) } : null;
     // Тайлант өдрөөс хойш эхэлсэн дэвтэр тэр өдөр байгаагүй — «бүртгэлгүй» (0 биш).
     const ledgerSinceAt = through && ledgerSince && ledgerSince > through ? null : ledgerSince;
     return buildPlanPerformance({

@@ -423,7 +423,7 @@ const dateOf = (value: unknown): string | null => {
     return match ? match[1] : null;
 };
 const isLive = (status: string | null | undefined) => status !== 'cancelled';
-const effectiveDate = (contract: ContractListContract) => dateOf(contract.order_date) ?? dateOf(contract.contract_date);
+const effectiveDate = (contract: { order_date?: string | null; contract_date?: string | null }) => dateOf(contract.order_date) ?? dateOf(contract.contract_date);
 /** Нэрийг харьцуулах: зай, цэгийн орчмын зай, том жижиг үсэг хамаагүй. */
 const nameKey = (value: string | null | undefined) => (value ?? '').trim().replace(/\s*\.\s*/g, '.').replace(/\s+/g, ' ').toLowerCase();
 const joinName = (first: string | null, last: string | null) => [first, last].filter(Boolean).join('.') || null;
@@ -439,6 +439,54 @@ function contractLabel(contract: ContractListContract): string {
     return displayLabel(contract.product_type, code);
 }
 const byDateDesc = (a: string | null, b: string | null) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : a < b ? 1 : -1);
+
+/** Тулгалтад хэрэгтэй файлын мөр, гэрээний хэсэг (импорт ба «Нийт төлсөн дүн» хоёулаа). */
+interface PairRow { row: number; orderDate: string; status: ContractListStatus }
+interface PairContract { id: string; contract_status?: string | null; order_date?: string | null; contract_date?: string | null }
+
+/**
+ * Нэг байрны файлын мөр ↔ гэрээний тулгалтын нийтлэг алхмууд. Импорт (`planContractListImport`) ба HUB-ийн «Нийт
+ * төлсөн дүн» (`hubPaidByContract`) энэ нэг дүрмийг хэрэглэнэ — хуулбар дүрэм зөрдөг. Огноо = order_date ?? contract_date.
+ *  1. амьд мөр ↔ амьд гэрээ, цуцалсан мөр ↔ цуцалсан гэрээ ижил огноогоор;
+ *  2. үлдсэн цуцалсан мөр ↔ ижил огноотой амьд гэрээ («Тоот шилжсэн» биш) = тэр гэрээ цуцлагдаж байр дахин зарагдсан
+ *     (шинэ мөрийг түүнд оноохгүй — оновол хуучин эзэмшигчийн гэрээ шинэ худалдааны огноо, дүнг авна);
+ *  3. үлдсэн амьд мөр ↔ үлдсэн амьд гэрээ: шинэ ↔ шинэ.
+ * Үлдсэн мөрийг (`liveExtra`, `cancelledUnmatched`) импорт цааш шийднэ (шинэ гэрээ, буцаан идэвхжүүлэх, огноогүй гэрээ).
+ */
+function pairUnitRows<R extends PairRow, C extends PairContract>(unitRows: readonly R[], db: readonly C[]) {
+    const rows = [...unitRows].sort((a, b) => byDateDesc(a.orderDate, b.orderDate) || a.row - b.row);
+    const byEffectiveDate = (a: C, b: C) => byDateDesc(effectiveDate(a), effectiveDate(b)) || a.id.localeCompare(b.id);
+    const liveRows = rows.filter(row => row.status !== 'cancelled');
+    const cancelledRows = rows.filter(row => row.status === 'cancelled');
+    const liveDb = db.filter(contract => isLive(contract.contract_status)).sort(byEffectiveDate);
+    const cancelledDb = db.filter(contract => !isLive(contract.contract_status)).sort(byEffectiveDate);
+    const pairs: Array<{ row: R; contract: C }> = [];
+    const pairedIds = new Set<string>();
+    const take = (row: R, contract: C) => { pairs.push({ row, contract }); pairedIds.add(contract.id); };
+    const free = (list: readonly C[]) => list.filter(contract => !pairedIds.has(contract.id));
+
+    const liveLeft: R[] = [];
+    for (const row of liveRows) {
+        const match = free(liveDb).find(contract => effectiveDate(contract) === row.orderDate);
+        if (match) take(row, match); else liveLeft.push(row);
+    }
+    const cancelledLeft: R[] = [];
+    for (const row of cancelledRows) {
+        const match = free(cancelledDb).find(contract => effectiveDate(contract) === row.orderDate);
+        if (match) take(row, match); else cancelledLeft.push(row);
+    }
+    const cancelledUnmatched: R[] = [];
+    for (const row of cancelledLeft) {
+        const match = free(liveDb).find(contract => contract.contract_status !== 'transferred' && effectiveDate(contract) === row.orderDate);
+        if (match) take(row, match); else cancelledUnmatched.push(row);
+    }
+    const liveExtra: R[] = [];
+    for (const row of liveLeft) {
+        const next = free(liveDb)[0];
+        if (next) take(row, next); else liveExtra.push(row);
+    }
+    return { pairs, take, free, liveRows, liveDb, cancelledDb, liveExtra, cancelledUnmatched };
+}
 
 /** Түлхүүрийг эрэмбэлсэн JSON — ижил төлөвлөгөө ижил hash. */
 export function canonicalJson(value: unknown): string {
@@ -551,42 +599,10 @@ export function planContractListImport(input: ContractListPlanInput): ContractLi
             continue;
         }
 
-        const pairs: Pair[] = [];
-        const pairedIds = new Set<string>();
-        const take = (row: HubRow, contract: ContractListContract) => { pairs.push({ row, contract }); pairedIds.add(contract.id); };
-        const liveRows = rows.filter(row => row.status !== 'cancelled');
-        const cancelledRows = rows.filter(row => row.status === 'cancelled');
-        const liveDb = db.filter(contract => isLive(contract.contract_status))
-            .sort((a, b) => byDateDesc(effectiveDate(a), effectiveDate(b)) || a.id.localeCompare(b.id));
-        const cancelledDb = db.filter(contract => !isLive(contract.contract_status))
-            .sort((a, b) => byDateDesc(effectiveDate(a), effectiveDate(b)) || a.id.localeCompare(b.id));
-        const free = (list: ContractListContract[]) => list.filter(contract => !pairedIds.has(contract.id));
-
-        // Ижил огноогоор эхэлж: амьд мөр ↔ амьд гэрээ, цуцалсан мөр ↔ цуцалсан гэрээ.
-        const liveLeft: HubRow[] = [];
-        for (const row of liveRows) {
-            const match = free(liveDb).find(contract => effectiveDate(contract) === row.orderDate);
-            if (match) take(row, match); else liveLeft.push(row);
-        }
-        const cancelledLeft: HubRow[] = [];
-        for (const row of cancelledRows) {
-            const match = free(cancelledDb).find(contract => effectiveDate(contract) === row.orderDate);
-            if (match) take(row, match); else cancelledLeft.push(row);
-        }
-        // Цуцалсан мөртэй ижил огноотой амьд гэрээ = тэр гэрээ цуцлагдаж байр дахин зарагдсан: цуцална (шалгах),
-        // шинэ мөрийг түүнд оноохгүй (оновол хуучин эзэмшигчийн гэрээ шинэ худалдааны огноо, дүнг авна).
-        const cancelledUnmatched: HubRow[] = [];
-        for (const row of cancelledLeft) {
-            const match = free(liveDb).find(contract => contract.contract_status !== 'transferred' && effectiveDate(contract) === row.orderDate);
-            if (match) take(row, match); else cancelledUnmatched.push(row);
-        }
-        // Үлдсэн амьд мөр ↔ үлдсэн амьд гэрээ: шинэ ↔ шинэ.
-        let liveOnUnit = liveRows.length > liveLeft.length;
-        const liveExtra: HubRow[] = [];
-        for (const row of liveLeft) {
-            const next = free(liveDb)[0];
-            if (next) { take(row, next); liveOnUnit = true; } else liveExtra.push(row);
-        }
+        // Ижил огноо, дахин зарагдсан байр, шинэ ↔ шинэ (`pairUnitRows`, «Нийт төлсөн дүн»-тэй нэг дүрэм).
+        const { pairs, take, free, liveRows, liveDb, cancelledDb, liveExtra, cancelledUnmatched } = pairUnitRows<HubRow, ContractListContract>(rows, db);
+        // Байранд тулгагдсан амьд мөр бий эсэх.
+        let liveOnUnit = liveRows.length > liveExtra.length;
         const insertRows: HubRow[] = [];
         for (const row of liveExtra) {
             if (liveOnUnit) {
@@ -874,8 +890,8 @@ export function summarizeFileTotals(rows: readonly HubRow[]): ContractListFileTo
 
 // ---------------------------------------------------------------- Орсон мөнгө (W5/W6)
 
-/** Хадгалсан мөрийн (contract_list_imports.rows) «Нийт төлсөн дүн»-д хэрэгтэй хэсэг. */
-export interface HubPaidRow { productType: string; unitLabel: string; orderDate: string; status: ContractListStatus; paidTotal: number | null }
+/** Хадгалсан мөрийн (contract_list_imports.rows) «Нийт төлсөн дүн»-д хэрэгтэй хэсэг. row = файлын мөрийн дугаар (ижил огнооны дараалал). */
+export interface HubPaidRow { row: number; productType: string; unitLabel: string; orderDate: string; status: ContractListStatus; paidTotal: number | null }
 
 /** Хадгалсан мөрүүдийг (JSON) шалгаж уншина; байр тулгагдаагүй, хэлбэр буруу мөрийг алгасна. Сөрөг дүн = хоосон. */
 export function storedHubPaidRows(rows: unknown): HubPaidRow[] {
@@ -889,27 +905,29 @@ export function storedHubPaidRows(rows: unknown): HubPaidRow[] {
         const status = row.status === 'active' || row.status === 'closed' || row.status === 'cancelled' ? row.status : null;
         if (!productType || !unitLabel || !orderDate || !status) return [];
         const paid = typeof row.paidTotal === 'number' && Number.isFinite(row.paidTotal) && row.paidTotal >= 0 ? roundMoney(row.paidTotal) : null;
-        return [{ productType, unitLabel, orderDate, status, paidTotal: paid }];
+        const rowNumber = typeof row.row === 'number' && Number.isInteger(row.row) ? row.row : 0;
+        return [{ row: rowNumber, productType, unitLabel, orderDate, status, paidTotal: paid }];
     });
 }
 
 /** Файлд «Нийт төлсөн дүн» тоогоор бөглөгдсөн мөр байгаа эсэх (багана байхгүй бол бүгд null). */
 export const hasHubPaidTotals = (rows: readonly HubPaidRow[]) => rows.some(row => row.paidTotal !== null);
 
-/** Тулгалтад хэрэгтэй гэрээний баганууд. */
+/** Тулгалтад хэрэгтэй гэрээний баганууд (огноо = order_date ?? contract_date — импортынхтой ижил). */
 export interface HubPaidContract {
     id: string; product_type?: string | null; unit_label?: string | null; contract_status?: string | null; contract_date?: string | null; order_date?: string | null;
 }
 
 /**
- * Файлын амьд мөрийг амьд гэрээтэй импортын түлхүүрээр (`${product_type}|${unit_label}`) тулгаж «Нийт төлсөн дүн»-г
- * гэрээгээр буцаана — импортын дараалал: ижил огноогоор эхэлж, дараа нь шинэ ↔ шинэ. Map-д байхгүй гэрээ = файлд
- * тулгагдаагүй (тодорхойгүй); null = мөр байгаа ч дүн хоосон. Цуцалсан мөр, цуцалсан гэрээ оролцохгүй.
+ * Файлын мөрийг гэрээтэй импортын түлхүүр (`${product_type}|${unit_label}`), импортын тулгалт (`pairUnitRows`)-аар
+ * тулгаж «Нийт төлсөн дүн»-г гэрээгээр буцаана. `asOf` = файлын огноо: түүнээс хойш огноотой гэрээ (цуцалж дахин
+ * зарсан гэх мэт) файлд байх боломжгүй тул тулгалтад оролцохгүй — хуучин худалдааны дүнг шинэ гэрээнд өгөхгүй.
+ * Map-д байхгүй гэрээ = файлд тулгагдаагүй (тодорхойгүй, «+»); null = мөр байгаа ч дүн хоосон. Дүн зөвхөн амьд мөр ↔
+ * амьд гэрээний хосод; файлд цуцлагдсан (цуцалсан мөртэй тулгагдсан) амьд гэрээ тодорхойгүй хэвээр.
  */
-export function hubPaidByContract(rows: readonly HubPaidRow[], contracts: readonly HubPaidContract[]): Map<string, number | null> {
+export function hubPaidByContract(rows: readonly HubPaidRow[], contracts: readonly HubPaidContract[], asOf: string): Map<string, number | null> {
     const rowsByUnit = new Map<string, HubPaidRow[]>();
     for (const row of rows) {
-        if (row.status === 'cancelled') continue;
         const key = unitKeyOf(row.productType, row.unitLabel);
         if (!key) continue;
         const list = rowsByUnit.get(key);
@@ -917,26 +935,18 @@ export function hubPaidByContract(rows: readonly HubPaidRow[], contracts: readon
     }
     const contractsByUnit = new Map<string, HubPaidContract[]>();
     for (const contract of contracts) {
-        if (!isLive(contract.contract_status)) continue;
+        const date = effectiveDate(contract);
+        if (date !== null && date > asOf) continue;
         const key = unitKeyOf(contract.product_type, contract.unit_label);
         if (!key || !rowsByUnit.has(key)) continue;
         const list = contractsByUnit.get(key);
         if (list) list.push(contract); else contractsByUnit.set(key, [contract]);
     }
-    const contractDate = (contract: HubPaidContract) => dateOf(contract.order_date) ?? dateOf(contract.contract_date);
     const paid = new Map<string, number | null>();
-    for (const [key, unitContracts] of contractsByUnit) {
-        const unitRows = [...rowsByUnit.get(key)!].sort((a, b) => byDateDesc(a.orderDate, b.orderDate));
-        const free = [...unitContracts].sort((a, b) => byDateDesc(contractDate(a), contractDate(b)) || a.id.localeCompare(b.id));
-        const take = (row: HubPaidRow, contract: HubPaidContract) => { paid.set(contract.id, row.paidTotal); free.splice(free.indexOf(contract), 1); };
-        const left: HubPaidRow[] = [];
-        for (const row of unitRows) {
-            const match = free.find(contract => contractDate(contract) === row.orderDate);
-            if (match) take(row, match); else left.push(row);
-        }
-        for (const row of left) {
-            if (!free.length) break;
-            take(row, free[0]);
+    for (const [key, unitRows] of rowsByUnit) {
+        const { pairs } = pairUnitRows(unitRows, contractsByUnit.get(key) ?? []);
+        for (const { row, contract } of pairs) {
+            if (row.status !== 'cancelled' && isLive(contract.contract_status)) paid.set(contract.id, row.paidTotal);
         }
     }
     return paid;
