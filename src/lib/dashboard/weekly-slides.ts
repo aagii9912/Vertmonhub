@@ -15,7 +15,7 @@ export const WEEKLY_SLIDE_PART_LABEL: Record<WeeklySlidePart, string> = { sales:
 
 export const WEEKLY_SLIDE_SECTIONS = [
     'social', 'page', 'ads', 'callpro', 'sms', 'survey', 'website', 'chat',
-    'event', 'handover', 'negotiation', 'plan', 'other',
+    'event', 'handover', 'negotiation', 'plan', 'construction', 'other',
 ] as const;
 export type WeeklySlideSection = typeof WEEKLY_SLIDE_SECTIONS[number];
 export const WEEKLY_SLIDE_SECTION_LABEL: Record<WeeklySlideSection, string> = {
@@ -31,15 +31,17 @@ export const WEEKLY_SLIDE_SECTION_LABEL: Record<WeeklySlideSection, string> = {
     handover: 'Хүлээлцсэн байдал',
     negotiation: 'Яригдаж буй гэрээ',
     plan: 'Энэ сард хийгдэх ажил',
+    construction: 'Барилгын явц',
     other: 'Бусад',
 };
 /** Хэсэг бүрт сонгох сэдвүүд (маркетингийн тайлангийн слайдын дарааллаар). */
 export const WEEKLY_SLIDE_PART_SECTIONS: Record<WeeklySlidePart, readonly WeeklySlideSection[]> = {
     marketing: ['social', 'page', 'ads', 'callpro', 'sms', 'survey', 'website', 'chat', 'event', 'other'],
-    sales: ['event', 'handover', 'negotiation', 'plan', 'other'],
+    sales: ['event', 'handover', 'negotiation', 'plan', 'construction', 'other'],
 };
 
-export const WEEKLY_SLIDE_LIMITS = { images: 6, title: 200, note: 2000, slides: 60, imageBytes: 4 * 1024 * 1024 } as const;
+/** Нэг слайдад 9 хүртэл зураг (багийн илтгэлийн 9 зурагтай коллаж; DB CHECK 20261023152000). */
+export const WEEKLY_SLIDE_LIMITS = { images: 9, title: 200, note: 2000, slides: 60, imageBytes: 4 * 1024 * 1024 } as const;
 export { parseReportMediaPath, REPORT_MEDIA_BUCKET, REPORT_MEDIA_ENDPOINT, REPORT_MEDIA_TYPES, reportMediaUrl } from './report-media';
 
 const uuid = z.uuid();
@@ -71,6 +73,17 @@ export const WeeklySlidePatchSchema = z.object({
     imagePaths: imagePaths.optional(),
 }).strict().refine(value => Object.values(value).some(field => field !== undefined), 'Өөрчлөх зүйлээ сонгоно уу');
 export type WeeklySlidePatch = z.output<typeof WeeklySlidePatchSchema>;
+
+/** «Өмнөх хурлаас хуулах»: тухайн хэсэг × сэдвийн өмнөх хурлын зураггүй слайдуудыг энэ хуралд хуулна. */
+export const WeeklySlideCopySchema = z.object({
+    meetingDate: meetingDateSchema,
+    part: z.enum(WEEKLY_SLIDE_PARTS),
+    section: z.enum(WEEKLY_SLIDE_SECTIONS),
+}).strict().refine(value => WEEKLY_SLIDE_PART_SECTIONS[value.part].includes(value.section), { message: 'Энэ хэсэгт тохирохгүй сэдэв байна', path: ['section'] });
+export type WeeklySlideCopy = z.output<typeof WeeklySlideCopySchema>;
+
+/** Хуулж болох (зураггүй) слайд: зургийн файл оруулсан хүнийх тул зурагтай слайдыг хуулахгүй. */
+export const isTextOnlySlide = (slide: Pick<WeeklySlide, 'image_paths'>) => !slide.image_paths.length;
 
 export const WeeklySlideOrderSchema = z.object({
     meetingDate: meetingDateSchema,

@@ -652,27 +652,53 @@ function channelExportSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     note(slide, ['Reach, Viewers зэрэг давхардах тоог мөрүүдээр нэмээгүй. Meta-ийн зардал зарын дансны валютаар (ихэвчлэн USD), төгрөгтэй нэмээгүй.']);
 }
 
-function imageGrid(slide: Slide, images: DeckImage[], box: { x: number; y: number; w: number; h: number }) {
+/**
+ * Зургийн мөрүүд: мөр бүрийн зургийн тоо ба тэгш багана эсэх. ≤ 6 — тэгш багана (≤ 3 нэг мөр, 4 босоо бол нэг мөр,
+ * эс бөгөөс 2×2, 5–6 гурваар, сүүлийн мөр зүүнээс). 7–9 — мөр бүр өөрийн тоогоор бүтэн өргөнд: бүгд босоо бол хоёр мөр,
+ * дээр нь цөөн (9 = 4 + 5, багийн илтгэлийн 15-р слайд), эс бөгөөс гурван мөр, доор нь олон (7 = 2 + 2 + 3).
+ */
+export function imageGridRows(images: readonly Pick<DeckImage, 'width' | 'height'>[]): { rows: number[]; uniformCols: number | null } {
     const n = images.length;
     const portrait = images.every(image => image.height > image.width);
-    const cols = n <= 3 ? n : n === 4 ? (portrait ? 4 : 2) : 3;
-    const rows = Math.ceil(n / cols);
+    if (n <= 6) {
+        const cols = n <= 3 ? Math.max(1, n) : n === 4 ? (portrait ? 4 : 2) : 3;
+        return { rows: Array.from({ length: Math.ceil(n / cols) }, (_, row) => Math.min(cols, n - row * cols)), uniformCols: cols };
+    }
+    const count = portrait ? 2 : Math.ceil(n / 3);
+    const base = Math.floor(n / count);
+    const extra = n % count;
+    return { rows: Array.from({ length: count }, (_, row) => base + (row >= count - extra ? 1 : 0)), uniformCols: null };
+}
+
+function imageGrid(slide: Slide, images: DeckImage[], box: { x: number; y: number; w: number; h: number }) {
+    const { rows, uniformCols } = imageGridRows(images);
     const gap = 0.25;
-    const cellW = (box.w - gap * (cols - 1)) / cols;
-    const cellH = (box.h - gap * (rows - 1)) / rows;
-    images.forEach((image, index) => {
-        const ratio = image.width > 0 && image.height > 0 ? image.width / image.height : 1;
-        let w = cellW;
-        let h = w / ratio;
-        if (h > cellH) { h = cellH; w = h * ratio; }
-        const x = box.x + (index % cols) * (cellW + gap) + (cellW - w) / 2;
-        const y = box.y + Math.floor(index / cols) * (cellH + gap) + (cellH - h) / 2;
-        slide.addImage({ data: image.data, x, y, w, h, altText: `Слайдын зураг ${index + 1}` });
+    const cellH = (box.h - gap * (rows.length - 1)) / rows.length;
+    let index = 0;
+    rows.forEach((count, row) => {
+        const cols = uniformCols ?? count;
+        const cellW = (box.w - gap * (cols - 1)) / cols;
+        for (let col = 0; col < count; col++, index++) {
+            const image = images[index];
+            const ratio = image.width > 0 && image.height > 0 ? image.width / image.height : 1;
+            let w = cellW;
+            let h = w / ratio;
+            if (h > cellH) { h = cellH; w = h * ratio; }
+            const x = box.x + col * (cellW + gap) + (cellW - w) / 2;
+            const y = box.y + row * (cellH + gap) + (cellH - h) / 2;
+            slide.addImage({ data: image.data, x, y, w, h, altText: `Слайдын зураг ${index + 1}` });
+        }
     });
 }
 
-/** Зураг (≤ 6) ба тайлбар: богино тайлбар доор, урт бол баруун талд. Зураггүй бол тайлбар бүтэн слайдад. */
-function layoutImages(slide: Slide, loaded: DeckImage[], text: string, top: number) {
+/** «Энэ сард хийгдэх ажил»: мөр бүр нэг цэг (гараар бичсэн «•», «-» тэмдгийг хасна, хоосон мөр алгасна). */
+function bulletRuns(text: string): PptxGenJS.TextProps[] {
+    const lines = text.split('\n').map(line => line.trim().replace(/^[•·▪◦*\-–—]\s*/, '').trim()).filter(Boolean);
+    return lines.map((line, index) => ({ text: line, options: { bullet: { indent: 18 }, breakLine: index < lines.length - 1 } }));
+}
+
+/** Зураг (≤ 9) ба тайлбар: богино тайлбар доор, урт бол баруун талд. Зураггүй бол тайлбар бүтэн слайдад. `bullets` — мөр бүр цэг. */
+function layoutImages(slide: Slide, loaded: DeckImage[], text: string, top: number, bullets = false) {
     if (loaded.length) {
         const longNote = text.length > 220;
         const box = longNote
@@ -680,24 +706,33 @@ function layoutImages(slide: Slide, loaded: DeckImage[], text: string, top: numb
             : { x: M, y: top, w: CW, h: (text ? 5.95 : BOTTOM) - top };
         imageGrid(slide, loaded, box);
         if (text) {
-            slide.addText(clip(text, 1400), longNote
+            slide.addText(bullets ? bulletRuns(clip(text, 1400)) : clip(text, 1400), longNote
                 ? { x: M + CW * 0.62 + 0.3, y: top, w: CW * 0.38 - 0.3, h: BOTTOM - top, fontFace: FONT, fontSize: 13, color: C.ink2, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true }
                 : { x: M, y: 6.05, w: CW, h: 0.8, fontFace: FONT, fontSize: 14, color: C.ink2, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true });
         }
     } else if (text) {
-        slide.addText(clip(text, 2000), { x: M, y: top, w: CW, h: BOTTOM - top, fontFace: FONT, fontSize: text.length > 700 ? 13 : text.length > 300 ? 16 : 20, color: C.ink, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true, paraSpaceAfter: 6 });
+        slide.addText(bullets ? bulletRuns(clip(text, 2000)) : clip(text, 2000), { x: M, y: top, w: CW, h: BOTTOM - top, fontFace: FONT, fontSize: text.length > 700 ? 13 : text.length > 300 ? 16 : 20, color: C.ink, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true, paraSpaceAfter: 6 });
     }
 }
 
-/** Хэрэглэгчийн оруулсан слайд: сэдэв, зураг (≤ 6), тайлбар/дүгнэлт. */
+/** Зөвхөн зурагтай слайдын коллажийн дээд зах (толгойгүй; доод зах нь хөлийн дээр). */
+const PHOTO_TOP = 0.45;
+
+/**
+ * Хэрэглэгчийн оруулсан слайд: сэдэв, зураг (≤ 9), тайлбар/дүгнэлт. Гарчиг, тайлбаргүй зурагтай слайд = зөвхөн зураг:
+ * толгойгүй, захын зай доторх бүтэн коллаж (багийн илтгэлийн 14–15-р слайд). «Энэ сард хийгдэх ажил» — мөр бүр цэг.
+ */
 function customSlide(pres: PptxGenJS, slideData: WeeklySlide, images: Record<string, DeckImage>) {
-    const label = `${WEEKLY_SLIDE_PART_LABEL[slideData.part]} · ${WEEKLY_SLIDE_SECTION_LABEL[slideData.section]}`;
-    const slide = content(pres, label, slideData.title || WEEKLY_SLIDE_SECTION_LABEL[slideData.section]);
     const loaded = slideData.image_paths.map(path => images[path]).filter((image): image is DeckImage => !!image);
     const missing = slideData.image_paths.length - loaded.length;
     const text = slideData.note.trim();
-    layoutImages(slide, loaded, text, TOP - 0.25);
+    const label = `${WEEKLY_SLIDE_PART_LABEL[slideData.part]} · ${WEEKLY_SLIDE_SECTION_LABEL[slideData.section]}`;
+    const photoOnly = !slideData.title.trim() && !text && loaded.length > 0;
+    const slide = photoOnly ? pres.addSlide({ masterName: CONTENT }) : content(pres, label, slideData.title || WEEKLY_SLIDE_SECTION_LABEL[slideData.section]);
+    if (photoOnly) imageGrid(slide, loaded, { x: M, y: PHOTO_TOP, w: CW, h: BOTTOM - PHOTO_TOP });
+    else layoutImages(slide, loaded, text, TOP - 0.25, slideData.section === 'plan');
     note(slide, [
+        photoOnly ? label : null,
         `Оруулсан: ${slideData.author_name || '—'}`,
         missing ? `${missing} зураг ачаалж чадсангүй — Hub-ийн хурлын хуудсанд шалгана уу.` : null,
         text.length > 1400 && loaded.length ? text : null,

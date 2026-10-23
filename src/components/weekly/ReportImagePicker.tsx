@@ -12,17 +12,18 @@ export type DraftImage = { key: string; path?: string; url?: string; error?: str
 export const draftImages = (paths: readonly string[]): DraftImage[] => paths.map(path => ({ key: path, path, url: reportMediaUrl(path) }));
 export const savedPaths = (images: readonly DraftImage[]) => images.flatMap(image => image.path ? [image.path] : []);
 
-const MAX = 6;
+/** Анхдагч хязгаар (контент төлөвлөгөөний постер ≤ 6); хурлын слайд `WEEKLY_SLIDE_LIMITS.images`-ийг дамжуулна. */
+export const REPORT_IMAGE_MAX = 6;
 
 /**
  * Постер, дэлгэцийн зураг сонгох: файл сонгох, чирж оруулах, Ctrl+V (`pasteFiles`-аар эцэг dialog дамжуулна).
  * Зураг бүрийг шууд хувийн `report-media` руу оруулна; хадгалах товч `uploading` дуустал хүлээнэ.
  */
-export function makeImageUploader(part: WeeklySlidePart, images: DraftImage[], setImages: (update: (current: DraftImage[]) => DraftImage[]) => void, setUploading: (update: (count: number) => number) => void) {
+export function makeImageUploader(part: WeeklySlidePart, images: DraftImage[], setImages: (update: (current: DraftImage[]) => DraftImage[]) => void, setUploading: (update: (count: number) => number) => void, max = REPORT_IMAGE_MAX) {
     return async function addFiles(files: Blob[]) {
-        const room = MAX - images.length;
+        const room = max - images.length;
         const accepted = files.filter(file => file.type.startsWith('image/')).slice(0, Math.max(0, room));
-        if (files.length > accepted.length) toast.error(`${MAX} хүртэл зураг (зөвхөн зураг) оруулна.`);
+        if (files.length > accepted.length) toast.error(`${max} хүртэл зураг (зөвхөн зураг) оруулна.`);
         for (const file of accepted) {
             const key = crypto.randomUUID();
             setImages(current => [...current, { key }]);
@@ -39,8 +40,8 @@ export function makeImageUploader(part: WeeklySlidePart, images: DraftImage[], s
     };
 }
 
-export function ReportImagePicker({ images, setImages, addFiles }: {
-    images: DraftImage[]; setImages: (update: (current: DraftImage[]) => DraftImage[]) => void; addFiles: (files: Blob[]) => Promise<void>;
+export function ReportImagePicker({ images, setImages, addFiles, max = REPORT_IMAGE_MAX }: {
+    images: DraftImage[]; setImages: (update: (current: DraftImage[]) => DraftImage[]) => void; addFiles: (files: Blob[]) => Promise<void>; max?: number;
 }) {
     const fileInput = useRef<HTMLInputElement>(null);
     const move = (index: number, delta: number) => setImages(current => {
@@ -50,7 +51,7 @@ export function ReportImagePicker({ images, setImages, addFiles }: {
         return next;
     });
     return <>
-        <div className={cn('rounded-xl border border-dashed border-control p-3', images.length >= MAX && 'opacity-70')}
+        <div className={cn('rounded-xl border border-dashed border-control p-3', images.length >= max && 'opacity-70')}
             onDragOver={event => event.preventDefault()}
             onDrop={event => { event.preventDefault(); void addFiles([...event.dataTransfer.files]); }}>
             {images.length > 0 && <ul className="mb-3 grid grid-cols-3 gap-2">
@@ -70,7 +71,7 @@ export function ReportImagePicker({ images, setImages, addFiles }: {
             </ul>}
             <input ref={fileInput} type="file" accept="image/*" multiple className="sr-only" tabIndex={-1} aria-hidden
                 onChange={event => { void addFiles([...(event.target.files ?? [])]); event.target.value = ''; }} />
-            <Button type="button" variant="tertiary" size="sm" disabled={images.length >= MAX} onClick={() => fileInput.current?.click()}><ImagePlus />Зураг сонгох</Button>
+            <Button type="button" variant="tertiary" size="sm" disabled={images.length >= max} onClick={() => fileInput.current?.click()}><ImagePlus />Зураг сонгох</Button>
             <span className="ml-3 text-xs text-muted-foreground">эсвэл энд чирж оруулах, Ctrl+V</span>
         </div>
         {images.some(image => image.error) && <p className="text-xs text-status-danger">Алдаатай зургийг хасаад дахин оруулна уу — хадгалахад орохгүй.</p>}
