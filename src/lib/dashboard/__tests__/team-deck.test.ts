@@ -93,6 +93,17 @@ describe('team-format Wednesday deck (.pptx)', () => {
         for (const needle of ['10-р сар', '1–10 сар', '2026 он', 'Нийт төлөвлөгөө', 'Гүйцэтгэл хувиар', 'Зогсоол', 'Мөнгөн урсгал']) expect(year).toContain(needle);
     });
 
+    it('labels the year-to-date column by the plan\'s own range when exported before the reporting week ends in a new month', async () => {
+        // Хурал 11-04 (7 хоног 10-28 – 11-03), 10-30-нд татсан: тайлангийн хүрээ 10-р сар хүртэл.
+        const novRange = { from: '2026-10-28', to: '2026-11-03' };
+        const report = plan();
+        const { text } = await render(teamInput({ meetingDate: '2026-11-04', range: novRange, plan: { ...report, throughMonth: 10 } }));
+        const year = at(text, '2026 ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ');
+        expect(year).toContain('11-р сар');
+        expect(year).toContain('1–10 сар');
+        expect(year).not.toContain('1–11 сар');
+    });
+
     it('marks the advance of the month «+» while undated contracts of that block may belong to the month', async () => {
         const { text, notes } = await render(teamInput({ plan: plan({ undated: true }) }));
         const line = (title: string) => at(text, title).match(/Энэ сарын гэрээний урьдчилгаа \(орсон \+ хүлээгдэж буй\): (\S+)/)![1];
@@ -227,9 +238,22 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(pies).toHaveLength(3);
         for (const pie of pies) for (const name of ['Б1 E7 · 89.73 м² · 3 өрөө', 'Сонголтгүй']) expect(pie).toContain(name);
         const meetings = xml.find(part => part.includes('НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ'))!;
-        expect(meetings).toContain('Болсон уулзалт алга');
+        // Бүртгэл эхлэхээс өмнөх 7 хоног тодорхойгүй (9-р слайдтай нэг дүрэм), «уулзалт алга» биш.
+        expect(meetings).toContain('Бүртгэлгүй (тодорхойгүй)');
+        expect(meetings).not.toContain('Болсон уулзалт алга');
         for (const needle of ['Ойрхон амьдардаг', 'Тодорхойгүй', 'Нийт']) expect(meetings).toContain(needle);
         expect(meetings).toMatch(/<a:t>Нийт<\/a:t>[\s\S]*?<a:t>12<\/a:t>/);
+    });
+
+    it('meeting pies: a fully recorded empty week says «Болсон уулзалт алга», a straddling week is a lower bound «N+»', async () => {
+        const base = teamInput();
+        const weeks = base.meetings!.weeks.map((week, index) => index === 0 ? { ...week, coverage: 'full' as const }
+            : index === 1 ? { ...week, coverage: 'partial' as const } : week);
+        const { zip, xml } = await render(teamInput({ meetings: { ...base.meetings!, weeks } }));
+        const meetings = xml.find(part => part.includes('НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ'))!;
+        expect(meetings).toContain('Болсон уулзалт алга');
+        const charts = await Promise.all(Object.keys(zip.files).filter(name => /^ppt\/charts\/chart\d+\.xml$/.test(name)).map(name => zip.file(name)!.async('string')));
+        expect(charts.some(chart => chart.includes(`${weeks[1].label} · ${weeks[1].total}+`))).toBe(true);
     });
 
     it('activity chart: a real 0 stays 0 in the editable workbook, unknown stays an empty cell; lower bounds are named under the chart', async () => {

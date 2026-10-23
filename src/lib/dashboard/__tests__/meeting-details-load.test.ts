@@ -19,15 +19,23 @@ function fakeDb(tables: Record<string, Row[]>, options: { errors?: Record<string
             if (error) return { data: null, error };
             return { data: (tables[table] ?? []).filter(row => filters.every(f => f(row))), error: null };
         };
+        let ascending: string | null = null;
+        let limit = Infinity;
+        const sorted = () => {
+            const { data, error } = result();
+            return { data: data && ascending ? [...data].sort((a, b) => String(a[ascending!]).localeCompare(String(b[ascending!]))).slice(0, limit) : data, error };
+        };
         const query: Record<string, unknown> = {
             select: (columns: string) => { selected = columns; calls.push(`${table}:${columns}`); return query; },
+            limit: (value: number) => { limit = value; return query; },
+            maybeSingle: () => { const { data, error } = sorted(); return Promise.resolve({ data: data?.[0] ?? null, error }); },
             eq: (key: string, value: unknown) => { filters.push(row => row[key] === value); return query; },
             is: (key: string, value: null) => { filters.push(row => (row[key] ?? null) === value); return query; },
             in: (key: string, values: unknown[]) => { filters.push(row => values.includes(row[key])); return query; },
             not: (key: string, operator: string, value: null) => { if (operator === 'is' && value === null) filters.push(row => row[key] != null); return query; },
             gte: (key: string, value: string) => { filters.push(row => String(row[key]) >= value); return query; },
             lt: (key: string, value: string) => { filters.push(row => String(row[key]) < value); return query; },
-            order: () => query, range: () => query,
+            order: (key: string, opts?: { ascending?: boolean }) => { if (opts?.ascending) ascending = key; return query; }, range: () => query,
             then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve),
         };
         return query;
@@ -73,6 +81,15 @@ describe('loadMeetingDetails', () => {
         expect(report.weeks[2]).toMatchObject({ total: 1, withoutInterest: 0, byModel: [{ key: 'B2|A', label: 'Б2 A · 57.87 м² · 2 өрөө', count: 1 }] });
         // Архивласан сэжим нэрээ хадгална.
         expect(report.referral).toEqual({ rows: [{ label: 'Бармаш түрээслэгч', count: 1 }, { label: 'Ойрхон амьдардаг', count: 1 }], unknown: 1, total: 3, available: true });
+    });
+
+    it('marks weeks before the first recorded meeting unknown and the straddling week a lower bound', async () => {
+        const report = await loadMeetingDetails(fakeDb(base()), { shopId: 's', meetingDate: '2026-10-21' });
+        // Хамгийн эртний (устгаагүй, ямар ч төлөвтэй) уулзалт: УБ 10-13 (v6) → өмнөх хоёр 7 хоног бүртгэлгүй, 10/07–10/13 доод хязгаар.
+        expect(report.weeks.map(week => [week.label, week.coverage])).toEqual([
+            ['09/23–09/29', 'none'], ['09/30–10/06', 'none'], ['10/07–10/13', 'partial'], ['10/14–10/20', 'full'],
+        ]);
+        expect(report.notes.join(' ')).toMatch(/Уулзалтын бүртгэл 2026-10-13-нээс эхэлсэн/);
     });
 
     it('treats every new meeting as unknown when the referral column or table is missing', async () => {

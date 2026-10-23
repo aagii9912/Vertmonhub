@@ -48,9 +48,15 @@ export function ledgerReceipts(transactions: OperationsTransaction[], year: numb
  */
 export async function loadPlanPerformance(db: SupabaseClient, options: {
     shopId: string; year?: number; canReadFinance: boolean; now?: Date; through?: string;
+    /**
+     * HUB «Нийт төлсөн дүн»-ийн файлын огнооны дээд хязгаар (заавал биш, өнөөдрөөр хязгаарлана). Лхагвын илтгэл хурлын өдрийг
+     * өгдөг — давхрын зураглалтай (тайлангийн үлдэгдэл) ижил HUB файл; гэрээ өөрөө `through`-аар огтлогдсон хэвээр.
+     */
+    hubAsOf?: string;
 }): Promise<PlanPerformance> {
     const today = ubDateStr(options.now ?? new Date());
     const through = options.through ? (options.through > today ? today : options.through) : null;
+    const hubCutoff = [options.hubAsOf ?? through ?? today, today].sort()[0];
     // Тайлант өдрийн Улаанбаатарын (UTC+8) үд дунд — сарын хил серверийн UTC-д шилжихгүй.
     const now = options.now ?? (through ? new Date(`${through}T12:00:00+08:00`) : new Date());
     const year = SalesYearSchema.parse(options.year ?? ubParts(now).year);
@@ -79,7 +85,7 @@ export async function loadPlanPerformance(db: SupabaseClient, options: {
     // Тайлант өдөр (эс бөгөөс өнөөдөр) хүртэлх файлын огноотой сүүлийн импортын мөрүүд — «Нийт төлсөн дүн»-д.
     const hubImport = async (): Promise<{ asOf: string; rows: unknown } | null> => {
         const { data, error } = await db.from('contract_list_imports').select('report_date, rows')
-            .eq('shop_id', options.shopId).lte('report_date', through ?? today)
+            .eq('shop_id', options.shopId).lte('report_date', hubCutoff)
             .order('report_date', { ascending: false }).order('created_at', { ascending: false }).limit(1).maybeSingle();
         if (error) {
             if (isMissingContractListSchema(error)) return null;

@@ -59,7 +59,7 @@ describe('exportTeamDeck (browser export)', () => {
         expect(result).toEqual({ fileName: 'Elysium Residence - Борлуулалт (албаны загвар) - Лхагва 2026-10-21.pptx', failedImages: 0, failedSources: 1 });
         expect(downloads).toEqual([result.fileName]);
         expect(requested).toEqual(expect.arrayContaining([
-            '/api/dashboard/reports/plan-performance?year=2026&through=2026-10-20',
+            '/api/dashboard/reports/plan-performance?year=2026&through=2026-10-20&hubAsOf=2026-10-21',
             '/api/dashboard/reports/sales-activity?meeting=2026-10-21',
             '/api/dashboard/reports/meeting-details?meeting=2026-10-21',
             '/api/dashboard/reports/negotiations',

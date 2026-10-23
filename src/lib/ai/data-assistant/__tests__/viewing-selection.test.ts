@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ options: vi.fn(), conditions: vi.fn(), quote: vi.fn(), prepare: vi.fn(), update: vi.fn(), selects: [] as string[],
-    referrals: [] as Array<{ id: string; name: string; sort_order: number; archived_at: string | null }>, viewingReferral: null as string | null }));
+    referrals: [] as Array<{ id: string; name: string; sort_order: number; archived_at: string | null }>, viewingReferral: null as string | null,
+    readError: null as { code: string; message: string } | null }));
 const selection = { block: 'Б1', model: 'E6', area_sqm: 51.72, floor: 5, payment_condition: '30%' };
 const id = '20000000-0000-4000-8000-000000000001';
 const projectId = '30000000-0000-4000-8000-000000000001';
 const scope = { projectIds: [projectId], managerName: 'Номин' };
 const q = { select: (columns: string) => { mocks.selects.push(columns); return q; }, eq: () => q, is: () => q, in: () => q,
-    maybeSingle: async () => ({ data: { id, interests: [], agent_notes: null, referral_source_id: mocks.viewingReferral, leads: { project_id: projectId } }, error: null }) };
+    maybeSingle: async () => mocks.readError ? { data: null, error: mocks.readError }
+        : { data: { id, interests: [], agent_notes: null, referral_source_id: mocks.viewingReferral, leads: { project_id: projectId } }, error: null } };
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: () => q }) }));
 vi.mock('@/lib/sales/referral-sources-store', async (original) => {
     const actual = await original<typeof import('@/lib/sales/referral-sources-store')>();
@@ -42,6 +44,7 @@ beforeEach(() => {
     mocks.selects = [];
     mocks.referrals = [];
     mocks.viewingReferral = null;
+    mocks.readError = null;
 });
 
 describe('AI viewing selections', () => {
@@ -108,6 +111,16 @@ describe('AI viewing selections', () => {
         expect(mocks.update).not.toHaveBeenCalled();
         expect(await updateViewingSelectionTool('shop', { viewing_id: id, referral_source: null }, true, 'actor', 'Номин', scope)).toMatchObject({ success: true });
         expect(mocks.update).toHaveBeenCalledWith(expect.anything(), 'shop', id, { referral_source_id: null }, expect.anything());
+    });
+
+    it('says the «Сэжим» update is not installed (not that the meeting is broken) before the referral migration', async () => {
+        mocks.readError = { code: '42703', message: 'column property_viewings.referral_source_id does not exist' };
+        const result = await updateViewingSelectionTool('shop', { viewing_id: id, referral_source: 'Facebook' }, true, 'actor', 'Номин', scope);
+        expect(result).toEqual({ error: expect.stringContaining('шинэчлэлийг (migration)') });
+        expect(mocks.update).not.toHaveBeenCalled();
+        // Бусад уншилтын алдаа ерөнхий мессежтэй хэвээр.
+        mocks.readError = { code: '57014', message: 'timeout' };
+        expect(await updateViewingSelectionTool('shop', { viewing_id: id, referral_source: 'Facebook' }, true, 'actor', 'Номин', scope)).toEqual({ error: 'Уулзалтын мэдээлэл уншигдсангүй' });
     });
 
     it('rejects malformed selections and injected snapshot amounts before any write', async () => {

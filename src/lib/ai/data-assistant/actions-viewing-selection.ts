@@ -8,7 +8,7 @@ import { ViewingInterestsSchema, viewingSelectionText, type ViewingInterest } fr
 import { prepareViewingInterests } from '@/lib/viewings/prepare';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { updateViewing } from '@/lib/services/ViewingService';
-import { listReferralSources, resolveReferralSource } from '@/lib/sales/referral-sources-store';
+import { listReferralSources, resolveReferralSource, isMissingReferralSchema, REFERRAL_UNAVAILABLE } from '@/lib/sales/referral-sources-store';
 import { REFERRAL_FIELD_LABEL, isActiveReferral, referralNameMap } from '@/lib/sales/referral-sources';
 
 const OptionsSchema = z.object({ project_id: z.guid().optional(), block: z.string().optional(), model: z.string().optional(), floor: z.number().int().optional() }).strict();
@@ -59,7 +59,8 @@ export async function updateViewingSelectionTool(shopId: string, args: unknown, 
     const columns: string = `id,interests,agent_notes,customer_feedback,meeting_type,${editsReferral ? 'referral_source_id,' : ''}${scope.projectIds === null ? 'leads' : 'leads!inner'}(project_id,sales_manager_name)`;
     const { data: row, error } = await applyLeadScope(db.from('property_viewings').select(columns)
         .eq('shop_id', shopId).eq('id', id).is('deleted_at', null), scope, 'leads.project_id', 'leads.sales_manager_name').maybeSingle();
-    if (error) return { error: 'Уулзалтын мэдээлэл уншигдсангүй' };
+    // «Сэжим»-ийн шинэчлэл суугаагүй бол UI-тай ижил тодорхой мессеж (уулзалт эвдэрсэн мэт биш).
+    if (error) return { error: editsReferral && isMissingReferralSchema(error) ? REFERRAL_UNAVAILABLE : 'Уулзалтын мэдээлэл уншигдсангүй' };
     if (!row) return { error: 'Уулзалт олдсонгүй' };
     type LeadRef = { project_id: string | null; sales_manager_name: string | null };
     const data = row as unknown as {

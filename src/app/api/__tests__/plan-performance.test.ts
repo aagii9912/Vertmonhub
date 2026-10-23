@@ -74,6 +74,9 @@ describe('plan performance API', () => {
         expect((await get('?year=2025&through=2026-10-20')).status).toBe(200);
         expect(state.loads.at(-1)).toMatchObject({ year: 2025, through: '2026-10-20' });
         for (const bad of ['2026-13-01', '2026-00-10', '2026-02-30', '2026-1x-01', 'abc']) expect((await get(`?through=${bad}`)).status, bad).toBe(400);
+        expect((await get('?through=2026-10-20&hubAsOf=2026-10-21')).status).toBe(200);
+        expect(state.loads.at(-1)).toMatchObject({ through: '2026-10-20', hubAsOf: '2026-10-21' });
+        expect((await get('?through=2026-10-20&hubAsOf=2026-13-01')).status).toBe(400);
         expect(state.loads.every(load => !('through' in load) || load.through === '2026-10-20')).toBe(true);
     });
 });

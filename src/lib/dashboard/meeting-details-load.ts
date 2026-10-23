@@ -46,12 +46,20 @@ export async function loadViewingReferrals(db: SupabaseClient, shopId: string, v
  * `completed`, устгаагүй уулзалт (сонирхол, төрөл), байрны бүртгэлийн өрөө, тайлант 7 хоногийн шинэ
  * уулзалтын сэжим. Уншилтын алдааг хоосон тайлан болгож нуухгүй.
  */
+/** Уулзалтын бүртгэл эхэлсэн УБ өдөр: устгаагүй, ямар ч төлөвтэй хамгийн эртний уулзалт (алга бол null). 9, 10-р слайдын нэг эх. */
+export async function loadMeetingsSince(db: SupabaseClient, shopId: string): Promise<string | null> {
+    const { data, error } = await db.from('property_viewings').select('scheduled_at').eq('shop_id', shopId).is('deleted_at', null)
+        .order('scheduled_at', { ascending: true }).limit(1).maybeSingle();
+    if (error) throw new Error(error.message);
+    return data?.scheduled_at ? ubDateStr(new Date(data.scheduled_at as string)) : null;
+}
+
 export async function loadMeetingDetails(db: SupabaseClient, options: { shopId: string; meetingDate: string }): Promise<MeetingDetailsReport> {
     const { shopId, meetingDate } = options;
     const weeks = meetingDetailWeeks(meetingDate);
     const start = ubDateStart(weeks[0].from).toISOString();
     const end = ubDateStart(shiftDate(weeks.at(-1)!.to, 1)).toISOString();
-    const [viewings, units] = await Promise.all([
+    const [viewings, units, meetingsSince] = await Promise.all([
         fetchAllRows<{ id: string; scheduled_at: string; meeting_type: string | null; interests: unknown }>((from, to) => db.from('property_viewings')
             .select('id, scheduled_at, meeting_type, interests')
             .eq('shop_id', shopId).is('deleted_at', null).eq('status', 'completed').gte('scheduled_at', start).lt('scheduled_at', end)
@@ -59,10 +67,11 @@ export async function loadMeetingDetails(db: SupabaseClient, options: { shopId: 
         fetchAllRows<{ block: string | null; model: string | null; rooms: number | string | null }>((from, to) => db.from('property_units')
             .select('block, model, rooms').eq('shop_id', shopId).eq('category', 'residential').not('rooms', 'is', null)
             .order('id').range(from, to)),
+        loadMeetingsSince(db, shopId),
     ]);
     const meetings = viewings.map(row => ({ id: row.id, day: ubDateStr(new Date(row.scheduled_at)), type: row.meeting_type, interests: row.interests }));
     const last = weeks.at(-1)!;
     const fresh = meetings.filter(meeting => meeting.type === 'new_customer' && meeting.day >= last.from && meeting.day <= last.to).map(meeting => meeting.id);
     const referrals = await loadViewingReferrals(db, shopId, fresh);
-    return buildMeetingDetails({ meetingDate, meetings, units, referrals });
+    return buildMeetingDetails({ meetingDate, meetings, units, referrals, meetingsSince });
 }

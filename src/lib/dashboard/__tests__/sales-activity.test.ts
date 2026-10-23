@@ -128,6 +128,24 @@ describe('buildSalesActivity', () => {
         expect(none.notes).toEqual(expect.arrayContaining(['Уулзалт бүртгэгдээгүй тул уулзалтын тоо тодорхойгүй.']));
     });
 
+    it('treats days before the first daily-report count as unknown: earlier periods «—», straddling ones «N+» without a %', () => {
+        const counts = [{ report_date: '2026-10-08', manager_name: 'A', metric: 'call.l1.new', value: 20 }, { report_date: '2026-10-15', manager_name: 'A', metric: 'chat.page', value: 5 }];
+        const report = buildSalesActivity(input({ counts, countsSince: '2026-10-08', targets: { hotline: 550, chats: 85 } }));
+        const before = report.buckets.find(bucket => bucket.to < '2026-10-08')!;
+        expect(before.values.hotline).toBeNull();
+        const straddle = report.buckets.find(bucket => bucket.from < '2026-10-08' && bucket.to >= '2026-10-08')!;
+        expect([straddle.values.hotline, straddle.partial.hotline]).toEqual([20, true]);
+        expect(report.month.metrics.hotline).toMatchObject({ actual: 20, partial: true, pct: null });
+        expect(report.month.metrics.chats).toMatchObject({ actual: 5, partial: true, pct: null });
+        expect(report.notes.join(' ')).toMatch(/Өдрийн тайлангийн тоо 2026-10-08-нээс эхэлсэн/);
+        // Сарын эхнээс бүртгэсэн бол хувь тооцогдоно.
+        const full = buildSalesActivity(input({ counts, countsSince: '2026-10-01', targets: { hotline: 550 } }));
+        expect(full.month.metrics.hotline).toMatchObject({ actual: 20, partial: false });
+        expect(full.month.metrics.hotline.pct).not.toBeNull();
+        // Тоо огт бүртгэгдээгүй бол тодорхойгүй.
+        expect(buildSalesActivity(input({ counts: [], countsSince: null })).month.metrics.hotline).toMatchObject({ actual: null, partial: false });
+    });
+
     it('marks counts that straddle the first recorded meeting as lower bounds and drops their attainment', () => {
         // Elysium: анхны уулзалт 10/07; 10/21-ний хурлын сар 10/01–10/20 — 6 өдөр нь бүртгэлгүй.
         const meetings = [

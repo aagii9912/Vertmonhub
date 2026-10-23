@@ -5,7 +5,7 @@ import { applyLeadScope, type SalesProjectScope } from '@/lib/sales/project-scop
 import { ubDateStr } from '@/lib/utils/date';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { loadViewingReferrals } from './meeting-details-load';
-import { buildNegotiations, HELD_MEETING_STATUS, latestInterestViewings, NEGOTIATION_STATUSES, type NegotiationsInput, type NegotiationsReport } from './negotiations';
+import { buildNegotiations, HELD_MEETING_STATUS, NEGOTIATION_STATUSES, type NegotiationsInput, type NegotiationsReport } from './negotiations';
 
 const ID_CHUNK = 100;
 const chunks = <T,>(values: readonly T[]): T[][] => Array.from({ length: Math.ceil(values.length / ID_CHUNK) }, (_, index) => values.slice(index * ID_CHUNK, (index + 1) * ID_CHUNK));
@@ -43,8 +43,8 @@ export async function loadNegotiations(db: SupabaseClient, options: { shopId: st
         : [];
 
     const liveContractLeadIds = new Set(contracts.map(row => row.lead_id).filter((id): id is string => !!id));
-    // Сэжим: гэрээгүй лидийн сонирхол авсан уулзалтынх.
-    const viewingIds = [...latestInterestViewings(viewings, today)].filter(([leadId]) => !liveContractLeadIds.has(leadId)).map(([, entry]) => entry.viewing.id);
+    // Сэжим: гэрээгүй лидийн болсон уулзалтуудаас «Сэжим» сонгосон сүүлийнх (`latestReferralByLead`).
+    const viewingIds = viewings.filter(viewing => viewing.lead_id && !liveContractLeadIds.has(viewing.lead_id)).map(viewing => viewing.id);
     const referrals = leadIds.length ? await loadViewingReferrals(db, shopId, viewingIds) : { available: true, byViewing: new Map<string, string | null>() };
     return buildNegotiations({ today, leads, viewings, units, pricing, liveContractLeadIds, referrals });
 }

@@ -107,8 +107,8 @@ export function meetings(): MeetingDetailsReport {
     const a = { key: 'B2|A', label: 'Б2 A · 57.87 м² · 2 өрөө' };
     return {
         range,
-        weeks: weeks.map((week, index) => index === 0 ? { ...week, total: 0, withoutInterest: 0, byModel: [] } : {
-            ...week, total: 6 + index, withoutInterest: 1,
+        weeks: weeks.map((week, index) => index === 0 ? { ...week, total: 0, withoutInterest: 0, byModel: [], coverage: 'none' as const } : {
+            ...week, total: 6 + index, withoutInterest: 1, coverage: 'full' as const,
             byModel: [{ ...e7, count: 3 + index }, { ...a, count: 2 }],
         }),
         referral: { rows: [{ label: 'Ойрхон амьдардаг', count: 5 }, { label: 'Сошиал медиа', count: 3 }, { label: 'Мандала Гарден ОС', count: 2 }], unknown: 2, total: 12, available: true },

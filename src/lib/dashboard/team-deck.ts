@@ -539,8 +539,10 @@ function meetingSlide(pres: PptxGenJS, ctx: Ctx) {
     const pieH = 2.55;
     report.weeks.forEach((week, index) => {
         const x = M + index * pieW;
-        if (!week.total) {
-            slide.addText([{ text: week.label, options: { bold: true, breakLine: true } }, { text: 'Болсон уулзалт алга' }],
+        // Бүртгэл эхлэхээс өмнөх 7 хоног тодорхойгүй («0» биш); бүрэн бүртгэлтэй 7 хоногт л «уулзалт алга» (9-р слайдтай нэг дүрэм).
+        const unknown = (week.coverage ?? 'full') === 'none' || (week.coverage === 'partial' && !week.total);
+        if (unknown || !week.total) {
+            slide.addText([{ text: week.label, options: { bold: true, breakLine: true } }, { text: unknown ? 'Бүртгэлгүй (тодорхойгүй)' : 'Болсон уулзалт алга' }],
                 { x, y: TOP - 0.05, w: pieW - 0.1, h: 0.9, fontFace: FONT, fontSize: 11, color: C.muted, align: 'center', margin: 0, valign: 'top', isTextBox: true });
             return;
         }
@@ -550,7 +552,7 @@ function meetingSlide(pres: PptxGenJS, ctx: Ctx) {
         slide.addChart('pie', [{ name: week.label, labels, values }], {
             x, y: TOP - 0.05, w: pieW - 0.1, h: pieH, chartColors: colors, showLegend: false, showValue: true, showPercent: false,
             dataLabelPosition: 'outEnd', dataLabelFontSize: 9, dataLabelFontFace: FONT, dataLabelColor: C.ink,
-            showTitle: true, title: `${week.label} · ${week.total}`, titleFontSize: 11, titleFontFace: FONT, titleColor: C.ink,
+            showTitle: true, title: `${week.label} · ${week.total}${week.coverage === 'partial' ? '+' : ''}`, titleFontSize: 11, titleFontFace: FONT, titleColor: C.ink,
             altText: `Сонирхсон загвар ${week.label}: ${labels.map((label, i) => `${label} ${values[i]}`).join(', ')}`,
         });
     });
@@ -620,6 +622,8 @@ function yearTableSlide(pres: PptxGenJS, ctx: Ctx) {
     const plan = ctx.input.plan;
     const row = plan?.months[ctx.month - 1];
     if (!plan || !row) return unavailable(slide, ctx, 'plan');
+    // Он эхнээсх баганын сар = тайлангийн өөрийн хүрээ (тайлант өдрийг өнөөдрөөр хязгаарласан): илтгэлийн сартай зөрж болно.
+    const ytdMonth = plan.throughMonth ?? ctx.month;
     const metrics: Array<{ key: PlanMetricKey; label: string; format: (value: number) => string }> = [
         { key: 'contract_count', label: 'Тоо хэмжээ', format: value => value.toLocaleString('en-US') },
         { key: 'contract', label: 'Гэрээний дүн', format: digits },
@@ -634,7 +638,7 @@ function yearTableSlide(pres: PptxGenJS, ctx: Ctx) {
     const head1: Cell[] = [
         { text: 'Блок', options: { bold: true, color: C.muted, fill: { color: C.surface }, rowspan: 2, valign: 'middle' } },
         { text: 'Үзүүлэлт', options: { bold: true, color: C.muted, fill: { color: C.surface }, rowspan: 2, valign: 'middle' } },
-        groupHead(`${ctx.month}-р сар`), groupHead(`1–${ctx.month} сар`), groupHead(`${ctx.year} он`),
+        groupHead(`${ctx.month}-р сар`), groupHead(`1–${ytdMonth} сар`), groupHead(`${ctx.year} он`),
     ];
     const head2 = [0, 1, 2].flatMap(() => sub.map((text, index) => headCell(text, index === 2 ? 'center' : 'right')));
     const body: Cell[][] = scopes.flatMap(scope => metrics.map((metric, index) => {
@@ -656,7 +660,8 @@ function yearTableSlide(pres: PptxGenJS, ctx: Ctx) {
     });
     note(slide, [
         `Эх сурвалж: «Төлөвлөгөөний биелэлт» — ${ctx.year} он, тайлант өдөр (${ctx.input.range.to}) хүртэл; гэрээ захиалга өгсөн огноогоор, цуцлагдсаныг хассан.`,
-        `«${ctx.year} он»-ы гүйцэтгэл = 1–${ctx.month} сарын гүйцэтгэл; хувь = бүтэн жилийн төлөвлөгөөнөөс. Аль нэг сард төлөвлөгөө оруулаагүй бол нийт төлөвлөгөө «—».`,
+        `«${ctx.year} он»-ы гүйцэтгэл = 1–${ytdMonth} сарын гүйцэтгэл; хувь = бүтэн жилийн төлөвлөгөөнөөс. Аль нэг сард төлөвлөгөө оруулаагүй бол нийт төлөвлөгөө «—».`,
+        ytdMonth !== ctx.month ? `Тайлант 7 хоног дуусаагүй тул он эхнээсх гүйцэтгэл ${ytdMonth}-р сар хүртэл (татсан өдрөөр); ${ctx.month}-р сарын гүйцэтгэл «—».` : null,
         ctx.cashVisible ? cashSource(plan, row.total.metrics.cashflow) : 'Мөнгөн урсгалын мөрийг санхүүгийн эрхтэй хүн харна.',
         row.total.undated ? `«+» — огноогүй ${row.total.undated} гэрээтэй тул доод хязгаар. ${undatedContractsHint(row.total.undated)}` : null,
     ]);

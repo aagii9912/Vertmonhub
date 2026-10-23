@@ -185,7 +185,7 @@ export async function exportTeamDeck(input: TeamDeckExportInput): Promise<{ file
     const meeting = encodeURIComponent(input.meetingDate);
     const slides = input.slides.filter(slide => slide.part === 'sales');
     const [plan, activity, meetings, negotiations, branding, media, { default: PptxGenJS }] = await Promise.all([
-        settle(dashboardJson<TeamPlanReport>(`/api/dashboard/reports/plan-performance?year=${year}&through=${input.range.to}`)),
+        settle(dashboardJson<TeamPlanReport>(`/api/dashboard/reports/plan-performance?year=${year}&through=${input.range.to}&hubAsOf=${input.meetingDate}`)),
         settle(dashboardJson<SalesActivityReport>(`/api/dashboard/reports/sales-activity?meeting=${meeting}`)),
         settle(dashboardJson<MeetingDetailsReport>(`/api/dashboard/reports/meeting-details?meeting=${meeting}`)),
         settle(dashboardJson<NegotiationsReport>('/api/dashboard/reports/negotiations')),

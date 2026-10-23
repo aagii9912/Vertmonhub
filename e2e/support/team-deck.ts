@@ -48,7 +48,7 @@ export function teamDeckFixtures(meetingDate: string, shopId: string) {
     const meetings: MeetingDetailsReport & { meetingDate: string } = {
         meetingDate, range,
         weeks: meetingDetailWeeks(meetingDate).map((week, index) => ({
-            ...week, total: 5 + index, withoutInterest: 1,
+            ...week, total: 5 + index, withoutInterest: 1, coverage: 'full' as const,
             byModel: [{ key: 'B1|E7', label: 'Б1 E7 · 89.73 м² · 3 өрөө', count: 2 + index }, { key: 'B2|A', label: 'Б2 A · 57.87 м² · 2 өрөө', count: 2 }],
         })),
         referral: { rows: [{ label: 'Ойрхон амьдардаг', count: 5 }, { label: 'Сошиал медиа', count: 3 }], unknown: 1, total: 9, available: true },

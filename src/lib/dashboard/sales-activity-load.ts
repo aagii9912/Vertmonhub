@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { loadMeetingsSince } from './meeting-details-load';
 import { daySpan, shiftDate, ubDateStart } from '@/lib/sales/activity';
 import { ubDateStr } from '@/lib/utils/date';
 import { fetchAllRows } from '@/lib/utils/pagination';
@@ -29,7 +30,7 @@ export async function loadSalesActivity(db: SupabaseClient, options: { shopId: s
     const month = Number(window.month.month.slice(5, 7));
 
     const settings = await loadDailyReportConfig(db, shopId, options.shopName);
-    const [counts, reports, meetings, first, target] = await Promise.all([
+    const [counts, reports, meetings, first, firstCount, target] = await Promise.all([
         fetchAllRows<SalesActivityCountRow>((from, to) => db.from('daily_report_counts').select('report_date, manager_name, metric, value')
             .eq('shop_id', shopId).gte('report_date', window.from).lte('report_date', window.to)
             .order('report_date').order('manager_name').order('metric').range(from, to)),
@@ -38,12 +39,14 @@ export async function loadSalesActivity(db: SupabaseClient, options: { shopId: s
         fetchAllRows<{ scheduled_at: string; meeting_type: string | null }>((from, to) => db.from('property_viewings').select('scheduled_at, meeting_type')
             .eq('shop_id', shopId).is('deleted_at', null).eq('status', 'completed').gte('scheduled_at', start).lt('scheduled_at', end)
             .order('scheduled_at').order('id').range(from, to)),
-        // Уулзалтын бүртгэл эхэлсэн өдөр: устгаагүй, ямар ч төлөвтэй хамгийн эртний уулзалт.
-        db.from('property_viewings').select('scheduled_at').eq('shop_id', shopId).is('deleted_at', null)
-            .order('scheduled_at', { ascending: true }).limit(1).maybeSingle(),
+        // Уулзалтын бүртгэл эхэлсэн өдөр (10-р слайдтай нэг эх).
+        loadMeetingsSince(db, shopId),
+        // Өдрийн тайлангийн тоо эхэлсэн өдөр (хамгийн эртний нүд): түүнээс өмнөх өдөр «0» биш, тодорхойгүй.
+        db.from('daily_report_counts').select('report_date').eq('shop_id', shopId)
+            .order('report_date', { ascending: true }).limit(1).maybeSingle(),
         db.from('team_sales_targets').select('activity_targets').eq('shop_id', shopId).eq('year', year).eq('month', month).maybeSingle(),
     ]);
-    if (first.error) throw new Error(first.error.message);
+    if (firstCount.error) throw new Error(firstCount.error.message);
     const targetsAvailable = !isMissingSchemaError(target.error);
     if (target.error && targetsAvailable) throw new Error(target.error.message);
 
@@ -55,7 +58,8 @@ export async function loadSalesActivity(db: SupabaseClient, options: { shopId: s
         counts: counts.map(row => ({ ...row, value: Number(row.value) || 0 })),
         confirmedDates: reports.filter(row => row.completed_at).map(row => row.report_date),
         meetings: meetings.map(row => ({ day: ubDateStr(new Date(row.scheduled_at)), type: row.meeting_type })),
-        meetingsSince: first.data?.scheduled_at ? ubDateStr(new Date(first.data.scheduled_at as string)) : null,
+        meetingsSince: first,
+        countsSince: (firstCount.data as { report_date?: string } | null)?.report_date ?? null,
         targets: targetsAvailable ? (target.data as { activity_targets?: unknown } | null)?.activity_targets ?? null : null,
         targetsAvailable,
         today: ubDateStr(),

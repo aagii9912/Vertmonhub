@@ -9,6 +9,7 @@
  *  • «Сэжим» (хаанаас ирсэн): тайлант 7 хоногийн ШИНЭ (`new_customer`) уулзалт сэжмийн нэрээр;
  *    сонгоогүй эсвэл талбар хараахан алга бол «Тодорхойгүй» (`unknown`), 0 гэж хасахгүй.
  */
+import { periodCoverage, type PeriodCoverage } from './data-since';
 import { pricingKey } from '@/lib/sales/pricing';
 import { activityRangeLabel } from './sales-activity';
 import { shiftReviewDate, weeklyReviewRange } from './weekly-review';
@@ -16,7 +17,11 @@ import { shiftReviewDate, weeklyReviewRange } from './weekly-review';
 export const MEETING_DETAIL_WEEKS = 4;
 
 export interface MeetingModelCount { key: string; label: string; count: number }
-export interface MeetingDetailWeek { label: string; from: string; to: string; total: number; withoutInterest: number; byModel: MeetingModelCount[] }
+/**
+ * `coverage`: уулзалтын бүртгэл эхлэхээс өмнө дууссан 7 хоног → none (тоо тодорхойгүй, «0» биш); дунд нь эхэлсэн → partial
+ * (тоо доод хязгаар «N+»); full → бүрэн. Идэвхжлийн тайлантай (9-р слайд) нэг дүрэм (`data-since.ts`).
+ */
+export interface MeetingDetailWeek { label: string; from: string; to: string; total: number; withoutInterest: number; byModel: MeetingModelCount[]; coverage: PeriodCoverage }
 export interface MeetingDetailsReport {
     range: { from: string; to: string };
     weeks: MeetingDetailWeek[];
@@ -38,6 +43,8 @@ export interface MeetingDetailsInput {
     units: ReadonlyArray<{ block: string | null; model: string | null; rooms: number | string | null }>;
     /** Сэжим: `available: false` = багана/хүснэгт алга; `byViewing` = уулзалт → сэжмийн нэр (сонгоогүй бол null). */
     referrals: { available: boolean; byViewing: ReadonlyMap<string, string | null> };
+    /** Уулзалтын бүртгэл эхэлсэн УБ өдөр (устгаагүй, ямар ч төлөвтэй хамгийн эртний уулзалт); алга бол null. Хуучин дуудагчид заавал биш. */
+    meetingsSince?: string | null;
 }
 
 /** Тайлант 7 хоногоор дуусах сүүлийн `count` Лхагва→Мягмар 7 хоног (эрт → хожуу). */
@@ -115,8 +122,13 @@ export function buildMeetingDetails(input: MeetingDetailsInput): MeetingDetailsR
             const area = [...group.areas].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] ?? null;
             return { key, label: modelLabel(group.block, group.model, area, roomsOf(rooms, group.block, group.model)), count: group.count };
         }).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key, 'mn', { numeric: true }));
-        return { ...week, total: meetings.length, withoutInterest, byModel };
+        const coverage: PeriodCoverage = input.meetingsSince === undefined ? 'full' : periodCoverage(input.meetingsSince, week.from, week.to);
+        return { ...week, total: meetings.length, withoutInterest, byModel, coverage };
     });
+    if (input.meetingsSince === null) notes.push('Уулзалт бүртгэгдээгүй тул 7 хоногийн тоо тодорхойгүй.');
+    else if (input.meetingsSince && input.meetingsSince > weeks[0].from) {
+        notes.push(`Уулзалтын бүртгэл ${input.meetingsSince}-нээс эхэлсэн — түүнээс өмнөх 7 хоног тодорхойгүй, тэр өдрийг агуулсан 7 хоногийн тоо доод хязгаар («N+»).`);
+    }
     const missing = weeks.reduce((sum, week) => sum + week.withoutInterest, 0);
     if (missing) notes.push(`${missing} уулзалтад сонирхсон загвар бүртгэгдээгүй («Сонголтгүй»).`);
 

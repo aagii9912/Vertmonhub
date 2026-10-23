@@ -21,6 +21,7 @@ import { readActivityTargets as readMonthActivityTargets, type ActivityTargetKey
 import { daySpan, shiftDate } from '@/lib/sales/activity';
 import { chatMetric, configMetrics, lineMetrics, type DailyReportConfig, type DailyReportLine } from './daily-report';
 import { monthWeeks } from './weekly-sales';
+import { boundedCount, periodCoverage } from './data-since';
 import { weeklyReviewRange } from './weekly-review';
 
 export const ACTIVITY_METRICS = ['hotline', 'managerLine', 'newMeetings', 'repeatMeetings', 'chats'] as const;
@@ -82,6 +83,12 @@ export interface SalesActivityInput {
     meetings: readonly SalesActivityMeeting[];
     /** Анхны бүртгэлтэй уулзалтын УБ өдөр (устгаагүй, ямар ч төлөв); уулзалтгүй бол null. */
     meetingsSince: string | null;
+    /**
+     * Өдрийн тайлангийн тоо эхэлсэн өдөр (хамгийн эртний `daily_report_counts`); алга бол null. Түүнээс өмнөх өдөр «0» биш —
+     * дунд нь эхэлсэн хугацааны дуудлага, чат доод хязгаар («N+»), биелэлтийн хувь «—» (уулзалттай ижил дүрэм).
+     * Хуучин дуудагчийн нийцэлд заавал биш: өгөөгүй бол хязгаар тавихгүй.
+     */
+    countsSince?: string | null;
     /** Тухайн сарын `activity_targets` (түүхий); `targetsAvailable: false` = багана алга. */
     targets: unknown;
     targetsAvailable: boolean;
@@ -175,33 +182,40 @@ export function buildSalesActivity(input: SalesActivityInput): SalesActivityRepo
         return found ? total : null;
     };
     const since = input.meetingsSince;
+    const countsSince = input.countsSince;
     /**
      * Уулзалт: бүртгэл эхлэхээс өмнө дууссан хугацаа → null. Бүртгэл хугацааны дунд эхэлсэн бол эхэлснээс хойшхи
      * тоо нь доод хязгаар («N+», `partial`); нэг ч олдоогүй бол null (өмнөх өдрүүд тодорхойгүй тул 0 биш).
      */
-    const countMeetings = (type: string, from: string, to: string): { value: number | null; partial: boolean } => {
-        if (!since || to < since) return { value: null, partial: false };
-        const count = input.meetings.filter(meeting => meeting.type === type && meeting.day >= from && meeting.day <= to).length;
-        if (from >= since) return { value: count, partial: false };
-        return count ? { value: count, partial: true } : { value: null, partial: false };
+    const countMeetings = (type: string, from: string, to: string) => {
+        const coverage = periodCoverage(since, from, to);
+        return boundedCount(coverage === 'none' ? null : input.meetings.filter(meeting => meeting.type === type && meeting.day >= from && meeting.day <= to).length, coverage);
     };
+    /** Дуудлага, чат: өдрийн тайлан эхлэхээс өмнөх өдөр тодорхойгүй (`countsSince`); өгөөгүй бол нүдний нийлбэр хэвээр. */
+    const countLines = (keys: Set<string>, from: string, to: string) => countsSince === undefined
+        ? { value: sumCounts(keys, from, to), partial: false }
+        : boundedCount(sumCounts(keys, from, to), periodCoverage(countsSince, from, to));
     const valuesFor = (from: string, to: string) => {
         const fresh = countMeetings('new_customer', from, to);
         const repeat = countMeetings('repeat_customer', from, to);
+        const hotline = countLines(metricKeys.hotline, from, to);
+        const manager = countLines(metricKeys.managerLine, from, to);
+        const chats = countLines(metricKeys.chats, from, to);
         const values: Record<ActivityMetric, number | null> = {
             ...emptyValues(),
-            hotline: sumCounts(metricKeys.hotline, from, to),
-            managerLine: sumCounts(metricKeys.managerLine, from, to),
-            newMeetings: fresh.value,
-            repeatMeetings: repeat.value,
-            chats: sumCounts(metricKeys.chats, from, to),
+            hotline: hotline.value, managerLine: manager.value, newMeetings: fresh.value, repeatMeetings: repeat.value, chats: chats.value,
         };
-        return { values, partial: { ...completeValues(), newMeetings: fresh.partial, repeatMeetings: repeat.partial } };
+        return { values, partial: { ...completeValues(), hotline: hotline.partial, managerLine: manager.partial, newMeetings: fresh.partial, repeatMeetings: repeat.partial, chats: chats.partial } };
     };
     if (!since) notes.push('Уулзалт бүртгэгдээгүй тул уулзалтын тоо тодорхойгүй.');
     else if (since > window.from) notes.push(`Уулзалтын бүртгэл ${since}-нээс эхэлсэн — түүнээс өмнөх уулзалт тодорхойгүй, тэр өдрийг агуулсан хугацааны тоо доод хязгаар («N+»).`);
     if (since && since > window.month.from && since <= window.month.to) {
         notes.push(`${window.month.month} сарын уулзалтын тоо ${since}-нээс хойшхи бүртгэлээр тул биелэлтийн хувь «—».`);
+    }
+    if (countsSince === null) notes.push('Өдрийн тайлангийн тоо бүртгэгдээгүй тул дуудлага, чатын тоо тодорхойгүй.');
+    else if (countsSince && countsSince > window.from) notes.push(`Өдрийн тайлангийн тоо ${countsSince}-нээс эхэлсэн — түүнээс өмнөх дуудлага, чат тодорхойгүй, тэр өдрийг агуулсан хугацааны тоо доод хязгаар («N+»).`);
+    if (countsSince && countsSince > window.month.from && countsSince <= window.month.to) {
+        notes.push(`${window.month.month} сарын дуудлага, чатын тоо ${countsSince}-нээс хойшхи бүртгэлээр тул биелэлтийн хувь «—».`);
     }
     if (input.today && window.range.to > input.today) notes.push(`Тайлант 7 хоног (${window.range.from} – ${window.range.to}) хараахан дуусаагүй байна.`);
 

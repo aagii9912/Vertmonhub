@@ -117,6 +117,17 @@ describe('buildNegotiations', () => {
         expect(report.rows[0]).toMatchObject({ manager: 'Khongoroo', block: 'Б2', area: null, total: null, priceReason: 'Сонирхлын мэдээлэл дутуу' });
     });
 
+    it('takes «Сэжим» from the lead\'s latest held meeting that recorded one, not only from the interest meeting', () => {
+        // L1: сонирхол v-new-ээс (Facebook), гэхдээ хожмын v-latest дээр «Ойрхон амьдардаг» сонгосон → түүнийг; ирээдүйн товлол тооцохгүй.
+        const report = buildNegotiations(input({ referrals: { available: true, byViewing: new Map([['v-old', 'Ажилтан'], ['v-new', null], ['v-latest', 'Ойрхон амьдардаг'], ['v-booked', 'Монкон']]) } }));
+        expect(report.rows.find(row => row.leadId === 'L1')?.referral).toBe('Ойрхон амьдардаг');
+        // L2: зөвхөн ирэх товлол дээр сонгосон — болоогүй уулзалтаас авахгүй.
+        expect(report.rows.find(row => row.leadId === 'L2')?.referral).toBeNull();
+        // Эхний (шинэ) уулзалтын «Сэжим» давтан уулзалтад хоосон байсан ч хадгалагдана.
+        const first = buildNegotiations(input({ referrals: { available: true, byViewing: new Map([['v-old', 'Ажилтан']]) } }));
+        expect(first.rows.find(row => row.leadId === 'L1')?.referral).toBe('Ажилтан');
+    });
+
     it('drops «Сэжим» when the referral column is missing', () => {
         const report = buildNegotiations(input({ referrals: { available: false, byViewing: new Map([['v-new', 'Facebook']]) } }));
         expect(report.rows.every(row => row.referral === null)).toBe(true);

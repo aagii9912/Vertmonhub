@@ -201,6 +201,14 @@ describe('HUB paid totals as cash (W5/W6)', () => {
         expect(report.months[9].total.metrics.cashflow).toMatchObject({ actual: 100, plan: 500, pct: 20 });
         const hub = calls.find(call => call.table === 'contract_list_imports' && call.columns.includes('rows'))!;
         expect(hub.filters).toEqual([['shop_id', 'shop-a'], ['lte:report_date', '2026-10-20']]);
+
+        // Лхагвын илтгэл: HUB файлыг хурлын өдөр хүртэл (давхрын зураглалтай ижил), гэрээ тайлант өдрөөр; ирээдүйг өнөөдрөөр.
+        const meeting = database({ property_contracts: [contract()], contract_list_imports: [] });
+        await loadPlanPerformance(meeting.db, { ...rest, now: new Date('2026-10-22T04:00:00Z'), through: '2026-10-20', hubAsOf: '2026-10-21' });
+        expect(meeting.calls.find(call => call.table === 'contract_list_imports' && call.columns.includes('rows'))!.filters).toContainEqual(['lte:report_date', '2026-10-21']);
+        const future = database({ property_contracts: [contract()], contract_list_imports: [] });
+        await loadPlanPerformance(future.db, { ...rest, now: new Date('2026-10-22T04:00:00Z'), through: '2026-10-20', hubAsOf: '2026-12-01' });
+        expect(future.calls.find(call => call.table === 'contract_list_imports' && call.columns.includes('rows'))!.filters).toContainEqual(['lte:report_date', '2026-10-22']);
     });
 
     it('never books an old sale\'s paid total on a contract made after the file date; pairs by order date like the import', async () => {

@@ -95,6 +95,20 @@ export function latestInterestViewings(viewings: NegotiationsInput['viewings'], 
     return latest;
 }
 
+/**
+ * Лид бүрийн «Сэжим»: «Сэжим» сонгосон хамгийн сүүлийн болсон уулзалтынх (`today`-гоос хойш биш). Сонирхол авсан уулзалтаас
+ * тусдаа — «Сэжим» шинэ уулзалтад заавал, давтан уулзалтад сонголттой тул сүүлийн уулзалтад ихэвчлэн хоосон байдаг.
+ */
+export function latestReferralByLead(viewings: NegotiationsInput['viewings'], byViewing: ReadonlyMap<string, string | null>, today: string): Map<string, string> {
+    const latest = new Map<string, string>();
+    const held = viewings.filter(viewing => viewing.status === HELD_MEETING_STATUS && ubDateStr(new Date(viewing.scheduled_at)) <= today);
+    for (const viewing of [...held].sort((a, b) => b.scheduled_at.localeCompare(a.scheduled_at) || a.id.localeCompare(b.id))) {
+        const name = byViewing.get(viewing.id)?.trim();
+        if (viewing.lead_id && name && !latest.has(viewing.lead_id)) latest.set(viewing.lead_id, name);
+    }
+    return latest;
+}
+
 /** Талбайн бутархайн үлдэгдлийг (57.87 + 85.19) мөнгөний нарийвчлалаар тайрна. */
 const cents = (value: number) => Math.round(value * 100) / 100;
 export function negotiationSum(values: Array<number | null>): NegotiationSum {
@@ -108,6 +122,7 @@ export function buildNegotiations(input: NegotiationsInput): NegotiationsReport 
     const rooms = modelRooms(input.units);
     const unitRooms = new Map(input.units.map(unit => [unit.id, unit.rooms === null ? null : Number(unit.rooms)]));
     const latestByLead = latestInterestViewings(input.viewings, input.today);
+    const referralByLead = input.referrals.available ? latestReferralByLead(input.viewings, input.referrals.byViewing, input.today) : new Map<string, string>();
 
     const leads = input.leads.filter(lead => (NEGOTIATION_STATUSES as readonly string[]).includes(lead.status ?? ''));
     const contracted = leads.filter(lead => input.liveContractLeadIds.has(lead.id)).length;
@@ -118,7 +133,7 @@ export function buildNegotiations(input: NegotiationsInput): NegotiationsReport 
         const manager = lead.sales_manager_name?.trim() || latest?.viewing.sales_manager_name?.trim() || null;
         const base: NegotiationRow = {
             leadId: lead.id, status: lead.status ?? '', manager, block: null, rooms: null, floor: null, area: null, condition: null,
-            pricePerSqm: null, total: null, advance: null, conditionNote: null, referral: null, viewedAt: null, priceReason: null,
+            pricePerSqm: null, total: null, advance: null, conditionNote: null, referral: referralByLead.get(lead.id) ?? null, viewedAt: null, priceReason: null,
         };
         if (!latest) { withoutInterest++; return { ...base, priceReason: 'Болсон уулзалтад сонирхсон байр бүртгэгдээгүй' }; }
         const { viewing, interest } = latest;
@@ -143,7 +158,6 @@ export function buildNegotiations(input: NegotiationsInput): NegotiationsReport 
             pricePerSqm: quote?.price_per_sqm ?? null,
             total: quote?.total_amount ?? null,
             advance: quote?.advance_amount ?? null,
-            referral: input.referrals.available ? input.referrals.byViewing.get(viewing.id)?.trim() || null : null,
             viewedAt: ubDateStr(new Date(viewing.scheduled_at)),
             priceReason,
         };
