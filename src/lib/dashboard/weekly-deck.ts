@@ -31,7 +31,9 @@ import { ubDateStr } from '@/lib/utils/date';
 export interface DeckImage { data: string; width: number; height: number }
 
 export type WeeklyDeckKind = 'sales' | 'marketing';
-export const WEEKLY_DECK_LABEL: Record<WeeklyDeckKind, string> = { sales: 'Борлуулалт', marketing: 'Маркетинг' };
+/** Татах файлын төрөл: борлуулалт, маркетинг ба борлуулалтын албаны загвар (`team-deck.ts`, W2). */
+export type WeeklyDeckFileKind = WeeklyDeckKind | 'sales-team';
+export const WEEKLY_DECK_LABEL: Record<WeeklyDeckFileKind, string> = { sales: 'Борлуулалт', marketing: 'Маркетинг', 'sales-team': 'Борлуулалт (албаны загвар)' };
 
 export interface WeeklyDeckInput {
     kind: WeeklyDeckKind;
@@ -61,83 +63,88 @@ export interface WeeklyDeckInput {
     updates?: WeeklyUpdate[];
 }
 
-const W = 13.333;
-const H = 7.5;
-const M = 0.6;
-const CW = W - M * 2;
-const FONT = 'Arial';
-const C = {
+/*
+ * Доорх хэмжээ, өнгө, формат, слайдын туслахыг багийн загварын илтгэл (`team-deck.ts`) хуваалцана —
+ * хуулбарлахгүй, нэг загвар (Arial, Hub-ийн өнгө, LAYOUT_WIDE 13.333×7.5).
+ */
+export const W = 13.333;
+export const H = 7.5;
+export const M = 0.6;
+export const CW = W - M * 2;
+export const FONT = 'Arial';
+export const C = {
     ink: '12151C', ink2: '3A404C', muted: '5C6474', line: 'E3E6EB', surface: 'F0F2F5', white: 'FFFFFF',
     brand: '2D5FDD', brandSoft: 'EBF0FD', navy: '0E1A3A', navy2: 'A9B8E8',
     success: '13784A', successSoft: 'E5F5EC', pending: '9A5A00', pendingSoft: 'FDF2DF',
     danger: 'C0362C', dangerSoft: 'FCEBE9', neutralSoft: 'E6E9EE', gold: 'A9823F',
 } as const;
-const CONTENT = 'VH_CONTENT';
-const COVER = 'VH_COVER';
-const TOP = 1.7;
-const BOTTOM = 6.85;
+export const CONTENT = 'VH_CONTENT';
+export const COVER = 'VH_COVER';
+export const TOP = 1.7;
+export const BOTTOM = 6.85;
 
-const dot = (date: string) => date.replaceAll('-', '.');
+export const dot = (date: string) => date.replaceAll('-', '.');
 const span = (range: { from: string; to: string }) => `${dot(range.from)} – ${dot(range.to)}`;
-const count = (value: number | null | undefined) => value === null || value === undefined ? '—' : value.toLocaleString('en-US');
+export const count = (value: number | null | undefined) => value === null || value === undefined ? '—' : value.toLocaleString('en-US');
 const pct = (value: number | null | undefined) => value === null || value === undefined ? '—' : `${value}%`;
-const area = (value: number | null) => value === null ? '—' : value.toLocaleString('en-US', { maximumFractionDigits: 2 });
-const money = (value: number | null | undefined) => value === null || value === undefined ? '—' : formatMNT(value);
+export const area = (value: number | null) => value === null ? '—' : value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+export const money = (value: number | null | undefined) => value === null || value === undefined ? '—' : formatMNT(value);
 const short = (value: number | null | undefined) => value === null || value === undefined ? '—' : formatMNTShort(value);
-const clip = (text: string, max: number) => text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
-const managerShort = (name: string | null) => name?.split('.')[0]?.trim() || '—';
+export const clip = (text: string, max: number) => text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+export const managerShort = (name: string | null) => name?.split('.')[0]?.trim() || '—';
 
 type Slide = PptxGenJS.Slide;
 type Cell = PptxGenJS.TableCell;
 
-function defineLayouts(pres: PptxGenJS, projectName: string) {
+/** Нүүр (хар хөх) ба агуулгын мастер; агуулгын слайдын хөлд `footer` бичвэр ба слайдын дугаар. */
+export function defineLayouts(pres: PptxGenJS, footer: string) {
     pres.defineSlideMaster({ title: COVER, background: { color: C.navy } });
     pres.defineSlideMaster({
         title: CONTENT,
         background: { color: C.white },
         objects: [
-            { text: { text: `VERTMON HUB · ${projectName}`, options: { x: M, y: 7.02, w: 8, h: 0.3, fontFace: FONT, fontSize: 9, color: C.muted, margin: 0 } } },
+            { text: { text: footer, options: { x: M, y: 7.02, w: 8, h: 0.3, fontFace: FONT, fontSize: 9, color: C.muted, margin: 0 } } },
         ],
         slideNumber: { x: W - M - 0.6, y: 7.02, w: 0.6, h: 0.3, fontFace: FONT, fontSize: 9, color: C.muted, align: 'right' },
     });
 }
 
-function header(slide: Slide, kicker: string, title: string, subtitle?: string) {
+export function header(slide: Slide, kicker: string, title: string, subtitle?: string) {
     slide.addText(kicker.toUpperCase(), { x: M, y: 0.38, w: CW, h: 0.28, fontFace: FONT, fontSize: 11, bold: true, color: C.brand, charSpacing: 1, margin: 0, isTextBox: true });
     slide.addText(title, { x: M, y: 0.68, w: CW, h: 0.6, fontFace: FONT, fontSize: 26, bold: true, color: C.ink, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
     if (subtitle) slide.addText(subtitle, { x: M, y: 1.28, w: CW, h: 0.3, fontFace: FONT, fontSize: 12, color: C.muted, margin: 0, isTextBox: true });
 }
 
-function content(pres: PptxGenJS, kicker: string, title: string, subtitle?: string): Slide {
+export function content(pres: PptxGenJS, kicker: string, title: string, subtitle?: string): Slide {
     const slide = pres.addSlide({ masterName: CONTENT });
     header(slide, kicker, title, subtitle);
     return slide;
 }
 
-function note(slide: Slide, lines: (string | false | null | undefined)[]) {
+export function note(slide: Slide, lines: (string | false | null | undefined)[]) {
     const text = lines.filter(Boolean).join('\n');
     if (text) slide.addNotes(text);
 }
 
 /** Тоон карт: шошго, том тоо, доор тайлбар. */
-function stat(slide: Slide, x: number, y: number, w: number, h: number, label: string, value: string, helper?: string, tone?: 'danger' | 'gold') {
+export function stat(slide: Slide, x: number, y: number, w: number, h: number, label: string, value: string, helper?: string, tone?: 'danger' | 'gold') {
     slide.addShape('roundRect', { x, y, w, h, fill: { color: C.surface }, line: { color: C.surface }, rectRadius: 0.08 });
     slide.addText(label, { x: x + 0.22, y: y + 0.16, w: w - 0.44, h: 0.3, fontFace: FONT, fontSize: 11, color: C.muted, margin: 0, isTextBox: true });
     slide.addText(value, { x: x + 0.22, y: y + 0.46, w: w - 0.44, h: 0.62, fontFace: FONT, fontSize: value.length > 14 ? 20 : 26, bold: true, color: tone === 'danger' ? C.danger : tone === 'gold' ? C.gold : C.ink, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
     if (helper) slide.addText(helper, { x: x + 0.22, y: y + 1.08, w: w - 0.44, h: Math.max(0.3, h - 1.2), fontFace: FONT, fontSize: 10, color: C.muted, margin: 0, valign: 'top', isTextBox: true });
 }
 
-function statRow(slide: Slide, y: number, items: { label: string; value: string; helper?: string; tone?: 'danger' | 'gold' }[], h = 1.55) {
+export function statRow(slide: Slide, y: number, items: { label: string; value: string; helper?: string; tone?: 'danger' | 'gold' }[], h = 1.55) {
     const gap = 0.25;
     const w = (CW - gap * (items.length - 1)) / items.length;
     items.forEach((item, index) => stat(slide, M + index * (w + gap), y, w, h, item.label, item.value, item.helper, item.tone));
 }
 
-const headCell = (text: string, align: 'left' | 'right' | 'center' = 'left'): Cell => ({ text, options: { bold: true, color: C.muted, fill: { color: C.surface }, align } });
-const bodyCell = (text: string, align: 'left' | 'right' | 'center' = 'left', extra: PptxGenJS.TableCellProps = {}): Cell => ({ text, options: { color: C.ink, align, ...extra } });
+export const headCell = (text: string, align: 'left' | 'right' | 'center' = 'left'): Cell => ({ text, options: { bold: true, color: C.muted, fill: { color: C.surface }, align } });
+export const bodyCell = (text: string, align: 'left' | 'right' | 'center' = 'left', extra: PptxGenJS.TableCellProps = {}): Cell => ({ text, options: { color: C.ink, align, ...extra } });
 
 /** Хүснэгтийг шаардлагатай бол хэд хэдэн слайдад хуваана (гарчигт «1/2»). */
-function tableSlides(pres: PptxGenJS, opts: {
+export function tableSlides(pres: PptxGenJS, opts: {
     kicker: string; title: string; subtitle?: string; head: Cell[]; rows: Cell[][]; footer?: Cell[];
     colW: number[]; perSlide: number; fontSize?: number; notes?: string[];
 }) {
@@ -300,7 +307,7 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
 }
 
 /** Хүснэгтийн хөлийн нийлбэр: бүгд тодорхойгүй бол «—», зарим нь бол мэдэгдэхийн нийлбэр «+» — хоосныг 0 гэж нэмэхгүй. */
-function footerSum(values: Array<number | null>): string {
+export function footerSum(values: Array<number | null>): string {
     const known = values.filter((value): value is number => value !== null);
     if (!known.length) return values.length ? '—' : money(0);
     const total = money(known.reduce((sum, value) => sum + value, 0));
@@ -398,8 +405,11 @@ function legend(slide: Slide, y: number) {
     }
 }
 
-/** Давхрын зураглал: давхар × загвар, худалдаанд байгаа байр цагаан, гэрээтэйд менежерийн нэр. */
-function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport) {
+/**
+ * Давхрын зураглал: давхар × загвар, худалдаанд байгаа байр цагаан, гэрээтэйд менежерийн нэр.
+ * `options` (багийн загварын илтгэл): толгойн дээд шошго, гарчиг (блокоор; хуваагдвал «(1/2)» нэмнэ), нэмэлт тэмдэглэл.
+ */
+export function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport, options: { kicker?: string; title?: (block: string) => string; notes?: string[] } = {}) {
     // Мөр ≥ 0.2" (8pt) байхаар хуваана: 23 хүртэл давхартай блок нэг слайдад багтана, түүнээс олон бол тэнцүү хуваагдана.
     const maxFloors = Math.floor((BOTTOM - TOP) / 0.2) - 2;
     for (const map of report.inventory?.floorMaps ?? []) {
@@ -407,7 +417,8 @@ function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport) {
         const chunkSize = Math.ceil(map.floors.length / chunks);
         for (let chunk = 0; chunk < chunks; chunk++) {
             const floors = map.floors.slice(chunk * chunkSize, (chunk + 1) * chunkSize);
-            const slide = content(pres, 'Үлдэгдэл', `Орон сууцны үлдэгдэл — ${map.block} блок${chunks > 1 ? ` (${chunk + 1}/${chunks})` : ''}`);
+            const title = options.title ? options.title(map.block) : `Орон сууцны үлдэгдэл — ${map.block} блок`;
+            const slide = content(pres, options.kicker ?? 'Үлдэгдэл', `${title}${chunks > 1 ? ` (${chunk + 1}/${chunks})` : ''}`);
             legend(slide, 1.3);
             const countW = 0.9;
             const floorW = 0.85;
@@ -436,6 +447,7 @@ function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport) {
                 `${map.block} блок: гэрээтэй ${map.totals.sold}, худалдаанд ${map.totals.available}, бартер ${map.totals.barter}.`,
                 'Цэнхэр тоо = худалдаанд байгаа байр (м²). Захиалсан, хадгалсан байр «Худалдаанд»-д орно.',
                 report.inventory?.source.kind === 'contracts' ? 'Ногоон = Хабын амьд гэрээтэй байр (HUB гэрээний жагсаалт). Гэрээтэй байрны талбай нь гэрээлсэн талбай.' : null,
+                ...(options.notes ?? []),
             ]);
         }
     }
@@ -670,7 +682,7 @@ export function imageGridRows(images: readonly Pick<DeckImage, 'width' | 'height
     return { rows: Array.from({ length: count }, (_, row) => base + (row >= count - extra ? 1 : 0)), uniformCols: null };
 }
 
-function imageGrid(slide: Slide, images: DeckImage[], box: { x: number; y: number; w: number; h: number }) {
+export function imageGrid(slide: Slide, images: DeckImage[], box: { x: number; y: number; w: number; h: number }) {
     const { rows, uniformCols } = imageGridRows(images);
     const gap = 0.25;
     const cellH = (box.h - gap * (rows.length - 1)) / rows.length;
@@ -722,7 +734,7 @@ const PHOTO_TOP = 0.45;
  * Хэрэглэгчийн оруулсан слайд: сэдэв, зураг (≤ 9), тайлбар/дүгнэлт. Гарчиг, тайлбаргүй зурагтай слайд = зөвхөн зураг:
  * толгойгүй, захын зай доторх бүтэн коллаж (багийн илтгэлийн 14–15-р слайд). «Энэ сард хийгдэх ажил» — мөр бүр цэг.
  */
-function customSlide(pres: PptxGenJS, slideData: WeeklySlide, images: Record<string, DeckImage>) {
+export function customSlide(pres: PptxGenJS, slideData: WeeklySlide, images: Record<string, DeckImage>) {
     const loaded = slideData.image_paths.map(path => images[path]).filter((image): image is DeckImage => !!image);
     const missing = slideData.image_paths.length - loaded.length;
     const text = slideData.note.trim();
@@ -773,7 +785,7 @@ export function buildWeeklyDeck(pres: PptxGenJS, input: WeeklyDeckInput): PptxGe
     pres.title = `${input.projectName} · ${WEEKLY_DECK_LABEL[input.kind]} · Лхагва гарагийн хурал ${input.meetingDate}`;
     pres.subject = `Тайлант хугацаа ${input.range.from} – ${input.range.to}`;
     pres.theme = { headFontFace: FONT, bodyFontFace: FONT };
-    defineLayouts(pres, input.projectName);
+    defineLayouts(pres, `VERTMON HUB · ${input.projectName}`);
     const updates = (input.updates ?? []).filter(update => updatePart(update) === input.kind);
 
     coverSlide(pres, input);
@@ -812,7 +824,7 @@ export function buildWeeklyDeck(pres: PptxGenJS, input: WeeklyDeckInput): PptxGe
     return pres;
 }
 
-export function weeklyDeckFileName(projectName: string, meetingDate: string, kind: WeeklyDeckKind): string {
+export function weeklyDeckFileName(projectName: string, meetingDate: string, kind: WeeklyDeckFileKind): string {
     const safe = projectName.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Vertmon';
     return `${safe} - ${WEEKLY_DECK_LABEL[kind]} - Лхагва ${meetingDate}.pptx`;
 }

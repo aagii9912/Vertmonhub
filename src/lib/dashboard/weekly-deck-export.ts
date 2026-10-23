@@ -1,3 +1,4 @@
+import type PptxGenJS from 'pptxgenjs';
 import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 import type { BudgetOverview } from '@/lib/marketing/budget';
 import type { ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
@@ -8,6 +9,11 @@ import type { WeeklySalesReport } from './weekly-sales';
 import type { WeeklyContentPlan, WeeklyUpdate } from './weekly-review';
 import { reportMediaUrl, type WeeklySlide } from './weekly-slides';
 import { buildWeeklyDeck, weeklyDeckFileName, type DeckImage, type WeeklyDeckKind } from './weekly-deck';
+import { buildTeamDeck, type TeamDeckSource, type TeamPlanReport } from './team-deck';
+import type { SalesActivityReport } from './sales-activity';
+import type { MeetingDetailsReport } from './meeting-details';
+import type { NegotiationsReport } from './negotiations';
+import { brandingImageUrl, type ReportBranding, type ReportBrandingResponse } from './report-branding';
 
 /**
  * Хөтөч дээр Лхагвагийн тайланг .pptx болгож татна — борлуулалт, маркетинг тусдаа файл.
@@ -70,15 +76,15 @@ async function imageSize(blob: Blob): Promise<{ width: number; height: number }>
     }
 }
 
-/** Слайдын зургийг (дөрвөөр зэрэг) татаж base64 болгоно. Ачаалж чадаагүйг алгасна. */
-async function loadImages(paths: string[]): Promise<{ images: Record<string, DeckImage>; failed: number }> {
+/** Слайдын зургийг (дөрвөөр зэрэг) татаж base64 болгоно. Ачаалж чадаагүйг алгасна. `toUrl` — зургийн хувийн хаяг. */
+async function loadImages(paths: string[], toUrl: (path: string) => string = reportMediaUrl): Promise<{ images: Record<string, DeckImage>; failed: number }> {
     const images: Record<string, DeckImage> = {};
     let failed = 0;
     const queue = [...new Set(paths)];
     await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
         for (let path = queue.shift(); path; path = queue.shift()) {
             try {
-                const response = await dashboardFetch(reportMediaUrl(path));
+                const response = await dashboardFetch(toUrl(path));
                 if (!response.ok) throw new Error(String(response.status));
                 const blob = await response.blob();
                 const [dataUrl, size] = await Promise.all([readDataUrl(blob), imageSize(blob)]);
@@ -116,8 +122,14 @@ export async function exportWeeklyDeck(input: WeeklyDeckExportInput): Promise<{ 
         budget: budget?.available && budget.overview ? { year, month: Number(input.range.to.slice(5, 7)), overview: budget.overview } : null,
         channels, social, slides, images: media.images, updates: input.updates,
     });
-    const blob = await pres.write({ outputType: 'blob' }) as Blob;
     const fileName = weeklyDeckFileName(input.projectName, input.meetingDate, input.kind);
+    await saveDeck(pres, fileName);
+    return { fileName, failedImages: media.failed };
+}
+
+/** Үүсгэсэн илтгэлийг хөтөчөөр татуулна. */
+async function saveDeck(pres: PptxGenJS, fileName: string) {
+    const blob = await pres.write({ outputType: 'blob' }) as Blob;
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -126,5 +138,75 @@ export async function exportWeeklyDeck(input: WeeklyDeckExportInput): Promise<{ 
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 0);
-    return { fileName, failedImages: media.failed };
+}
+
+/** Борлуулалтын албаны загварын илтгэлийн оролт: хуудасны долоо хоногийн тайлан (сарын гэрээ, давхрын зураглал), слайд. */
+export interface TeamDeckExportInput {
+    projectName: string;
+    meetingDate: string;
+    range: { from: string; to: string };
+    weeklySales?: WeeklySalesReport;
+    /** Хуудсанд долоо хоногийн тайланг ачаалж чадаагүй шалтгаан (слайдын тэмдэглэлд). */
+    weeklySalesError?: string | null;
+    slides: WeeklySlide[];
+}
+
+type Settled<T> = { data: T; error: null } | { data: null; error: string };
+const settle = <T>(promise: Promise<T>): Promise<Settled<T>> => promise.then(
+    data => ({ data, error: null }),
+    (error: unknown) => ({ data: null, error: error instanceof Error && error.message ? error.message : 'тодорхойгүй алдаа' }),
+);
+
+/**
+ * Илтгэлийн брэнд ба нүүрний зураг, лого. 403/404, хүснэгт алга (`available: false`) эсвэл бусад алдаа — брэндгүй
+ * (анхдагч загвар), илтгэлийг унагаахгүй. Зураг ачаалж чадаагүй бол тэр зураггүй.
+ */
+async function loadBranding(): Promise<{ branding: ReportBranding | null; cover: DeckImage | null; logo: DeckImage | null; failed: number }> {
+    // Брэнд заавал биш: алдааг нүүрний тэмдэглэл («брэнд тохируулаагүй эсвэл уншиж чадаагүй») л илэрхийлнэ.
+    const response = await dashboardJson<ReportBrandingResponse>('/api/dashboard/report-branding').catch(() => null);
+    const branding = response?.available ? response.branding : null;
+    const paths = [branding?.coverImagePath, branding?.logoPath].filter((path): path is string => !!path);
+    const media = paths.length ? await loadImages(paths, path => brandingImageUrl(path) ?? '') : { images: {}, failed: 0 };
+    return {
+        branding,
+        cover: branding?.coverImagePath ? media.images[branding.coverImagePath] ?? null : null,
+        logo: branding?.logoPath ? media.images[branding.logoPath] ?? null : null,
+        failed: media.failed,
+    };
+}
+
+/**
+ * «Борлуулалт (албаны загвар)» (W2): багийн гараар хийдэг 17 слайдын агуулга, дарааллаар (`buildTeamDeck`).
+ * Эх сурвалжуудыг зэрэг уншина; аль нэг нь бүтэлгүйтвэл тэр слайд «мэдээлэл ачаалж чадсангүй», бусад нь хэвээр.
+ * Мөнгөн урсгал зөвхөн санхүүгийн эрхтэйд серверээс ирнэ (`cashHidden`).
+ */
+export async function exportTeamDeck(input: TeamDeckExportInput): Promise<{ fileName: string; failedImages: number; failedSources: number }> {
+    const year = input.range.to.slice(0, 4);
+    const meeting = encodeURIComponent(input.meetingDate);
+    const slides = input.slides.filter(slide => slide.part === 'sales');
+    const [plan, activity, meetings, negotiations, branding, media, { default: PptxGenJS }] = await Promise.all([
+        settle(dashboardJson<TeamPlanReport>(`/api/dashboard/reports/plan-performance?year=${year}&through=${input.range.to}`)),
+        settle(dashboardJson<SalesActivityReport>(`/api/dashboard/reports/sales-activity?meeting=${meeting}`)),
+        settle(dashboardJson<MeetingDetailsReport>(`/api/dashboard/reports/meeting-details?meeting=${meeting}`)),
+        settle(dashboardJson<NegotiationsReport>('/api/dashboard/reports/negotiations')),
+        loadBranding(),
+        loadImages(slides.flatMap(slide => slide.image_paths)),
+        import('pptxgenjs'),
+    ]);
+    const failed: Partial<Record<TeamDeckSource, string>> = {};
+    if (plan.error) failed.plan = plan.error;
+    if (activity.error) failed.activity = activity.error;
+    if (meetings.error) failed.meetings = meetings.error;
+    if (negotiations.error) failed.negotiations = negotiations.error;
+    if (!input.weeklySales) failed.weeklySales = input.weeklySalesError || 'долоо хоногийн борлуулалтын тайлан ачаалагдаагүй';
+    const pres = new PptxGenJS();
+    buildTeamDeck(pres, {
+        projectName: input.projectName, meetingDate: input.meetingDate, range: input.range, generatedAt: stamp(),
+        branding: branding.branding, coverImage: branding.cover, logo: branding.logo,
+        plan: plan.data, activity: activity.data, meetings: meetings.data, negotiations: negotiations.data, weeklySales: input.weeklySales ?? null,
+        slides, images: media.images, failed,
+    });
+    const fileName = weeklyDeckFileName(input.projectName, input.meetingDate, 'sales-team');
+    await saveDeck(pres, fileName);
+    return { fileName, failedImages: media.failed + branding.failed, failedSources: Object.keys(failed).length };
 }

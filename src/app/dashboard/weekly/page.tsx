@@ -28,7 +28,7 @@ import { useWeeklySlides, WeeklySlides } from '@/components/weekly/WeeklySlides'
 import { contentPlanWindow, useContentPlan, WeeklyContentPlan } from '@/components/weekly/WeeklyContentPlan';
 import { WEEKLY_SLIDE_PART_MODULE, type WeeklySlidePart } from '@/lib/dashboard/weekly-slides';
 import { summarizeContentPlan } from '@/lib/marketing/content-plan';
-import type { WeeklyDeckKind } from '@/lib/dashboard/weekly-deck';
+import type { WeeklyDeckFileKind } from '@/lib/dashboard/weekly-deck';
 import { periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from '@/lib/dashboard/contract-dates';
 
 export default function WeeklyReviewPage() {
@@ -48,7 +48,7 @@ function WeeklyReview() {
     const canWrite = user?.role === 'super_admin' || !!user?.permissions.canWrite;
     const canEditSlides = (part: WeeklySlidePart) => user?.role === 'super_admin' || (!!user?.permissions.canWrite && can(WEEKLY_SLIDE_PART_MODULE[part]));
     const canDeleteSlides = (part: WeeklySlidePart) => user?.role === 'super_admin' || (!!user?.permissions.canDelete && can(WEEKLY_SLIDE_PART_MODULE[part]));
-    const [exporting, setExporting] = useState<WeeklyDeckKind | null>(null);
+    const [exporting, setExporting] = useState<WeeklyDeckFileKind | null>(null);
     const params = new URLSearchParams(range);
     const salesQuery = useQuery<OperationsReport>({
         queryKey: ['operations-report', shop?.id, range.from, range.to, user?.id, can('finance')],
@@ -106,19 +106,27 @@ function WeeklyReview() {
         void updatesQuery.refetch();
     };
 
-    /** Борлуулалт, маркетинг тусдаа файл. */
-    async function downloadSlides(kind: WeeklyDeckKind) {
+    /** Борлуулалт, маркетинг, борлуулалтын албаны загвар — тус бүр тусдаа файл. */
+    async function downloadSlides(kind: WeeklyDeckFileKind) {
         setExporting(kind);
         try {
-            const { exportWeeklyDeck } = await import('@/lib/dashboard/weekly-deck-export');
-            const result = await exportWeeklyDeck({
-                kind, projectName: weeklySales?.projectName || shop?.name || 'Vertmon Hub', meetingDate, range, previousRange,
-                discussion: discussionItems.map(({ title, detail, part }) => ({ title, detail, part })), notices,
-                sales, previousSales, weeklySales, marketing, contentPlan, updates: updates?.updates,
-                slides: slidesQuery.data?.slides ?? [], canReports: can('reports'), canMarketing: can('marketing-roi'),
-            });
-            const label = kind === 'marketing' ? 'Маркетингийн' : 'Борлуулалтын';
-            if (result.failedImages) toast.warning(`${label} слайд татагдлаа. ${result.failedImages} зураг ачаалж чадсангүй.`);
+            const { exportTeamDeck, exportWeeklyDeck } = await import('@/lib/dashboard/weekly-deck-export');
+            const projectName = weeklySales?.projectName || shop?.name || 'Vertmon Hub';
+            const slides = slidesQuery.data?.slides ?? [];
+            const result = kind === 'sales-team'
+                ? await exportTeamDeck({ projectName, meetingDate, range, weeklySales, weeklySalesError: weeklySalesQuery.error?.message, slides })
+                : await exportWeeklyDeck({
+                    kind, projectName, meetingDate, range, previousRange,
+                    discussion: discussionItems.map(({ title, detail, part }) => ({ title, detail, part })), notices,
+                    sales, previousSales, weeklySales, marketing, contentPlan, updates: updates?.updates,
+                    slides, canReports: can('reports'), canMarketing: can('marketing-roi'),
+                });
+            const label = kind === 'marketing' ? 'Маркетингийн' : kind === 'sales-team' ? 'Борлуулалтын албаны загварын' : 'Борлуулалтын';
+            const problems = [
+                'failedSources' in result && result.failedSources ? `${result.failedSources} эх сурвалж ачаалж чадсангүй` : null,
+                result.failedImages ? `${result.failedImages} зураг ачаалж чадсангүй` : null,
+            ].filter(Boolean);
+            if (problems.length) toast.warning(`${label} слайд татагдлаа. ${problems.join(', ')}.`);
             else toast.success(`${label} слайд (.pptx) татагдлаа`);
         } catch (error) {
             toast.error(error instanceof Error && error.message ? `Слайд үүсгэж чадсангүй: ${error.message}` : 'Слайд үүсгэж чадсангүй. Дахин оролдоно уу.');
@@ -160,6 +168,7 @@ function WeeklyReview() {
                     <Button variant="secondary" disabled={!exportable} onClick={() => void reportRef.current?.requestFullscreen?.().catch(() => toast.error('Бүтэн дэлгэц нээгдсэнгүй. PDF / хэвлэх үйлдлийг ашиглана уу.'))}><Maximize2 />Танилцуулах</Button>
                     <Button variant="secondary" disabled={!exportable} onClick={() => window.print()}><Printer />PDF / хэвлэх</Button>
                     {can('reports') && <Button disabled={!exportable || !!exporting} isLoading={exporting === 'sales'} onClick={() => void downloadSlides('sales')}>{exporting !== 'sales' && <Presentation />}Борлуулалтын слайд</Button>}
+                    {can('reports') && <Button disabled={!exportable || !!exporting} isLoading={exporting === 'sales-team'} onClick={() => void downloadSlides('sales-team')}>{exporting !== 'sales-team' && <Presentation />}Борлуулалт (албаны загвар)</Button>}
                     {can('marketing-roi') && <Button disabled={!exportable || !!exporting} isLoading={exporting === 'marketing'} onClick={() => void downloadSlides('marketing')}>{exporting !== 'marketing' && <Presentation />}Маркетингийн слайд</Button>}
                 </div>
             </div>
