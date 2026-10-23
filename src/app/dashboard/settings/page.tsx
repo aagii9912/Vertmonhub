@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { LeadCategoriesSettings } from '@/components/settings/LeadCategoriesSettings';
+import { ReferralSourcesSettings } from '@/components/settings/ReferralSourcesSettings';
 import {
     Building2, User, Bell, Save, LogOut, Loader2, Check, Phone
 } from 'lucide-react';
@@ -171,6 +172,9 @@ export default function SettingsPage() {
 
             {/* Лидийн ангилал (төсөл бүрийн жагсаалт) */}
             <LeadCategoriesSettings />
+
+            {/* «Сэжим (хаанаас ирсэн)» — уулзалт, гэрээний сонголт (төсөл бүрийн жагсаалт) */}
+            <ReferralSourcesSettings />
 
             {/* Notification Settings */}
             <SectionCard title="Мэдэгдлийн тохиргоо" icon={Bell}>

@@ -23,6 +23,8 @@ import { FilterBar, FilterChip } from '@/components/dashboard/FilterBar';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/Dropdown';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { ANONYMOUS_LEAD_LABEL, ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
+import { useReferralSources } from '@/hooks/useReferralSources';
+import { REFERRAL_FIELD_LABEL, REFERRAL_LIST_FAILED, isActiveReferral, referralNameMap, referralOptionLabel, referralRequired, referralSubmitError } from '@/lib/sales/referral-sources';
 
 /**
  * «Уулзалт» v2 — өдрөөр бүлэглэсэн нягт жагсаалт; товлох ба үр дүн бүртгэх
@@ -62,6 +64,8 @@ export function ViewingsPage() {
 
     const { data, isLoading, error, refetch } = useViewings({ range, status, manager });
     const { data: managers = [] } = useManagers();
+    const { data: referralData } = useReferralSources({ inlineError: true });
+    const referralNames = useMemo(() => referralNameMap(referralData?.sources ?? []), [referralData]);
     const update = useUpdateViewing();
     const now = useMemo(() => Date.now(), [data]); // eslint-disable-line react-hooks/exhaustive-deps -- өгөгдөл шинэчлэгдэх бүрт «одоо» шинэчлэгдэнэ
 
@@ -126,7 +130,7 @@ export function ViewingsPage() {
                                 <span className="mono-label ml-auto text-[11px] text-muted-foreground">{g.items.length}</span>
                             </div>
                             {g.items.map((v) => (
-                                <Row key={v.id} v={v} now={now} canWrite={canWrite} busy={update.isPending} onEdit={() => setEditFor(v)} onArrived={() => setOutcomeFor(v)} onNoShow={() => patch(v.id, { status: 'no_show' }, 'Ирээгүй гэж тэмдэглэв')} onCancel={() => patch(v.id, { status: 'cancelled' }, 'Цуцлагдлаа')} onPostpone={() => postpone(v)} />
+                                <Row key={v.id} v={v} now={now} referral={v.referral_source_id ? referralNames.get(v.referral_source_id) ?? null : null} canWrite={canWrite} busy={update.isPending} onEdit={() => setEditFor(v)} onArrived={() => setOutcomeFor(v)} onNoShow={() => patch(v.id, { status: 'no_show' }, 'Ирээгүй гэж тэмдэглэв')} onCancel={() => patch(v.id, { status: 'cancelled' }, 'Цуцлагдлаа')} onPostpone={() => postpone(v)} />
                             ))}
                         </div>
                     ))
@@ -161,7 +165,7 @@ export function ViewingsPage() {
 
 /* ------------------------------------------------------------------ */
 
-function Row({ v, now, canWrite, busy, onEdit, onArrived, onNoShow, onCancel, onPostpone }: { v: ViewingRow; now: number; canWrite: boolean; busy: boolean; onEdit: () => void; onArrived: () => void; onNoShow: () => void; onCancel: () => void; onPostpone: () => void }) {
+function Row({ v, now, referral, canWrite, busy, onEdit, onArrived, onNoShow, onCancel, onPostpone }: { v: ViewingRow; now: number; referral: string | null; canWrite: boolean; busy: boolean; onEdit: () => void; onArrived: () => void; onNoShow: () => void; onCancel: () => void; onPostpone: () => void }) {
     const phone = v.lead?.customer_phone?.replace(/\D/g, '') || '';
     const past = new Date(v.scheduled_at).getTime() < now;
     const name = leadDisplayName(v.lead);
@@ -172,7 +176,7 @@ function Row({ v, now, canWrite, busy, onEdit, onArrived, onNoShow, onCancel, on
             {v.lead ? <Link href={`/dashboard/leads?lead=${v.lead.id}`} className="block truncate text-sm font-medium text-foreground hover:text-brand-strong focus-ring">{name}</Link> : <span className="text-sm font-medium">{name}</span>}
             <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><MapPin className="size-3 shrink-0" /><span className="truncate">{viewingSelectionText(v.interests, v.property ? [v.property.name, v.property.district].filter(Boolean).join(' · ') : null) || 'Байр сонгоогүй'}</span></div>
             {v.agent_notes && <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{v.agent_notes}</p>}
-            {mt && <p className="mt-1 text-xs text-muted-foreground">{mt.label}</p>}
+            {(mt || referral) && <p className="mt-1 text-xs text-muted-foreground">{[mt?.label, referral ? `${REFERRAL_FIELD_LABEL}: ${referral}` : null].filter(Boolean).join(' · ')}</p>}
         </div>
         {v.sales_manager_name && <span className="hidden items-center gap-2 lg:inline-flex"><Avatar name={v.sales_manager_name} /><span className="text-xs text-fg-2">{v.sales_manager_name}</span></span>}
         <div className="col-span-2 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:ml-auto sm:shrink-0 sm:border-0 sm:pt-0">
@@ -219,6 +223,13 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
     const [feedback, setFeedback] = useState('');
     const [interests, setInterests] = useState<ViewingInterestInput[]>([]);
     const [draftInterest, setDraftInterest] = useState<ViewingInterestInput | null>(null);
+    const [referralId, setReferralId] = useState('');
+    // «Сэжим (хаанаас ирсэн)»: жагсаалтгүй төсөлд товлохыг хаахгүй. Ачаалж байгаа / уншиж чадаагүй үед шинэ
+    // харилцагчийн уулзалтыг илгээхгүй (сервер жагсаалттай төсөлд шаардана) — алдааг энд харуулж дахин оролдуулна.
+    const referralQuery = useReferralSources({ inlineError: true });
+    const referralOptions = (referralQuery.data?.sources ?? []).filter(isActiveReferral);
+    const referralLoading = referralQuery.isLoading;
+    const referralFailed = referralQuery.isError && !referralQuery.data;
     const projectScope = leadId ? leadDetail?.lead.project_id ?? null : projectId || null;
     const options = useViewingOptions(projectScope);
     const units = options.data?.units ?? [];
@@ -230,12 +241,17 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
         : 'new_customer';
     const type = typeOverride ?? inferredType;
     const setType = setTypeOverride;
+    const needsReferral = referralRequired(type, referralOptions.length);
 
     const submit = async () => {
         if (!leadId && !projects.some(p => p.id === projectId)) { toast.error('Төсөл сонгоно уу'); return; }
         if (!leadId && !anonymous && !normalizeLeadName(name)) { toast.error(LEAD_NAME_OR_ANONYMOUS); return; }
         if (!leadId && anonymous && phone.replace(/\D/g, '').length < 8) { toast.error(ANONYMOUS_MEETING_PHONE); return; }
         if (!walkIn && !when) { toast.error('Огноо, цаг сонгоно уу'); return; }
+        const referralError = referralSubmitError(type, {
+            loading: referralLoading, failed: referralFailed, activeCount: referralOptions.length, selected: referralOptions.some(item => item.id === referralId),
+        });
+        if (referralError) { toast.error(referralError); return; }
         try {
             const result = await create.mutateAsync({
                 lead_id: leadId,
@@ -251,12 +267,15 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                 interest_level: walkIn && interest ? interest : null,
                 feedback: walkIn ? feedback.trim() || null : null,
                 interests: includeDraftInterest(interests, draftInterest),
+                ...(referralOptions.some(item => item.id === referralId) ? { referral_source_id: referralId } : {}),
             });
             if (result.warning) toast.warning(result.warning);
             else toast.success(walkIn ? 'Ирсэн уулзалт бүртгэгдлээ' : 'Уулзалт товлогдлоо');
             onClose();
         } catch (e) {
             toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй');
+            // Жагсаалт хуучирсан байж болно (админ дөнгөж нэмсэн / архивласан): маягтыг хаалгүй шинэчилнэ.
+            void referralQuery.refetch();
         }
     };
 
@@ -352,6 +371,17 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                     </div>
                 </Field>
 
+                {/* Алдааны үед <label> (Field) биш: товч цорын ганц удирдлага тул шошгыг товшиход дахин ачаалахгүй. */}
+                {referralFailed ? <div className="flex flex-col gap-1.5">
+                    <span className="text-[11.5px] font-medium text-muted-foreground">{REFERRAL_FIELD_LABEL}</span>
+                    <p role="alert" className="text-xs text-status-danger">{REFERRAL_LIST_FAILED} <button type="button" className="underline" disabled={referralQuery.isFetching} onClick={() => void referralQuery.refetch()}>Дахин оролдох</button></p>
+                </div> : (referralLoading || referralOptions.length > 0) && <Field label={REFERRAL_FIELD_LABEL} required={needsReferral}>
+                    <select aria-label={REFERRAL_FIELD_LABEL} value={referralId} onChange={e => setReferralId(e.target.value)} disabled={referralLoading} className={inputCls}>
+                        <option value="">{referralLoading ? 'Ачаалж байна…' : 'Сонгох'}</option>
+                        {referralOptions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                </Field>}
+
                 {walkIn && (
                     <>
                         <Field label="Сонирхол">
@@ -367,7 +397,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                     </>
                 )}
 
-                <Field label="Сэжим / тэмдэглэл"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Ойрхон амьдардаг, 12-р давхраас дээш сонирхож байна…" className={cn(inputCls, 'h-auto resize-none py-2')} /></Field>
+                <Field label="Тэмдэглэл"><textarea aria-label="Тэмдэглэл" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="12-р давхраас дээш сонирхож байна, хүүхэдтэй…" className={cn(inputCls, 'h-auto resize-none py-2')} /></Field>
             </div>
             <footer className="flex shrink-0 items-center gap-2 border-t border-border p-4">
                 <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring sm:h-[34px]">Болих</button>
@@ -393,6 +423,10 @@ function EditSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
     const [when, setWhen] = useState(() => ubInputDate(v.scheduled_at));
     const [property, setProperty] = useState<{ id: string; name: string } | null>(v.property);
     const [propertyQuery, setPropertyQuery] = useState('');
+    const [referralId, setReferralId] = useState(v.referral_source_id ?? '');
+    // Засварт заавал биш. Одоогийн (архивласан ч) сонголт жагсаалтад үлдэнэ.
+    const referralQuery = useReferralSources({ inlineError: true });
+    const referralOptions = (referralQuery.data?.sources ?? []).filter(item => isActiveReferral(item) || item.id === v.referral_source_id);
     const properties = usePropertySearch(propertyQuery, !property && !units.length && !options.isLoading && !options.error);
     const save = async () => {
         if (!when) { toast.error('Огноо, цаг сонгоно уу'); return; }
@@ -406,6 +440,7 @@ function EditSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
         if (status !== v.status) patch.status = status;
         if (when !== ubInputDate(v.scheduled_at)) patch.scheduled_at = new Date(`${when}:00+08:00`).toISOString();
         if ((property?.id ?? null) !== v.property_id) patch.property_id = property?.id ?? null;
+        if ((referralId || null) !== (v.referral_source_id ?? null)) patch.referral_source_id = referralId || null;
         if (!Object.keys(patch).length) { onClose(); return; }
         try {
             const result = await update.mutateAsync({ id: v.id, patch });
@@ -433,7 +468,11 @@ function EditSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
                 <Field label="Төрөл"><select aria-label="Төрөл" className={inputCls} value={type} onChange={e => setType(e.target.value as MeetingType)}>{MEETING_TYPES.map(key => <option key={key} value={key}>{MEETING_TYPE_META[key].label}</option>)}</select></Field></div>
             <Field label="Сонирхол"><select aria-label="Сонирхол" className={inputCls} value={interest} onChange={e => setInterest(Number(e.target.value))}><option value={0}>Үнэлээгүй</option>{[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}/5</option>)}</select></Field>
             <Field label="Харилцагчийн санал"><textarea aria-label="Харилцагчийн санал" className={cn(inputCls, 'h-auto py-2')} rows={2} value={feedback} onChange={e => setFeedback(e.target.value)} /></Field>
-            <Field label="Сэжим / тэмдэглэл"><textarea aria-label="Сэжим / тэмдэглэл" className={cn(inputCls, 'h-auto py-2')} rows={3} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+            {referralOptions.length > 0 && <Field label={REFERRAL_FIELD_LABEL}><select aria-label={REFERRAL_FIELD_LABEL} className={inputCls} value={referralId} onChange={e => setReferralId(e.target.value)}>
+                <option value="">Сонгоогүй</option>
+                {referralOptions.map(item => <option key={item.id} value={item.id}>{referralOptionLabel(item)}</option>)}
+            </select></Field>}
+            <Field label="Тэмдэглэл"><textarea aria-label="Тэмдэглэл" className={cn(inputCls, 'h-auto py-2')} rows={3} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
         </div>
         <footer className="flex justify-end gap-2 border-t border-border p-4"><Button variant="secondary" onClick={onClose}>Болих</Button><Button disabled={update.isPending} onClick={() => void save()}>Хадгалах</Button></footer>
     </div>;

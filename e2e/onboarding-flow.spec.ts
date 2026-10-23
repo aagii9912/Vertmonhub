@@ -93,6 +93,8 @@ async function fixtures(page: Page, identity: Identity, state: State) {
         if (path === '/api/dashboard/leads/summary') return reply({ all: 1, mine: 1, new: 1, meetings: 0, active: 1, mineName: identity.full_name, canClaim: false,
             queues: { unassigned: 0, uncontacted: 0, no_followup: 0, overdue: 0 } });
         if (path === '/api/dashboard/properties/search') return reply({ properties: [] });
+        // «Сэжим (хаанаас ирсэн)»: жагсаалтгүй төсөл — уулзалт бүртгэхийг хаахгүй.
+        if (path === '/api/dashboard/referral-sources') return reply({ sources: [], available: true });
         if (path === '/api/dashboard/viewings' && method === 'POST') {
             const body = write();
             if (state.lead) state.lead.status = 'viewing_scheduled';

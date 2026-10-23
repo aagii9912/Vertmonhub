@@ -39,6 +39,8 @@ export const DailyMeetingRecordSchema = z.object({
     notes: TextSchema,
     feedback: TextSchema,
     interest_level: InterestSchema,
+    /** «Сэжим (хаанаас ирсэн)» — төслийн жагсаалтын id; шинэ харилцагчийн уулзалтад заавал (жагсаалттай төсөлд, сервер шалгана). */
+    referral_source_id: z.guid().nullish().transform(value => value ?? null),
 }).strict();
 
 export const DailyMeetingCompleteSchema = z.object({

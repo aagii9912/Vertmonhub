@@ -28,6 +28,8 @@ import { Button } from '@/components/ui/Button';
 import { confirmToast } from '@/components/ui/Toast';
 import { EntityAttachments } from '@/components/dashboard/EntityAttachments';
 import { useRegisterAiContext } from '@/lib/ai/context';
+import { useReferralSources, useSetContractReferral } from '@/hooks/useReferralSources';
+import { REFERRAL_FIELD_LABEL, isActiveReferral, referralOptionLabel } from '@/lib/sales/referral-sources';
 
 const RECEIPT_KIND_LABEL = { advance: 'Урьдчилгаа', installment: 'Хуваарьт төлөлт', other: 'Бусад төлбөр' };
 
@@ -108,6 +110,7 @@ export function ContractDetail({ id }: { id: string }) {
                         <F label="Блок / Тоот"><span className="mono-label">{[c.block_name, contractUnitNumber(c)].filter(Boolean).join(' / ') || '—'}</span></F>
                         <F label="Байр">{[c.unit_type || (c.rooms ? `${c.rooms} өрөө` : null), c.contracted_area ? `${c.contracted_area} м²` : null, c.floor ? `${c.floor}-р давхар` : null].filter(Boolean).join(' · ') || '—'}</F>
                         <F label="Менежер" wrap><ManagerField contract={c} canEdit={canEditManager} /></F>
+                        <F label={REFERRAL_FIELD_LABEL} wrap><ReferralField contract={c} canEdit={canWrite} /></F>
                         <F label="Захиалга өгсөн огноо" wrap><OrderDateField contract={c} canWrite={canWrite} /></F>
                         <F label="Нийт үнэ"><span className="num font-medium">{formatMNT(c.total_price)}</span></F>
                         <F label="Урьдчилгаа"><span className="num">{c.prepayment_percent ? `${c.prepayment_percent}%` : c.prepayment_condition || '—'}{c.prepayment_due ? ` · ${formatMNT(c.prepayment_due)}` : ''}</span></F>
@@ -391,6 +394,56 @@ function ManagerField({ contract: c, canEdit }: { contract: ContractRow; canEdit
                 {setManager.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Хадгалах
             </button>
             <button type="button" onClick={() => setEditing(false)} aria-label="Менежер солихыг болих" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 focus-ring"><X className="h-3.5 w-3.5" /></button>
+        </span>
+    );
+}
+
+/**
+ * «Сэжим (хаанаас ирсэн)»: бичих эрхтэй хэрэглэгч төслийн идэвхтэй жагсаалтаас сонгож солино эсвэл цэвэрлэнэ
+ * (PATCH `referral_source_id`; сервер шалгаж аудитад бичнэ). Одоогийн архивласан сонголт жагсаалтад үлдэнэ.
+ * Жагсаалт идэвхжээгүй (migration) бол зөвхөн «—».
+ */
+function ReferralField({ contract: c, canEdit }: { contract: ContractRow; canEdit: boolean }) {
+    const [editing, setEditing] = useState(false);
+    const [value, setValue] = useState('');
+    const { data, isError } = useReferralSources({ inlineError: true });
+    const setReferral = useSetContractReferral(c.id);
+    const sources = data?.sources ?? [];
+    const currentId = c.referral_source_id ?? null;
+    const currentName = currentId ? sources.find(source => source.id === currentId)?.name ?? c.referral_source_name ?? null : null;
+    const current = currentName ? <span>{currentName}</span> : <span className="text-muted-foreground">—</span>;
+    const options = sources.filter(source => isActiveReferral(source) || source.id === currentId);
+    if (!canEdit || data?.available === false || (!options.length && !isError)) return current;
+    if (!editing) {
+        return (
+            <span className="inline-flex flex-wrap items-center gap-1.5">
+                {current}
+                {!isError && <GhostButton onClick={() => { setValue(currentId ?? ''); setEditing(true); }} className="text-brand-strong hover:bg-brand-soft">
+                    <Pencil className="h-3.5 w-3.5" /> {currentId ? 'Солих' : 'Сонгох'}
+                </GhostButton>}
+            </span>
+        );
+    }
+    const save = () => {
+        const next = value || null;
+        if (next === currentId) { setEditing(false); return; }
+        setReferral.mutate(next, {
+            onSuccess: () => { toast.success(next ? `${REFERRAL_FIELD_LABEL} хадгалагдлаа` : `${REFERRAL_FIELD_LABEL} цэвэрлэгдлээ`); setEditing(false); },
+            onError: (e) => toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй'),
+        });
+    };
+    return (
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+            <select value={value} onChange={(e) => setValue(e.target.value)} aria-label={REFERRAL_FIELD_LABEL}
+                className="h-7 max-w-[16rem] rounded-md border border-control bg-surface px-1.5 text-xs text-foreground">
+                <option value="">Сонгоогүй</option>
+                {options.map(source => <option key={source.id} value={source.id}>{referralOptionLabel(source)}</option>)}
+            </select>
+            <button type="button" onClick={save} disabled={setReferral.isPending} aria-label={`${REFERRAL_FIELD_LABEL} хадгалах`}
+                className="inline-flex h-7 items-center gap-1 rounded-md bg-brand px-2 text-xs font-medium text-brand-fg hover:bg-brand-hover disabled:opacity-60 focus-ring">
+                {setReferral.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Хадгалах
+            </button>
+            <button type="button" onClick={() => setEditing(false)} aria-label={`${REFERRAL_FIELD_LABEL} солихыг болих`} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 focus-ring"><X className="h-3.5 w-3.5" /></button>
         </span>
     );
 }

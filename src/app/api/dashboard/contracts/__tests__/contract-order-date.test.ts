@@ -137,3 +137,51 @@ describe('PATCH /api/dashboard/contracts/[id] — «Огноо оруулах»'
         expect((await patch({ order_date: '2026-09-15' })).status).toBe(200);
     });
 });
+
+describe('PATCH /api/dashboard/contracts/[id] — «Сэжим (хаанаас ирсэн)»', () => {
+    const FACEBOOK = '00000000-0000-4000-8000-0000000000f1';
+    const ARCHIVED = '00000000-0000-4000-8000-0000000000b1';
+    const FOREIGN = '00000000-0000-4000-8000-0000000000c1';
+    beforeEach(() => {
+        state.db.tables.sales_referral_sources = [
+            { id: FACEBOOK, shop_id: 'shop-1', name: 'Facebook', sort_order: 10, archived_at: null },
+            { id: ARCHIVED, shop_id: 'shop-1', name: 'Бармаш түрээслэгч', sort_order: 20, archived_at: '2026-10-20T00:00:00Z' },
+            { id: FOREIGN, shop_id: 'shop-2', name: 'Монкон', sort_order: 10, archived_at: null },
+        ];
+        stored().referral_source_id = null;
+    });
+
+    it('sets and clears an active referral with an audit row', async () => {
+        expect((await patch({ referral_source_id: FACEBOOK })).status).toBe(200);
+        expect(stored().referral_source_id).toBe(FACEBOOK);
+        expect(state.db.tables.data_audit_log.at(-1)).toMatchObject({ entity: 'contract', changes: { referral_source_id: { from: null, to: FACEBOOK } } });
+        expect((await patch({ referral_source_id: null })).status).toBe(200);
+        expect(stored().referral_source_id).toBeNull();
+    });
+
+    it('refuses archived, foreign or malformed referrals but keeps the current archived one', async () => {
+        for (const id of [ARCHIVED, FOREIGN]) {
+            const response = await patch({ referral_source_id: id });
+            expect(response.status).toBe(400);
+            expect((await response.json()).error).toContain('Facebook');
+        }
+        expect((await patch({ referral_source_id: 'Facebook' })).status).toBe(400);
+        expect(contractWrites()).toEqual([]);
+        stored().referral_source_id = ARCHIVED;
+        expect((await patch({ referral_source_id: ARCHIVED, remaining_payment_condition: 'Банк' })).status).toBe(200);
+        expect(stored()).toMatchObject({ referral_source_id: ARCHIVED, remaining_payment_condition: 'Банк' });
+    });
+
+    it('lets a restricted manager set it only on an own contract, and answers 503 before the migration', async () => {
+        state.scope = { projectIds: ['p-1'], managerName: 'Сараа' };
+        expect((await patch({ referral_source_id: FACEBOOK })).status).toBe(404);
+        state.scope = { projectIds: ['p-1'], managerName: 'Номин' };
+        expect((await patch({ referral_source_id: FACEBOOK })).status).toBe(200);
+        state.scope = { projectIds: null, managerName: null };
+        state.db.failNext.property_contracts = { code: '42703', message: 'column property_contracts.referral_source_id does not exist' };
+        const response = await patch({ referral_source_id: FACEBOOK });
+        expect(response.status).toBe(503);
+        expect((await response.json()).error).toContain('migration');
+    });
+});
+

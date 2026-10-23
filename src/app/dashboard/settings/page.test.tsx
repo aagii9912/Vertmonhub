@@ -21,8 +21,9 @@ vi.mock('@/hooks/usePushNotifications', () => ({
     usePushNotifications: () => ({ ...push.state, subscribe: push.subscribe, unsubscribe: push.unsubscribe }),
 }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
-// Лидийн ангиллын хэсэг өөрийн тесттэй (react-query) — энд төслийн талбар, push-ийг шалгана.
+// Лидийн ангилал, «Сэжим»-ийн хэсэг өөрийн тесттэй (react-query) — энд төслийн талбар, push-ийг шалгана.
 vi.mock('@/components/settings/LeadCategoriesSettings', () => ({ LeadCategoriesSettings: () => null }));
+vi.mock('@/components/settings/ReferralSourcesSettings', () => ({ ReferralSourcesSettings: () => null }));
 
 type Call = { url: string; init?: RequestInit };
 const calls: Call[] = [];

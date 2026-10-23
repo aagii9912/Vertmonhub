@@ -223,4 +223,32 @@ describe('GET /api/dashboard/contracts', () => {
         expect(ids(body)).toEqual(['1']);
         expect(body.stats.total).toBe(1);
     });
+
+    it('adds the «Сэжим (хаанаас ирсэн)» name to every row with one extra read (archived names too), null otherwise', async () => {
+        state.tables.property_contracts[0].referral_source_id = 'ref-facebook';
+        state.tables.property_contracts[1].referral_source_id = 'ref-barmash';
+        state.tables.sales_referral_sources = [
+            { id: 'ref-facebook', shop_id: 'shop-1', name: 'Facebook', sort_order: 10, archived_at: null },
+            { id: 'ref-barmash', shop_id: 'shop-1', name: 'Бармаш түрээслэгч', sort_order: 20, archived_at: '2026-10-20T00:00:00Z' },
+            { id: 'ref-foreign', shop_id: 'shop-2', name: 'Монкон', sort_order: 10, archived_at: null },
+        ];
+        for (const query of ['page=1&pageSize=25', 'search=Б']) {
+            state.reads = [];
+            const { body } = await list(query);
+            const names = Object.fromEntries((body.contracts as Row[]).map((c) => [c.id, c.referral_source_name]));
+            expect(names).toMatchObject({ '1': 'Facebook', '2': 'Бармаш түрээслэгч', '4': null });
+            expect(state.reads.filter((read) => read.table === 'sales_referral_sources')).toHaveLength(1);
+        }
+    });
+
+    it('skips the referral read when no row has one and tolerates the table missing', async () => {
+        const { body } = await list();
+        expect((body.contracts as Row[]).every((c) => c.referral_source_name === null)).toBe(true);
+        expect(state.reads.some((read) => read.table === 'sales_referral_sources')).toBe(false);
+        state.tables.property_contracts[0].referral_source_id = 'ref-facebook';
+        state.errors.sales_referral_sources = { code: 'PGRST205', message: "Could not find the table 'public.sales_referral_sources'" };
+        const missing = await list();
+        expect(missing.response.status).toBe(200);
+        expect((missing.body.contracts as Row[]).find((c) => c.id === '1')?.referral_source_name).toBeNull();
+    });
 });

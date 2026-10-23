@@ -22,7 +22,7 @@ function fakeDb(responses: Record<string, Result[]>, rpcResponse: Result = { dat
         queries.push(query);
         const result = () => responses[table]?.shift() ?? { data: null, error: null };
         const chain: Record<string, any> = {
-            select: () => chain, limit: () => chain,
+            select: () => chain, limit: () => chain, range: () => chain, order: () => chain,
             in: (...args: unknown[]) => { query.filters.push(args); return chain; },
             eq: (...args: unknown[]) => { query.filters.push(args); return chain; },
             is: (...args: unknown[]) => { query.filters.push(args); return chain; },
@@ -360,5 +360,79 @@ describe('viewing update integrity', () => {
         rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'RPC missing' } });
         expect(await updateViewing(db, 'shop', 'viewing', patch, { ...actor, scope })).toMatchObject({ ok: false, status: 503 });
         expect(from).not.toHaveBeenCalled(); expect(logLeadActivity).not.toHaveBeenCalled();
+    });
+});
+
+describe('«Сэжим (хаанаас ирсэн)» on meetings', () => {
+    const facebook = '00000000-0000-4000-8000-0000000000f1';
+    const barmash = '00000000-0000-4000-8000-0000000000b1';
+    const list = ok([
+        { id: facebook, name: 'Facebook', sort_order: 10, archived_at: null },
+        { id: barmash, name: 'Бармаш түрээслэгч', sort_order: 20, archived_at: '2026-10-20T00:00:00Z' },
+    ]);
+    const missing = { data: null, error: { code: 'PGRST205', message: "Could not find the table 'public.sales_referral_sources'" } };
+    const viewing = { id: 'viewing', status: 'scheduled', scheduled_at: scheduledAt };
+
+    it('requires an active referral for a new-customer meeting before any write when the project has a list', async () => {
+        const { db, queries, rpcCalls } = fakeDb({ leads: [ok({ id: leadId, project_id: projectId, status: 'new' })], projects: [ok({ id: projectId })], sales_referral_sources: [list] });
+        const result = await createViewing(db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, meeting_type: 'new_customer' }, actor);
+        expect(result).toMatchObject({ ok: false, status: 400, error: expect.stringContaining('Шинэ харилцагчийн уулзалтад «Сэжим (хаанаас ирсэн)»-ийг сонгоно уу') });
+        expect(result).toMatchObject({ error: expect.stringContaining('Боломжтой: Facebook.') });
+        expect(rpcCalls).toEqual([]);
+        expect(queries.some(query => query.insert || query.updates)).toBe(false);
+    });
+
+    it('stores the referral through the RPC and the direct insert, and omits the key when there is none', async () => {
+        const scope = { projectIds: [projectId], managerName: 'Канон' };
+        const restricted = fakeDb({ leads: [ok({ id: leadId, project_id: projectId, status: 'new', sales_manager_name: 'Канон' })], projects: [ok({ id: projectId })], sales_referral_sources: [list] }, ok(viewing));
+        expect(await createViewing(restricted.db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, referral_source_id: facebook }, { ...actor, scope })).toMatchObject({ ok: true });
+        expect(restricted.rpcCalls[0].params.p_input).toMatchObject({ referral_source_id: facebook, meeting_type: 'new_customer' });
+
+        const repeat = fakeDb({ leads: [ok({ id: leadId, project_id: projectId, status: 'contacted', sales_manager_name: 'Канон' })], projects: [ok({ id: projectId })], sales_referral_sources: [list] }, ok(viewing));
+        expect(await createViewing(repeat.db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, meeting_type: 'repeat_customer' }, { ...actor, scope })).toMatchObject({ ok: true });
+        expect(repeat.rpcCalls[0].params.p_input).not.toHaveProperty('referral_source_id');
+
+        const admin = fakeDb({ leads: [ok({ id: leadId, status: 'new' }), ok({ id: leadId })], sales_referral_sources: [list], property_viewings: [ok(viewing)] });
+        expect(await createViewing(admin.db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, referral_source_id: facebook }, actor)).toMatchObject({ ok: true });
+        expect(admin.queries.find(query => query.table === 'property_viewings')?.insert).toMatchObject({ referral_source_id: facebook, meeting_type: 'new_customer' });
+    });
+
+    it('resolves the AI referral name to the id, and refuses archived or foreign ones', async () => {
+        const named = fakeDb({ leads: [ok({ id: leadId, project_id: projectId, status: 'new' })], projects: [ok({ id: projectId })], sales_referral_sources: [list] });
+        expect(await resolveViewingInput(named.db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, referral_source: ' FACEBOOK ' }))
+            .toMatchObject({ ok: true, data: { input: { referral_source_id: facebook, referral_source: undefined }, referral: { name: 'Facebook' } } });
+        for (const bad of [{ referral_source_id: barmash }, { referral_source: 'Бармаш түрээслэгч' }, { referral_source_id: '00000000-0000-4000-8000-0000000000c1' }]) {
+            const { db } = fakeDb({ leads: [ok({ id: leadId, project_id: projectId, status: 'new' })], projects: [ok({ id: projectId })], sales_referral_sources: [list] });
+            expect(await resolveViewingInput(db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, ...bad })).toMatchObject({ ok: false, status: 400 });
+        }
+    });
+
+    it('does not block meetings before the migration but refuses to store a referral then', async () => {
+        const plain = fakeDb({ leads: [ok({ id: leadId, status: 'new' }), ok({ id: leadId })], sales_referral_sources: [missing], property_viewings: [ok(viewing)] });
+        expect(await createViewing(plain.db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt }, actor)).toMatchObject({ ok: true });
+        expect(plain.queries.find(query => query.table === 'property_viewings')?.insert).not.toHaveProperty('referral_source_id');
+        const given = fakeDb({ leads: [ok({ id: leadId, status: 'new' })], sales_referral_sources: [missing] });
+        expect(await createViewing(given.db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, referral_source_id: facebook }, actor)).toMatchObject({ ok: false, status: 503 });
+        expect(given.queries.some(query => query.insert)).toBe(false);
+    });
+
+    it('edits the referral through the atomic RPC, keeping the current archived one and refusing a new archived one', async () => {
+        const keep = fakeDb({ property_viewings: [ok({ referral_source_id: barmash })], sales_referral_sources: [list] }, ok({ id: 'viewing', status: 'completed', scheduled_at: scheduledAt, lead_id: leadId, property_id: null }));
+        expect(await updateViewing(keep.db, 'shop', 'viewing', { referral_source_id: barmash }, actor)).toMatchObject({ ok: true });
+        expect(keep.rpcCalls[0]).toMatchObject({ name: 'update_scoped_sales_viewing', params: { p_project_ids: null, p_patch: { referral_source_id: barmash } } });
+        expect(keep.queries.some(query => query.updates)).toBe(false);
+
+        const refuse = fakeDb({ property_viewings: [ok({ referral_source_id: facebook })], sales_referral_sources: [list] });
+        expect(await updateViewing(refuse.db, 'shop', 'viewing', { referral_source_id: barmash }, actor)).toMatchObject({ ok: false, status: 400 });
+        expect(refuse.rpcCalls).toEqual([]);
+
+        const clear = fakeDb({ property_viewings: [ok({ referral_source_id: facebook })], sales_referral_sources: [list] }, ok({ id: 'viewing', status: 'completed', scheduled_at: scheduledAt, lead_id: leadId, property_id: null }));
+        expect(await updateViewing(clear.db, 'shop', 'viewing', { referral_source_id: null }, actor)).toMatchObject({ ok: true });
+        expect(clear.rpcCalls[0].params.p_patch).toEqual({ referral_source_id: null });
+
+        const gone = fakeDb({ property_viewings: [{ data: null, error: { code: '42703', message: 'column property_viewings.referral_source_id does not exist' } }] });
+        expect(await updateViewing(gone.db, 'shop', 'viewing', { referral_source_id: facebook }, actor)).toMatchObject({ ok: false, status: 503, error: expect.stringContaining('migration') });
+        const missingViewing = fakeDb({ property_viewings: [ok(null)] });
+        expect(await updateViewing(missingViewing.db, 'shop', 'viewing', { referral_source_id: facebook }, actor)).toMatchObject({ ok: false, status: 404 });
     });
 });

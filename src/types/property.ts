@@ -287,6 +287,10 @@ export interface PropertyContract {
     // CRM
     hubspot_contact_id: string | null;
     lead_id?: string | null;
+    /** «Сэжим (хаанаас ирсэн)» (sales_referral_sources); migration-ий өмнө байхгүй. */
+    referral_source_id?: string | null;
+    /** Жагсаалтын API-ийн нэмсэн нэр (`referral_source_id`-ийн нэр, архивласан ч). */
+    referral_source_name?: string | null;
     /** Одоогийн эзэмшигчийн харилцагч (шилжүүлэгт солигдоно). */
     customer_id?: string | null;
     project_id?: string | null;

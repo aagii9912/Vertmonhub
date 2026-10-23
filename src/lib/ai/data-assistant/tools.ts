@@ -29,7 +29,7 @@ export interface ToolDefinition {
  
 const readDefinitions: ToolDefinition[] = [
     {
-        name: 'get_viewing_options', description: 'Уулзалтад сонгож болох бодит нөөцийн блок, загвар, талбай, давхар, баталсан төлбөрийн нөхцөлийг авна. Худалдан авагчийн мэдээлэлгүй. Тоот хэрэгтэй бол загвар ба давхраар шүүнэ.',
+        name: 'get_viewing_options', description: 'Уулзалтад сонгож болох бодит нөөцийн блок, загвар, талбай, давхар, баталсан төлбөрийн нөхцөл, «Сэжим (хаанаас ирсэн)»-ийн сонголтуудыг (referral_sources) авна. Худалдан авагчийн мэдээлэлгүй. Тоот хэрэгтэй бол загвар ба давхраар шүүнэ.',
         parameters: { type: SchemaType.OBJECT, properties: { project_id: { type: SchemaType.STRING }, block: { type: SchemaType.STRING }, model: { type: SchemaType.STRING }, floor: { type: SchemaType.INTEGER } } },
     },
     {
@@ -601,14 +601,16 @@ const writeDefinitions: ToolDefinition[] = [
                 interests: viewingInterestsParameter,
                 interest_level: { type: SchemaType.INTEGER, minimum: 1, maximum: 5 },
                 feedback: { type: SchemaType.STRING, description: 'Харилцагчийн санал' },
-                notes: { type: SchemaType.STRING, description: 'Сэжим / тэмдэглэл' }
+                notes: { type: SchemaType.STRING, description: 'Тэмдэглэл (чөлөөт текст)' },
+                referral_source: { type: SchemaType.STRING, description: 'Сэжим (хаанаас ирсэн): get_viewing_options-ийн referral_sources-оос яг нэр. Шинэ харилцагчийн уулзалтад (жагсаалттай төсөлд) заавал — хэрэглэгчээс асууна, бүү таамагла' }
             }
         }
     },
     {
-        name: 'update_viewing', description: 'Товлосон эсвэл болсон уулзалтын сонирхсон байр, төлбөрийн нөхцөл, сэжим, санал, төрлийг засна. Өмнөх ба шинэ мэдээлэл, тооцооллыг баталгаажуулна. Гэрээ, мөнгөн орлого үүсгэхгүй.',
+        name: 'update_viewing', description: 'Товлосон эсвэл болсон уулзалтын сонирхсон байр, төлбөрийн нөхцөл, «Сэжим (хаанаас ирсэн)», тэмдэглэл, санал, төрлийг засна. Өмнөх ба шинэ мэдээлэл, тооцооллыг баталгаажуулна. Гэрээ, мөнгөн орлого үүсгэхгүй.',
         parameters: { type: SchemaType.OBJECT, properties: { viewing_id: { type: SchemaType.STRING }, interests: viewingInterestsParameter,
-            agent_notes: { type: [SchemaType.STRING, 'null'], description: 'Сэжим / тэмдэглэл' },
+            agent_notes: { type: [SchemaType.STRING, 'null'], description: 'Тэмдэглэл (чөлөөт текст)' },
+            referral_source: { type: [SchemaType.STRING, 'null'], description: 'Сэжим (хаанаас ирсэн): get_viewing_options-ийн referral_sources-оос яг нэр; null = цэвэрлэх' },
             customer_feedback: { type: [SchemaType.STRING, 'null'] },
             meeting_type: { type: SchemaType.STRING, enum: ['new_customer', 'repeat_customer', 'existing_buyer'] },
         }, required: ['viewing_id'], additionalProperties: false },

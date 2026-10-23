@@ -11,6 +11,7 @@ const projectId = '00000000-0000-4000-8000-000000000120';
 const viewingId = '00000000-0000-4000-8000-000000000130';
 const leadId = '00000000-0000-4000-8000-000000000131';
 const configId = '00000000-0000-4000-8000-000000000140';
+const referralId = '00000000-0000-4000-8000-000000000160';
 const units = [
     { id: '00000000-0000-4000-8000-000000000151', project_id: projectId, block: 'Б1', model: 'E3', area_sqm: 80.32, floor: 2, unit_number: '201', code: 'Б1-201', status: 'available' },
     { id: '00000000-0000-4000-8000-000000000152', project_id: projectId, block: 'Б2', model: 'A', area_sqm: 57.23, floor: 2, unit_number: '202', code: 'Б2-202', status: 'available' },
@@ -59,6 +60,10 @@ async function setup(page: Page, approvedPricing = true) {
         }], unassigned: [], diagnosticsError: null });
         if (path === '/api/dashboard/managers') return reply({ managers: [], mineName: 'Тест Админ' });
         if (path === '/api/dashboard/leads/projects') return reply({ projects: [{ id: projectId, name: 'Elysium Residence' }] });
+        // «Сэжим (хаанаас ирсэн)»: шинэ харилцагчийн уулзалтад заавал.
+        if (path === '/api/dashboard/referral-sources') return reply({ available: true, sources: [
+            { id: referralId, name: 'Ойрхон амьдардаг', sort_order: 10, archived_at: null },
+        ] });
         if (path === '/api/dashboard/viewings/options') return reply({ units, conditions: viewingPricing
             ? viewingPricing.rules.map(({ block, model, floor_min, floor_max, payment_condition }) => ({ block, model, floor_min, floor_max, payment_condition }))
             : elysiumViewingConditions(shop.name, units), reason: viewingPricing ? null : 'Нөхцөлөө сонгож хадгалж болно. Үнэ, урьдчилгааны дүн батлагдаагүй.' });
@@ -78,7 +83,7 @@ async function setup(page: Page, approvedPricing = true) {
                 });
                 state.viewings.push({ id: viewingId, scheduled_at: now, status: input.walk_in ? 'completed' : 'scheduled',
                     lead_id: leadId, property_id: null, customer_feedback: input.feedback ?? null, agent_notes: input.notes ?? null,
-                    meeting_type: input.meeting_type, interest_level: input.interest_level ?? null,
+                    meeting_type: input.meeting_type, interest_level: input.interest_level ?? null, referral_source_id: input.referral_source_id ?? null,
                     completed_at: input.walk_in ? now : null, sales_manager_name: 'Тест Админ', property: null,
                     lead: { id: leadId, customer_name: input.customer_name ?? null, customer_phone: input.customer_phone ?? null, status: 'contacted' }, interests });
                 return reply({ viewing: { id: viewingId }, lead_id: leadId });
@@ -159,6 +164,11 @@ test('payment conditions remain selectable and persist without approved prices',
     await expect(dialog.getByText('Нийт үнэ', { exact: true })).not.toBeVisible();
     await condition.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('meeting-no-price-payment-condition.png'), fullPage: true });
+    // Шинэ харилцагчийн уулзалт «Сэжим (хаанаас ирсэн)»-гүй бүртгэгдэхгүй.
+    await dialog.getByRole('button', { name: 'Бүртгэх', exact: true }).click();
+    await expect(dialog).toBeVisible();
+    expect(state.viewingWrites).toHaveLength(0);
+    await dialog.getByLabel('Сэжим (хаанаас ирсэн)', { exact: true }).selectOption(referralId);
     await dialog.getByRole('button', { name: 'Бүртгэх', exact: true }).click();
     await expect(dialog).not.toBeVisible();
     expect(state.viewingWrites).toHaveLength(1);
@@ -184,7 +194,8 @@ test('walk-in meeting saves multiple interests and completed meeting notes prese
     await dialog.getByRole('switch').click();
     await dialog.getByPlaceholder('Б. Болд', { exact: true }).fill('Сараа');
     await dialog.getByPlaceholder('9909 1122', { exact: true }).fill('99091122');
-    await dialog.getByPlaceholder('Ойрхон амьдардаг, 12-р давхраас дээш сонирхож байна…').fill('Ойрхон амьдардаг');
+    await dialog.getByLabel('Сэжим (хаанаас ирсэн)', { exact: true }).selectOption(referralId);
+    await dialog.getByLabel('Тэмдэглэл', { exact: true }).fill('12-оос дээш давхар');
     await chooseInterest(dialog, 'Б1', 'E3', '80.32', '50%');
     await expect(dialog).toContainText('321,280,000');
     await expect(dialog).toContainText('160,640,000');
@@ -198,7 +209,7 @@ test('walk-in meeting saves multiple interests and completed meeting notes prese
     await expect(dialog).not.toBeVisible();
     expect(state.viewingWrites).toHaveLength(1);
     const saved = state.viewingWrites[0] as CreateViewingInput;
-    expect(saved).toMatchObject({ project_id: projectId, walk_in: true, notes: 'Ойрхон амьдардаг' });
+    expect(saved).toMatchObject({ project_id: projectId, walk_in: true, notes: '12-оос дээш давхар', referral_source_id: referralId });
     expect(saved.interests).toHaveLength(2);
     expect(saved.interests?.map(selection => selection.block)).toEqual(['Б1', 'Б2']);
     expect(saved.interests?.every(selection => !('quote' in selection) && !('total_amount' in selection))).toBe(true);
@@ -207,10 +218,11 @@ test('walk-in meeting saves multiple interests and completed meeting notes prese
     await expect(edit.getByLabel('Төлөв', { exact: true })).toHaveValue('completed');
     await expect(edit).toContainText('Хадгалсан сонголт, үнийн санал');
     await expect(edit).toContainText('321,280,000');
-    await edit.getByLabel('Сэжим / тэмдэглэл', { exact: true }).fill('Ойрхон амьдардаг · дараа дахин ирнэ');
+    await expect(edit.getByLabel('Сэжим (хаанаас ирсэн)', { exact: true })).toHaveValue(referralId);
+    await edit.getByLabel('Тэмдэглэл', { exact: true }).fill('12-оос дээш давхар · дараа дахин ирнэ');
     await edit.getByRole('button', { name: 'Хадгалах', exact: true }).click();
     await expect(edit).not.toBeVisible();
-    expect(state.viewingWrites[1]).toEqual({ agent_notes: 'Ойрхон амьдардаг · дараа дахин ирнэ' });
+    expect(state.viewingWrites[1]).toEqual({ agent_notes: '12-оос дээш давхар · дараа дахин ирнэ' });
     expect(state.viewings[0].interests?.map(selection => selection.quote?.version)).toEqual([1, 1]);
     expect(state.errors).toEqual([]); expect(state.unhandled).toEqual([]);
 });
