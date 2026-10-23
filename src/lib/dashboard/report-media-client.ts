@@ -58,3 +58,14 @@ export async function uploadReportImage(file: Blob, part: WeeklySlidePart): Prom
     if (!response.ok || !body?.path || !body.url) throw new Error(body?.error || 'Зургийг хадгалж чадсангүй.');
     return { path: body.path, url: body.url };
 }
+
+/** Илтгэлийн брэнд зураг (нүүр, лого): мөн бэлдээд `branding/` замд оруулна; брэндэд хадгалах нь тусдаа (PUT). */
+export async function uploadBrandingImage(file: Blob): Promise<{ path: string; url: string }> {
+    const prepared = await prepareReportImage(file);
+    const form = new FormData();
+    form.append('file', prepared, prepared.type === 'image/png' ? 'image.png' : 'image.jpg');
+    const response = await dashboardFetch('/api/dashboard/report-branding/media', { method: 'POST', body: form });
+    const body = await response.json().catch(() => null) as { path?: string; url?: string; error?: string } | null;
+    if (!response.ok || !body?.path || !body.url) throw new Error(body?.error || 'Зургийг хадгалж чадсангүй.');
+    return { path: body.path, url: body.url };
+}

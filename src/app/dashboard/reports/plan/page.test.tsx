@@ -135,6 +135,25 @@ describe('plan fulfilment page', () => {
         cache.clear();
     });
 
+    it('says the cash comes from the HUB file «Нийт төлсөн дүн» as of the file date, with a lower bound for unknown contracts', async () => {
+        const months = emptyMonthlySales();
+        months[8] = { ...months[8], cashflow_target_amount: 330, block_amounts: { b1: { cashflow_target_amount: 300 }, parking: { cashflow_target_amount: 30 } } };
+        const built = buildPlanPerformance({
+            year: 2026, now: new Date('2026-10-22T04:00:00Z'), months, planYears: [2026], latestImportDate: '2026-10-20',
+            receipts: [], contracts: [contract('1', {}), contract('2', {})],
+            hubPaid: { asOf: '2026-10-20', paid: new Map([['1', 120]]) },
+        });
+        const cache = open({ ...built, shopName: 'Elysium Residence' });
+        expect(await screen.findByText('Орсон мөнгө HUB файлаас')).toBeInTheDocument();
+        expect(screen.getByText(/тухайн сард захиалсан гэрээний HUB файлын «Нийт төлсөн дүн»/)).toBeInTheDocument();
+        expect(screen.getByText(/Файлд дүнгүй эсвэл файлд байхгүй/)).toBeInTheDocument();
+        expect(screen.queryByText('Орсон мөнгө бүртгэгдээгүй')).not.toBeInTheDocument();
+        const cashTable = screen.getByRole('table', { name: /орсон мөнгөний төлөвлөгөө/ });
+        const september = within(cashTable).getByRole('rowheader', { name: '9-р сар' }).closest('tr')!;
+        expect(within(september).getByText((_, node) => node?.textContent === '120+*' && node.tagName === 'SPAN')).toBeInTheDocument();
+        cache.clear();
+    });
+
     it('tells a restricted manager the team plan is for management, without a danger alert or a retry', async () => {
         transport.json.mockRejectedValue(new DashboardApiError('Багийн төлөвлөгөө удирдлагад харагдана', 403));
         const cache = new QueryClient();

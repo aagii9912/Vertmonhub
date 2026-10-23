@@ -5,9 +5,11 @@ import { ubDateStr, ubParts } from '@/lib/utils/date';
 import { SalesYearSchema } from './monthly';
 import { getTeamMonthlySales } from './targets';
 import { buildPlanPerformance, type PlanContract, type PlanPerformance, type PlanReceipt } from './plan-performance';
-import { readLatestContractListImport } from '@/lib/contracts/live';
+import { isMissingContractListSchema, readLatestContractListImport } from '@/lib/contracts/live';
+import { hasHubPaidTotals, hubPaidByContract, storedHubPaidRows } from '@/lib/contracts/list-import';
 
-const CONTRACT_COLUMNS = 'id, contract_date, contract_status, product_type, block_name, unit_label, total_price, prepayment_due, paid_amount';
+// order_date: HUB «Нийт төлсөн дүн»-г импортын огноогоор (order_date ?? contract_date) тулгахад.
+const CONTRACT_COLUMNS = 'id, contract_date, order_date, contract_status, product_type, block_name, unit_label, total_price, prepayment_due, paid_amount';
 const OVERDUE_COLUMNS = ', overdue_amount, overdue_as_of';
 type DbError = { code?: string; message: string } | null;
 const missingColumn = (error: DbError, column: string) => !!error && ['42703', 'PGRST204'].includes(error.code ?? '') && error.message.includes(column);
@@ -41,6 +43,8 @@ export function ledgerReceipts(transactions: OperationsTransaction[], year: numb
  * `through` (YYYY-MM-DD, Улаанбаатар): тайлант өдрөөр огтолно — түүнээс хойш огноотой гэрээ, төлбөр орохгүй, сарын
  * явц тэр өдрөөр (Лхагвын илтгэлийн «10-р сарын гүйцэтгэл» тайлант долоо хоногийн эцэс хүртэл). Ирээдүйн өдрийг өнөөдрөөр
  * хязгаарлана — болоогүй сарыг өнгөрсөн гэж 0 харуулахгүй.
+ * Орсон мөнгө (санхүүгийн эрхтэй үед): тайлант өдөр хүртэлх сүүлийн HUB импортын мөрүүдэд «Нийт төлсөн дүн» байвал
+ * гэрээгээр тулгаж cohort-оор (W5/W6, `hubPaid`); үгүй бол өмнөх шигээ дэвтрээр. Импортын хүснэгт байхгүй бол дэвтэр.
  */
 export async function loadPlanPerformance(db: SupabaseClient, options: {
     shopId: string; year?: number; canReadFinance: boolean; now?: Date; through?: string;
@@ -72,7 +76,19 @@ export async function loadPlanPerformance(db: SupabaseClient, options: {
         if (error) throw error;
         return (data as Array<{ txn_date: string | null }> | null)?.[0]?.txn_date?.slice(0, 10) ?? null;
     };
-    const [months, planRows, contracts, latestImportDate, transactions, ledgerSince] = await Promise.all([
+    // Тайлант өдөр (эс бөгөөс өнөөдөр) хүртэлх файлын огноотой сүүлийн импортын мөрүүд — «Нийт төлсөн дүн»-д.
+    const hubImport = async (): Promise<{ asOf: string; rows: unknown } | null> => {
+        const { data, error } = await db.from('contract_list_imports').select('report_date, rows')
+            .eq('shop_id', options.shopId).lte('report_date', through ?? today)
+            .order('report_date', { ascending: false }).order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (error) {
+            if (isMissingContractListSchema(error)) return null;
+            throw new Error(error.message);
+        }
+        const row = data as { report_date: string | null; rows: unknown } | null;
+        return row?.report_date ? { asOf: String(row.report_date).slice(0, 10), rows: row.rows } : null;
+    };
+    const [months, planRows, contracts, latestImportDate, transactions, ledgerSince, hubFile] = await Promise.all([
         getTeamMonthlySales(db, options.shopId, year),
         fetchAllRows<{ year: number }>((from, to) => db.from('team_sales_targets').select('year')
             .eq('shop_id', options.shopId).order('year').order('month').range(from, to)),
@@ -83,7 +99,10 @@ export async function loadPlanPerformance(db: SupabaseClient, options: {
             .eq('shop_id', options.shopId).gte('txn_date', `${year}-01-01`).lte('txn_date', through && through < `${year}-12-31` ? through : `${year}-12-31`)
             .order('id').range(from, to)) : Promise.resolve(null),
         options.canReadFinance ? ledgerStart() : Promise.resolve(null),
+        options.canReadFinance ? hubImport() : Promise.resolve(null),
     ]);
+    const hubRows = hubFile ? storedHubPaidRows(hubFile.rows) : [];
+    const hubPaid = hubFile && hasHubPaidTotals(hubRows) ? { asOf: hubFile.asOf, paid: hubPaidByContract(hubRows, contracts, hubFile.asOf) } : null;
     // Тайлант өдрөөс хойш эхэлсэн дэвтэр тэр өдөр байгаагүй — «бүртгэлгүй» (0 биш).
     const ledgerSinceAt = through && ledgerSince && ledgerSince > through ? null : ledgerSince;
     return buildPlanPerformance({
@@ -92,6 +111,6 @@ export async function loadPlanPerformance(db: SupabaseClient, options: {
         contracts: through ? contracts.filter(contract => !contract.contract_date || contract.contract_date.slice(0, 10) <= through) : contracts,
         receipts: transactions === null ? null : ledgerReceipts(transactions, year),
         ...(transactions === null ? {} : { ledgerSince: ledgerSinceAt }),
-        latestImportDate, overdueAvailable,
+        latestImportDate, overdueAvailable, hubPaid,
     });
 }

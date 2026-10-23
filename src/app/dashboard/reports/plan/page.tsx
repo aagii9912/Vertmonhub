@@ -28,6 +28,8 @@ const SEGMENTS: Array<{ key: Segment; label: string }> = [
     ...MONTHLY_SALES_BLOCKS.map(block => ({ key: block, label: block === 'parking' ? 'Зогсоол' : MONTHLY_SALES_BLOCK_LABELS[block].replace(' блок', '') })),
 ];
 const CASH_TOOLTIP = 'Тухайн сард бодитоор орсон урьдчилгаа, төлбөр: удирдлагын гараар оруулсан дүн, эс бөгөөс системд бүртгэсэн төлбөр.';
+const HUB_CASH_TOOLTIP = 'Тухайн сард захиалсан гэрээнээс орсон мөнгө: удирдлагын гараар оруулсан дүн, эс бөгөөс HUB файлын «Нийт төлсөн дүн» (файлын огноогоор).';
+const cashTooltip = (cash: PlanPerformance['cash']) => cash?.source === 'hub_paid' ? HUB_CASH_TOOLTIP : CASH_TOOLTIP;
 const ADVANCE_TOOLTIP = 'Тухайн сард захиалсан гэрээний нөхцлөөр төлөх ёстой дүн. Орсон мөнгө биш — төлөвлөгөөтэй харьцуулж хувь гаргахгүй.';
 const LOWER_BOUND_NOTE = '«+» — огноогүй гэрээ байгаа тул доод хязгаар; тухайн сард гэрээгүй бол «—».';
 
@@ -141,9 +143,9 @@ function PlanReport({ data, segment, segmentLabel }: { data: PlanResponse; segme
                 value={<>{short(ytdAmount?.actual ?? null, !!ytdAmount?.lowerBound)}<span className="text-sm font-normal text-muted-foreground"> · {planPctText(ytdAmount?.pct ?? null, !!ytdAmount?.lowerBound)}</span></>}
                 helper={`Жилийн төлөвлөгөөнөөс ${planPctText(ytdAmount?.yearPct ?? null, !!ytdAmount?.lowerBound)} · төлөвлөгөө ${short(ytdAmount?.yearPlan ?? null)}`} />
             {cashVisible
-                ? <Tile label="Орсон мөнгө (он эхнээс)" title={CASH_TOOLTIP}
+                ? <Tile label="Орсон мөнгө (он эхнээс)" title={cashTooltip(data.cash)}
                     value={ytdCash?.actual === null || ytdCash?.actual === undefined ? (data.cash!.availability === 'none' ? 'Оруулаагүй' : data.cash!.availability === 'no_ledger' ? 'Бүртгэл алга' : '—') : short(ytdCash.actual, ytdCash.lowerBound)}
-                    helper={`Төлөвлөгөө ${short(ytdCash?.plan ?? null)}${ytdCash?.pct !== null && ytdCash?.pct !== undefined ? ` · ${planPctText(ytdCash.pct, ytdCash.lowerBound)}` : ''}`} />
+                    helper={`Төлөвлөгөө ${short(ytdCash?.plan ?? null)}${ytdCash?.pct !== null && ytdCash?.pct !== undefined ? ` · ${planPctText(ytdCash.pct, ytdCash.lowerBound)}` : ''}${data.cash!.hubPaidAsOf ? ` · HUB ${data.cash!.hubPaidAsOf}` : ''}`} />
                 : <Tile label="Орсон мөнгө" value={<span className="text-base">Санхүүгийн эрх шаардлагатай</span>} helper="Мөнгөн урсгалыг санхүүгийн эрхтэй ажилтан харна." />}
             <Tile label="Төлбөр хоцролт" tone={overdue.amount ? 'danger' : undefined}
                 value={data.overdue.available ? short(overdue.amount) : '—'}
@@ -257,17 +259,27 @@ function CashTable({ data, segment, segmentLabel }: { data: PlanResponse; segmen
     const ytd = yearCellOf(data, segment, 'cashflow');
     return <section className="overflow-hidden rounded-md border border-border bg-surface">
         <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-3.5 py-2.5">
-            <h2 className="text-sm font-semibold" title={CASH_TOOLTIP}>Мөнгөн урсгал · {segmentLabel}</h2>
-            <p className="text-xs text-muted-foreground">Дүн ₮-өөр · бэлэн, банк, ипотек; бартер орохгүй</p>
+            <h2 className="text-sm font-semibold" title={cashTooltip(cash)}>Мөнгөн урсгал · {segmentLabel}</h2>
+            <p className="text-xs text-muted-foreground">{cash.source === 'hub_paid'
+                ? <>Дүн ₮-өөр · HUB файлын «Нийт төлсөн дүн» · <span className="num">{cash.hubPaidAsOf}</span>-ны байдлаар</>
+                : 'Дүн ₮-өөр · бэлэн, банк, ипотек; бартер орохгүй'}</p>
         </header>
+        {cash.source === 'hub_paid' && <div className="border-b border-border p-3"><Alert variant="info">
+            <AlertTitle>Орсон мөнгө HUB файлаас</AlertTitle>
+            <AlertDescription>
+                Сар бүрийн орсон мөнгө = тухайн сард захиалсан гэрээний HUB файлын «Нийт төлсөн дүн», <span className="num">{cash.hubPaidAsOf}</span>-ны
+                файлын байдлаар (хуучин гэрээний дараагийн төлбөр орохгүй). Гараар оруулсан блокийн дүн давамгайлна.
+                {cash.unknownPaid > 0 && <> Файлд дүнгүй эсвэл файлд байхгүй <span className="num">{cash.unknownPaid}</span> гэрээтэй сар доод хязгаар («+»).</>}
+            </AlertDescription>
+        </Alert></div>}
         {cash.availability === 'none' && <div className="border-b border-border p-3"><Alert variant="info">
             {/* Гараар оруулсан сар байвал «бүртгэгдээгүй» гэж бичихгүй — хүснэгтэд тэр дүн харагдана. */}
             {ytd?.actual === null || ytd?.actual === undefined ? <>
                 <AlertTitle>Орсон мөнгө бүртгэгдээгүй</AlertTitle>
-                <AlertDescription>HUB файлд төлсөн дүн байхгүй тул автоматаар тооцохгүй. Сарын дүнг «Төлөвлөгөө ба баг» хуудсанд оруулах, эсвэл файлдаа «Нийт төлсөн дүн» багана нэмбэл хоёр дахь файлаас эхлэн зөрүүгээр тооцно.</AlertDescription>
+                <AlertDescription>HUB файлд төлсөн дүн байхгүй тул автоматаар тооцохгүй. Сарын дүнг «Төлөвлөгөө ба баг» хуудсанд оруулах, эсвэл файлдаа «Нийт төлсөн дүн» багана нэмбэл тухайн сард захиалсан гэрээнээс орсон мөнгийг файлын огноогоор тооцно.</AlertDescription>
             </> : <>
                 <AlertTitle>Зөвхөн гараар оруулсан орсон мөнгө</AlertTitle>
-                <AlertDescription>HUB файлд төлсөн дүн байхгүй тул системээс тооцохгүй; «Төлөвлөгөө ба баг» хуудсанд оруулсан сарын дүн л харагдана. Файлдаа «Нийт төлсөн дүн» багана нэмбэл хоёр дахь файлаас эхлэн зөрүүгээр тооцно.</AlertDescription>
+                <AlertDescription>HUB файлд төлсөн дүн байхгүй тул системээс тооцохгүй; «Төлөвлөгөө ба баг» хуудсанд оруулсан сарын дүн л харагдана. Файлдаа «Нийт төлсөн дүн» багана нэмбэл тухайн сард захиалсан гэрээнээс орсон мөнгийг файлын огноогоор тооцно.</AlertDescription>
             </>}
         </Alert></div>}
         {cash.availability === 'no_ledger' && <div className="border-b border-border p-3"><Alert variant="info">
@@ -276,14 +288,14 @@ function CashTable({ data, segment, segmentLabel }: { data: PlanResponse; segmen
         </Alert></div>}
         {cash.availability !== 'no_ledger' && cash.availability !== 'none' && cash.ledgerSince && cash.ledgerSince.slice(0, 4) === String(data.year) && cash.ledgerSince.slice(5, 7) !== '01'
             && <p className="border-b border-border px-3.5 py-2.5 text-xs text-muted-foreground">Төлбөрийн бүртгэл <span className="num">{cash.ledgerSince}</span>-аас эхэлсэн — өмнөх сарын орсон мөнгө «—».</p>}
-        {cash.availability === 'partial' && <p className="border-b border-border px-3.5 py-2.5 text-xs text-status-pending">{cash.unknownPaid} гэрээний төлсөн дүн тодорхойгүй тул бүртгэсэн төлбөр доод хязгаар («+»).</p>}
+        {cash.availability === 'partial' && cash.source !== 'hub_paid' && <p className="border-b border-border px-3.5 py-2.5 text-xs text-status-pending">{cash.unknownPaid} гэрээний төлсөн дүн тодорхойгүй тул бүртгэсэн төлбөр доод хязгаар («+»).</p>}
         <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
                 <caption className="sr-only">{data.year} оны {segmentLabel} орсон мөнгөний төлөвлөгөө, гүйцэтгэл, биелэлт</caption>
                 <thead className="bg-surface-2 text-xs text-muted-foreground"><tr>
                     <th scope="col" className="border-b border-r border-border px-3 py-2 text-left font-medium">Сар</th>
                     <th scope="col" className="border-b border-border px-3 py-2 text-right font-medium text-gold">Төлөвлөгөө</th>
-                    <th scope="col" title={CASH_TOOLTIP} className="border-b border-border px-3 py-2 text-right font-medium">Орсон мөнгө</th>
+                    <th scope="col" title={cashTooltip(cash)} className="border-b border-border px-3 py-2 text-right font-medium">Орсон мөнгө</th>
                     <th scope="col" className="border-b border-border px-3 py-2 text-right font-medium">Биелэлт</th>
                 </tr></thead>
                 <tbody>{data.months.map(row => {
@@ -310,7 +322,7 @@ function CashTable({ data, segment, segmentLabel }: { data: PlanResponse; segmen
                 </tfoot>
             </table>
         </div>
-        <p className="border-t border-border px-3.5 py-2.5 text-xs text-muted-foreground">Гэрээний нөхцлөөр төлөх урьдчилгаа, төлбөр хоцролтыг орсон мөнгө гэж тооцохгүй. Гараар оруулсан дүн байвал түүнийг, эс бөгөөс системд бүртгэсэн төлбөрийг харуулна — хоёрыг нэмэхгүй.</p>
+        <p className="border-t border-border px-3.5 py-2.5 text-xs text-muted-foreground">Гэрээний нөхцлөөр төлөх урьдчилгаа, төлбөр хоцролтыг орсон мөнгө гэж тооцохгүй. Гараар оруулсан дүн байвал түүнийг, эс бөгөөс {cash.source === 'hub_paid' ? 'HUB файлын төлсөн дүнг' : 'системд бүртгэсэн төлбөрийг'} харуулна — хоёрыг нэмэхгүй.</p>
     </section>;
 }
 
