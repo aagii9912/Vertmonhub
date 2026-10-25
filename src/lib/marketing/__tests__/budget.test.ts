@@ -7,6 +7,11 @@ import {
     daysUntil,
     allocateAnnualBudget,
     MarketingBudgetSchema,
+    monthlySpendStatus,
+    spendStatusThrough,
+    budgetSpendCell,
+    budgetSpendNote,
+    budgetSpendPct,
 } from '../budget';
 
 describe('жилийн төсвийн хуваарилалт', () => {
@@ -126,5 +131,56 @@ describe('daysUntil', () => {
     it('хоосон/буруу огноонд null', () => {
         expect(daysUntil(null, now)).toBeNull();
         expect(daysUntil('not-a-date', now)).toBeNull();
+    });
+});
+
+describe('зарцуулалтын төлөв — бүртгэлгүй ба ханшгүй зардал', () => {
+    const entries = [
+        { spent_at: '2026-01-31', amount: 500000, exclusion: null },
+        // Ханшгүй Meta зардал: эх валютаар, ₮-д ороогүй.
+        { spent_at: '2026-10-01', amount: 0, exclusion: 'missing_fx' as const, native_amount: 1000.5, currency: 'USD' },
+        { spent_at: '2026-10-02', amount: 0, exclusion: 'missing_fx' as const, native_amount: '234.06', currency: 'USD' },
+        // 0 USD = яг 0 ₮ (ханшаас үл хамаарна) — бүртгэлтэй.
+        { spent_at: '2026-11-01', amount: 0, exclusion: 'missing_fx' as const, native_amount: 0, currency: 'USD' },
+        // Давхардсан гар Meta мөр аль алинд нь орохгүй.
+        { spent_at: '2026-12-01', amount: 100000, exclusion: 'manual_overlap' as const },
+        { spent_at: '2025-10-01', amount: 900000, exclusion: null },
+        { spent_at: '2026-09-15', amount: 200000, exclusion: null },
+        { spent_at: '2026-09-20', amount: 0, exclusion: 'missing_fx' as const, native_amount: 10, currency: 'EUR' },
+    ];
+
+    it('сарын хилийг огнооны мөрөөр (серверийн UTC-ээс үл хамааран) тоолж, ханшгүй дүнг валютаар нь хуримтлуулна', () => {
+        const previous = process.env.TZ;
+        process.env.TZ = 'UTC';
+        try {
+            const months = monthlySpendStatus(entries, 2026);
+            expect(months[0]).toEqual({ month: 1, recorded: true, pending: {} });
+            expect(months[1]).toEqual({ month: 2, recorded: false, pending: {} });
+            expect(months[8]).toEqual({ month: 9, recorded: true, pending: { EUR: 10 } });
+            expect(months[9]).toEqual({ month: 10, recorded: false, pending: { USD: 1234.56 } });
+            expect(months[10]).toEqual({ month: 11, recorded: true, pending: {} });
+            expect(months[11]).toEqual({ month: 12, recorded: false, pending: {} });
+            expect(spendStatusThrough(months, 10)).toEqual({ recorded: true, pending: { EUR: 10, USD: 1234.56 } });
+            expect(spendStatusThrough(months, 2)).toEqual({ recorded: true, pending: {} });
+            expect(spendStatusThrough(months.map(month => ({ ...month, recorded: false })), 12).recorded).toBe(false);
+        } finally {
+            process.env.TZ = previous;
+        }
+    });
+
+    it('бүртгэлгүй бол «—», зөвхөн ханшгүй бол «—» + эх валют, хэсэгчлэн бол ₮ + «+ ханшгүй» (хувь доод хязгаар)', () => {
+        const format = (value: number) => `${value.toLocaleString('en-US')} ₮`;
+        expect(budgetSpendCell(0, { recorded: false, pending: {} }, format)).toEqual({ value: '—', pending: null, known: false, lowerBound: false });
+        const unconverted = budgetSpendCell(0, { recorded: false, pending: { USD: 1234.56 } }, format);
+        expect(unconverted).toEqual({ value: '—', pending: 'Ханшгүй 1,234.56 USD (₮-д ороогүй)', known: false, lowerBound: false });
+        expect(budgetSpendNote(unconverted, '0%')).toBe('Ханшгүй 1,234.56 USD (₮-д ороогүй)');
+        const partial = budgetSpendCell(500000, { recorded: true, pending: { USD: 12.5, EUR: 0 } }, format);
+        expect(partial).toEqual({ value: '500,000 ₮', pending: '+ ханшгүй 12.5 USD', known: true, lowerBound: true });
+        expect(budgetSpendNote(partial, budgetSpendPct(500000, 1000000, partial.lowerBound))).toBe('+ ханшгүй 12.5 USD · 50%+');
+        expect(budgetSpendCell(0, { recorded: true, pending: {} }, format)).toEqual({ value: '0 ₮', pending: null, known: true, lowerBound: false });
+        expect(budgetSpendNote(budgetSpendCell(0, { recorded: false, pending: {} }, format))).toBe('Зарцуулалт бүртгээгүй');
+        // Хуучин хариу (төлөвгүй): ₮-ийн дүн хэвээр.
+        expect(budgetSpendCell(300, undefined, format).value).toBe('300 ₮');
+        expect(budgetSpendPct(1, 0)).toBe('төсөвгүй');
     });
 });

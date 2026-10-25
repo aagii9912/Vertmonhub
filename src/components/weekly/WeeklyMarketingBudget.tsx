@@ -6,12 +6,15 @@ import { ArrowUpRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson } from '@/lib/api/dashboardFetch';
 import { formatMNTShort } from '@/lib/utils/currency';
-import type { BudgetOverview } from '@/lib/marketing/budget';
+import { budgetSpendCell, budgetSpendNote, budgetSpendPct, spendStatusThrough, type BudgetOverview, type BudgetSpendMonth } from '@/lib/marketing/budget';
 import { cn } from '@/lib/utils';
 
-type BudgetResponse = { year: number; available: boolean; error?: string; overview?: BudgetOverview };
+type BudgetResponse = { year: number; available: boolean; error?: string; overview?: BudgetOverview; spendStatus?: BudgetSpendMonth[] };
 
-/** Төслийн маркетингийн жилийн үндсэн төсөв: он эхнээс болон тухайн сарын зарцуулалт. */
+/**
+ * Төслийн маркетингийн жилийн үндсэн төсөв: он эхнээс болон тухайн сарын зарцуулалт. Бүртгэлгүй бол «—» (0 ₮ биш);
+ * ханшгүй Meta зардлыг эх валютаар тусад нь (₮-д нэмэхгүй) — слайдын «Төсөв ба зарцуулалт»-тай ижил (`budgetSpendCell`).
+ */
 export function WeeklyMarketingBudget({ to }: { to: string }) {
     const { shop, user } = useAuth();
     const year = Number(to.slice(0, 4));
@@ -30,13 +33,18 @@ export function WeeklyMarketingBudget({ to }: { to: string }) {
     const ytdSpend = ytd.reduce((sum, row) => sum + row.spend, 0);
     const ytdBudget = ytd.reduce((sum, row) => sum + row.budget, 0);
     const current = overview.months[month - 1];
-    const pct = (spend: number, budget: number) => budget > 0 ? `${Math.round(spend / budget * 100)}%` : 'төсөвгүй';
+    const status = query.data.spendStatus;
+    const ytdCell = budgetSpendCell(ytdSpend, status && spendStatusThrough(status, month), formatMNTShort);
+    const monthCell = budgetSpendCell(current?.spend ?? 0, status?.[month - 1], formatMNTShort);
+
     return (
         <div className="grid grid-cols-2 gap-4 rounded-2xl border border-border p-5 sm:grid-cols-4">
             <Cell label={`${year} оны үндсэн төсөв`} value={overview.totals.budget ? formatMNTShort(overview.totals.budget) : 'Оруулаагүй'} />
-            <Cell label="Он эхнээс зарцуулсан" value={formatMNTShort(ytdSpend)} helper={`${pct(ytdSpend, ytdBudget)} (энэ хүртэлх сарын төсвөөс)`} tone={ytdBudget > 0 && ytdSpend > ytdBudget ? 'danger' : undefined} />
+            <Cell label="Он эхнээс зарцуулсан" value={ytdCell.value} helper={budgetSpendNote(ytdCell, `${budgetSpendPct(ytdSpend, ytdBudget, ytdCell.lowerBound)} (энэ хүртэлх сарын төсвөөс)`)}
+                tone={ytdCell.known && ytdBudget > 0 && ytdSpend > ytdBudget ? 'danger' : undefined} />
             <Cell label={`${month}-р сарын төсөв`} value={current?.budget ? formatMNTShort(current.budget) : 'Оруулаагүй'} />
-            <Cell label={`${month}-р сард зарцуулсан`} value={formatMNTShort(current?.spend ?? 0)} helper={current ? pct(current.spend, current.budget) : undefined} tone={current?.status === 'over' ? 'danger' : undefined} />
+            <Cell label={`${month}-р сард зарцуулсан`} value={monthCell.value} helper={budgetSpendNote(monthCell, current ? budgetSpendPct(current.spend, current.budget, monthCell.lowerBound) : null) || undefined}
+                tone={monthCell.known && current?.status === 'over' ? 'danger' : undefined} />
             <Link href="/marketing/budget" className="col-span-full inline-flex items-center gap-1 text-xs text-brand-strong hover:underline focus-ring print:hidden">Төсөв засах, зардал нэмэх<ArrowUpRight className="size-3" /></Link>
         </div>
     );

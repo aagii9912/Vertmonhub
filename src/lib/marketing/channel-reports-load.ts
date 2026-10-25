@@ -8,10 +8,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { ubDateStr } from '@/lib/utils/date';
+import { logger } from '@/lib/utils/logger';
 import {
     CHANNEL_SOURCES, compareWithPrevious, periodDays,
     type BreakdownRow, type ChannelMapping, type ChannelReportOrigin, type ChannelSource, type ChannelTotals, type ChannelWarning, type MetricDelta,
 } from './channel-reports';
+import { META_INSIGHTS_TABLE, META_INSIGHT_COLUMNS, compareMetaSameDays, metaSameDaysTotals } from './meta-channel-report';
+import { presentMetaResultTypes } from './meta-results';
+import type { MetaInsightRow } from './meta-result-groups';
 
 export const CHANNEL_REPORTS_TABLE = 'marketing_channel_reports';
 export const CHANNEL_MAPPINGS_TABLE = 'marketing_channel_mappings';
@@ -51,6 +55,11 @@ export interface ChannelReportMatch {
     /** Ижил урттай, өмнө дууссан хамгийн сүүлийн тайлан. */
     previous: ChannelReportSummary | null;
     comparison: Record<string, MetricDelta> | null;
+    /**
+     * Meta API-ийн дуусаагүй долоо хоногийг (хурлын өглөө сүүлийн өдөр дутуу) өмнөх долоо хоногийн мөн өдрүүдтэй
+     * харьцуулсан бол тэр өдрүүд (`comparison` нь reach, frequency-гүй). Байхгүй бол `comparison` = өмнөх тайлантай.
+     */
+    sameDays?: { from: string; to: string };
 }
 export type ChannelReportMatches = Record<ChannelSource, ChannelReportMatch>;
 
@@ -141,6 +150,42 @@ export function compareReports(report: ChannelReportSummary, previous: ChannelRe
 }
 
 /**
+ * Meta API-ийн дуусаагүй долоо хоногийн мөн өдрүүдийн суурь: өмнөх хурлын долоо хоногийн API тайлан (файл биш —
+ * эх сурвалж холихгүй) мөн өдрүүдийг хамарсан бол тэр тайлан ба өдрүүд; үгүй бол null (харьцуулахгүй хэвээр).
+ */
+export function metaSameDaysPlan(report: ChannelReportSummary, own: readonly ChannelReportSummary[]): { previous: ChannelReportSummary & { data_from: string; data_to: string }; days: { from: string; to: string } } | null {
+    if (report.source !== 'meta_ads' || report.origin !== 'api' || !report.data_from || !report.data_to || !reportCoverage(report)?.partial) return null;
+    const days = { from: shift(report.data_from, -7), to: shift(report.data_to, -7) };
+    const previous = own.find(r => r.source === 'meta_ads' && r.origin === 'api' && r.id !== report.id
+        && r.period_from === shift(report.period_from, -7) && r.period_to === shift(report.period_to, -7)
+        && !!r.data_from && !!r.data_to && r.data_from <= days.from && r.data_to >= days.to);
+    return previous ? { previous: previous as ChannelReportSummary & { data_from: string; data_to: string }, days } : null;
+}
+
+/**
+ * Өмнөх долоо хоногийн мөн өдрүүдийн харьцуулалт: одоогийн зарын дансны хадгалсан ad set × өдрийн мөрөөс
+ * (`metaSameDaysTotals`). Данс сонгоогүй, мөр тайлантай таарахгүй эсвэл уншиж чадаагүй бол null — тайлан
+ * «өдөр дутуу тул харьцуулаагүй» хэвээр (уншилтын алдааг серверийн логт).
+ */
+async function loadMetaSameDays(db: SupabaseClient, shopId: string, report: ChannelReportSummary, plan: NonNullable<ReturnType<typeof metaSameDaysPlan>>): Promise<Record<string, MetricDelta> | null> {
+    try {
+        const { data: shop, error } = await db.from('shops').select('facebook_ad_account_id').eq('id', shopId).single();
+        if (error) throw new Error(error.message);
+        const account = shop?.facebook_ad_account_id ? `act_${String(shop.facebook_ad_account_id).replace(/^act_/, '')}` : null;
+        if (!account) return null;
+        const rows = await fetchAllRows<MetaInsightRow>((from, to) => db.from(META_INSIGHTS_TABLE).select(META_INSIGHT_COLUMNS)
+            .eq('shop_id', shopId).eq('account_id', account).gte('day', plan.previous.data_from).lte('day', plan.previous.data_to)
+            .order('day').order('adset_id').range(from, to));
+        const knownTypes = new Set([...presentMetaResultTypes(report.totals), ...presentMetaResultTypes(plan.previous.totals)]);
+        const totals = metaSameDaysTotals({ rows, previous: plan.previous, days: plan.days, knownTypes });
+        return totals ? compareMetaSameDays(report.totals, totals) : null;
+    } catch (error) {
+        logger.warn('[channel-reports] Meta-гийн мөн өдрүүдийн харьцуулалтыг уншиж чадсангүй', { shopId, message: error instanceof Error ? error.message : 'unknown' });
+        return null;
+    }
+}
+
+/**
  * Эх үүсвэр бүрийн хувьд хугацаанд тохирох тайлан, өмнөх тайлан, харьцуулалт.
  * `range` null бол эх үүсвэр бүрийн хамгийн сүүлийн тайлан.
  */
@@ -172,11 +217,11 @@ export async function loadChannelReports(
         throw error;
     }
 
-    const picks = new Map<ChannelSource, { best: ChannelReportSummary | null; previous: ChannelReportSummary | null }>();
+    const picks = new Map<ChannelSource, { best: ChannelReportSummary | null; previous: ChannelReportSummary | null; sameDays: ReturnType<typeof metaSameDaysPlan> }>();
     for (const source of sources) {
         const own = summaries.filter(r => r.source === source);
         const best = pickBestReport(own, range);
-        picks.set(source, { best, previous: best ? pickPreviousReport(own, best) : null });
+        picks.set(source, { best, previous: best ? pickPreviousReport(own, best) : null, sameDays: best ? metaSameDaysPlan(best, own) : null });
     }
     const ids = [...picks.values()].map(p => p.best?.id).filter((id): id is string => !!id);
     const details = new Map<string, { breakdown: BreakdownRow[]; mapping: ChannelMapping }>();
@@ -186,17 +231,24 @@ export async function loadChannelReports(
         for (const row of (data ?? []) as Array<{ id: string; breakdown: BreakdownRow[]; mapping: ChannelMapping }>) details.set(row.id, { breakdown: row.breakdown ?? [], mapping: row.mapping ?? {} });
     }
 
+    // Дуусаагүй Meta API долоо хоног: өмнөх долоо хоногийн мөн өдрүүдтэй (боломжтой бол).
+    const metaPick = picks.get('meta_ads');
+    const sameDays = metaPick?.best && metaPick.sameDays ? await loadMetaSameDays(db, shopId, metaPick.best, metaPick.sameDays) : null;
+
     const result = {} as ChannelReportMatches;
     for (const source of CHANNEL_SOURCES) {
         const pick = picks.get(source);
         const best = pick?.best ?? null;
         const report = best ? { ...best, ...(details.get(best.id) ?? { breakdown: [], mapping: {} }) } : null;
+        const same = source === 'meta_ads' && sameDays && pick?.sameDays ? pick.sameDays : null;
         result[source] = {
             report,
             exact: !!report && !!range && report.period_from === range.from && report.period_to === range.to,
             longer: !!report && !!range && isLongerReport(report, range),
-            previous: pick?.previous ?? null,
-            comparison: report ? compareReports(report, pick?.previous ?? null) : null,
+            // Мөн өдрүүдтэй харьцуулбал «өмнөх» нь тэр өдрүүдийг хамарсан өмнөх долоо хоногийн API тайлан.
+            previous: same ? same.previous : pick?.previous ?? null,
+            comparison: same ? sameDays : report ? compareReports(report, pick?.previous ?? null) : null,
+            ...(same ? { sameDays: same.days } : {}),
         };
     }
     return result;

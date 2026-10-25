@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { formatMetaPending } from './meta-ads-report';
 
 /**
  * Маркетингийн төсвийн хяналтын PURE туслахууд (DB-гүй, unit-тестэд ордог).
@@ -73,6 +74,70 @@ export function monthlySpendSeries(entries: SpendEntryLite[], year: number): num
         if (month >= 1 && month <= 12) out[month - 1] += Number(entry.amount) || 0;
     }
     return out;
+}
+
+/**
+ * Сарын зарцуулалтын бүртгэлийн төлөв: төгрөгийн нийтэд орсон бүртгэл байгаа эсэх (`recorded`) ба ханшгүй
+ * (`missing_fx`, төгрөгт ороогүй) Meta зардал эх валютаар. Ханшгүй дүнг ₮ гэж бичихгүй, нийтэд нэмэхгүй
+ * (`formatMetaPending`); бүртгэлгүй сар «—», 0 ₮ биш.
+ */
+export interface BudgetSpendMonth { month: number; recorded: boolean; pending: Record<string, number> }
+
+export interface SpendStatusEntry extends SpendEntryLite {
+    exclusion?: 'manual_overlap' | 'missing_fx' | null;
+    native_amount?: number | string | null;
+    currency?: string | null;
+}
+
+/** Тухайн оны бүртгэлүүдээс [12] сарын төлөв. Давхардсан гар Meta мөр (`manual_overlap`) аль алинд нь орохгүй. */
+export function monthlySpendStatus(entries: readonly SpendStatusEntry[], year: number): BudgetSpendMonth[] {
+    const out: BudgetSpendMonth[] = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, recorded: false, pending: {} }));
+    for (const entry of entries) {
+        const match = /^(\d{4})-(\d{2})-\d{2}$/.exec(entry.spent_at ?? '');
+        if (!match || Number(match[1]) !== year) continue;
+        const row = out[Number(match[2]) - 1];
+        if (!row || entry.exclusion === 'manual_overlap') continue;
+        if (entry.exclusion !== 'missing_fx') { row.recorded = true; continue; }
+        const native = Number(entry.native_amount) || 0;
+        // 0 эх валют = яг 0 ₮ (ханшаас үл хамаарна).
+        if (native <= 0 || !entry.currency) { row.recorded = true; continue; }
+        row.pending[entry.currency] = Math.round(((row.pending[entry.currency] ?? 0) + native) * 1e6) / 1e6;
+    }
+    return out;
+}
+
+/** 1..`through` сарын төлөвийн нийлбэр (он эхнээс). */
+export function spendStatusThrough(months: readonly BudgetSpendMonth[], through: number): Omit<BudgetSpendMonth, 'month'> {
+    const pending: Record<string, number> = {};
+    for (const row of months.filter(item => item.month <= through)) {
+        for (const [currency, amount] of Object.entries(row.pending)) pending[currency] = Math.round(((pending[currency] ?? 0) + amount) * 1e6) / 1e6;
+    }
+    return { recorded: months.some(item => item.month <= through && item.recorded), pending };
+}
+
+/**
+ * Зарцуулалтын нүд (хурлын хуудас, слайд): бүртгэлгүй → «—»; зөвхөн ханшгүй → «—» + «Ханшгүй 1,234.56 USD (₮-д ороогүй)»;
+ * хэсэгчлэн → ₮ дүн + «+ ханшгүй …» (`lowerBound`: ₮-ийн дүн, хувь доод хязгаар — «45%+»). `known` = ₮-ийн дүн бодит
+ * (хувь, хэтрэлтийг зөвхөн үед тооцно). Төлөвгүй (хуучин хариу) бол ₮ дүнг хэвээр харуулна.
+ */
+export interface BudgetSpendCell { value: string; pending: string | null; known: boolean; lowerBound: boolean }
+export function budgetSpendCell(mnt: number, status: Omit<BudgetSpendMonth, 'month'> | null | undefined, format: (value: number) => string): BudgetSpendCell {
+    if (!status) return { value: format(mnt), pending: null, known: true, lowerBound: false };
+    const positive = Object.fromEntries(Object.entries(status.pending).filter(([, amount]) => amount > 0));
+    const text = Object.keys(positive).length ? formatMetaPending({ mnt: 0, complete: false, pending: positive, native: positive }) : null;
+    if (!status.recorded) return { value: '—', pending: text ? `Ханшгүй ${text} (₮-д ороогүй)` : null, known: false, lowerBound: false };
+    return { value: format(mnt), pending: text ? `+ ханшгүй ${text}` : null, known: true, lowerBound: !!text };
+}
+
+/** Нүдний тайлбар: ханшгүй дүн, (₮ бодит бол) `ratio`; бүртгэлгүй бол «Зарцуулалт бүртгээгүй». */
+export function budgetSpendNote(cell: BudgetSpendCell, ratio?: string | null): string {
+    if (!cell.known) return cell.pending ?? 'Зарцуулалт бүртгээгүй';
+    return [cell.pending, ratio].filter(Boolean).join(' · ');
+}
+
+/** Зарцуулалт / төсөв, бүхэл хувь; төсөвгүй бол «төсөвгүй»; ханшгүй зардал үлдсэн бол доод хязгаар «+». */
+export function budgetSpendPct(spend: number, budget: number, lowerBound = false): string {
+    return budget > 0 ? `${Math.round(spend / budget * 100)}%${lowerBound ? '+' : ''}` : 'төсөвгүй';
 }
 
 /** Сувгаар нийлбэрлэнэ (их → бага эрэмбэтэй жагсаалт). */

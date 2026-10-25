@@ -12,6 +12,7 @@ import { buildMonthlyPerformance, buildOperationsReport } from '../operations-re
 import { buildBudgetOverview } from '@/lib/marketing/budget';
 import { buildMarketingPerformance } from '@/lib/marketing/performance';
 import { compareReports, type ChannelReportMatch, type ChannelReportMatches, type ChannelReportRecord } from '@/lib/marketing/channel-reports-load';
+import { compareMetaSameDays } from '@/lib/marketing/meta-channel-report';
 import type { BreakdownRow, ChannelTotals, ChannelWarning } from '@/lib/marketing/channel-reports';
 import type { ErpProduct, ErpSale } from '@/lib/erp/records';
 import type { WeeklySlide } from '../weekly-slides';
@@ -398,6 +399,27 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(notes).toContain('Hub-ийн бүртгэлтэй холбож тооцоогүй');
     });
 
+    it('marketing deck: an unfinished Meta API week is compared with the previous week\'s same days, reach and frequency left out', async () => {
+        const report = metaApiReport();
+        // Ачаалагч өмнөх долоо хоногийн мөн өдрүүдийг (09.30–10.05) хадгалсан ad set × өдрийн мөрөөс бодсон.
+        const sameTotals = { spend: 360, currency: 'USD', impressions: 90000, link_clicks: 1100, cpm: 4, cost_per_link_click: 0.33, ctr_link: 1.22, results_calls: 50, spend_calls: 220, cost_per_result_calls: 4.4 };
+        const previous = { ...report, id: 'meta-prev', period_from: '2026-09-30', period_to: '2026-10-06', data_from: '2026-09-30', data_to: '2026-10-06' };
+        const match: ChannelReportMatch = { report, exact: true, longer: false, previous, comparison: compareMetaSameDays(report.totals, sameTotals), sameDays: { from: '2026-09-30', to: '2026-10-05' } };
+        const { text, zip } = await render(input({ kind: 'marketing', channels: withMeta(match) }));
+        const at = (needle: string) => text.find(slideText => slideText.includes(needle))!;
+        const summary = at('Meta зар — долоо хоногийн тойм');
+        expect(summary).toContain('6/7 өдөр (2026.10.07 – 2026.10.12)');
+        expect(summary).toMatch(/Зарцуулсан дүн 412\.57 USD Өмнөх 7 хоногийн мөн өдрүүд 360 USD · \+52\.57 \(\+14\.6%\)/);
+        expect(summary).toMatch(/Reach \(хүрсэн хүн\) 41,200 Мөн өдрүүдтэй харьцуулаагүй \(давхардалгүй\)/);
+        expect(summary).toMatch(/Frequency \(давтамж\) 2\.38 Мөн өдрүүдтэй харьцуулаагүй/);
+        expect(summary).toContain('Долоо хоног дуусаагүй тул өмнөх 7 хоногийн мөн өдрүүдтэй (2026.09.30 – 2026.10.05) харьцуулав.');
+        expect(summary).not.toContain('Өдөр дутуу тул');
+        const types = at('Meta зар — үр дүн төрлөөр');
+        expect(types).toContain('өмнөх 7 хоногийн мөн өдрүүдтэй (2026.09.30 – 2026.10.05)');
+        expect(types).toMatch(/Тоо Өмнөх 7 хоногийн мөн өдрүүд Зардал \(USD\) .*Дуудлага \(Meta\) 58 50 · \+8 \(\+16%\)/);
+        expect(await notesOf(zip)).toContain('экспорт файлтай холихгүй');
+    });
+
     it('marketing deck: a full Meta week is compared with the previous week, per type too, and Meta form leads keep a neutral cost label', async () => {
         // Лид маягтын кампанит ажил өмнөх долоо хоногт хүргэлттэй, энэ долоо хоногт хүргэлтгүй (0 үр дүн, 0 зардал).
         const report = metaApiReport({ data_to: range.to, totals: { ...metaApiReport().totals, results_leads: 0, spend_leads: 0 } });
@@ -551,13 +573,64 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(size('98,234')).toBe(2600);
     });
 
+    it('marketing deck: connection status right after the cover, previous content week, failed sources in place, budget never «0 ₮»', async () => {
+        const plan = contentPlan();
+        const previousItems = [content('p1', 'Өмнөх reel', '2026-10-01', 'published'), content('p2', 'Өмнөх пост', '2026-10-03', 'planned', { type: 'post' })];
+        const connections = {
+            page: { connected: true, name: 'Elysium Residence', sync: { lastAttemptAt: '2026-10-13T04:00:00Z', lastSuccessAt: '2026-10-13T04:00:00Z', from: '2026-09-13', to: '2026-10-12', error: null } },
+            instagram: { connected: false, username: null, sync: null },
+            ads: { accountId: 'act_1129994262383674', tokenSource: 'user' as const, tokenDaysLeft: 41, tokenExpired: false, insights: { lastAttemptAt: '2026-10-13T04:00:00Z', lastSuccessAt: null, from: null, to: null, error: 'Meta-гийн хандах эрх хүрэлцэхгүй (#200).' }, spend: null, currency: 'USD', mntPerUnit: null },
+        };
+        const months = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, recorded: i < 9, pending: (i === 9 ? { USD: 300.38 } : {}) as Record<string, number> }));
+        const budget = { year: 2026, month: 10, overview: buildBudgetOverview(Array(12).fill(10000000), Array.from({ length: 12 }, (_, i) => i < 9 ? 8000000 : 0), Array(12).fill(0)), spendStatus: months };
+        const { text, zip } = await render(input({
+            kind: 'marketing', connections, budget, social: null, failed: { social: 'Facebook хуудасны үзүүлэлтийг уншиж чадсангүй' },
+            contentPlan: { ...plan, previous: summarizeContentPlan(previousItems, { from: '2026-09-30', to: '2026-10-06' }, '2026-10-14') },
+        }));
+        await validXml(zip);
+        const index = (needle: string) => text.findIndex(slideText => slideText.includes(needle));
+        expect(index('Холболтын төлөв')).toBe(1);
+        expect(index('Энэ хурлаар шийдэх')).toBe(2);
+        const status = text[1];
+        expect(status).toMatch(/Facebook хуудас Холбогдсон · Elysium Residence Сүүлд 2026\.10\.13 · 2026\.10\.12 хүртэл/);
+        expect(status).toMatch(/Instagram Холбогдоогүй/);
+        expect(status).toMatch(/Meta токен Хэрэглэгчийн \(OAuth\) 41 хоногийн дараа дуусна/);
+        expect(status).toMatch(/Meta зарын синк Алдаатай Синк алдаатай: Meta-гийн хандах эрх хүрэлцэхгүй \(#200\)\./);
+        expect(status).toMatch(/Төгрөгийн ханш Оруулаагүй/);
+        // Контент: өмнөх хурлын долоо хоногтой зэрэгцүүлнэ.
+        expect(text[index('Төлөвлөсөн контент')]).toContain('Өмнөх 7 хоног: төлөвлөсөн 2 / нийтэлсэн 1 (50%) (2026.09.30 – 2026.10.06)');
+        // Хуудас + Instagram-ийн хүсэлт ачаалж чадаагүй → хэсгийн оронд богино слайд (шалтгаан тэмдэглэлд), хуудас холбогдоогүй гэж бичихгүй.
+        const failedPage = text[index('Facebook хуудас, Instagram-ийн мэдээллийг ачаалж чадсангүй.')];
+        expect(failedPage).toContain('Facebook хуудас');
+        expect(text.join(' ')).not.toContain('долоо хоногийн үзүүлэлт');
+        expect(await notesOf(zip)).toContain('Facebook хуудас, Instagram: Facebook хуудасны үзүүлэлтийг уншиж чадсангүй.');
+        expect(index('Facebook хуудас, Instagram-ийн мэдээллийг ачаалж чадсангүй.')).toBeLessThan(index('Сувгийн экспорт'));
+        // Төсөв: 10-р сард зөвхөн ханшгүй USD → «—» + эх валют; энэ 7 хоногт ₮-ийн бүртгэлтэй (1.2 сая ₮).
+        const budgetSlide = text[index('Төсөв ба зарцуулалт')];
+        expect(budgetSlide).toMatch(/10-р сард зарцуулсан — Ханшгүй 300\.38 USD \(₮-д ороогүй\)/);
+        expect(budgetSlide).toMatch(/Он эхнээс зарцуулсан 72 сая ₮ \+ ханшгүй 300\.38 USD · 72%\+ \(энэ хүртэлх сарын төсвөөс\)/);
+        expect(budgetSlide).toMatch(/Энэ 7 хоногт бүртгэсэн зардал 1\.2 сая ₮ Гар бүртгэл \+ Meta өдрийн зардал/);
+        expect(budgetSlide).not.toMatch(/(^|\s)0 ₮/);
+    });
+
+    it('sales deck has no marketing connection slide', async () => {
+        const { text } = await render(input({ connections: { page: { connected: false, name: null, sync: null }, instagram: { connected: false, username: null, sync: null },
+            ads: { accountId: null, tokenSource: null, tokenDaysLeft: null, tokenExpired: false, insights: null, spend: null, currency: null, mntPerUnit: null } } }));
+        expect(text.join(' ')).not.toContain('Холболтын төлөв');
+    });
+
     it('marketing deck adds no Meta slides when the week has no Meta report', async () => {
         const none = { report: null, exact: false, longer: false, previous: null, comparison: null };
         const { text } = await render(input({ kind: 'marketing', channels: withMeta(none) }));
         expect(text.join(' ')).not.toContain('META ЗАР');
         const channelSlide = text.find(slideText => slideText.includes('Сувгийн экспорт'))!;
-        expect(channelSlide).toContain('Экспорт оруулаагүй: Meta Ads Manager, Facebook хуудас, Масс SMS');
+        // Facebook хуудас API-аар холбогдсон (хуудасны слайдтай) тул экспорт дутуу гэж тооцохгүй.
+        expect(channelSlide).toContain('Экспорт оруулаагүй: Meta Ads Manager, Масс SMS · Facebook хуудас: API-аар (Facebook хуудасны слайд)');
         expect(channelSlide).toContain('CallPro дуудлага');
+        const unconnected = await render(input({ kind: 'marketing', channels: withMeta(none), social: { ...social(), page: null, metrics: [], posts: [] } }));
+        const withoutPage = unconnected.text.find(slideText => slideText.includes('Сувгийн экспорт'))!;
+        expect(withoutPage).toContain('Экспорт оруулаагүй: Meta Ads Manager, Facebook хуудас, Масс SMS');
+        expect(withoutPage).not.toContain('API-аар');
     });
 
     it('marketing deck: Instagram week right after the Facebook Page slides — summed actions, follower snapshot, no summed reach', async () => {

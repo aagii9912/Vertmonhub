@@ -14,6 +14,7 @@ import { hasRealContractFields } from '@/lib/leads/contracts';
 import { ubParts } from '@/lib/utils/date';
 import {
     monthlySpendSeries,
+    monthlySpendStatus,
     spendByChannel,
     buildBudgetOverview,
     SPEND_CHANNELS,
@@ -28,7 +29,8 @@ import { withRoute } from '@/lib/api/route';
  *
  * GET ?year=&project= — жилийн тойм: байгууллага эсвэл сонгосон төслийн
  *   сар бүрийн төсөв vs бүртгэсэн зарцуулалт vs бодит гэрээний дүн,
- *   өнгөний төлөвтэй (ok/warn/over) + сувгийн задаргаа + Meta Ads нийт spend.
+ *   өнгөний төлөвтэй (ok/warn/over) + сувгийн задаргаа + Meta Ads нийт spend. `spendStatus` = сар бүрийн
+ *   бүртгэлтэй эсэх, ханшгүй (₮-д ороогүй) Meta зардал эх валютаар — бүртгэлгүй сарыг «0 ₮» гэж харуулахгүй.
  * PUT { year, project_id?, annualAmount?, months? } — нэг хүсэлтээр 12 сарын төсөв.
  * POST { spentAt, amount, channel, note, project_id? } — зарцуулалт бүртгэх.
  * DELETE ?id= — зарцуулалтын мөрийг зөөлөн устгах (бичих эрх).
@@ -129,6 +131,8 @@ export async function GET(request: NextRequest) {
             unassignedSpendCount: projectId ? shopEntries.filter(e => !e.project_id).length : 0,
             available: true,
             overview: buildBudgetOverview(budgets, spend, revenue),
+            // Сар бүрт ₮-д орсон бүртгэлтэй эсэх ба ханшгүй Meta зардал эх валютаар (₮-ийн дүнд ороогүй).
+            spendStatus: monthlySpendStatus(allEntries, year),
             byChannel: spendByChannel(entries),
             entries: allEntries.slice(0, 100),
             metaAdsTotalSpend: entries.filter(e => e.source === 'meta').reduce((sum, e) => sum + Number(e.amount), 0),

@@ -1,6 +1,7 @@
 import type PptxGenJS from 'pptxgenjs';
 import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
-import type { BudgetOverview } from '@/lib/marketing/budget';
+import type { BudgetOverview, BudgetSpendMonth } from '@/lib/marketing/budget';
+import type { MarketingConnections } from '@/lib/marketing/connections';
 import type { ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
 import type { SocialWeekResponse } from '@/lib/marketing/social-week';
 import type { MarketingPerformance } from '@/lib/marketing/performance';
@@ -8,7 +9,7 @@ import type { OperationsReport } from './operations-report';
 import type { WeeklySalesReport } from './weekly-sales';
 import type { WeeklyContentPlan, WeeklyUpdate } from './weekly-review';
 import { reportMediaUrl, type WeeklySlide } from './weekly-slides';
-import { buildWeeklyDeck, weeklyDeckFileName, type DeckImage, type WeeklyDeckKind } from './weekly-deck';
+import { buildWeeklyDeck, weeklyDeckFileName, type DeckImage, type MarketingDeckSource, type WeeklyDeckKind } from './weekly-deck';
 import { buildTeamDeck, type TeamDeckSource, type TeamPlanReport } from './team-deck';
 import type { SalesActivityReport } from './sales-activity';
 import type { MeetingDetailsReport } from './meeting-details';
@@ -40,7 +41,8 @@ export interface WeeklyDeckExportInput {
     canMarketing: boolean;
 }
 
-type BudgetResponse = { year: number; available: boolean; overview?: BudgetOverview };
+/** `spendStatus` = сар бүрийн бүртгэлтэй эсэх, ханшгүй Meta зардал эх валютаар (₮-д ороогүй). */
+type BudgetResponse = { year: number; available: boolean; overview?: BudgetOverview; spendStatus?: BudgetSpendMonth[] };
 
 function monthBounds(day: string) {
     const [year, month] = day.split('-').map(Number);
@@ -97,34 +99,56 @@ async function loadImages(paths: string[], toUrl: (path: string) => string = rep
     return { images, failed };
 }
 
+type Settled<T> = { data: T; error: null } | { data: null; error: string };
+const settle = <T>(promise: Promise<T>): Promise<Settled<T>> => promise.then(
+    data => ({ data, error: null }),
+    (error: unknown) => ({ data: null, error: error instanceof Error && error.message ? error.message : 'тодорхойгүй алдаа' }),
+);
+
 const stamp = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ulaanbaatar', dateStyle: 'short', timeStyle: 'short' }).format(new Date()).replaceAll('-', '.');
 
-export async function exportWeeklyDeck(input: WeeklyDeckExportInput): Promise<{ fileName: string; failedImages: number }> {
+/**
+ * Борлуулалт эсвэл маркетингийн илтгэл. Маркетингийн эх сурвалж (төсөв, сувгийн тайлан, Facebook хуудас, Instagram,
+ * холболтын төлөв) бүтэлгүйтвэл тэр хэсгийн оронд «… ачаалж чадсангүй» слайд, `failedSources`-д тоологдоно (хуудас анхааруулна) —
+ * хэсгийг чимээгүй хасахгүй (албаны загварын `exportTeamDeck`-тэй ижил).
+ */
+export async function exportWeeklyDeck(input: WeeklyDeckExportInput): Promise<{ fileName: string; failedImages: number; failedSources: number }> {
     const year = Number(input.range.to.slice(0, 4));
     const month = monthBounds(input.range.to);
     const marketing = input.kind === 'marketing' && input.canMarketing;
     const slides = input.slides.filter(slide => slide.part === input.kind);
     const contentImages = marketing && input.contentPlan
         ? input.contentPlan.week.items.filter(item => item.status === 'published' || item.status === 'ready').flatMap(item => item.image_paths) : [];
-    const [budget, channels, social, monthSales, media, { default: PptxGenJS }] = await Promise.all([
-        marketing ? dashboardJson<BudgetResponse>(`/api/marketing/budget?year=${year}`).catch(() => null) : null,
-        marketing ? dashboardJson<{ latest: ChannelReportMatches }>(`/api/marketing/channel-reports?from=${input.range.from}&to=${input.range.to}`).then(response => response.latest).catch(() => null) : null,
-        marketing ? dashboardJson<SocialWeekResponse>(`/api/dashboard/marketing/social-week?meetingDate=${input.meetingDate}`).catch(() => null) : null,
+    const skipped = Promise.resolve<Settled<null>>({ data: null, error: null });
+    const [budget, channels, social, connections, monthSales, media, { default: PptxGenJS }] = await Promise.all([
+        marketing ? settle(dashboardJson<BudgetResponse>(`/api/marketing/budget?year=${year}`)) : skipped,
+        marketing ? settle(dashboardJson<{ latest: ChannelReportMatches }>(`/api/marketing/channel-reports?from=${input.range.from}&to=${input.range.to}`).then(response => response.latest)) : skipped,
+        marketing ? settle(dashboardJson<SocialWeekResponse>(`/api/dashboard/marketing/social-week?meetingDate=${input.meetingDate}`)) : skipped,
+        marketing ? settle(dashboardJson<{ connections: MarketingConnections }>('/api/dashboard/marketing/connections').then(response => response.connections)) : skipped,
         input.kind === 'sales' && input.canReports ? dashboardJson<OperationsReport>(`/api/dashboard/reports/operations?${new URLSearchParams(month)}`).catch(() => undefined) : undefined,
         loadImages([...slides.flatMap(slide => slide.image_paths), ...contentImages]),
         import('pptxgenjs'),
     ]);
+    const failed: Partial<Record<MarketingDeckSource, string>> = {};
+    if (budget.error) failed.budget = budget.error;
+    if (channels.error) failed.channels = channels.error;
+    if (social.error) failed.social = social.error;
+    // Хуудасны хариу ирсэн ч Instagram-ийн хэсгийг уншиж чадаагүй (`instagramError`) — Instagram-ийн оронд тусдаа слайд.
+    else if (social.data?.instagramError) failed.instagram = social.data.instagramError;
+    if (connections.error) failed.connections = connections.error;
     const pres = new PptxGenJS();
     buildWeeklyDeck(pres, {
         kind: input.kind, contentPlan: input.contentPlan, projectName: input.projectName, meetingDate: input.meetingDate, range: input.range, previousRange: input.previousRange,
         generatedAt: stamp(), discussion: input.discussion, notices: input.notices,
         sales: input.sales, previousSales: input.previousSales, monthSales, weeklySales: input.weeklySales, marketing: input.marketing,
-        budget: budget?.available && budget.overview ? { year, month: Number(input.range.to.slice(5, 7)), overview: budget.overview } : null,
-        channels, social: social?.week ?? null, instagram: social?.instagram ?? null, slides, images: media.images, updates: input.updates,
+        // Төсвийн хүснэгт суулгаагүй (`available: false`) нь алдаа биш — төсвийн мөргүй.
+        budget: budget.data?.available && budget.data.overview ? { year, month: Number(input.range.to.slice(5, 7)), overview: budget.data.overview, spendStatus: budget.data.spendStatus } : null,
+        channels: channels.data, social: social.data?.week ?? null, instagram: social.data?.instagram ?? null, connections: connections.data, failed,
+        slides, images: media.images, updates: input.updates,
     });
     const fileName = weeklyDeckFileName(input.projectName, input.meetingDate, input.kind);
     await saveDeck(pres, fileName);
-    return { fileName, failedImages: media.failed };
+    return { fileName, failedImages: media.failed, failedSources: Object.keys(failed).length };
 }
 
 /** Үүсгэсэн илтгэлийг хөтөчөөр татуулна. */
@@ -151,11 +175,6 @@ export interface TeamDeckExportInput {
     slides: WeeklySlide[];
 }
 
-type Settled<T> = { data: T; error: null } | { data: null; error: string };
-const settle = <T>(promise: Promise<T>): Promise<Settled<T>> => promise.then(
-    data => ({ data, error: null }),
-    (error: unknown) => ({ data: null, error: error instanceof Error && error.message ? error.message : 'тодорхойгүй алдаа' }),
-);
 
 /**
  * Илтгэлийн брэнд ба нүүрний зураг, лого. 403/404, хүснэгт алга (`available: false`) эсвэл бусад алдаа — брэндгүй
