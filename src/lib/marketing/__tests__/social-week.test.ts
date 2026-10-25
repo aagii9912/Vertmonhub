@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { latestSocialRanges, loadLatestSocialWeek, loadSocialWeek, summarizeSocialWeek, type SocialDailyRow } from '../social-week';
+import {
+    IG_WEEK_METRICS, SOCIAL_WEEK_METRICS, latestSocialRanges, loadInstagramWeek, loadLatestInstagramWeek, loadLatestSocialWeek, loadSocialWeek,
+    summarizeInstagramWeek, summarizeSocialWeek, summarizeWeekMetrics, type SocialDailyRow,
+} from '../social-week';
+import { PAGE_METRIC_INFO } from '../social-metrics';
 
 const range = { from: '2026-10-07', to: '2026-10-13' };
 const previousRange = { from: '2026-09-30', to: '2026-10-06' };
@@ -38,11 +42,59 @@ describe('summarizeSocialWeek', () => {
 
     it('ignores rows outside both weeks and gives no percent against a zero week', () => {
         const rows: SocialDailyRow[] = [
-            ...days(range.from, 7).map(day => ({ day, metric: 'page_total_actions', value: 2 })),
-            ...days(previousRange.from, 7).map(day => ({ day, metric: 'page_total_actions', value: 0 })),
-            { day: '2026-10-14', metric: 'page_total_actions', value: 999 },
+            ...days(range.from, 7).map(day => ({ day, metric: 'page_video_views', value: 2 })),
+            ...days(previousRange.from, 7).map(day => ({ day, metric: 'page_video_views', value: 0 })),
+            { day: '2026-10-14', metric: 'page_video_views', value: 999 },
         ];
-        expect(metric(rows, 'page_total_actions')).toMatchObject({ value: 14, previous: 0, delta: 14, deltaPct: null });
+        expect(metric(rows, 'page_video_views')).toMatchObject({ value: 14, previous: 0, delta: 14, deltaPct: null });
+    });
+
+    it('leaves out page_total_actions, which Meta returns as 0 every day', () => {
+        const rows = days(range.from, 7).map(day => ({ day, metric: 'page_total_actions', value: 0 }));
+        expect(summarizeSocialWeek(rows, range, previousRange).map(item => item.metric)).toEqual([...SOCIAL_WEEK_METRICS]);
+        expect(SOCIAL_WEEK_METRICS).not.toContain('page_total_actions');
+    });
+
+    it('is the generic summariser applied to the Page catalog', () => {
+        const rows: SocialDailyRow[] = [
+            ...days(range.from, 6).map(day => ({ day, metric: 'page_media_view', value: 100 })),
+            ...days(previousRange.from, 7).map((day, i) => ({ day, metric: 'page_follows', value: 900 + i })),
+            ...days(range.from, 7).map((day, i) => ({ day, metric: 'page_follows', value: 910 + i })),
+        ];
+        expect(summarizeWeekMetrics(rows, range, previousRange, SOCIAL_WEEK_METRICS, PAGE_METRIC_INFO)).toEqual(summarizeSocialWeek(rows, range, previousRange));
+    });
+});
+
+describe('summarizeInstagramWeek', () => {
+    it('sums Instagram actions, keeps the follower snapshot and never adds daily unique reach', () => {
+        const rows: SocialDailyRow[] = [
+            ...days(range.from, 7).flatMap((day, i) => [
+                { day, metric: 'views', value: 300 }, { day, metric: 'reach', value: 200 }, { day, metric: 'accounts_engaged', value: 20 },
+                { day, metric: 'follows', value: i === 0 ? 0 : 2 }, { day, metric: 'followers_count', value: 800 + i },
+            ]),
+            ...days(previousRange.from, 7).flatMap(day => [{ day, metric: 'views', value: 200 }, { day, metric: 'follows', value: 1 }]),
+            { day: '2026-10-06', metric: 'followers_count', value: 790 },
+        ];
+        const week = summarizeInstagramWeek(rows, range, previousRange);
+        expect(week.map(item => item.metric)).toEqual([...IG_WEEK_METRICS]);
+        expect(week.map(item => item.metric)).not.toContain('reach');
+        expect(week.map(item => item.metric)).not.toContain('accounts_engaged');
+        const at = (name: string) => week.find(item => item.metric === name)!;
+        expect(at('views')).toMatchObject({ label: 'Үзэлт', kind: 'sum', value: 2100, previous: 1400, comparison: 'week', delta: 700, deltaPct: 50 });
+        // Эхний өдрийн 0 нь Meta-гийн хариу — 7 өдөр бүрэн.
+        expect(at('follows')).toMatchObject({ label: 'Шинэ дагагч', value: 12, days: 7, previous: 7, delta: 5 });
+        expect(at('followers_count')).toMatchObject({ label: 'Дагагч', kind: 'latest', value: 806, day: '2026-10-13', comparison: 'week-ago', previous: 790, delta: 16 });
+        // Хадгалаагүй метрик 0 биш — null.
+        expect(at('saves')).toMatchObject({ value: null, previous: null, days: 0, delta: null });
+    });
+
+    it('compares an unfinished Instagram week with the same days of the previous week', () => {
+        const rows: SocialDailyRow[] = [
+            ...days(range.from, 6).map(day => ({ day, metric: 'total_interactions', value: 50 })),
+            ...days(previousRange.from, 7).map((day, i) => ({ day, metric: 'total_interactions', value: i === 6 ? 999 : 40 })),
+        ];
+        expect(summarizeInstagramWeek(rows, range, previousRange).find(item => item.metric === 'total_interactions'))
+            .toMatchObject({ value: 300, days: 6, comparison: 'same-days', previous: 240, delta: 60, deltaPct: 25 });
     });
 });
 
@@ -137,5 +189,62 @@ describe('loadLatestSocialWeek', () => {
         const { db, calls } = fakeDb({ shops: { facebook_page_id: null, facebook_page_name: null } });
         expect(await loadLatestSocialWeek(db, 'shop', '2026-10-15')).toMatchObject({ page: null, range: { from: '2026-10-08', to: '2026-10-14' }, metrics: [] });
         expect(calls.some(call => call.table === 'social_insights_sync')).toBe(false);
+    });
+});
+
+describe('loadInstagramWeek', () => {
+    const IG = '17841475771440904';
+    const isPost = (filters: Filter[]) => filters.some(filter => filter.op === 'eq' && filter.args[0] === 'object_type' && filter.args[1] === 'post');
+
+    it('returns an empty week when no Instagram account is connected', async () => {
+        const { db, calls } = fakeDb({ shops: { instagram_business_account_id: null, instagram_username: null } });
+        expect(await loadInstagramWeek(db, 'shop', range, previousRange)).toMatchObject({ account: null, metrics: [], posts: [], rangeDays: 7 });
+        expect(calls.some(call => call.table === 'social_insights_daily')).toBe(false);
+    });
+
+    it('reads stored Instagram days and the week media with their latest views and real reach', async () => {
+        const { db, calls } = fakeDb({
+            shops: { instagram_business_account_id: IG, instagram_username: 'elysiumbymoncon' },
+            social_insights_sync: { last_to: '2026-10-12' },
+            social_insights_daily: (filters: Filter[]) => isPost(filters) ? [
+                { object_id: '1791', metric: 'views', value: '1500', day: '2026-10-13' },
+                { object_id: '1791', metric: 'reach', value: '1100', day: '2026-10-13' },
+                { object_id: '1791', metric: 'saved', value: '9', day: '2026-10-13' },
+                { object_id: '1791', metric: 'views', value: '600', day: '2026-10-10' },
+                { object_id: '1790', metric: 'shares', value: '4', day: '2026-10-13' },
+            ] : [
+                ...days(range.from, 7).map(day => ({ day, metric: 'views', value: '300' })),
+                { day: '2026-10-13', metric: 'followers_count', value: '812' },
+            ],
+            social_posts: [
+                { external_post_id: '1790', content: 'Пост', likes: 10, comments: 2, shares: null, published_at: '2026-10-09T01:00:00Z' },
+                { external_post_id: '1791', content: 'Reel', likes: 31, comments: 4, shares: 3, published_at: '2026-10-08T01:00:00Z' },
+            ],
+        });
+        const week = await loadInstagramWeek(db, 'shop', range, previousRange);
+        expect(week.account).toEqual({ id: IG, username: 'elysiumbymoncon' });
+        expect(week.syncedTo).toBe('2026-10-12');
+        expect(week.metrics.find(item => item.metric === 'views')).toMatchObject({ value: 2100, days: 7 });
+        expect(week.metrics.find(item => item.metric === 'followers_count')).toMatchObject({ value: 812, day: '2026-10-13' });
+        expect(week.posts.map(post => post.id)).toEqual(['1791', '1790']);
+        expect(week.posts[0]).toEqual({ id: '1791', content: 'Reel', publishedAt: '2026-10-08T01:00:00Z', views: 1500, reach: 1100, likes: 31, comments: 4, shares: 3, saved: 9, asOf: '2026-10-13' });
+        expect(week.posts[1]).toMatchObject({ views: null, reach: null, shares: 4, saved: null, asOf: null });
+        expect(calls).toContainEqual({ table: 'social_insights_daily', op: 'eq', args: ['platform', 'instagram'] });
+        expect(calls).toContainEqual({ table: 'social_insights_daily', op: 'eq', args: ['page_id', IG] });
+        expect(calls).toContainEqual({ table: 'social_insights_sync', op: 'eq', args: ['platform', 'instagram'] });
+        expect(calls).toContainEqual({ table: 'social_posts', op: 'eq', args: ['platform', 'instagram'] });
+        expect(calls).toContainEqual({ table: 'social_posts', op: 'gte', args: ['published_at', '2026-10-06T16:00:00.000Z'] });
+    });
+
+    it('reads the latest synced Instagram week for the marketing dashboard', async () => {
+        const { db, calls } = fakeDb({
+            shops: { instagram_business_account_id: IG, instagram_username: null },
+            social_insights_sync: { last_to: '2026-10-13' },
+            social_insights_daily: [], social_posts: [],
+        });
+        const week = await loadLatestInstagramWeek(db, 'shop', '2026-10-15');
+        expect(week).toMatchObject({ range: { from: '2026-10-07', to: '2026-10-13' }, syncedTo: '2026-10-13' });
+        expect(week.metrics.every(item => item.value === null)).toBe(true);
+        expect(calls).toContainEqual({ table: 'social_insights_sync', op: 'eq', args: ['page_id', IG] });
     });
 });
