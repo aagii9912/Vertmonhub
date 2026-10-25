@@ -25,7 +25,7 @@ const previousReport = buildMetaChannelReport({ rows: previousRows, currency: 'U
 const currentRows = days('2026-10-21', 6).map((day, i) => row(day, { spend: 12 + i, impressions: 1100 + i * 100, results: 3 }));
 const currentReport = buildMetaChannelReport({ rows: currentRows, currency: 'USD', reach: { account: 5200, campaigns: new Map([['11', 5200]]) } });
 
-const summary = (id: string, from: string, to: string, data: { from: string; to: string }, totals: ChannelReportSummary['totals'], origin: 'api' | 'file' = 'api'): ChannelReportSummary => ({
+const summary = (id: string, from: string, to: string, data: { from: string; to: string }, totals: ChannelReportSummary['totals'], origin: 'api' | 'file' = 'api'): ChannelReportSummary & { data_from: string; data_to: string } => ({
     id, source: 'meta_ads', period_from: from, period_to: to, origin, data_from: data.from, data_to: data.to, file_name: origin === 'file' ? 'meta.csv' : null,
     totals, warnings: [], row_count: 7, note: null, imported_by: null, created_at: '2026-10-27T00:00:00Z', updated_at: '2026-10-27T00:00:00Z',
 });
