@@ -4,108 +4,117 @@ import { getUserId, assertShopAccess, supabaseAdmin } from '@/lib/auth/supabase-
 import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { encryptToken } from '@/lib/crypto/tokens';
 import { metaAdsSystemToken } from '@/lib/facebook/ads-auth';
-import { metaRead } from '@/lib/facebook/daily-spend';
+import { exchangeMetaAdsCode, metaErrorDetails, NO_GRAPH_DETAILS, type MetaAdsOAuthStep, type MetaGraphDetails } from '@/lib/facebook/ads-oauth';
+import { MetaApiError, metaRead } from '@/lib/facebook/daily-spend';
 import { getAdAccounts } from '@/lib/facebook/marketing-api';
+import { META_ADS_OAUTH_RETURN, type MetaAdsOAuthResult } from '@/lib/marketing/meta-ads-oauth-result';
 import { logger } from '@/lib/utils/logger';
 import { META_ADS_CALLBACK_PATH, META_ADS_OAUTH_COOKIE } from '../route';
 
 export const dynamic = 'force-dynamic';
 
 type OAuthState = { state: string; userId: string; shopId: string };
-type DebugToken = { data?: { app_id?: string | number; type?: string; is_valid?: boolean; expires_at?: number; scopes?: unknown } };
+/** Connect route-ийн state: 32 байтын hex. Хэлбэрийг шалгасны дараа л timingSafeEqual (ижил байтын урт). */
+const isState = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+/** Лог руу зөвхөн аюулгүй тэмдэгттэй төслийн ID (cookie-оос, шалгахаас өмнө ч). */
+const loggableShop = (value: unknown) => typeof value === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(value) ? value : null;
+/** Серверийн / Meta-гийн талын алдаа (error); бусад нь хэрэглэгчийн урсгалын үр дүн (warn). */
+const SERVER_FAULTS = new Set<MetaAdsOAuthResult>(['config_error', 'token_error', 'save_error', 'connection_error']);
 
 export async function GET(request: NextRequest) {
-    const finish = (result: string) => {
-        const url = new URL('/marketing', request.nextUrl.origin);
-        url.searchParams.set('meta_ads', result);
+    let shopId: string | null = null;
+    const finish = (result: MetaAdsOAuthResult) => {
+        // MetaSpendSync байрладаг таб руу буцаана — үр дүнгийн мессеж тэнд харагдана.
+        const url = new URL(META_ADS_OAUTH_RETURN.path, request.nextUrl.origin);
+        url.searchParams.set('tab', META_ADS_OAUTH_RETURN.tab);
+        url.searchParams.set(META_ADS_OAUTH_RETURN.param, result);
         const response = NextResponse.redirect(url);
         response.cookies.set(META_ADS_OAUTH_COOKIE, '', { maxAge: 0, path: '/api/marketing/facebook/ads/connect' });
         return response;
     };
+    /** Амжилтгүй гаралт бүр нэг бүтэцтэй лог мөр бичнэ: токен, code, URL, хариуны бие хэзээ ч биш. */
+    const fail = (result: Exclude<MetaAdsOAuthResult, 'connected'>, step: MetaAdsOAuthStep, details: Partial<MetaGraphDetails> & { dbCode?: string | null } = {}) => {
+        const entry = {
+            result, step, shopId,
+            httpStatus: details.httpStatus ?? null, graphCode: details.graphCode ?? null, graphSubcode: details.graphSubcode ?? null, graphType: details.graphType ?? null,
+            ...(details.dbCode ? { dbCode: details.dbCode } : {}),
+        };
+        if (SERVER_FAULTS.has(result)) logger.error('[Meta Ads OAuth] холболт амжилтгүй', entry);
+        else logger.warn('[Meta Ads OAuth] холболт амжилтгүй', entry);
+        return finish(result);
+    };
+
     let saved: OAuthState | null = null;
     try { saved = JSON.parse(request.cookies.get(META_ADS_OAUTH_COOKIE)?.value || 'null') as OAuthState | null; }
-    catch { return finish('state_error'); }
+    catch { return fail('state_error', 'state_cookie'); }
+    if (!isState(saved?.state) || typeof saved.userId !== 'string' || typeof saved.shopId !== 'string') return fail('state_error', 'state_cookie');
+    shopId = loggableShop(saved.shopId);
     const state = request.nextUrl.searchParams.get('state');
-    if (typeof saved?.state !== 'string' || typeof saved.userId !== 'string' || typeof saved.shopId !== 'string' || !state || saved.state.length !== state.length ||
-        !crypto.timingSafeEqual(Buffer.from(saved.state), Buffer.from(state))) return finish('state_error');
-    if (request.nextUrl.searchParams.has('error')) return finish('denied');
+    if (!isState(state) || !crypto.timingSafeEqual(Buffer.from(saved.state), Buffer.from(state))) return fail('state_error', 'state_mismatch');
+    if (request.nextUrl.searchParams.has('error')) return fail('denied', 'oauth_denied');
     const code = request.nextUrl.searchParams.get('code');
-    if (!code) return finish('missing_code');
+    if (!code) return fail('missing_code', 'oauth_code');
 
     const denied = await requireModuleWrite('marketing-roi');
-    if (denied) return finish('permission_error');
+    if (denied) return fail('permission_error', 'permission');
     const userId = await getUserId();
-    const shopId = await assertShopAccess(saved.shopId);
-    if (!userId || userId !== saved.userId || shopId !== saved.shopId) return finish('session_error');
+    const accessible = await assertShopAccess(saved.shopId);
+    if (!userId || userId !== saved.userId || accessible !== saved.shopId) return fail('session_error', 'session');
     // System User токентой үед (env-ийг state cookie олгосны дараа тохируулсан ч) токен солих, хадгалах,
     // дансны сонголтод хүрэхгүй: синк хэрэглэгчийн токеныг ашигладаггүй, дансыг админ сонгоно.
-    if (metaAdsSystemToken()) return finish('system_token');
+    if (metaAdsSystemToken()) return fail('system_token', 'system_token');
 
     const appId = process.env.META_ADS_APP_ID?.trim();
     const appSecret = process.env.META_ADS_APP_SECRET?.trim();
-    if (!appId || !appSecret) return finish('config_error');
+    if (!appId || !appSecret) return fail('config_error', 'app_config');
     const redirectUri = `${request.nextUrl.origin}${META_ADS_CALLBACK_PATH}`;
+    let step: MetaAdsOAuthStep = 'code_exchange';
     try {
-        const tokenUrl = 'https://graph.facebook.com/v26.0/oauth/access_token';
-        const short = await fetch(tokenUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({ client_id: appId, client_secret: appSecret, redirect_uri: redirectUri, code }),
-            cache: 'no-store',
-            signal: AbortSignal.timeout(20000),
-        });
-        const shortData = await short.json().catch(() => null);
-        if (!short.ok || typeof shortData?.access_token !== 'string') return finish('token_error');
-
-        // Токены төрөл, хугацаа: Login for Business-ийн system-user тохиргоо хугацаагүй (expires_at = 0)
-        // SYSTEM_USER токен өгдөг — түүнийг богино хугацаат user токен шиг солихгүй.
-        const debug = await metaRead<DebugToken>('debug_token', `${appId}|${appSecret}`, { input_token: shortData.access_token });
-        if (debug.data?.is_valid !== true || String(debug.data.app_id ?? '') !== appId) return finish('token_error');
-        let token: string, expiresAt: string | null;
-        if (debug.data.type === 'SYSTEM_USER') {
-            token = shortData.access_token;
-            const expires = Number(debug.data.expires_at);
-            expiresAt = Number.isFinite(expires) && expires > 0 ? new Date(expires * 1000).toISOString() : null;
-        } else {
-            const long = await fetch(tokenUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({ grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: shortData.access_token }),
-                cache: 'no-store',
-                signal: AbortSignal.timeout(20000),
+        const exchange = await exchangeMetaAdsCode({ appId, appSecret, redirectUri, code });
+        if (!exchange.ok) return fail(exchange.result, exchange.step, exchange);
+        const { token, expiresAt, scopes } = exchange.grant;
+        if (exchange.fallback) {
+            const { step: fallbackStep, ...details } = exchange.fallback;
+            logger.warn('[Meta Ads OAuth] урт хугацаат токен авч чадсангүй — хүчинтэй богино токеныг хадгална', {
+                result: 'connected', step: fallbackStep, shopId, ...NO_GRAPH_DETAILS, ...details, expiresAt,
             });
-            const longData = await long.json().catch(() => null);
-            if (!long.ok || typeof longData?.access_token !== 'string' || !Number.isFinite(longData.expires_in) || longData.expires_in <= 0) return finish('token_error');
-            token = longData.access_token;
-            expiresAt = new Date(Date.now() + longData.expires_in * 1000).toISOString();
         }
 
-        const scopes = Array.isArray(debug.data.scopes) ? debug.data.scopes : [];
+        step = 'ads_read';
         if (!scopes.includes('ads_read')) {
             const permissions = await metaRead<{ data: Array<{ permission: string; status: string }> }>('me/permissions', token);
-            if (!Array.isArray(permissions.data) || !permissions.data.some(p => p.permission === 'ads_read' && p.status === 'granted')) return finish('ads_read_error');
+            if (!Array.isArray(permissions.data) || !permissions.data.some(p => p.permission === 'ads_read' && p.status === 'granted')) return fail('ads_read_error', 'ads_read');
         }
+        step = 'encrypt';
         const encrypted = encryptToken(token);
-        if (!encrypted?.startsWith('enc:v1:')) return finish('save_error');
+        if (!encrypted?.startsWith('enc:v1:')) return fail('save_error', 'encrypt');
 
+        step = 'shop_read';
         const db = supabaseAdmin();
         // Сонгосон дансыг зөвхөн шинэ токены АМЖИЛТТАЙ жагсаалтад байхгүй бол дахин сонгуулна. Жагсаалт
         // татагдаагүй (хурдны хязгаар, сүлжээ) бол сонголт хэвээр — синк Meta-гийн эрхийн алдааг өөрөө харуулна.
-        const { data: current, error: readError } = await db.from('shops').select('facebook_ad_account_id').eq('id', shopId).single();
-        if (readError) return finish('save_error');
+        const { data: current, error: readError } = await db.from('shops').select('facebook_ad_account_id').eq('id', saved.shopId).single();
+        if (readError) return fail('save_error', 'shop_read', { dbCode: readError.code });
         const selected = current?.facebook_ad_account_id ? `act_${String(current.facebook_ad_account_id).replace(/^act_/, '')}` : null;
         let keepAccount = true;
         if (selected) {
             try { keepAccount = (await getAdAccounts(token)).data.some(account => account.id === selected); }
-            catch { logger.warn('[Meta Ads OAuth] зарын дансны жагсаалт татагдсангүй — сонгосон дансыг хэвээр үлдээв', { shopId }); }
+            catch (error) {
+                logger.warn('[Meta Ads OAuth] зарын дансны жагсаалт татагдсангүй — сонгосон дансыг хэвээр үлдээв', { shopId, ...metaErrorDetails(error) });
+            }
         }
+        step = 'shop_update';
         const { error } = await db.from('shops').update({
             meta_ads_user_access_token: encrypted,
             meta_ads_user_token_expires_at: expiresAt,
             ...(keepAccount ? {} : { facebook_ad_account_id: null }),
-        }).eq('id', shopId);
-        if (error) return finish('save_error');
+        }).eq('id', saved.shopId);
+        if (error) return fail('save_error', 'shop_update', { dbCode: error.code });
 
         return finish('connected');
-    } catch { return finish('connection_error'); }
+    } catch (error) {
+        // HTTP хариу ирсэн Graph алдаа = токен/эрхийн асуудал; бусад нь сүлжээ, хугацаа.
+        const graphFailure = error instanceof MetaApiError && error.status !== null;
+        return fail(graphFailure ? 'token_error' : 'connection_error', step, metaErrorDetails(error));
+    }
 }
