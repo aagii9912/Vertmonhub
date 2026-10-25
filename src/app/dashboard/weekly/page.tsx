@@ -24,6 +24,7 @@ import { useWeeklySales, WeeklySalesDetails } from '@/components/weekly/WeeklySa
 import { WeeklyMarketingBudget } from '@/components/weekly/WeeklyMarketingBudget';
 import { WeeklyMarketingChannels } from '@/components/weekly/WeeklyMarketingChannels';
 import { WeeklySocialPage } from '@/components/weekly/WeeklySocialPage';
+import { WeeklyInstagram } from '@/components/weekly/WeeklyInstagram';
 import { useWeeklySlides, WeeklySlides } from '@/components/weekly/WeeklySlides';
 import { contentPlanWindow, useContentPlan, WeeklyContentPlan } from '@/components/weekly/WeeklyContentPlan';
 import { WEEKLY_SLIDE_PART_MODULE, type WeeklySlidePart } from '@/lib/dashboard/weekly-slides';
@@ -272,8 +273,9 @@ function WeeklyReview() {
                     </section>
 
                     {can('marketing-roi') && <section className="break-inside-avoid space-y-4">
-                        <ReportHeading number="02·2" title="Суваг: Page, Ads, CallPro, SMS · төсөв" href="/marketing/channel-reports" />
+                        <ReportHeading number="02·2" title="Суваг: Page, Instagram, Ads, CallPro, SMS · төсөв" href="/marketing/channel-reports" />
                         <WeeklySocialPage meetingDate={meetingDate} />
+                        <WeeklyInstagram meetingDate={meetingDate} />
                         <WeeklyMarketingChannels from={range.from} to={range.to} />
                         <WeeklyMarketingBudget to={range.to} />
                         {marketing && marketing.spendQuality.current.missingFx > 0 && <Alert variant="warning">Ханшгүй {marketing.spendQuality.current.missingFx} зардал нийтэд ороогүй.</Alert>}

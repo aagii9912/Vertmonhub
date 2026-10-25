@@ -5,6 +5,7 @@
  */
 import { appsecretProof } from '@/lib/facebook/messenger';
 import { graphPost, graphRead, MetaApiError, type MetaGraphApp, type MetaReadOptions } from '@/lib/facebook/daily-spend';
+import { decryptToken } from '@/lib/crypto/tokens';
 
 /** Graph-ийн эрхийн алдаа: 10 = permission, 200–299 = permission/token-ийн эрх, 294 = ads. */
 const PERMISSION_CODES = new Set([10, 200, 294]);
@@ -31,6 +32,14 @@ export function pageRead<T>(path: string, token: string, params: Record<string, 
 
 export function pagePost<T>(path: string, token: string, body: Record<string, string> = {}): Promise<T> {
     return graphPost<T>(PAGE_APP, path, token, body);
+}
+
+/**
+ * Instagram-ийн Graph дуудлагын токен (shop-ийн шифрлэгдсэн талбараас): Instagram урсгалаар хадгалсан токен,
+ * эс бөгөөс Page токен — хоёулаа Page аппынх. Live унших (`loadShopInstagram`) ба синк нэг дүрмээр.
+ */
+export function instagramToken(shop: { instagram_access_token?: string | null; facebook_page_access_token?: string | null } | null | undefined): string | null {
+    return decryptToken(shop?.instagram_access_token) || decryptToken(shop?.facebook_page_access_token) || null;
 }
 
 /** Токен дууссан/хүчингүй (code 190) — хэрэглэгч Page-ээ дахин холбох ёстой. */

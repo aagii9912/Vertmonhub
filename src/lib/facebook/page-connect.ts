@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { assertShopAccess, getUserId, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { decryptToken, encryptToken } from '@/lib/crypto/tokens';
 import { META_GRAPH_VERSION, MetaApiError } from '@/lib/facebook/daily-spend';
-import { pageRead } from '@/lib/facebook/page-graph';
+import { instagramToken, pageRead } from '@/lib/facebook/page-graph';
 import { subscribePageToApp } from '@/lib/facebook/marketing-api';
 import { logger } from '@/lib/utils/logger';
 import { META_PAGE_APP_MISSING, metaPageApp } from '@/lib/facebook/page-app';
@@ -335,7 +335,7 @@ export async function loadShopInstagram(shopId: string): Promise<{ igId: string;
     const { data, error } = await supabaseAdmin().from('shops')
         .select('instagram_business_account_id, instagram_username, instagram_access_token, facebook_page_access_token').eq('id', shopId).maybeSingle();
     if (error) throw new Error(error.message);
-    const token = decryptToken(data?.instagram_access_token) || decryptToken(data?.facebook_page_access_token);
+    const token = instagramToken(data);
     if (!data?.instagram_business_account_id || !token) return null;
     return { igId: data.instagram_business_account_id, username: data.instagram_username ?? null, token };
 }

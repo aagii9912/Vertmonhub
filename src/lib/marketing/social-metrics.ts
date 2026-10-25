@@ -22,6 +22,8 @@ export const PAGE_DAILY_METRICS = [
     'page_follows',
     'page_daily_follows_unique',
     'page_views_total',
+    // Татаж хадгална, гэхдээ харуулахгүй: Meta Elysium-ийн бүх өдөрт 0 буцаадаг (2026-10-25, 42 өдөр; хуудас
+    // үзсэн нь өдөрт 94–1209). Постын давхардалгүй хүрэлттэй адил — 0 нь бодит тоо биш (social-week.ts).
     'page_total_actions',
     'page_video_views',
 ] as const;
@@ -80,9 +82,46 @@ export const IG_ACCOUNT_METRIC_INFO: Record<IgAccountMetric, SocialMetricInfo> =
     profile_links_taps: { label: 'Профайлын холбоос дарсан', kind: 'sum' },
 };
 
+/**
+ * Instagram аккаунтын дагалт: `follows_and_unfollows` (`breakdown=follow_type`, `metric_type=total_value`).
+ * Задаргааны FOLLOWER = дагасан, NON_FOLLOWER = дагахаа больсон (эсвэл Instagram-аас гарсан).
+ */
+export const IG_FOLLOWS_METRIC = 'follows_and_unfollows';
+export const IG_FOLLOW_TYPES = { FOLLOWER: 'follows', NON_FOLLOWER: 'unfollows' } as const;
+
+/**
+ * Hub-д хадгалах Instagram аккаунтын өдрийн мөр (`social_insights_daily`: platform 'instagram', object_type 'page',
+ * page_id = object_id = IG аккаунтын ID, Meta-гийн Номхон далайн цагийн өдөр): аккаунтын total_value метрик
+ * (өдөр бүрт нэг дуудлага), `follows_and_unfollows`-ийн задаргаа (`follows`, `unfollows`) ба дагагчийн тоо
+ * (`followers_count` — аккаунтын талбар, синк хийсэн Meta-гийн өдрийн төлөв).
+ */
+export const IG_DAILY_METRICS = [...IG_ACCOUNT_METRICS, 'follows', 'unfollows', 'followers_count'] as const;
+export type IgDailyMetric = typeof IG_DAILY_METRICS[number];
+
+export const IG_DAILY_METRIC_INFO: Record<IgDailyMetric, SocialMetricInfo> = {
+    ...IG_ACCOUNT_METRIC_INFO,
+    follows: { label: 'Шинэ дагагч', kind: 'sum' },
+    unfollows: { label: 'Дагахаа больсон', kind: 'sum' },
+    followers_count: { label: 'Дагагч', kind: 'latest' },
+};
+
 /** Instagram media (post, reel) метрик. `saved` нь media дээрх нэр (аккаунт дээр `saves`). */
 export const IG_MEDIA_METRICS = ['views', 'reach', 'likes', 'comments', 'shares', 'saved', 'total_interactions'] as const;
 export type IgMediaMetric = typeof IG_MEDIA_METRICS[number];
+
+/**
+ * Media-ийн насан туршийн (lifetime) утга — синк бүр Улаанбаатарын өдрөөр мөр нэмдэг тул хамгийн сүүлийнх.
+ * Facebook постоос ялгаатай нь IG media-ийн `reach` бодит давхардалгүй хүн (Meta 0 гэж буцаадаггүй).
+ */
+export const IG_MEDIA_METRIC_INFO: Record<IgMediaMetric, SocialMetricInfo> = {
+    views: { label: 'Үзэлт', kind: 'latest' },
+    reach: { label: 'Хүрсэн хүн', kind: 'latest' },
+    likes: { label: 'Like', kind: 'latest' },
+    comments: { label: 'Сэтгэгдэл', kind: 'latest' },
+    shares: { label: 'Хуваалцсан', kind: 'latest' },
+    saved: { label: 'Хадгалсан', kind: 'latest' },
+    total_interactions: { label: 'Нийт оролцоо', kind: 'latest' },
+};
 
 export interface DailyMetricValue { day: string; value: number | null }
 

@@ -169,8 +169,11 @@ cron (`/api/cron/social-insights-sync`) устгана. State нь 64 тэмдэ
   хэзээ ч throw хийхгүй. `appsecret_proof` зөвхөн `META_CAPI_APP_SECRET` тохируулсан үед (Events
   Manager-ийн dataset токен өөр app-д хамаарч болох тул `FACEBOOK_APP_SECRET`-ээр fail-closed хийхгүй).
   v22–v26 changelog-д `/{pixel}/events` payload өөрчлөгдөөгүй.
-- Instagram аккаунтын insights-ийг өдрөөр хадгалах (одоо live л). Хүснэгт `platform =
-  'instagram'`-ийг аль хэдийн зөвшөөрнө.
+- ~~Instagram аккаунтын insights-ийг өдрөөр хадгалах~~ — 2026-10-25: `syncShopInstagram`
+  (docs/features/WEEKLY-REPORT-SLIDES-2026-10-13.md → «Instagram»), миграцигүй.
+- 2026-10-25: Facebook постын `social_posts.reach`-ийг NULL хадгална (Meta
+  `post_total_media_view_unique`-ийг бүх постод 0 буцаадаг); `page_total_actions`-ийг (бүх өдөр 0)
+  хадгалсаар, харуулахгүй.
 - Instagram сонголт Page-ийг DM webhook-д subscribe хийхгүй (өмнө нь Instagram холболт огт
   дуусдаггүй байсан — `ig_accounts` cookie-г уншдаг код байгаагүй).
 - Хуучин `social_insights` хүснэгтийг устгах (тусдаа зөвшөөрөлтэй миграци).

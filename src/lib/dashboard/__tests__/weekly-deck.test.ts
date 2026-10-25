@@ -16,7 +16,7 @@ import type { BreakdownRow, ChannelTotals, ChannelWarning } from '@/lib/marketin
 import type { ErpProduct, ErpSale } from '@/lib/erp/records';
 import type { WeeklySlide } from '../weekly-slides';
 import { summarizeContentPlan, type ContentItem } from '@/lib/marketing/content-plan';
-import { summarizeSocialWeek, type SocialDailyRow, type SocialWeek } from '@/lib/marketing/social-week';
+import { summarizeInstagramWeek, summarizeSocialWeek, type InstagramWeek, type SocialDailyRow, type SocialWeek } from '@/lib/marketing/social-week';
 
 const range = { from: '2026-10-07', to: '2026-10-13' };
 const meetingDate = '2026-10-14';
@@ -196,6 +196,25 @@ function social(): SocialWeek {
         posts: [
             { id: '1_2', content: 'ОНЦЛОХ ОРОН СУУЦ | ГЭР БҮЛИЙН\nТАВ ТУХ', publishedAt: '2026-10-08T02:00:00Z', views: 70662, clicks: 327, likes: 289, comments: 7, shares: 0, asOf: '2026-10-13' },
             { id: '1_3', content: null, publishedAt: '2026-10-12T17:30:00Z', views: null, clicks: null, likes: 12, comments: null, shares: 1, asOf: null },
+        ],
+    };
+}
+
+/** Instagram-ийн өдрийн мөр: үзэлт бүтэн 2 долоо хоног, дагагчийн snapshot, хүрэлт (нэмэхгүй). */
+function instagram(): InstagramWeek {
+    const previousRange = { from: '2026-09-30', to: '2026-10-06' };
+    const days = (from: string, n: number) => Array.from({ length: n }, (_, i) => new Date(Date.parse(`${from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10));
+    const rows: SocialDailyRow[] = [
+        ...days(range.from, 7).flatMap((day, i) => [{ day, metric: 'views', value: 3000 }, { day, metric: 'reach', value: 1800 }, { day, metric: 'follows', value: 3 }, { day, metric: 'followers_count', value: 812 + i }]),
+        ...days(previousRange.from, 7).flatMap(day => [{ day, metric: 'views', value: 2000 }, { day, metric: 'follows', value: 2 }]),
+        { day: '2026-10-06', metric: 'followers_count', value: 800 },
+    ];
+    return {
+        account: { id: '17841475771440904', username: 'elysiumbymoncon' }, range, previousRange, syncedTo: range.to, rangeDays: 7,
+        metrics: summarizeInstagramWeek(rows, range, previousRange),
+        posts: [
+            { id: '1791', content: 'Reel: 24 давхрын харагдац', publishedAt: '2026-10-09T03:00:00Z', views: 15400, reach: 9800, likes: 310, comments: 12, shares: 41, saved: 66, asOf: '2026-10-14' },
+            { id: '1790', content: null, publishedAt: '2026-10-08T03:00:00Z', views: null, reach: null, likes: 20, comments: null, shares: null, saved: null, asOf: null },
         ],
     };
 }
@@ -539,6 +558,41 @@ describe('weekly meeting deck (.pptx)', () => {
         const channelSlide = text.find(slideText => slideText.includes('Сувгийн экспорт'))!;
         expect(channelSlide).toContain('Экспорт оруулаагүй: Meta Ads Manager, Facebook хуудас, Масс SMS');
         expect(channelSlide).toContain('CallPro дуудлага');
+    });
+
+    it('marketing deck: Instagram week right after the Facebook Page slides — summed actions, follower snapshot, no summed reach', async () => {
+        const { zip, text } = await render(input({ kind: 'marketing', instagram: instagram() }));
+        await validXml(zip);
+        const index = (needle: string) => text.findIndex(slideText => slideText.includes(needle));
+        const card = text[index('@elysiumbymoncon — долоо хоногийн үзүүлэлт')];
+        expect(card).toContain('МАРКЕТИНГ · INSTAGRAM');
+        expect(card).toMatch(/Үзэлт 21,000 Өмнөх 7 хоног 14,000 · \+7,000 \(\+50%\)/);
+        expect(card).toMatch(/Шинэ дагагч 21 Өмнөх 7 хоног 14 · \+7 \(\+50%\)/);
+        expect(card).toMatch(/Дагагч 818 2026\.10\.13-ны байдлаар · 7 хоногийн өмнө 800 · \+18/);
+        // Хадгалаагүй метрик 0 биш «—»; өдрийн давхардалгүй хүрэлтийг нэмж картад гаргахгүй.
+        expect(card).toMatch(/Хадгалсан — Meta өгөөгүй/);
+        expect(card).not.toContain('Хүрсэн хүн');
+        expect(card).not.toContain('12,600');
+        const posts = text[index('Энэ долоо хоногт Instagram-д нийтэлсэн пост')];
+        expect(posts).toContain('Reel: 24 давхрын харагдац');
+        expect(posts).toContain('(текстгүй пост)');
+        expect(posts).toMatch(/15,400 9,800 310 12 41 66/);
+        expect(posts).toContain('(текстгүй пост) — — 20 — — —');
+        // Дараалал: Facebook хуудас → Facebook пост → Instagram → нэмэлт слайд → сувгийн экспорт.
+        expect(index('Elysium Residence — долоо хоногийн үзүүлэлт')).toBeLessThan(index('@elysiumbymoncon'));
+        expect(index('Энэ долоо хоногт нийтэлсэн пост')).toBeLessThan(index('@elysiumbymoncon'));
+        expect(index('Instagram-д нийтэлсэн пост')).toBe(index('@elysiumbymoncon') + 1);
+        expect(index('Instagram-д нийтэлсэн пост')).toBeLessThan(index('Дахин идэвхжүүлсэн reel'));
+        expect(index('Instagram-д нийтэлсэн пост')).toBeLessThan(index('Сувгийн экспорт'));
+    });
+
+    it('marketing deck: Instagram without stored days says so, and no Instagram slides without an account or in the sales deck', async () => {
+        const empty = { ...instagram(), metrics: summarizeInstagramWeek([], range, { from: '2026-09-30', to: '2026-10-06' }), posts: [] };
+        const { text } = await render(input({ kind: 'marketing', instagram: empty }));
+        expect(text.find(slideText => slideText.includes('@elysiumbymoncon'))).toContain('Энэ долоо хоногийн Instagram үзүүлэлт хадгалагдаагүй байна');
+        expect(text.find(slideText => slideText.includes('Instagram-д нийтэлсэн пост'))).toContain('Hub-д хадгалагдаагүй байна');
+        expect((await render(input({ kind: 'marketing', instagram: { ...instagram(), account: null } }))).text.join(' ')).not.toContain('INSTAGRAM');
+        expect((await render(input({ instagram: instagram() }))).text.join(' ')).not.toContain('INSTAGRAM');
     });
 
     it('marketing deck skips the Facebook slides when no Page is connected', async () => {

@@ -7,18 +7,29 @@ import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson } from '@/lib/api/dashboardFetch';
 import { ubDateStr } from '@/lib/utils/date';
 import { cn } from '@/lib/utils';
-import type { SocialWeek, SocialWeekMetric } from '@/lib/marketing/social-week';
+import type { SocialWeek, SocialWeekResponse, WeekMetric } from '@/lib/marketing/social-week';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
 
-const count = (value: number | null) => value === null ? '—' : value.toLocaleString('en-US');
+export const count = (value: number | null) => value === null ? '—' : value.toLocaleString('en-US');
 
-export function useSocialWeek(meetingDate: string, enabled: boolean) {
+/** Хурлын долоо хоногийн Facebook хуудас + Instagram — нэг хүсэлт, хоёр карт (`select`-ээр хуваана). */
+function useSocialWeekQuery<T>(meetingDate: string, enabled: boolean, select: (response: SocialWeekResponse) => T) {
     const { shop, user } = useAuth();
-    return useQuery<SocialWeek>({
+    return useQuery<SocialWeekResponse, Error, T>({
         queryKey: ['social-week', shop?.id, user?.id, meetingDate],
-        queryFn: async ({ signal }) => (await dashboardJson<{ week: SocialWeek }>(`/api/dashboard/marketing/social-week?meetingDate=${meetingDate}`, { signal, shopId: shop?.id })).week,
-        enabled: !!shop?.id && enabled, staleTime: 60_000, retry: 1,
+        queryFn: async ({ signal }) => dashboardJson<SocialWeekResponse>(`/api/dashboard/marketing/social-week?meetingDate=${meetingDate}`, { signal, shopId: shop?.id }),
+        select, enabled: !!shop?.id && enabled, staleTime: 60_000, retry: 1,
     });
+}
+
+const selectWeek = (response: SocialWeekResponse) => response.week;
+export function useSocialWeek(meetingDate: string, enabled: boolean) {
+    return useSocialWeekQuery<SocialWeek>(meetingDate, enabled, selectWeek);
+}
+
+const selectInstagram = (response: SocialWeekResponse) => ({ instagram: response.instagram, error: response.instagramError ?? null });
+export function useInstagramWeek(meetingDate: string, enabled: boolean) {
+    return useSocialWeekQuery(meetingDate, enabled, selectInstagram);
 }
 
 /** Хурлын долоо хоногийн Facebook хуудасны органик үзүүлэлт (хадгалсан insights) ба нийтэлсэн постууд. */
@@ -42,7 +53,7 @@ export function WeeklySocialPage({ meetingDate }: { meetingDate: string }) {
                 </p>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {week.metrics.map(metric => <Metric key={metric.metric} metric={metric} rangeDays={week.rangeDays} />)}
+                {week.metrics.map(metric => <WeekMetricCard key={metric.metric} metric={metric} rangeDays={week.rangeDays} />)}
             </div>
             <div className="mt-5 border-t border-border pt-4">
                 <p className="text-xs font-medium text-muted-foreground">Энэ долоо хоногт нийтэлсэн пост: {week.posts.length}</p>
@@ -63,7 +74,8 @@ export function WeeklySocialPage({ meetingDate }: { meetingDate: string }) {
     );
 }
 
-function Metric({ metric, rangeDays }: { metric: SocialWeekMetric; rangeDays: number }) {
+/** Долоо хоногийн нэг метрик: утга, харьцуулалт («—» = Meta өгөөгүй). Instagram-ийн карт ч ашиглана. */
+export function WeekMetricCard({ metric, rangeDays }: { metric: WeekMetric; rangeDays: number }) {
     const sign = metric.delta !== null && metric.delta > 0 ? '+' : '';
     return (
         <div>
