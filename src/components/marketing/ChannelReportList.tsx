@@ -12,6 +12,7 @@ import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { CHANNEL_SOURCES, CHANNEL_SOURCE_LABELS, channelKeyMetrics, channelMetric, formatChannelValue, type ChannelSource } from '@/lib/marketing/channel-reports';
 import { reportCoverage, type ChannelReportMatches, type ChannelReportSummary } from '@/lib/marketing/channel-reports-load';
 import { META_RESULT_DEFS, metaResultKey, presentMetaResultTypes } from '@/lib/marketing/meta-results';
+import { metaSameDaysNote } from '@/lib/marketing/channel-week';
 import { ChannelTotalsGrid, MetaResultsByType, MissedCallsByHour, formatMetric } from './ChannelReportParts';
 import { CHANNEL_REPORTS_ENDPOINT } from './ChannelReportImport';
 
@@ -72,14 +73,20 @@ export function ChannelReportList({ data, filter, onFilter, canDelete, shopId }:
                 // Өдрийн хамралт дутуу бол хавтан бүрт давтахгүй, нэг удаа тайлбарлана.
                 const partial = Object.values(match.comparison ?? {}).some(delta => delta.reason === 'coverage');
                 const comparison = match.previous && !partial ? match.comparison : null;
+                // Дуусаагүй Meta API долоо хоногийг ачаалагч өмнөх долоо хоногийн мөн өдрүүдтэй харьцуулсан бол (`sameDays`)
+                // өмнөх долоо хоногийн бүтэн хугацааг биш, харьцуулсан өдрүүдийг нэрлэнэ.
+                const sameDays = match.sameDays ?? null;
+                const against = sameDays ? ` · өмнөх 7 хоногийн мөн өдрүүд ${sameDays.from} – ${sameDays.to}`
+                    : match.previous ? ` · өмнөх ${match.previous.period_from} – ${match.previous.period_to}` : ' · харьцуулах өмнөх тайлан алга';
                 return <article key={source} className="space-y-3 rounded-2xl border border-border p-4" aria-label={`${CHANNEL_SOURCE_LABELS[source]} сүүлийн тайлан`}>
                     <header className="flex flex-wrap items-baseline justify-between gap-2">
                         <h3 className="text-sm font-semibold">{CHANNEL_SOURCE_LABELS[source]}</h3>
-                        <p className="text-xs text-muted-foreground">{report.period_from} – {report.period_to}{coverageNote(report) ? ` · ${coverageNote(report)}` : ''} · {originText(report)}{match.previous ? ` · өмнөх ${match.previous.period_from} – ${match.previous.period_to}` : ' · харьцуулах өмнөх тайлан алга'}</p>
+                        <p className="text-xs text-muted-foreground">{report.period_from} – {report.period_to}{coverageNote(report) ? ` · ${coverageNote(report)}` : ''} · {originText(report)}{against}</p>
                     </header>
                     {partial && <p className="text-xs text-status-pending">Аль нэг долоо хоногийн өдрийн хамралт дутуу тул өмнөх тайлантай харьцуулаагүй.</p>}
-                    <ChannelTotalsGrid source={source} totals={report.totals} comparison={comparison} keys={channelKeyMetrics(source)} />
-                    {source === 'meta_ads' && <MetaResultsByType totals={report.totals} comparison={comparison} />}
+                    {sameDays && comparison && <p className="text-xs text-muted-foreground">{metaSameDaysNote(sameDays, day => day)}</p>}
+                    <ChannelTotalsGrid source={source} totals={report.totals} comparison={comparison} keys={channelKeyMetrics(source)} sameDays={!!sameDays} />
+                    {source === 'meta_ads' && <MetaResultsByType totals={report.totals} comparison={comparison} sameDays={!!sameDays} />}
                     {source === 'callpro' && <MissedCallsByHour breakdown={report.breakdown} />}
                 </article>;
             })}

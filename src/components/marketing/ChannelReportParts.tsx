@@ -8,6 +8,7 @@ import {
     META_RESULT_DEFS, isMetaResultType, metaResultCostKey, metaResultKey, metaResultSpendKey, presentMetaResultTypes,
 } from '@/lib/marketing/meta-results';
 import { channelCurrency, metaCostText, metaMissingResultsReason, metaRowTypeLabel } from '@/lib/marketing/channel-week';
+import { META_SAME_DAYS_SKIP } from '@/lib/marketing/meta-channel-report';
 import { Alert } from '@/components/ui/Alert';
 import { Badge } from '@/components/ui/Badge';
 
@@ -23,12 +24,17 @@ export function coverageText(period: { from: string; to: string }, data: { from:
     return `${periodDays(data)}/${periodDays(period)} өдөр`;
 }
 
-function DeltaText({ delta }: { delta?: MetricDelta }) {
+/**
+ * Харьцуулалтын текст. `sameDays` = дуусаагүй Meta API долоо хоногийг өмнөх долоо хоногийн мөн өдрүүдтэй харьцуулсан
+ * (`ChannelReportMatch.sameDays`): давхардалгүй тоог (reach, frequency) өдрөөр нэмэхгүй тул тэдгээрийг харьцуулаагүй.
+ */
+function DeltaText({ delta, metric, sameDays = false }: { delta?: MetricDelta; metric?: string; sameDays?: boolean }) {
+    if (sameDays && metric && META_SAME_DAYS_SKIP.has(metric)) return <span className="text-muted-foreground">Мөн өдрүүдтэй харьцуулаагүй (давхардалгүй)</span>;
     if (!delta || delta.previous === null) return <span className="text-muted-foreground">Өмнөх тайлан алга</span>;
     if (!delta.comparable) return <span className="text-muted-foreground">{delta.reason === 'coverage' ? 'Өдрийн хамралт дутуу тул харьцуулаагүй' : 'Валют өөр тул харьцуулаагүй'}</span>;
     if (delta.pct === null) return <span className="text-muted-foreground">Өмнөх суурь 0 · хувь тооцоогүй</span>;
     // Өсөлт сайн эсэх нь үзүүлэлтээс хамаарна (алдсан дуудлага буурах нь сайн) тул өнгөөр үнэлэхгүй.
-    return <span className="text-fg-2">{delta.pct > 0 ? '+' : ''}{delta.pct}% өмнөхөөс</span>;
+    return <span className="text-fg-2">{delta.pct > 0 ? '+' : ''}{delta.pct}% {sameDays ? 'мөн өдрүүдээс' : 'өмнөхөөс'}</span>;
 }
 
 /**
@@ -36,12 +42,14 @@ function DeltaText({ delta }: { delta?: MetricDelta }) {
  * «Тооцоогүй» гэж харуулна. `keys` өгвөл зөвхөн тэдгээрийг. Meta-гийн үр дүнг төрлөөр нь
  * `MetaResultsByType` тусад нь харуулна.
  */
-export function ChannelTotalsGrid({ source, totals, missing = [], comparison, keys }: {
+export function ChannelTotalsGrid({ source, totals, missing = [], comparison, keys, sameDays = false }: {
     source: ChannelSource;
     totals: ChannelTotals;
     missing?: string[];
     comparison?: Record<string, MetricDelta> | null;
     keys?: string[];
+    /** Өмнөх долоо хоногийн мөн өдрүүдтэй харьцуулсан (`DeltaText`). */
+    sameDays?: boolean;
 }) {
     const metrics = channelMetrics(source).filter(m => keys ? keys.includes(m.key)
         : (source !== 'meta_ads' || !isMetaResultMetric(m.key)) && (typeof totals[m.key] === 'number' || missing.includes(m.key)));
@@ -55,7 +63,7 @@ export function ChannelTotalsGrid({ source, totals, missing = [], comparison, ke
                     {typeof value === 'number'
                         ? <span className="num text-base font-semibold">{formatMetric(source, m.key, value, totals)}</span>
                         : <span className="text-sm text-status-pending">Тооцоогүй</span>}
-                    {comparison && typeof value === 'number' && <span className="mt-0.5 block text-xs"><DeltaText delta={comparison[m.key]} /></span>}
+                    {comparison && typeof value === 'number' && <span className="mt-0.5 block text-xs"><DeltaText delta={comparison[m.key]} metric={m.key} sameDays={sameDays} /></span>}
                 </dd>
             </div>;
         })}
@@ -66,7 +74,7 @@ export function ChannelTotalsGrid({ source, totals, missing = [], comparison, ke
  * Meta-гийн үр дүн төрөл бүрээр: тоо, кампанит ажлын зорилгоор хуваарилсан зардал, нэг үр дүнгийн
  * өртөг. Хүрсэн хүн (reach)-ийг өдрөөр нэмдэггүй тул тоо нь «—» байж болно (зардлыг харуулна).
  */
-export function MetaResultsByType({ totals, comparison }: { totals: ChannelTotals; comparison?: Record<string, MetricDelta> | null }) {
+export function MetaResultsByType({ totals, comparison, sameDays = false }: { totals: ChannelTotals; comparison?: Record<string, MetricDelta> | null; sameDays?: boolean }) {
     const types = presentMetaResultTypes(totals);
     if (!types.length) {
         if (typeof totals.results !== 'number') return null;
@@ -87,7 +95,7 @@ export function MetaResultsByType({ totals, comparison }: { totals: ChannelTotal
                     <th scope="row" className="px-3 py-2 font-medium">{def.label}</th>
                     <td className="num px-3 py-2 text-right">
                         {typeof results === 'number' ? formatChannelValue(results, 'count') : <span className="text-muted-foreground" title={metaMissingResultsReason(type)}>—</span>}
-                        {comparison && typeof results === 'number' && <span className="block text-[11px]"><DeltaText delta={comparison[metaResultKey(type)]} /></span>}
+                        {comparison && typeof results === 'number' && <span className="block text-[11px]"><DeltaText delta={comparison[metaResultKey(type)]} metric={metaResultKey(type)} sameDays={sameDays} /></span>}
                     </td>
                     <td className="num px-3 py-2 text-right">{formatMetric('meta_ads', metaResultSpendKey(type), totals[metaResultSpendKey(type)], totals)}</td>
                     <td className="num px-3 py-2 text-right" title={def.costLabel}>{metaCostText(type, totals[metaResultCostKey(type)], channelCurrency(totals))}</td>

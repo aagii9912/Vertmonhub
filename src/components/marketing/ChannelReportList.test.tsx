@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { compareWithPrevious } from '@/lib/marketing/channel-reports';
+import { compareMetaSameDays } from '@/lib/marketing/meta-channel-report';
 import type { ChannelReportMatches, ChannelReportSummary } from '@/lib/marketing/channel-reports-load';
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn(), confirm: vi.fn() }));
@@ -78,4 +79,26 @@ it('tells that the next Meta sync restores a deleted API report, which the user 
     fireEvent.click(screen.getByRole('button', { name: 'Meta Ads Manager 2026-09-23 – 2026-09-29 тайланг устгах' }));
     await waitFor(() => expect(mocks.fetch).toHaveBeenCalledWith('/api/marketing/channel-reports?id=m1', { method: 'DELETE', shopId: 'shop-a' }));
     expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ description: 'Meta Ads Manager · 2026-09-23 – 2026-09-29. Дараагийн Meta синк (35 хоногийн дотор) сэргээнэ.' }));
+});
+
+it('names the same-days comparison of an unfinished Meta API week and does not claim a missing report for reach', () => {
+    const totals = { spend: 200, currency: 'USD', impressions: 100000, link_clicks: 500, reach: 40000, frequency: 2.5, results_reach: 40000, spend_reach: 20, results_calls: 60, spend_calls: 120 };
+    const meta: ChannelReportSummary = { ...summary('m2', '2026-10-21', '2026-10-27', totals), source: 'meta_ads', origin: 'api', file_name: null, data_from: '2026-10-21', data_to: '2026-10-26', warnings: [] };
+    const before: ChannelReportSummary = { ...summary('m1', '2026-10-14', '2026-10-20', { spend: 260, currency: 'USD', impressions: 90000, link_clicks: 400, reach: 38000, results_calls: 50 }), source: 'meta_ads', origin: 'api', file_name: null, data_from: '2026-10-14', data_to: '2026-10-20', warnings: [] };
+    const same = { spend: 227.27, currency: 'USD', impressions: 80000, link_clicks: 400, results_calls: 48, spend_calls: 100 };
+    const data = { reports: [meta, before], latest: { ...latest, callpro: empty, meta_ads: {
+        report: { ...meta, mapping: {}, breakdown: [] }, exact: true, longer: false, previous: before,
+        comparison: compareMetaSameDays(meta.totals, same), sameDays: { from: '2026-10-14', to: '2026-10-19' },
+    } } };
+    render(<QueryClientProvider client={new QueryClient()}><ChannelReportList data={data} filter="all" onFilter={vi.fn()} canDelete={false} shopId="shop-a" /></QueryClientProvider>);
+    const card = screen.getByRole('article', { name: 'Meta Ads Manager сүүлийн тайлан' });
+    expect(within(card).getByText(/6\/7 өдөр · Meta API · өмнөх 7 хоногийн мөн өдрүүд 2026-10-14 – 2026-10-19$/)).toBeInTheDocument();
+    expect(within(card).queryByText(/өмнөх 2026-10-14 – 2026-10-20/)).not.toBeInTheDocument();
+    expect(within(card).getByText(/өмнөх 7 хоногийн мөн өдрүүдтэй \(2026-10-14 – 2026-10-19\) харьцуулав/)).toBeInTheDocument();
+    expect(within(card).getByText('-12% мөн өдрүүдээс')).toBeInTheDocument(); // зардал 200 / 227.27
+    // Reach-ийг мөн өдрүүдтэй нэмж харьцуулахгүй — «Өмнөх тайлан алга» гэж худал хэлэхгүй.
+    expect(within(card).queryByText('Өмнөх тайлан алга')).not.toBeInTheDocument();
+    expect(within(card).getAllByText('Мөн өдрүүдтэй харьцуулаагүй (давхардалгүй)').length).toBeGreaterThanOrEqual(2); // Reach + үр дүнгийн хүрсэн хүн
+    const types = within(card).getByRole('region', { name: 'Үр дүн төрлөөр' });
+    expect(within(types).getByRole('row', { name: /Дуудлага \(Meta\)/ })).toHaveTextContent('+25% мөн өдрүүдээс');
 });
