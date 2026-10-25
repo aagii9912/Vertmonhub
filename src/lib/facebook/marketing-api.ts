@@ -4,10 +4,11 @@
  * Page/IG метрикийн каталог: `lib/marketing/social-metrics.ts`.
  */
 
-import { metaRead, MetaApiError, type MetaReadOptions } from '@/lib/facebook/daily-spend';
+import { metaDeadlinePassed, metaRead, metaStepSignal, MetaApiError, type MetaDeadline, type MetaReadOptions } from '@/lib/facebook/daily-spend';
 import { isMetaInvalidParamError, isMetaPermissionError, pagePost, pageRead } from '@/lib/facebook/page-graph';
 import {
-    IG_ACCOUNT_METRICS, IG_MEDIA_METRICS, PAGE_DAILY_METRICS, POST_LIFETIME_METRICS,
+    IG_ACCOUNT_METRICS, IG_FOLLOW_TYPES, IG_FOLLOWS_METRIC, IG_MEDIA_METRICS, PAGE_DAILY_METRICS, POST_LIFETIME_METRICS,
+    type IgDailyMetric, type IgMediaMetric,
 } from '@/lib/marketing/social-metrics';
 import { logger } from '@/lib/utils/logger';
 
@@ -76,10 +77,17 @@ export function parseInsightValue(raw: unknown): InsightNumber | null {
 }
 
 /**
+ * code 100-ийн объектын (метрикийн биш) алдаа: 33 = объект олдоогүй эсвэл хандах эрхгүй (устгасан Page, буруу ID),
+ * 2108006 = Instagram media бизнес аккаунт болохоос өмнө нийтлэгдсэн (insights огт байхгүй).
+ */
+const OBJECT_ERROR_SUBCODES = new Set([33, 2108006]);
+
+/**
  * Нэг объектын (Page, нийтлэл, IG аккаунт/media) insights. Хасагдсан/хүчингүй нэг метрик (code 100) бүх
  * дуудлагыг унагадаг тул тэр үед метрик бүрийг тусад нь оролдож, Meta-гийн өгөөгүйг `unavailable`-д
- * бичнэ. Эрх, токен, хурдны хязгаар, объект олдоогүй (100/33) алдаа шууд шидэгдэнэ; метрик бүрээр
- * оролдоод нэг ч метрик ирээгүй бол анхны алдааг шиднэ (метрик биш, хүсэлт өөрөө буруу).
+ * бичнэ (`invalid` = тэдгээрээс code 100-аар татгалзсан нь — дахин асуух хэрэггүй). Эрх, токен, хурдны
+ * хязгаар, объектын алдаа (100/33, 100/2108006) шууд шидэгдэнэ; метрик бүрээр оролдоод нэг ч метрик
+ * ирээгүй бол анхны алдааг шиднэ (метрик биш, хүсэлт өөрөө буруу).
  */
 export async function fetchInsightMetrics(
     objectId: string,
@@ -87,7 +95,7 @@ export async function fetchInsightMetrics(
     metrics: readonly string[],
     params: Record<string, string>,
     read: MetaReadOptions = {},
-): Promise<{ data: GraphInsight[]; unavailable: string[] }> {
+): Promise<{ data: GraphInsight[]; unavailable: string[]; invalid: string[] }> {
     const call = async (names: readonly string[]) => {
         const result = await pageRead<{ data?: GraphInsight[] }>(`${objectId}/insights`, accessToken, { ...params, metric: names.join(',') }, read);
         if (!Array.isArray(result.data)) throw new MetaApiError('Facebook insights-ийн хариу дутуу байна.');
@@ -97,15 +105,15 @@ export async function fetchInsightMetrics(
     let batchError: unknown;
     try {
         const data = await call(metrics);
-        return { data, unavailable: missing(data, metrics) };
+        return { data, unavailable: missing(data, metrics), invalid: [] };
     } catch (error) {
-        // 100/33 = объект олдоогүй эсвэл хандах эрхгүй (устгасан Page, буруу ID) — метрикийн асуудал биш.
-        if (!isMetaInvalidParamError(error) || (error as MetaApiError).subcode === 33) throw error;
-        if (metrics.length === 1) return { data: [], unavailable: [...metrics] };
+        if (!isMetaInvalidParamError(error) || OBJECT_ERROR_SUBCODES.has((error as MetaApiError).subcode ?? -1)) throw error;
+        if (metrics.length === 1) return { data: [], unavailable: [...metrics], invalid: [...metrics] };
         batchError = error;
     }
     const data: GraphInsight[] = [];
     const unavailable: string[] = [];
+    const invalid: string[] = [];
     for (const metric of metrics) {
         try {
             const found = await call([metric]);
@@ -114,11 +122,12 @@ export async function fetchInsightMetrics(
         } catch (error) {
             if (!isMetaInvalidParamError(error)) throw error;
             unavailable.push(metric);
+            invalid.push(metric);
         }
     }
     if (data.length === 0) throw batchError;
     if (unavailable.length) logger.warn('[Page insights] Meta зарим метрикийг өгсөнгүй', { metrics: unavailable });
-    return { data, unavailable };
+    return { data, unavailable, invalid };
 }
 
 const META_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -140,6 +149,28 @@ export function metaInsightToday(now: Date = new Date()): string {
 /** YYYY-MM-DD огноог n өдрөөр шилжүүлнэ (цагийн бүсгүй хуанлийн тооцоо). */
 export function shiftDay(day: string, days: number): string {
     return new Date(Date.parse(`${day}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+}
+
+const PT_CLOCK = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+});
+/** Тухайн мөчийн PT-ийн UTC-ээс зөрүү (мс): PDT = −7 цаг, PST = −8 цаг. */
+function pacificOffset(at: number): number {
+    const part = Object.fromEntries(PT_CLOCK.formatToParts(new Date(at)).map(item => [item.type, item.value]));
+    return Date.UTC(Number(part.year), Number(part.month) - 1, Number(part.day), Number(part.hour), Number(part.minute), Number(part.second)) - at;
+}
+
+/**
+ * Meta-гийн өдөр D-ийн эхлэл (D-ийн 00:00 PT) Unix секундээр: өдөр D = [metaDayStart(D), metaDayStart(D+1)).
+ * Offset-ийг Intl-ээр тухайн мөчид нь олдог тул DST-ийн өдөр зөв (2026-11-01 = 25 цаг, 2027-03-14 = 23 цаг).
+ * Серверийн цагийн бүсээс (Vercel = UTC) хамаарахгүй.
+ */
+export function metaDayStart(day: string): number {
+    const midnight = Date.parse(`${day}T00:00:00Z`);
+    let at = midnight + 8 * 3_600_000;
+    // АНУ-ын шилжилт 02:00-д болдог тул шөнийн 00:00 хэзээ ч «алга болсон» цагт орохгүй — 2 алхамд тогтворжино.
+    for (let step = 0; step < 2; step++) at = midnight - pacificOffset(at);
+    return Math.round(at / 1000);
 }
 
 // ============ Page Info ============
@@ -308,6 +339,8 @@ export interface InstagramMedia {
     id: string;
     caption?: string;
     media_type?: string;
+    /** FEED, REELS, STORY, AD — media-ийн insights-ийн боломжит метрик үүнээс хамаарна. */
+    media_product_type?: string;
     media_url?: string;
     thumbnail_url?: string;
     permalink?: string;
@@ -316,17 +349,17 @@ export interface InstagramMedia {
     comments_count?: number;
 }
 
-export function getInstagramAccount(igId: string, accessToken: string): Promise<InstagramAccount> {
+export function getInstagramAccount(igId: string, accessToken: string, read: MetaReadOptions = {}): Promise<InstagramAccount> {
     return pageRead<InstagramAccount>(igId, accessToken, {
         fields: 'id,username,name,profile_picture_url,followers_count,follows_count,media_count,biography',
-    });
+    }, read);
 }
 
-export async function getInstagramMedia(igId: string, accessToken: string, limit: number = 25): Promise<InstagramMedia[]> {
+export async function getInstagramMedia(igId: string, accessToken: string, limit: number = 25, read: MetaReadOptions = {}): Promise<InstagramMedia[]> {
     const result = await pageRead<{ data?: InstagramMedia[] }>(`${igId}/media`, accessToken, {
-        fields: 'id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count',
+        fields: 'id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count',
         limit: String(Math.min(Math.max(Math.trunc(limit) || 25, 1), 100)),
-    });
+    }, read);
     if (!Array.isArray(result.data)) throw new MetaApiError('Instagram нийтлэлийн хариу дутуу байна.');
     return result.data;
 }
@@ -363,23 +396,121 @@ export async function getInstagramInsights(igId: string, accessToken: string, da
 
     let follows: number | null = null;
     let unfollows: number | null = null;
-    const followData = await fetchInsightMetrics(igId, accessToken, ['follows_and_unfollows'], { ...range, breakdown: 'follow_type' });
+    const followData = await fetchInsightMetrics(igId, accessToken, [IG_FOLLOWS_METRIC], { ...range, breakdown: 'follow_type' });
     unavailable.push(...followData.unavailable);
     for (const result of followData.data[0]?.total_value?.breakdowns?.[0]?.results ?? []) {
         if (typeof result.value !== 'number' || !Number.isFinite(result.value)) continue;
-        if (result.dimension_values?.[0] === 'FOLLOWER') follows = result.value;
-        else if (result.dimension_values?.[0] === 'NON_FOLLOWER') unfollows = result.value;
+        if (IG_FOLLOW_TYPES[result.dimension_values?.[0] as keyof typeof IG_FOLLOW_TYPES] === 'follows') follows = result.value;
+        else if (IG_FOLLOW_TYPES[result.dimension_values?.[0] as keyof typeof IG_FOLLOW_TYPES] === 'unfollows') unfollows = result.value;
     }
     return { since, until, metrics, follows, unfollows, unavailable };
+}
+
+/** Instagram аккаунтын нэг Meta-гийн өдрийн утга (`social_insights_daily`-ийн мөр). */
+export interface InstagramDailyRow { day: string; metric: IgDailyMetric; value: number }
+
+/**
+ * `follows_and_unfollows`-ийн follow_type задаргаа → `follows`/`unfollows`. Meta тэг утгатай төрлийг задаргаанаас
+ * орхидог тул задаргаа ирсэн бол байхгүй төрөл = 0 (Meta-гийн хариу, таамаг биш — `parseInsightValue({})`-тэй адил);
+ * задаргаа огт ирээгүй эсвэл тоо биш утга бол мөргүй.
+ */
+export function instagramFollowRows(day: string, metric: GraphInsight | undefined): InstagramDailyRow[] {
+    const breakdown = metric?.total_value?.breakdowns?.find(item => item.dimension_keys?.includes('follow_type'));
+    if (!breakdown || !Array.isArray(breakdown.results)) return [];
+    const index = breakdown.dimension_keys!.indexOf('follow_type');
+    const values: Partial<Record<'follows' | 'unfollows', number | null>> = {};
+    for (const result of breakdown.results) {
+        const key = IG_FOLLOW_TYPES[result.dimension_values?.[index] as keyof typeof IG_FOLLOW_TYPES];
+        if (key) values[key] = typeof result.value === 'number' && Number.isFinite(result.value) ? result.value : null;
+    }
+    return (['follows', 'unfollows'] as const).flatMap(name => {
+        const value = values[name] === undefined ? 0 : values[name];
+        return value === null ? [] : [{ day, metric: name, value }];
+    });
+}
+
+/**
+ * Instagram аккаунтын өдрийн үзүүлэлт [from, to] (Meta-гийн PT өдөр). `metric_type=total_value` нь хугацааны нэг
+ * нийт дүн өгдөг тул өдөр бүрт тусад нь дуудна: since = D-ийн 00:00 PT, until = D+1-ийн 00:00 PT (`metaDayStart`),
+ * мөн `follows_and_unfollows`-ийг follow_type задаргаатай. Дуусаагүй (PT өнөөдөр) өдрийг татахгүй. Шинэ өдрөөс
+ * эхэлдэг тул хугацаа дутвал хамгийн сүүлийн өдрүүд хадгалагдана. Meta-гийн өгөөгүй метрик мөргүй (хэзээ ч 0
+ * биш); code 100-аар татгалзсан метрикийг `unavailable` гэж тэмдэглээд дараагийн өдрүүдэд асуухгүй. Эхний өдөр
+ * алдаа гарвал шиднэ; дараа нь алдаа гарах эсвэл хугацаа дуусвал тэр хүртэлх өдрүүдийг `stopped` мессежтэй буцаана.
+ */
+export async function fetchInstagramDailyInsights(
+    igId: string,
+    accessToken: string,
+    from: string,
+    to: string,
+    options: { deadline?: MetaDeadline | null } = {},
+): Promise<{ rows: InstagramDailyRow[]; unavailable: string[]; days: number; stopped: string | null }> {
+    const yesterday = shiftDay(metaInsightToday(), -1);
+    const last = to < yesterday ? to : yesterday;
+    let metrics: string[] = [...IG_ACCOUNT_METRICS];
+    let follows = true;
+    const invalid = new Set<string>();
+    const rows: InstagramDailyRow[] = [];
+    let days = 0;
+    let stopped: string | null = null;
+    for (let day = last; day >= from; day = shiftDay(day, -1)) {
+        if (metaDeadlinePassed(options.deadline)) { stopped = 'Instagram-ийн өдрийн үзүүлэлтийг татах хугацаа дууслаа — дараагийн синк үргэлжлүүлнэ.'; break; }
+        const params = { period: 'day', metric_type: 'total_value', since: String(metaDayStart(day)), until: String(metaDayStart(shiftDay(day, 1))) };
+        const read = { signal: metaStepSignal(20000, options.deadline) };
+        const dayRows: InstagramDailyRow[] = [];
+        try {
+            if (metrics.length) {
+                const result = await fetchInsightMetrics(igId, accessToken, metrics, params, read);
+                for (const name of result.invalid) invalid.add(name);
+                metrics = metrics.filter(name => !result.invalid.includes(name));
+                for (const metric of result.data) {
+                    const value = totalValue(metric);
+                    if (value !== null) dayRows.push({ day, metric: metric.name as IgDailyMetric, value });
+                }
+            }
+            if (follows) {
+                const result = await fetchInsightMetrics(igId, accessToken, [IG_FOLLOWS_METRIC], { ...params, breakdown: 'follow_type' }, read);
+                if (result.invalid.length) { follows = false; invalid.add('follows').add('unfollows'); }
+                dayRows.push(...instagramFollowRows(day, result.data[0]));
+            }
+        } catch (error) {
+            if (days === 0 || !(error instanceof MetaApiError)) throw error;
+            stopped = error.message;
+            break;
+        }
+        rows.push(...dayRows);
+        days++;
+    }
+    const returned = new Set(rows.map(row => row.metric));
+    const unavailable = days === 0 ? [...invalid]
+        : [...IG_ACCOUNT_METRICS, 'follows' as const, 'unfollows' as const].filter(name => invalid.has(name) || !returned.has(name));
+    if (invalid.size) logger.warn('[Instagram insights] Meta зарим метрикийг өгсөнгүй', { metrics: [...invalid] });
+    return { rows, unavailable, days, stopped };
+}
+
+/**
+ * Instagram media-ийн насан туршийн үзүүлэлт (синкэд): Meta-гийн өгсөн тоо л (`values`-д байхгүй = «—»).
+ * Эрх, токен, хурдны хязгаар, объектын алдааг дуудагч руу шиднэ; code 100-аар татгалзсан метрик `invalid`-д.
+ */
+export async function fetchInstagramMediaInsights(
+    mediaId: string,
+    accessToken: string,
+    metrics: readonly IgMediaMetric[] = IG_MEDIA_METRICS,
+    read: MetaReadOptions = {},
+): Promise<{ values: Partial<Record<IgMediaMetric, number>>; unavailable: string[]; invalid: string[] }> {
+    const { data, invalid } = await fetchInsightMetrics(mediaId, accessToken, metrics, {}, read);
+    const values: Partial<Record<IgMediaMetric, number>> = {};
+    for (const metric of data) {
+        const value = totalValue(metric);
+        if (value !== null) values[metric.name as IgMediaMetric] = value;
+    }
+    return { values, unavailable: metrics.filter(metric => values[metric] === undefined), invalid };
 }
 
 /** Instagram media (post, reel)-ийн насан туршийн үзүүлэлт. Алдаа гарвал бүгд null (жагсаалтыг унагахгүй). */
 export async function getInstagramMediaInsights(mediaId: string, accessToken: string): Promise<{ metrics: Record<string, number | null>; unavailable: string[] }> {
     try {
-        const { data, unavailable } = await fetchInsightMetrics(mediaId, accessToken, IG_MEDIA_METRICS, {});
-        const metrics = nullMetrics(IG_MEDIA_METRICS);
-        for (const metric of data) metrics[metric.name] = totalValue(metric);
-        return { metrics, unavailable };
+        const { values, unavailable } = await fetchInstagramMediaInsights(mediaId, accessToken);
+        return { metrics: { ...nullMetrics(IG_MEDIA_METRICS), ...values }, unavailable };
     } catch (error) {
         logger.warn('[Instagram media insights] татагдсангүй', { code: error instanceof MetaApiError ? error.code : null });
         return { metrics: nullMetrics(IG_MEDIA_METRICS), unavailable: [...IG_MEDIA_METRICS] };

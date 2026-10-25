@@ -79,7 +79,8 @@ it('stores date-keyed Page rows for the last 30 finished Meta days and lifetime 
 
     const posts = written('social_posts');
     expect(posts.map(p => p.external_post_id)).toEqual(['42_1', '42_2']);
-    expect(posts[0]).toMatchObject({ likes: 5, comments: 2, shares: 0, reach: 800, status: 'published' });
+    // Meta постын давхардалгүй хүрэлтийг (post_total_media_view_unique) бүх постод 0 гэж буцаадаг — reach хоосон.
+    expect(posts[0]).toMatchObject({ likes: 5, comments: 2, shares: 0, reach: null, status: 'published' });
     expect(posts[1]).toMatchObject({ likes: null, comments: null, shares: 3, reach: null });
     expect(upserts.find(u => u.table === 'social_posts')!.onConflict).toBe('shop_id,platform,external_post_id');
 
@@ -91,13 +92,13 @@ it('stores date-keyed Page rows for the last 30 finished Meta days and lifetime 
 });
 
 it('keeps previously known post counts when Meta stops returning them', async () => {
-    storedPosts = [{ external_post_id: '42_2', likes: 9, comments: 4, shares: 1, reach: 700 }];
+    storedPosts = [{ external_post_id: '42_2', likes: 9, comments: 4, shares: 1, reach: 0 }];
     await syncShopSocial(supabase, shop);
     const posts = written('social_posts');
-    // 42_2: Meta likes/comments/reach өгөөгүй → өмнөх утга; shares шинэ утга (3).
-    expect(posts[1]).toMatchObject({ external_post_id: '42_2', likes: 9, comments: 4, shares: 3, reach: 700 });
+    // 42_2: Meta likes/comments өгөөгүй → өмнөх утга; shares шинэ утга (3). Өмнө хадгалсан reach (Meta-гийн 0) хоосон болно.
+    expect(posts[1]).toMatchObject({ external_post_id: '42_2', likes: 9, comments: 4, shares: 3, reach: null });
     // 42_1: шинэ утгууд хэвээр.
-    expect(posts[0]).toMatchObject({ likes: 5, comments: 2, reach: 800 });
+    expect(posts[0]).toMatchObject({ likes: 5, comments: 2, reach: null });
 });
 
 it('keeps earlier data when Meta fails: no rows, no success stamp, Mongolian error without the token', async () => {
