@@ -57,6 +57,7 @@ beforeEach(() => {
             'social_insights_sync:facebook': sync(),
             meta_insights_sync: sync({ last_error: 'Meta-гийн хандах эрх хүрэлцэхгүй (#200).' }),
             meta_spend_sync: { ...sync(), currency: 'USD', mnt_per_unit: null },
+            meta_ad_insights_daily: { day: '2026-10-24' },
         },
     });
 });
@@ -83,7 +84,7 @@ describe('GET /api/dashboard/marketing/connections', () => {
             ads: {
                 accountId: 'act_1129994262383674', tokenSource: 'user', tokenDaysLeft: 10, tokenExpired: false,
                 insights: expect.objectContaining({ error: 'Meta-гийн хандах эрх хүрэлцэхгүй (#200).' }), spend: expect.objectContaining({ error: null }),
-                currency: 'USD', mntPerUnit: null,
+                dataTo: '2026-10-24', currency: 'USD', mntPerUnit: null,
             },
         });
         // Зөвхөн идэвхтэй төсөл.
@@ -91,6 +92,10 @@ describe('GET /api/dashboard/marketing/connections', () => {
             expect(call.ops).toEqual(expect.arrayContaining([['eq', [call.table === 'shops' ? 'id' : 'shop_id', 'shop-1']]]));
         }
         expect(state.calls.find(call => call.table === 'meta_spend_sync')!.ops).toEqual(expect.arrayContaining([['eq', ['account_id', 'act_1129994262383674']]]));
+        // Өгөгдлийн сүүлийн өдөр: сонгосон дансны хадгалсан ad set × өдрийн хамгийн сүүлийнх.
+        expect(state.calls.find(call => call.table === 'meta_ad_insights_daily')!.ops).toEqual(expect.arrayContaining([
+            ['eq', ['account_id', 'act_1129994262383674']], ['order', ['day', { ascending: false }]], ['limit', [1]],
+        ]));
         // Instagram-ийн синк төлөв — холбогдсон аккаунтынх (`syncShopInstagram`: page_id = IG ID).
         const igSync = state.calls.find(call => call.table === 'social_insights_sync' && call.ops.some(([op, args]) => op === 'eq' && args[1] === 'instagram'))!;
         expect(igSync.ops).toEqual(expect.arrayContaining([['eq', ['page_id', '17841475771440904']]]));
@@ -124,7 +129,8 @@ describe('GET /api/dashboard/marketing/connections', () => {
 
     it('treats a missing insights table as «not synced» but surfaces other read errors', async () => {
         state.errors.meta_insights_sync = { code: 'PGRST205', message: "Could not find the table 'public.meta_insights_sync' in the schema cache" };
-        expect((await (await get()).json()).connections.ads.insights).toBeNull();
+        state.errors.meta_ad_insights_daily = { code: '42P01', message: 'relation "meta_ad_insights_daily" does not exist' };
+        expect((await (await get()).json()).connections.ads).toMatchObject({ insights: null, dataTo: null });
         state.errors.meta_spend_sync = { code: '57014', message: 'canceling statement due to statement timeout' };
         const failed = await get();
         expect(failed.status).toBe(500);

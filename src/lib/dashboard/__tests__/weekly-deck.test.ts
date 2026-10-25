@@ -592,7 +592,7 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(index('Холболтын төлөв')).toBe(1);
         expect(index('Энэ хурлаар шийдэх')).toBe(2);
         const status = text[1];
-        expect(status).toMatch(/Facebook хуудас Холбогдсон · Elysium Residence Сүүлд 2026\.10\.13 · 2026\.10\.12 хүртэл/);
+        expect(status).toMatch(/Facebook хуудас Холбогдсон · Elysium Residence Сүүлд 2026\.10\.13 · өгөгдөл 2026\.10\.12 хүртэл/);
         expect(status).toMatch(/Instagram Холбогдоогүй/);
         expect(status).toMatch(/Meta токен Хэрэглэгчийн \(OAuth\) 41 хоногийн дараа дуусна/);
         expect(status).toMatch(/Meta зарын синк Алдаатай Синк алдаатай: Meta-гийн хандах эрх хүрэлцэхгүй \(#200\)\./);
@@ -605,6 +605,10 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(text.join(' ')).not.toContain('долоо хоногийн үзүүлэлт');
         expect(await notesOf(zip)).toContain('Facebook хуудас, Instagram: Facebook хуудасны үзүүлэлтийг уншиж чадсангүй.');
         expect(index('Facebook хуудас, Instagram-ийн мэдээллийг ачаалж чадсангүй.')).toBeLessThan(index('Сувгийн экспорт'));
+        // Хуудас холбогдсон ч долоо хоног ачаалагдаагүй — байхгүй «Facebook хуудасны слайд» руу заахгүй.
+        const channelSlide = text[index('Сувгийн экспорт')];
+        expect(channelSlide).toContain('Facebook хуудас: API-аар (үзүүлэлтийг ачаалж чадсангүй)');
+        expect(channelSlide).not.toContain('Facebook хуудасны слайд');
         // Төсөв: 10-р сард зөвхөн ханшгүй USD → «—» + эх валют; энэ 7 хоногт ₮-ийн бүртгэлтэй (1.2 сая ₮).
         const budgetSlide = text[index('Төсөв ба зарцуулалт')];
         expect(budgetSlide).toMatch(/10-р сард зарцуулсан — Ханшгүй 300\.38 USD \(₮-д ороогүй\)/);
@@ -657,6 +661,32 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(index('Instagram-д нийтэлсэн пост')).toBe(index('@elysiumbymoncon') + 1);
         expect(index('Instagram-д нийтэлсэн пост')).toBeLessThan(index('Дахин идэвхжүүлсэн reel'));
         expect(index('Instagram-д нийтэлсэн пост')).toBeLessThan(index('Сувгийн экспорт'));
+    });
+
+    it('marketing deck: an unfinished Instagram week keeps «6/7 өдрийн өгөгдөл» despite the follower snapshot day; a partial base is marked', async () => {
+        const previousRange = { from: '2026-09-30', to: '2026-10-06' };
+        const days = (from: string, n: number) => Array.from({ length: n }, (_, i) => new Date(Date.parse(`${from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10));
+        const rows: SocialDailyRow[] = [
+            ...days(range.from, 6).map(day => ({ day, metric: 'views', value: 3000 })),
+            // Дагагчийн snapshot синкийн (дуусаагүй) Meta-гийн өдөр — 7 дахь өдөр.
+            ...days(range.from, 7).map((day, i) => ({ day, metric: 'followers_count', value: 812 + i })),
+            // Өмнөх долоо хоногийн мөн өдрүүдээс 2 л хадгалагдсан.
+            ...days(previousRange.from, 2).map(day => ({ day, metric: 'views', value: 2000 })),
+        ];
+        const partial = { ...instagram(), metrics: summarizeInstagramWeek(rows, range, previousRange) };
+        const { text } = await render(input({ kind: 'marketing', instagram: partial }));
+        const card = text.find(slideText => slideText.includes('@elysiumbymoncon — долоо хоногийн үзүүлэлт'))!;
+        expect(card).toContain('6/7 өдрийн өгөгдөл');
+        expect(card).toMatch(/Үзэлт 18,000 6\/7 өдөр · Өмнөх 7 хоногийн мөн өдрүүд 4,000 \(2\/6 өдөр\)/);
+    });
+
+    it('marketing deck: a Meta-synced week without spend rows is 0 ₮, an unconverted-only week stays «—» with the USD amount', async () => {
+        const synced = { ...marketing(), spendQuality: { ...marketing().spendQuality, current: { ...marketing().spendQuality.current, metaSyncedDays: 7, pendingCurrencies: {} } },
+            totals: { ...marketing().totals, spend: 0, hasSpend: false, spendComplete: true } };
+        const at = async (value: typeof synced) => (await render(input({ kind: 'marketing', marketing: value }))).text.find(slideText => slideText.includes('Төсөв ба зарцуулалт'))!;
+        expect(await at(synced)).toMatch(/Энэ 7 хоногт бүртгэсэн зардал 0 ₮/);
+        const unconverted = { ...synced, spendQuality: { ...synced.spendQuality, current: { ...synced.spendQuality.current, missingFx: 3, pendingCurrencies: { USD: 412.57 } } }, totals: { ...synced.totals, spendComplete: false } };
+        expect(await at(unconverted)).toMatch(/Энэ 7 хоногт бүртгэсэн зардал — Ханшгүй 412\.57 USD \(₮-д ороогүй\)/);
     });
 
     it('marketing deck: Instagram without stored days says so, and no Instagram slides without an account or in the sales deck', async () => {

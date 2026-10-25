@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { metaAdsSystemToken, metaAdsTokenSource } from '@/lib/facebook/ads-auth';
 import { META_INSIGHTS_STATUS_TABLE } from './meta-insights';
+import { META_INSIGHTS_TABLE } from './meta-channel-report';
 import { tokenDaysLeft, type ConnectionSync, type MarketingConnections } from './connections';
 
 /**
@@ -27,16 +28,19 @@ export async function loadMarketingConnections(db: SupabaseClient, shopId: strin
     const instagramId: string | null = shop?.instagram_business_account_id || null;
     const accountId = shop?.facebook_ad_account_id ? `act_${String(shop.facebook_ad_account_id).replace(/^act_/, '')}` : null;
 
-    const [pageSync, instagramSync, insights, spend] = await Promise.all([
+    const [pageSync, instagramSync, insights, spend, latestDay] = await Promise.all([
         pageId ? db.from('social_insights_sync').select(SYNC_COLUMNS).eq('shop_id', shopId).eq('platform', 'facebook').eq('page_id', pageId).maybeSingle() : null,
         // `syncShopInstagram` төлвөө page_id = IG ID-аар хадгална — өмнө холбосон өөр аккаунтын мөрийг авахгүй.
         instagramId ? db.from('social_insights_sync').select(SYNC_COLUMNS).eq('shop_id', shopId).eq('platform', 'instagram').eq('page_id', instagramId).maybeSingle() : null,
         accountId ? db.from(META_INSIGHTS_STATUS_TABLE).select(SYNC_COLUMNS).eq('shop_id', shopId).eq('account_id', accountId).maybeSingle() : null,
         accountId ? db.from('meta_spend_sync').select(`${SYNC_COLUMNS},currency,mnt_per_unit`).eq('shop_id', shopId).eq('account_id', accountId).maybeSingle() : null,
+        // Өгөгдөл хаана хүртэл: синкийн хүссэн хугацаа (`last_to`) биш, хадгалсан хамгийн сүүлийн ad set × өдөр.
+        accountId ? db.from(META_INSIGHTS_TABLE).select('day').eq('shop_id', shopId).eq('account_id', accountId).order('day', { ascending: false }).limit(1).maybeSingle() : null,
     ]);
     if (pageSync?.error || instagramSync?.error) throw fail('Сошиал синкийн төлөвийг');
     if (spend?.error) throw fail('Meta зардлын синкийн төлөвийг');
     if (insights?.error && !missingTable(insights.error)) throw fail('Meta дэлгэрэнгүй синкийн төлөвийг');
+    if (latestDay?.error && !missingTable(latestDay.error)) throw fail('Meta зарын өгөгдлийн сүүлийн өдрийг');
 
     const source = metaAdsTokenSource(shop);
     const hasUserToken = !!shop?.meta_ads_user_access_token;
@@ -52,6 +56,7 @@ export async function loadMarketingConnections(db: SupabaseClient, shopId: strin
             tokenDaysLeft: source === 'user' ? tokenDaysLeft(shop?.meta_ads_user_token_expires_at, now) : null,
             tokenExpired: !source && hasUserToken && !metaAdsSystemToken(),
             insights: insights?.error ? null : sync(insights?.data as SyncRow | null),
+            dataTo: (latestDay?.data as { day?: string | null } | null | undefined)?.day ? String((latestDay!.data as { day: string }).day).slice(0, 10) : null,
             spend: sync(spendRow),
             currency: spendRow?.currency ?? null,
             mntPerUnit: spendRow?.currency === 'MNT' ? 1 : Number.isFinite(rate) && rate! > 0 ? rate : null,

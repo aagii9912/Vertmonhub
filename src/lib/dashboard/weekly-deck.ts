@@ -660,7 +660,8 @@ function connectionsSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
         rows: rows.map(row => [bodyCell(row.label, 'left', { bold: true }), bodyCell(row.status, 'left', { bold: row.tone !== 'off', color: CONNECTION_TONE[row.tone] }), bodyCell(row.detail ?? '—', 'left', { color: C.ink2 })]),
         colW: [2.6, 3.8, 5.733], perSlide: 8, fontSize: 13, fitHeight: true,
         notes: [
-            'Холбогдоогүй, алдаатай эх сурвалжийн тоо тайланд дутуу эсвэл хуучирсан байж болно — «Энэ хурлаар шийдэх»-д нэрлэсэн.',
+            'Холбогдоогүй, алдаатай эх сурвалжийн тоо тайланд дутуу эсвэл хуучирсан байж болно. Meta зарын холболт, ханш, синкийн алдаа, холбогдсон хуудас / Instagram-ийн синкийн асуудлыг «Энэ хурлаар шийдэх»-д нэрлэсэн; холбогдоогүй хуудас, Instagram-ыг зөвхөн энэ слайдад.',
+            'Meta зарын «өгөгдөл … хүртэл» = Hub-д хадгалсан хамгийн сүүлийн өдөр (сүүлийн синкийн хугацаа биш).',
             'Токены утгыг Hub хэзээ ч харуулахгүй — зөвхөн эх сурвалж (System User / хэрэглэгчийн), дуусах хугацаа.',
         ],
     });
@@ -861,9 +862,11 @@ function channelExportSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const pageByApi = (!!input.social?.page || !!input.connections?.page.connected) && !channels.facebook_page?.report;
     const present = CHANNEL_SOURCES.filter(source => source !== 'meta_ads' && channels[source]?.report);
     const missing = CHANNEL_SOURCES.filter(source => !channels[source]?.report && !(source === 'facebook_page' && pageByApi));
+    // Хуудасны слайд байгаа үед л түүн рүү заана; долоо хоногийг ачаалж чадаагүй бол тэр слайд байхгүй.
+    const pageWhere = input.social?.page ? 'Facebook хуудасны слайд' : input.failed?.social ? 'үзүүлэлтийг ачаалж чадсангүй' : 'үзүүлэлт алга';
     const subtitle = [
         missing.length ? `Экспорт оруулаагүй: ${missing.map(source => CHANNEL_SOURCE_LABELS[source]).join(', ')}` : null,
-        pageByApi ? `${CHANNEL_PAGE_BY_API} (Facebook хуудасны слайд)` : null,
+        pageByApi ? `${CHANNEL_PAGE_BY_API} (${pageWhere})` : null,
     ].filter(Boolean).join(' · ');
     const slide = content(pres, 'Маркетинг', 'Сувгийн экспорт', subtitle || undefined);
     if (!present.length) {
