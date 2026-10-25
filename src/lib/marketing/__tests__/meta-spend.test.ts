@@ -84,5 +84,5 @@ it('reconciles manual overlap, zero-activity covered days, missing FX and exact 
     expect(rows.find(r => r.id === 'meta:auto')).toMatchObject({ marketing_campaign_id: 'campaign', project_id: 'project', amount: 43750 });
     const report = buildMarketingPerformance({ spend: rows, activities: [], leads: [], projects: [], contracts: [], targets: [] }, { from: '2026-09-01', to: '2026-09-30' });
     expect(report.totals.spend).toBe(43750 + 999 + 999);
-    expect(report.spendQuality.current).toEqual({ missingFx: 1, excludedManual: 2, unmappedMeta: 1, pendingCurrencies: { USD: 12.5 } });
+    expect(report.spendQuality.current).toEqual({ missingFx: 1, excludedManual: 2, unmappedMeta: 1, pendingCurrencies: { USD: 12.5 }, metaSyncedDays: 0 });
 });
