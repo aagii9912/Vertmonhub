@@ -53,7 +53,7 @@ it('starts the OAuth connection with a full page navigation (plain anchor, not n
     expect(link).toHaveAttribute('href', '/api/marketing/facebook/ads/connect?shop_id=shop-1');
 });
 
-it.each(['state_error', 'token_error', 'ads_read_error', 'connection_error'] as const)('shows the specific message for %s and removes only the result from the URL', async result => {
+it.each(['state_error', 'token_error', 'ads_read_error', 'connection_error', 'connected_short'] as const)('shows the specific message for %s and removes only the result from the URL', async result => {
     window.history.replaceState(null, '', `/marketing?tab=records&meta_ads=${result}`);
     renderSync();
     expect(await screen.findByText(META_ADS_OAUTH_NOTICES[result].message)).toBeInTheDocument();
@@ -64,6 +64,8 @@ it.each(['state_error', 'token_error', 'ads_read_error', 'connection_error'] as 
 it('tells the user to retry from the button after a state error and where the details of a token error are', () => {
     expect(META_ADS_OAUTH_NOTICES.state_error.message).toContain('«Meta Ads холбох» товчоос дахин');
     expect(META_ADS_OAUTH_NOTICES.token_error.message).toMatch(/дахин эхлүүлнэ үү.*серверийн логт/);
+    // Богино токен хадгалсан холболт амжилт биш — удахгүй дуусахыг, дахин холбохыг хэлнэ (байнгын Alert).
+    expect(META_ADS_OAUTH_NOTICES.connected_short).toMatchObject({ tone: 'danger', message: expect.stringMatching(/1–2 цагийн дотор дуусна.*«Meta Ads холбох» товчоос дахин/) });
 });
 
 it('confirms a connection with a toast and falls back to a general message for an unknown code', async () => {

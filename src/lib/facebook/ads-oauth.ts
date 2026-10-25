@@ -1,23 +1,25 @@
 /**
  * «Meta Ads холбох» OAuth: нэг удаагийн code-ийг хадгалах токен болгоно (зөвхөн серверт).
  *
- *  1) code → богино хугацаат токен (POST, Graph v26).
+ *  1) code → богино хугацаат токен (POST, Graph v26). Нэг удаагийн code тул дахин оролдохгүй.
  *  2) debug_token (app токеноор): хүчинтэй, манай app-ийнх, төрөл, хугацаа, эрхүүд.
  *  3) SYSTEM_USER (Login for Business-ийн system-user тохиргоо) бол солихгүй.
- *     Бусад үед fb_exchange_token → урт хугацаат токен; `expires_in` ирээгүй бол хугацааг урт токены
- *     debug_token-оос. Солилт бүтэлгүйтвэл хүчинтэй богино токеныг өөрийн хугацаатай нь буцааж
- *     `fallback`-ээр мэдэгдэнэ — холболтыг бүхэлд нь унагахгүй.
+ *     Бусад үед fb_exchange_token → урт хугацаат токен (сүлжээ, 5xx, 429, хурдны хязгаарт 2 удаа дахин
+ *     оролддог — богино токен хүчинтэй хэвээр). Хугацаа = `expires_in`, богино токены `data_access_expires_at`-аар
+ *     хязгаарлана; `expires_in` ирээгүй бол `data_access_expires_at` (урт токеныг debug_token-д явуулахгүй — тэр
+ *     URL-ын query-д орно). Солилт бүтэлгүйтвэл хүчинтэй богино токеныг өөрийн хугацаатай нь буцааж
+ *     `fallback`-ээр мэдэгдэнэ — холболтыг бүхэлд нь унагахгүй, callback «дахин холбоно уу» гэж анхааруулна.
  *
  * Алдаа, лог нь зөвхөн HTTP статус, Graph-ийн code/subcode/type агуулна: токен, code, URL, хариуны бие хэзээ ч биш.
  */
-import { META_GRAPH_VERSION, MetaApiError, graphInt, metaRead } from '@/lib/facebook/daily-spend';
+import { META_GRAPH_VERSION, META_RETRY_DELAYS_MS, MetaApiError, graphInt, isRetriableMetaError, metaRead } from '@/lib/facebook/daily-spend';
 
 const TOKEN_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}/oauth/access_token`;
 
 /** Callback-ийн алхам: лог дээр аль алхам бүтэлгүйтсэнийг заана. */
 export type MetaAdsOAuthStep =
     | 'state_cookie' | 'state_mismatch' | 'oauth_denied' | 'oauth_code' | 'permission' | 'session' | 'system_token' | 'app_config'
-    | 'code_exchange' | 'debug_token' | 'token_invalid' | 'token_app_mismatch' | 'long_exchange' | 'long_debug'
+    | 'code_exchange' | 'debug_token' | 'token_invalid' | 'token_app_mismatch' | 'long_exchange'
     | 'ads_read' | 'encrypt' | 'shop_read' | 'shop_update';
 
 export interface MetaGraphDetails { httpStatus: number | null; graphCode: number | null; graphSubcode: number | null; graphType: string | null }
@@ -84,8 +86,31 @@ async function postToken(params: Record<string, string>): Promise<TokenPost> {
     } };
 }
 
+/**
+ * fb_exchange_token: түр алдаанд (сүлжээ, HTTP 5xx/429, Graph-ийн 1/2/хурдны хязгаар) `META_RETRY_DELAYS_MS`-ээр
+ * дахин оролдоно — богино токен хүчинтэй хэвээр тул code шиг нэг удаагийнх биш.
+ */
+async function postTokenWithRetry(params: Record<string, string>): Promise<TokenPost> {
+    for (let attempt = 0; ; attempt++) {
+        const result = await postToken(params);
+        if (result.ok || attempt >= META_RETRY_DELAYS_MS.length) return result;
+        if (!result.network && !isRetriableMetaError(result.details.httpStatus, result.details.graphCode)) return result;
+        await new Promise(resolve => setTimeout(resolve, META_RETRY_DELAYS_MS[attempt]));
+    }
+}
+
+/** Unix секундын хугацааг ISO болгоно; хугацаагүй (0, буруу) бол null. */
+const expiry = (seconds: unknown): string | null => {
+    const value = positive(seconds);
+    return value === null ? null : new Date(value * 1000).toISOString();
+};
+
 type Debug = { ok: true; data: DebugData } | ({ ok: false; result: 'token_error' | 'connection_error'; step: MetaAdsOAuthStep } & MetaGraphDetails);
 
+/**
+ * debug_token: Graph `input_token`-ийг зөвхөн query-гээр авдаг тул энэ ганц дуудлагад хэрэглэгчийн (богино) токен
+ * URL-д ордог — урт токеныг энд явуулахгүй; Sentry Graph-ийн URL-ыг бичихгүй (`lib/utils/sentry-meta.ts`).
+ */
 async function debugToken(appId: string, appSecret: string, token: string): Promise<Debug> {
     let data: DebugData | undefined;
     try { data = (await metaRead<{ data?: DebugData }>('debug_token', `${appId}|${appSecret}`, { input_token: token })).data; }
@@ -116,16 +141,11 @@ export async function exchangeMetaAdsCode(input: { appId: string; appSecret: str
     }
     const shortGrant: MetaAdsTokenGrant = { token: short.token, expiresAt: debugTokenExpiry(debug.data), scopes, kind: 'short_lived' };
 
-    const long = await postToken({ grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: short.token });
+    const long = await postTokenWithRetry({ grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: short.token });
     if (!long.ok) return { ok: true, grant: shortGrant, fallback: { step: 'long_exchange', ...long.details } };
-    if (long.expiresIn !== null) {
-        return { ok: true, grant: { token: long.token, expiresAt: new Date(Date.now() + long.expiresIn * 1000).toISOString(), scopes, kind: 'long_lived' }, fallback: null };
-    }
-    // `expires_in` ирээгүй (жишээ нь хугацаагүй Business Login токен): хугацааг урт токены debug_token-оос.
-    const longDebug = await debugToken(appId, appSecret, long.token);
-    if (!longDebug.ok) {
-        const { httpStatus, graphCode, graphSubcode, graphType: type } = longDebug;
-        return { ok: true, grant: shortGrant, fallback: { step: 'long_debug', httpStatus, graphCode, graphSubcode, graphType: type } };
-    }
-    return { ok: true, grant: { token: long.token, expiresAt: debugTokenExpiry(longDebug.data), scopes, kind: 'long_lived' }, fallback: null };
+    // Өгөгдөлд хандах эрх (`data_access_expires_at`) дууссаны дараа урт токен ч уншиж чадахгүй — хугацааны дээд хязгаар.
+    const dataAccess = expiry(debug.data.data_access_expires_at);
+    const ownExpiry = long.expiresIn !== null ? new Date(Date.now() + long.expiresIn * 1000).toISOString() : null;
+    const expiresAt = ownExpiry && dataAccess ? (ownExpiry < dataAccess ? ownExpiry : dataAccess) : ownExpiry ?? dataAccess;
+    return { ok: true, grant: { token: long.token, expiresAt, scopes, kind: 'long_lived' }, fallback: null };
 }

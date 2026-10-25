@@ -7,8 +7,15 @@
  * гурав хамт байж л Sentry асна. Server ба edge тохиргоо ижил тул энд нэг удаа тодорхойлно.
  */
 import * as Sentry from '@sentry/nextjs';
+import { scrubMetaBreadcrumb, scrubMetaSpan } from './lib/utils/sentry-meta';
 
-function initSentry() {
+type SentryIntegrations = Extract<Parameters<typeof Sentry.init>[0], { integrations?: unknown }>['integrations'];
+
+/**
+ * Meta Graph-ийн URL-ын query (`appsecret_proof`, debug_token-ий хэрэглэгчийн токен) Sentry-д орохгүй: node-д
+ * Graph-ийн fetch-ийг огт бичихгүй (`nodeSentryIntegrations`), breadcrumb/span-аас query-г нь хасна (хоёр runtime).
+ */
+function initSentry(integrations?: SentryIntegrations) {
     Sentry.init({
         dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
         // Зөвхөн production-д
@@ -16,12 +23,16 @@ function initSentry() {
         tracesSampleRate: 0.1,
         environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'development',
         release: process.env.VERCEL_GIT_COMMIT_SHA,
+        beforeBreadcrumb: scrubMetaBreadcrumb,
+        beforeSendSpan: scrubMetaSpan,
+        ...(integrations ? { integrations } : {}),
     });
 }
 
 export async function register() {
     if (process.env.NEXT_RUNTIME === 'nodejs') {
-        initSentry();
+        const { nodeSentryIntegrations } = await import('./lib/utils/sentry-node');
+        initSentry(nodeSentryIntegrations());
 
         // Production env шалгалт — дутуу нууцыг серверийн эхлэлд ил гаргана (deploy-г унагахгүй)
         if (process.env.NODE_ENV === 'production' && process.env.VERCEL_ENV === 'production') {

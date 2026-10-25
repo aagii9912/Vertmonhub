@@ -10,6 +10,8 @@ const RETRY = '«Meta Ads холбох» товчоос дахин эхлүүл�
 
 export const META_ADS_OAUTH_NOTICES = {
     connected: { tone: 'success', message: 'Meta Ads холбогдлоо.' },
+    // Урт хугацаат токены солилт бүтэлгүйтэж богино токен хадгалсан: синк 1–2 цагийн дараа зогсоно.
+    connected_short: { tone: 'danger', message: `Meta Ads түр холбогдсон ч Meta урт хугацаат токен олгосонгүй — холболт 1–2 цагийн дотор дуусна. Хэдэн минутын дараа ${RETRY}` },
     system_token: { tone: 'info', message: 'Системийн хэрэглэгчийн токен идэвхтэй тул Meta Ads-ийг хэрэглэгчээр холбох шаардлагагүй. Зарын дансыг админ сонгоно.' },
     state_error: { tone: 'danger', message: `Холболтын хамгаалалтын шалгалт (state) таарсангүй эсвэл 10 минутын хугацаа нь дууссан. Хуудсыг шинэчлээд ${RETRY}` },
     denied: { tone: 'danger', message: `Facebook дээр зөвшөөрөл өгөөгүй тул Meta Ads холбогдсонгүй. ${RETRY} Зарын дансны эрхийг зөвшөөрнө үү.` },

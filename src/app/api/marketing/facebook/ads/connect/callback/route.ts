@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
         return response;
     };
     /** Амжилтгүй гаралт бүр нэг бүтэцтэй лог мөр бичнэ: токен, code, URL, хариуны бие хэзээ ч биш. */
-    const fail = (result: Exclude<MetaAdsOAuthResult, 'connected'>, step: MetaAdsOAuthStep, details: Partial<MetaGraphDetails> & { dbCode?: string | null } = {}) => {
+    const fail = (result: Exclude<MetaAdsOAuthResult, 'connected' | 'connected_short'>, step: MetaAdsOAuthStep, details: Partial<MetaGraphDetails> & { dbCode?: string | null } = {}) => {
         const entry = {
             result, step, shopId,
             httpStatus: details.httpStatus ?? null, graphCode: details.graphCode ?? null, graphSubcode: details.graphSubcode ?? null, graphType: details.graphType ?? null,
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
         if (exchange.fallback) {
             const { step: fallbackStep, ...details } = exchange.fallback;
             logger.warn('[Meta Ads OAuth] урт хугацаат токен авч чадсангүй — хүчинтэй богино токеныг хадгална', {
-                result: 'connected', step: fallbackStep, shopId, ...NO_GRAPH_DETAILS, ...details, expiresAt,
+                result: 'connected_short', step: fallbackStep, shopId, ...NO_GRAPH_DETAILS, ...details, expiresAt,
             });
         }
 
@@ -111,7 +111,8 @@ export async function GET(request: NextRequest) {
         }).eq('id', saved.shopId);
         if (error) return fail('save_error', 'shop_update', { dbCode: error.code });
 
-        return finish('connected');
+        // Богино (1–2 цагийн) токен хадгалсан бол амжилт гэж бүү хэл — удахгүй дахин холбохыг анхааруулна.
+        return finish(exchange.fallback ? 'connected_short' : 'connected');
     } catch (error) {
         // HTTP хариу ирсэн Graph алдаа = токен/эрхийн асуудал; бусад нь сүлжээ, хугацаа.
         const graphFailure = error instanceof MetaApiError && error.status !== null;

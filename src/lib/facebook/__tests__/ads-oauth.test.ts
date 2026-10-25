@@ -35,10 +35,19 @@ function graph(options: { short?: Response | 'network'; long?: Response | 'netwo
 const calls = (http: ReturnType<typeof graph>, path: string) => http.mock.calls.filter(([target]) => new URL(String(target)).pathname === path);
 
 beforeEach(() => {
-    vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+    vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     vi.stubEnv('META_ADS_APP_SECRET', 'ads-secret');
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+
+/** fb_exchange_token-ийн дахин оролдлогын хүлээлтийг (fake timer) гүйлгэнэ. */
+async function exchange(value = input) {
+    const result = exchangeMetaAdsCode(value);
+    await vi.runAllTimersAsync();
+    return result;
+}
+/** Урт токен Graph-ийн URL-д (query) хэзээ ч орохгүй. */
+const urlsCarry = (http: ReturnType<typeof graph>, token: string) => http.mock.calls.some(([target]) => String(target).includes(token));
 
 describe('exchangeMetaAdsCode', () => {
     it('exchanges the code, checks the short token and stores a long-lived token with its expires_in', async () => {
@@ -57,42 +66,56 @@ describe('exchangeMetaAdsCode', () => {
         expect((debug[1]?.headers as Record<string, string>).Authorization).toBe('Bearer ads-app|ads-secret');
     });
 
-    it('reads the expiry from debug_token on the long token when fb_exchange_token has no expires_in', async () => {
-        const http = graph({
-            long: reply({ access_token: 'long-token', token_type: 'bearer' }),
-            debug: { 'long-token': { expires_at: at('2026-12-20T00:00:00Z'), data_access_expires_at: at('2027-01-20T00:00:00Z') } },
-        });
-        expect(await exchangeMetaAdsCode(input)).toMatchObject({ ok: true, fallback: null, grant: { token: 'long-token', expiresAt: '2026-12-20T00:00:00.000Z', kind: 'long_lived' } });
-        expect(calls(http, '/v26.0/debug_token').map(([target]) => new URL(String(target)).searchParams.get('input_token'))).toEqual(['short-token', 'long-token']);
+    it('caps the long-lived expiry at the data access expiry and never sends the long token to debug_token', async () => {
+        const http = graph({ debug: { 'short-token': { data_access_expires_at: at('2026-11-20T00:00:00Z') } } });
+        expect(await exchange()).toMatchObject({ ok: true, fallback: null, grant: { token: 'long-token', expiresAt: '2026-11-20T00:00:00.000Z', kind: 'long_lived' } });
+        expect(calls(http, '/v26.0/debug_token')).toHaveLength(1);
+        expect(urlsCarry(http, 'long-token')).toBe(false);
     });
 
-    it('stores a non-expiring long token (expires_at 0) without an expiry, but still honours a data access expiry', async () => {
-        graph({ long: reply({ access_token: 'long-token' }), debug: { 'long-token': { expires_at: 0, data_access_expires_at: 0 } } });
-        expect(await exchangeMetaAdsCode(input)).toMatchObject({ ok: true, grant: { token: 'long-token', expiresAt: null, kind: 'long_lived' } });
+    it('uses the data access expiry when fb_exchange_token has no expires_in (no second debug_token call)', async () => {
+        const http = graph({ long: reply({ access_token: 'long-token', token_type: 'bearer' }) });
+        expect(await exchange()).toMatchObject({ ok: true, fallback: null, grant: { token: 'long-token', expiresAt: '2027-01-23T04:00:00.000Z', kind: 'long_lived' } });
+        expect(calls(http, '/v26.0/debug_token').map(([target]) => new URL(String(target)).searchParams.get('input_token'))).toEqual(['short-token']);
+        expect(urlsCarry(http, 'long-token')).toBe(false);
 
-        graph({ long: reply({ access_token: 'long-token', expires_in: 'never' }), debug: { 'long-token': { expires_at: 0, data_access_expires_at: at('2027-01-23T04:00:00Z') } } });
-        expect(await exchangeMetaAdsCode(input)).toMatchObject({ ok: true, grant: { token: 'long-token', expiresAt: '2027-01-23T04:00:00.000Z' } });
+        // Хугацаагүй (data_access_expires_at = 0), expires_in буруу — хугацаагүй гэж хадгална.
+        graph({ long: reply({ access_token: 'long-token', expires_in: 'never' }), debug: { 'short-token': { data_access_expires_at: 0 } } });
+        expect(await exchange()).toMatchObject({ ok: true, grant: { token: 'long-token', expiresAt: null, kind: 'long_lived' } });
     });
 
-    it('keeps the valid short token with its debug expiry when the long-lived exchange fails', async () => {
-        graph({ long: reply({ error: { message: 'secret detail long-token', type: 'OAuthException', code: 100, error_subcode: 33 } }, 400) });
-        const result = await exchangeMetaAdsCode(input);
+    it('keeps the valid short token with its debug expiry when the long-lived exchange is refused (no retry for a permanent error)', async () => {
+        const http = graph({ long: reply({ error: { message: 'secret detail long-token', type: 'OAuthException', code: 100, error_subcode: 33 } }, 400) });
+        const result = await exchange();
         expect(result).toEqual({
             ok: true,
             grant: { token: 'short-token', expiresAt: '2026-10-25T06:00:00.000Z', scopes: ['ads_read'], kind: 'short_lived' },
             fallback: { step: 'long_exchange', httpStatus: 400, graphCode: 100, graphSubcode: 33, graphType: 'OAuthException' },
         });
         expect(JSON.stringify(result.ok && result.fallback)).not.toContain('secret');
-
-        graph({ long: 'network' });
-        expect(await exchangeMetaAdsCode(input)).toMatchObject({ ok: true, grant: { token: 'short-token', kind: 'short_lived' }, fallback: { step: 'long_exchange', httpStatus: null } });
+        expect(calls(http, '/v26.0/oauth/access_token')).toHaveLength(2);
     });
 
-    it('falls back to the short token when the long token without expires_in cannot be verified', async () => {
-        graph({ long: reply({ access_token: 'long-token' }), debug: { 'long-token': { is_valid: false, error: { code: 190, subcode: 460 } } } });
-        expect(await exchangeMetaAdsCode(input)).toMatchObject({
-            ok: true, grant: { token: 'short-token', kind: 'short_lived' }, fallback: { step: 'long_debug', graphCode: 190, graphSubcode: 460 },
+    it('retries a transient fb_exchange_token failure (network, 5xx, 429) before falling back to the short token', async () => {
+        let attempts = 0;
+        const http = graph();
+        const base = http.getMockImplementation()!;
+        http.mockImplementation(async (target: URL | string, init?: RequestInit) => {
+            const exchangeCall = new URLSearchParams(String(init?.body)).get('grant_type') === 'fb_exchange_token';
+            if (exchangeCall && ++attempts === 1) throw new TypeError('fetch failed');
+            if (exchangeCall && attempts === 2) return reply({ error: { code: 2, type: 'OAuthException' } }, 503);
+            return base(target, init);
         });
+        expect(await exchange()).toMatchObject({ ok: true, fallback: null, grant: { token: 'long-token', kind: 'long_lived' } });
+        expect(calls(http, '/v26.0/oauth/access_token')).toHaveLength(4); // code + 3 солилт
+
+        const down = graph({ long: 'network' });
+        expect(await exchange()).toMatchObject({ ok: true, grant: { token: 'short-token', kind: 'short_lived' }, fallback: { step: 'long_exchange', httpStatus: null } });
+        expect(calls(down, '/v26.0/oauth/access_token')).toHaveLength(4); // code + 1 + 2 дахин
+
+        const limited = graph({ long: reply({ error: { code: 4, type: 'OAuthException' } }, 429) });
+        expect(await exchange()).toMatchObject({ ok: true, grant: { kind: 'short_lived' }, fallback: { step: 'long_exchange', httpStatus: 429, graphCode: 4 } });
+        expect(calls(limited, '/v26.0/oauth/access_token')).toHaveLength(4);
     });
 
     it('keeps a Business Login system-user token as is (no fb_exchange_token)', async () => {

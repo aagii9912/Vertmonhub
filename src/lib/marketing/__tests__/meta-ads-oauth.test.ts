@@ -225,28 +225,37 @@ describe('callback result page and failure logging', () => {
         expect(mocks.update).not.toHaveBeenCalled();
     });
 
-    it('stores the valid short token with its debug expiry (and warns) when the long-lived exchange fails', async () => {
+    it('stores the valid short token with its debug expiry, warns and reports connected_short when the long-lived exchange keeps failing', async () => {
         const { request } = await oauth();
         const expires = Math.floor(Date.now() / 1000) + 3600;
         graph({ expiresAt: expires, scopes: ['ads_read'] });
-        tokens(new Response(JSON.stringify({ error: { type: 'OAuthException', code: 1, message: 'long-user-token' } }), { status: 500 }));
-        expect(result(await callback(request()))).toBe('connected');
+        const http = vi.fn().mockResolvedValueOnce(graphResponse({ access_token: 'short-user-token' }))
+            .mockImplementation(async () => new Response(JSON.stringify({ error: { type: 'OAuthException', code: 1, message: 'long-user-token' } }), { status: 500 }));
+        vi.stubGlobal('fetch', http);
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            const pending = callback(request());
+            await vi.runAllTimersAsync();
+            expect(result(await pending)).toBe('connected_short');
+        } finally { vi.useRealTimers(); }
+        // code + fb_exchange_token 3 удаа (түр алдаанд 2 дахин оролдлого).
+        expect(http).toHaveBeenCalledTimes(4);
         expect(mocks.encrypt).toHaveBeenCalledWith('short-user-token');
         expect(mocks.update.mock.calls[0][0]).toEqual({ meta_ads_user_access_token: 'enc:v1:stored', meta_ads_user_token_expires_at: new Date(expires * 1000).toISOString() });
         expect(mocks.warn).toHaveBeenCalledTimes(1);
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('богино токеныг'), expect.objectContaining({
-            result: 'connected', step: 'long_exchange', shopId: 'shop-1', httpStatus: 500, graphCode: 1, graphType: 'OAuthException',
+            result: 'connected_short', step: 'long_exchange', shopId: 'shop-1', httpStatus: 500, graphCode: 1, graphType: 'OAuthException',
         }));
         expect(mocks.error).not.toHaveBeenCalled();
         noSecrets();
     });
 
-    it('reads a missing expires_in from debug_token on the long token instead of failing with token_error', async () => {
+    it('takes a missing expires_in from the short token\'s data access expiry and never debugs the long token', async () => {
         const { request } = await oauth();
-        graph({ scopes: ['ads_read'] }); // expires_at = 0 → хугацаагүй
+        graph({ scopes: ['ads_read'] }); // data_access_expires_at алга → хугацаагүй
         tokens({ access_token: 'long-user-token', token_type: 'bearer' });
         expect(result(await callback(request()))).toBe('connected');
-        expect(mocks.read).toHaveBeenCalledWith('debug_token', 'new-app|new-secret', { input_token: 'long-user-token' });
+        expect(mocks.read).not.toHaveBeenCalledWith('debug_token', expect.anything(), { input_token: 'long-user-token' });
         expect(mocks.encrypt).toHaveBeenCalledWith('long-user-token');
         expect(mocks.update.mock.calls[0][0]).toEqual({ meta_ads_user_access_token: 'enc:v1:stored', meta_ads_user_token_expires_at: null });
         expect(mocks.warn).not.toHaveBeenCalled();
