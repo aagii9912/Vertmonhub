@@ -50,6 +50,23 @@ export function formatChannelDelta(delta: MetricDelta | null | undefined): strin
     return `${sign}${delta.delta.toLocaleString('en-US', { maximumFractionDigits: 2 })}${delta.pct !== null ? ` (${sign}${delta.pct}%)` : ''}`;
 }
 
+/**
+ * Facebook хуудас Graph API-аар холбогдсон бол (хадгалсан Page insights) хуудасны экспорт файл шаардахгүй — сувгийн
+ * «экспорт оруулаагүй» жагсаалтад оруулахгүй, оронд нь энэ шошго (слайд, хуудас өөрийн байршлыг нэмнэ).
+ */
+export const CHANNEL_PAGE_BY_API = 'Facebook хуудас: API-аар';
+
+/** Meta API-ийн дуусаагүй долоо хоногийн харьцуулалтын шошго (Facebook хуудасны слайдтай ижил). */
+export const META_SAME_DAYS_LABEL = 'Өмнөх 7 хоногийн мөн өдрүүд';
+
+/**
+ * Meta API-ийн дуусаагүй долоо хоногийг өмнөх долоо хоногийн мөн өдрүүдтэй харьцуулсан тайлбар (хуудас, слайд):
+ * `days` = харьцуулсан өдрүүд (`ChannelReportMatch.sameDays`), `format` = огнооны бичлэг.
+ */
+export function metaSameDaysNote(days: { from: string; to: string }, format: (day: string) => string): string {
+    return `Долоо хоног дуусаагүй тул өмнөх 7 хоногийн мөн өдрүүдтэй (${format(days.from)} – ${format(days.to)}) харьцуулав. Reach, Frequency-г харьцуулаагүй (давхардалгүй тоог өдрөөр нэмэхгүй).`;
+}
+
 /** Аль нэг тайлангийн өдрийн хамралт дутуу (6/7 өдөр) тул өмнөхтэй харьцуулаагүй эсэх. */
 export function comparisonBlockedByCoverage(comparison: Record<string, MetricDelta> | null | undefined): boolean {
     return Object.values(comparison ?? {}).some(delta => delta.reason === 'coverage');

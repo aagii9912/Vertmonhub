@@ -12,9 +12,10 @@ import type { BudgetOverview } from '@/lib/marketing/budget';
 import { reportCoverage, type ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
 import { CHANNEL_SOURCE_LABELS, CHANNEL_SOURCES, channelKeyMetrics, channelMetric, formatChannelValue, periodDays, type BreakdownRow } from '@/lib/marketing/channel-reports';
 import {
-    META_WEEK_KEYS, channelCurrency, comparisonBlockedByCoverage, formatChannelDelta, formatChannelMetric, metaCampaignRows, metaCampaignsBySpend, metaCostText,
-    metaReachIsSum, metaResultsByType, metaRowTypeLabel, metaUntypedSpend,
+    CHANNEL_PAGE_BY_API, META_SAME_DAYS_LABEL, META_WEEK_KEYS, channelCurrency, comparisonBlockedByCoverage, formatChannelDelta, formatChannelMetric, metaCampaignRows, metaCampaignsBySpend, metaCostText,
+    metaReachIsSum, metaResultsByType, metaRowTypeLabel, metaSameDaysNote, metaUntypedSpend,
 } from '@/lib/marketing/channel-week';
+import { META_SAME_DAYS_SKIP } from '@/lib/marketing/meta-channel-report';
 import { isMetaResultType, metaResultKey } from '@/lib/marketing/meta-results';
 import { CONTENT_STATUS_LABEL, CONTENT_TYPE_LABEL, contentPlatformLabel, type ContentItem, type ContentPlanSummary } from '@/lib/marketing/content-plan';
 import type { SocialWeek, SocialWeekMetric } from '@/lib/marketing/social-week';
@@ -715,18 +716,27 @@ function socialPageSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     });
 }
 
-/** Facebook хуудас, CallPro, SMS-ийн оруулсан экспорт — гол үзүүлэлт. Meta зарыг дараагийн слайдууд (`metaAdsSlides`) дэлгэрэнгүй харуулна. */
+/**
+ * Facebook хуудас, CallPro, SMS-ийн оруулсан экспорт — гол үзүүлэлт. Meta зарыг дараагийн слайдууд (`metaAdsSlides`)
+ * дэлгэрэнгүй харуулна. Facebook хуудас API-аар холбогдсон бол (`social.page`) экспорт дутуу гэж тооцохгүй.
+ */
 function channelExportSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const channels = input.channels;
     if (!channels) return;
     const meta = !!channels.meta_ads?.report;
+    const pageByApi = !!input.social?.page && !channels.facebook_page?.report;
     const present = CHANNEL_SOURCES.filter(source => source !== 'meta_ads' && channels[source]?.report);
-    const missing = CHANNEL_SOURCES.filter(source => !channels[source]?.report);
-    const slide = content(pres, 'Маркетинг', 'Сувгийн экспорт', missing.length ? `Экспорт оруулаагүй: ${missing.map(source => CHANNEL_SOURCE_LABELS[source]).join(', ')}` : undefined);
+    const missing = CHANNEL_SOURCES.filter(source => !channels[source]?.report && !(source === 'facebook_page' && pageByApi));
+    const subtitle = [
+        missing.length ? `Экспорт оруулаагүй: ${missing.map(source => CHANNEL_SOURCE_LABELS[source]).join(', ')}` : null,
+        pageByApi ? `${CHANNEL_PAGE_BY_API} (Facebook хуудасны слайд)` : null,
+    ].filter(Boolean).join(' · ');
+    const slide = content(pres, 'Маркетинг', 'Сувгийн экспорт', subtitle || undefined);
     if (!present.length) {
+        const pending = ['Facebook хуудас', 'CallPro', 'SMS'].filter(label => !(pageByApi && label === 'Facebook хуудас')).join(', ');
         slide.addText(meta
-            ? 'Энэ долоо хоногт Facebook хуудас, CallPro, SMS-ийн экспорт оруулаагүй байна. Маркетинг → Экспорт импорт хуудсанд файлаа оруулна уу. Meta зарын тайлан дараагийн слайдуудад.'
-            : 'Энэ долоо хоногт сувгийн экспорт оруулаагүй байна. Маркетинг → Экспорт импорт хуудсанд Meta Ads, Facebook хуудас, CallPro, SMS-ийн файлаа оруулна уу. Зарын данс холбогдсон бол Meta зарыг Meta API автоматаар татна.',
+            ? `Энэ долоо хоногт ${pending}-ийн экспорт оруулаагүй байна. Маркетинг → Экспорт импорт хуудсанд файлаа оруулна уу. Meta зарын тайлан дараагийн слайдуудад.`
+            : `Энэ долоо хоногт сувгийн экспорт оруулаагүй байна. Маркетинг → Экспорт импорт хуудсанд Meta Ads, ${pending}-ийн файлаа оруулна уу. Зарын данс холбогдсон бол Meta зарыг Meta API автоматаар татна.`,
         { x: M, y: TOP, w: CW, h: 0.9, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
         return;
     }
@@ -786,7 +796,9 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     const currency = channelCurrency(totals);
     const period = { from: report.period_from, to: report.period_to };
     const coverage = reportCoverage(report);
-    const blocked = comparisonBlockedByCoverage(match.comparison);
+    // Дуусаагүй Meta API долоо хоногийг ачаалагч өмнөх долоо хоногийн мөн өдрүүдтэй харьцуулсан бол (`sameDays`) хаахгүй.
+    const sameDays = match.sameDays ?? null;
+    const blocked = !sameDays && comparisonBlockedByCoverage(match.comparison);
     // Хуудастай адил харьцуулалтаас (`comparison`) уншина: өмнөх тайлангийн утгатай үзүүлэлт байвал л харьцуулна.
     const previous = match.previous;
     const compared = !blocked && Object.values(match.comparison ?? {}).some(delta => delta.previous !== null);
@@ -794,7 +806,7 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     const previousDays = previous ? periodDays({ from: previous.period_from, to: previous.period_to }) : null;
     const adjacent = !!previous && shiftReviewDate(previous.period_to, 1) === report.period_from;
     const previousWeek = adjacent && previousDays === 7;
-    const against = adjacent ? `Өмнөх ${previousDays} хоног` : 'Өмнөх тайлан';
+    const against = sameDays ? META_SAME_DAYS_LABEL : adjacent ? `Өмнөх ${previousDays} хоног` : 'Өмнөх тайлан';
     const mixedCurrency = report.warnings.some(warning => warning.code === 'mixed_currency');
     const unit = currency ? ` (${currency})` : typeof totals.spend === 'number' ? ' (валют тодорхойгүй)' : '';
     const origin = report.origin === 'api' ? 'Meta API' : 'Экспорт файл';
@@ -821,7 +833,8 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
         else {
             if (isMoney && !currency) parts.push('Валют тодорхойгүй — төгрөг биш');
             const delta = match.comparison?.[key];
-            if (compared && delta) {
+            if (compared && sameDays && META_SAME_DAYS_SKIP.has(key)) parts.push('Мөн өдрүүдтэй харьцуулаагүй (давхардалгүй)');
+            else if (compared && delta) {
                 if (delta.reason === 'currency') parts.push('Валют өөр — харьцуулаагүй');
                 else parts.push([`${against} ${formatChannelMetric('meta_ads', key, delta.previous, currency)}`, formatChannelDelta(delta)].filter(Boolean).join(' · '));
             }
@@ -834,7 +847,8 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     const important = report.warnings.filter(warning => warning.level === 'warning');
     const footnotes = [
         blocked ? `Өдөр дутуу тул ${previousWeek ? 'өмнөх долоо хоногтой' : 'өмнөх тайлантай'} харьцуулаагүй.` : !compared ? 'Өмнөх ижил хугацааны Meta тайлан алга — харьцуулаагүй.' : null,
-        previous && !previousWeek && compared ? `Харьцуулсан тайлан: ${span({ from: previous.period_from, to: previous.period_to })} (${previousDays} хоног).` : null,
+        sameDays && compared ? metaSameDaysNote(sameDays, dot) : null,
+        previous && !previousWeek && !sameDays && compared ? `Харьцуулсан тайлан: ${span({ from: previous.period_from, to: previous.period_to })} (${previousDays} хоног).` : null,
         currencyNote,
         important.length ? `${important.length} анхааруулга — слайдын тэмдэглэлд.` : null,
     ].filter((line): line is string => !!line);
@@ -844,7 +858,8 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
         currencyNote,
         'Reach = Meta-гийн тухайн хугацааны давхардалгүй хүрсэн хүн (дансны түвшинд); өдрийн reach-ийг нэмээгүй. Frequency = Impressions / Reach.',
         'CPM = зардал / харагдалт × 1000. Link CTR = link click / харагдалт.',
-        compared && previous ? `Харьцуулалт: ${span({ from: previous.period_from, to: previous.period_to })} (${previous.origin === 'api' ? 'Meta API' : 'экспорт файл'}).` : null,
+        compared && sameDays ? `Харьцуулалт: ${span(sameDays)} — өмнөх долоо хоногийн мөн өдрүүд, Meta API-ийн хадгалсан ad set × өдрийн мөрөөс (экспорт файлтай холихгүй).`
+            : compared && previous ? `Харьцуулалт: ${span({ from: previous.period_from, to: previous.period_to })} (${previous.origin === 'api' ? 'Meta API' : 'экспорт файл'}).` : null,
         untypedNote,
         ...report.warnings.map(warning => `${warning.level === 'warning' ? 'Анхааруулга' : 'Тэмдэглэл'}: ${warning.message}`),
     ]);
@@ -877,7 +892,8 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
         if (untyped !== null) rows.push(spendRow('Үр дүнгийн төрөлгүй зардал', untyped, { italic: true, ...muted }));
         if (typeof totals.spend === 'number') rows.push(spendRow('Нийт зардал', totals.spend, { bold: true }));
         const slide = content(pres, kicker, 'Meta зар — үр дүн төрлөөр', [span(period),
-            mixedCurrency ? 'өөр валют холилдсон тул зардал тооцоогүй' : 'зардлыг кампанит ажлын зорилгоор хуваарилсан', blocked ? 'өдөр дутуу тул харьцуулаагүй' : null].filter(Boolean).join(' · '));
+            mixedCurrency ? 'өөр валют холилдсон тул зардал тооцоогүй' : 'зардлыг кампанит ажлын зорилгоор хуваарилсан', blocked ? 'өдөр дутуу тул харьцуулаагүй' : null,
+            sameDays && showDelta ? `өмнөх 7 хоногийн мөн өдрүүдтэй (${span(sameDays)})` : null].filter(Boolean).join(' · '));
         const fontSize = rows.length > 8 ? 12 : 14;
         const colW = showDelta ? [4.333, 1.6, 2.5, 1.8, 1.9] : [5.333, 2.0, 2.2, 2.6];
         const margin: [number, number, number, number] = [0.06, 0.1, 0.06, 0.1];

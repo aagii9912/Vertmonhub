@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { aggregateByReviewWeeks, aggregateChannelReport, channelSplitWeeks, compareWithPrevious, suggestMapping } from '@/lib/marketing/channel-reports';
 import { compareReports, type ChannelReportMatch, type ChannelReportMatches, type ChannelReportRecord } from '@/lib/marketing/channel-reports-load';
+import { compareMetaSameDays } from '@/lib/marketing/meta-channel-report';
 import { META_ADS_EXPORT_HEADERS, metaAdsDailyTable } from '../../../e2e/fixtures/meta-ads-daily';
 
 const mocks = vi.hoisted(() => ({ json: vi.fn() }));
@@ -33,7 +34,7 @@ const metaReport = (overrides: Partial<ChannelReportRecord> = {}): ChannelReport
     ...overrides,
 });
 const respond = (meta: ChannelReportMatch) => mocks.json.mockResolvedValue({ latest: { meta_ads: meta, facebook_page: empty, callpro: empty, sms: empty } satisfies ChannelReportMatches });
-const show = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><WeeklyMarketingChannels {...week} /></QueryClientProvider>);
+const show = (pageConnected?: boolean) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><WeeklyMarketingChannels {...week} pageConnected={pageConnected} /></QueryClientProvider>);
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -183,4 +184,27 @@ it('orders a mixed-currency file\'s campaigns by impressions, never by unconvert
     const table = within(card).getByRole('region', { name: 'Задаргаа: Кампанит ажил', hidden: true });
     expect(within(table).getAllByRole('rowheader', { hidden: true }).map(cell => cell.textContent)).toEqual(['USD big', 'MNT small']);
     expect(within(card).queryByRole('list', { name: 'Их зардалтай кампанит ажил' })).not.toBeInTheDocument();
+});
+
+it('compares an unfinished Meta API week with the previous week\'s same days and leaves reach out', async () => {
+    const report = metaReport({ origin: 'api', file_name: null, totals: { ...metaReport().totals, reach: 41200, frequency: 3.72 } });
+    const same = { spend: 200, currency: 'USD', impressions: 140000, link_clicks: 700, results_calls: 60, spend_calls: 120, cost_per_result_calls: 2 };
+    respond({ report, exact: true, longer: false, previous: { ...report, id: 'm0', period_from: '2026-09-16', period_to: '2026-09-22', data_to: '2026-09-22' },
+        comparison: compareMetaSameDays(report.totals, same), sameDays: { from: '2026-09-16', to: '2026-09-21' } });
+    show();
+    const card = await screen.findByRole('region', { name: 'Meta Ads Manager' });
+    expect(within(card).getByText(/^Долоо хоног дуусаагүй тул өмнөх 7 хоногийн мөн өдрүүдтэй \(09-16 – 09-21\) харьцуулав\. Reach, Frequency-г харьцуулаагүй/)).toBeInTheDocument();
+    expect(within(card).queryByText('Өдөр дутуу тул өмнөх долоо хоногтой харьцуулаагүй.')).not.toBeInTheDocument();
+    expect(within(card).getByText('+33.1 (+16.6%)')).toBeInTheDocument();
+    const reach = within(card).getByText('Reach (хүрсэн хүн)').parentElement!;
+    expect(reach).toHaveTextContent(/^Reach \(хүрсэн хүн\)41,200$/);
+    const calls = within(within(card).getByText('Үр дүн төрлөөр').parentElement!).getAllByRole('listitem')[0];
+    expect(calls).toHaveTextContent('Дуудлага (Meta)76Нэг дуудлагын өртөг: 1.86 USD+16 (+26.7%)');
+});
+
+it('does not list the Facebook Page as a missing export when it is connected through the API', async () => {
+    respond(empty);
+    show(true);
+    expect(await screen.findByText('Facebook хуудас: API-аар (дээрх хуудасны үзүүлэлт).')).toBeInTheDocument();
+    expect(screen.getByText(/Экспорт оруулаагүй: Meta Ads Manager, CallPro дуудлага, Масс SMS\./)).toBeInTheDocument();
 });

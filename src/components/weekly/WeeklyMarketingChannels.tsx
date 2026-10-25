@@ -10,8 +10,9 @@ import { CHANNEL_LIMITS, CHANNEL_SOURCE_LABELS, CHANNEL_SOURCES, channelKeyMetri
 import { reportCoverage, type ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
 import {
     META_WEEK_KEYS, channelCurrency, comparisonBlockedByCoverage, formatChannelDelta, formatChannelMetric, metaCampaignRows, metaCampaignsBySpend, metaCostText,
-    metaMissingResultsReason, metaReachIsSum, metaResultsByType, metaUntypedSpend,
+    metaMissingResultsReason, metaReachIsSum, metaResultsByType, metaSameDaysNote, metaUntypedSpend, CHANNEL_PAGE_BY_API,
 } from '@/lib/marketing/channel-week';
+import { META_SAME_DAYS_SKIP } from '@/lib/marketing/meta-channel-report';
 import { META_RESULT_DEFS, isMetaResultType, metaResultKey } from '@/lib/marketing/meta-results';
 import { ChannelBreakdownTable } from '@/components/marketing/ChannelReportParts';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
@@ -71,8 +72,11 @@ function MetaResults({ totals, comparison, currency, reachSum }: { totals: Recor
 
 const REACH_SUM_NOTE = 'Хүрсэн хүн (үр дүн): reach зорилготой кампанит ажлуудын давхардалгүй reach-ийн нийлбэр — кампанит ажил хооронд давхцаж болно.';
 
-/** Meta Ads, Facebook хуудас, CallPro, масс SMS-ийн экспорт — хурлын долоо хоногийн тоо, өмнөх тайлантай харьцуулсан. */
-export function WeeklyMarketingChannels({ from, to }: { from: string; to: string }) {
+/**
+ * Meta Ads, Facebook хуудас, CallPro, масс SMS-ийн экспорт — хурлын долоо хоногийн тоо, өмнөх тайлантай харьцуулсан.
+ * `pageConnected` = Facebook хуудас API-аар холбогдсон (хуудасны үзүүлэлт дээр харагдана) — дутуу экспортод тооцохгүй.
+ */
+export function WeeklyMarketingChannels({ from, to, pageConnected = false }: { from: string; to: string; pageConnected?: boolean }) {
     const { shop, user } = useAuth();
     const query = useQuery<ChannelResponse>({
         queryKey: ['channel-reports', 'weekly', shop?.id, user?.id, from, to],
@@ -81,7 +85,8 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
     });
     if (query.isPending) return <Skeleton className="h-40" />;
     if (!query.data) return <p className="rounded-xl bg-surface-2 p-4 text-sm text-muted-foreground">Сувгийн экспортыг ачаалж чадсангүй. {query.error?.message}</p>;
-    const missing = CHANNEL_SOURCES.filter(source => !query.data.latest[source]?.report);
+    const missing = CHANNEL_SOURCES.filter(source => !query.data.latest[source]?.report && !(source === 'facebook_page' && pageConnected));
+    const pageByApi = pageConnected && !query.data.latest.facebook_page?.report;
 
     return (
         <div className="space-y-3">
@@ -94,7 +99,9 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
                     const keys = cardKeys(source).filter(key => report.totals[key] !== undefined);
                     const coverage = reportCoverage(report);
                     // Өдрийн хамралт дутуу долоо хоногийг өмнөхтэй тулгахгүй — хавтан бүрт биш, нэг удаа тайлбарлана.
+                    // Meta API-ийн дуусаагүй долоо хоногийг ачаалагч өмнөх долоо хоногийн мөн өдрүүдтэй харьцуулсан бол (`sameDays`) харуулна.
                     const partial = comparisonBlockedByCoverage(match.comparison);
+                    const sameDays = match.sameDays ?? null;
                     const warnings = report.warnings.filter(warning => warning.level === 'warning');
                     const missedByHour = source === 'callpro'
                         ? report.breakdown.filter(row => row.kind === 'hour' && (row.values.missed ?? 0) > 0).sort((a, b) => (b.values.missed ?? 0) - (a.values.missed ?? 0)).slice(0, 3)
@@ -120,11 +127,12 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
                                 </span>
                             </header>
                             {partial && <p className="-mt-2 mb-3 text-[11px] text-status-pending">Өдөр дутуу тул өмнөх долоо хоногтой харьцуулаагүй.</p>}
+                            {sameDays && <p className="-mt-2 mb-3 text-[11px] text-muted-foreground">{metaSameDaysNote(sameDays, day => day.slice(5))}</p>}
                             <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
                                 {keys.map(key => <div key={key}>
                                     <dt className="text-[11px] text-muted-foreground">{channelMetric(source, key)?.label ?? key}</dt>
                                     <dd className="num text-[15px] font-semibold">{formatChannelMetric(source, key, report.totals[key], currency)}</dd>
-                                    {!partial && <dd><Delta delta={match.comparison?.[key]} /></dd>}
+                                    {!partial && !(sameDays && META_SAME_DAYS_SKIP.has(key)) && <dd><Delta delta={match.comparison?.[key]} /></dd>}
                                 </div>)}
                             </dl>
                             {source === 'meta_ads' && <MetaResults totals={report.totals} comparison={partial ? null : match.comparison} currency={currency} reachSum={metaReachIsSum(report)} />}
@@ -151,6 +159,7 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
                     );
                 })}
             </div>
+            {pageByApi && <p className="text-xs text-muted-foreground">{CHANNEL_PAGE_BY_API} (дээрх хуудасны үзүүлэлт).</p>}
             {missing.length > 0 && <p className="text-xs text-muted-foreground">
                 Экспорт оруулаагүй: {missing.map(source => CHANNEL_SOURCE_LABELS[source]).join(', ')}.{' '}
                 <Link href="/marketing/channel-reports" className="inline-flex items-center gap-1 text-brand-strong hover:underline focus-ring print:hidden">Экспорт импорт<ArrowUpRight className="size-3" /></Link>
