@@ -77,8 +77,11 @@ interface InsightsData {
     metrics: Record<string, { label: string; kind: 'sum' | 'unique' | 'latest'; value: number | null; day: string | null; days: number }>;
 }
 
-/** Page insights картын дараалал (lib/marketing/social-metrics.ts). */
-const PAGE_CARD_METRICS = ['page_media_view', 'page_total_media_view_unique', 'page_post_engagements', 'page_daily_follows_unique', 'page_views_total', 'page_total_actions', 'page_video_views', 'page_follows'] as const;
+/**
+ * Page insights картын дараалал (lib/marketing/social-metrics.ts). `page_total_actions`-ийг Meta бүх өдөрт 0 гэж
+ * буцаадаг (бодит тоо биш, social-week.ts-ийн SOCIAL_WEEK_METRICS-тэй адил) тул харуулахгүй.
+ */
+const PAGE_CARD_METRICS = ['page_media_view', 'page_total_media_view_unique', 'page_post_engagements', 'page_daily_follows_unique', 'page_views_total', 'page_video_views', 'page_follows'] as const;
 
 /** Instagram аккаунтын хугацааны үзүүлэлт (/api/marketing/instagram). */
 interface InstagramInsightsData { metrics: Record<string, number | null>; follows: number | null; unfollows: number | null; unavailable: string[] }
@@ -89,6 +92,12 @@ const IG_CARD_METRICS: Array<[string, string]> = [
 
 /** Meta-гийн өгөөгүй тоо «—» (0 биш). */
 const showCount = (value: number | null | undefined) => typeof value === 'number' ? value.toLocaleString() : '—';
+
+/**
+ * Нийтлэлийн хүрэлт (давхардалгүй хүн): зөвхөн Instagram media-д бодит. Meta Facebook постын хүрэлтийг 0 гэж
+ * буцаадаг тул (синк 2026-10-25-аас NULL хадгалдаг, өмнөх мөр 0 хэвээр байж болно) Facebook-д «—».
+ */
+const postReach = (post: SocialPost): number | null => post.platform === 'instagram' && typeof post.reach === 'number' ? post.reach : null;
 
 type TabType = 'all' | 'facebook' | 'instagram';
 
@@ -427,7 +436,8 @@ function SocialPageContent() {
     };
 
     const totalLikes = posts.reduce((s, p) => s + (p.likes || 0), 0);
-    const totalReach = posts.reduce((s, p) => s + (p.reach || 0), 0);
+    // Давхардалгүй хүрэлтийг нийтлэл, платформын хооронд нэмэхгүй — нэг нийтлэлийн хамгийн их хүрэлт л.
+    const topReach = posts.reduce<number | null>((max, p) => { const reach = postReach(p); return reach === null ? max : Math.max(max ?? reach, reach); }, null);
 
     // ======= Tab content =======
 
@@ -519,7 +529,7 @@ function SocialPageContent() {
                         posts={posts}
                         loading={loadingPosts}
                         totalLikes={totalLikes}
-                        totalReach={totalReach}
+                        topReach={topReach}
                         formatNumber={formatNumber}
                         formatDate={formatTimeAgo}
                     />
@@ -991,14 +1001,14 @@ function AllPostsContent({
     posts,
     loading,
     totalLikes,
-    totalReach,
+    topReach,
     formatNumber,
     formatDate,
 }: {
     posts: SocialPost[];
     loading: boolean;
     totalLikes: number;
-    totalReach: number;
+    topReach: number | null;
     formatNumber: (v: number) => string;
     formatDate: (d: string) => string;
 }) {
@@ -1029,14 +1039,14 @@ function AllPostsContent({
                     iconColor="brand"
                 />
                 <StatsCard
-                    title="Нийтлэлүүдийн хүрэлтийн нийлбэр"
-                    value={totalReach.toLocaleString()}
+                    title="Нэг нийтлэлийн хамгийн их хүрэлт"
+                    value={showCount(topReach)}
                     icon={Eye}
                     iconColor="success"
                 />
             </div>
 
-            <p className="text-xs leading-relaxed text-muted-foreground">Хүрэлтийн нийлбэр нь энд ачаалсан нийтлэл бүрийн дүн. Олон нийтлэл үзсэн хүний давхардлыг хасаагүй; тайлант хугацааны давхардалгүй нийт хүрэлт биш.</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">Хүрэлт нь тухайн нийтлэлийг үзсэн давхардалгүй хүн — олон нийтлэл үзсэн хүн давхардах тул нийтлэл, платформын хооронд нэмэхгүй. Facebook постын хүрэлтийг Meta өгдөггүй («—»).</p>
 
             <Card>
                 <CardContent className="p-0">
@@ -1062,6 +1072,7 @@ function AllPostsContent({
                                             <p className="text-sm text-foreground line-clamp-2">{post.content}</p>
                                         </div>
                                         <div className="flex items-center gap-4 text-sm text-muted-foreground ml-4 tabular-nums">
+                                            <span className="flex items-center gap-1" title="Хүрсэн хүн"><Eye className="w-3 h-3" />{showCount(postReach(post))}</span>
                                             <span className="flex items-center gap-1"><Heart className="w-3 h-3" />{showCount(post.likes)}</span>
                                             <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3" />{showCount(post.comments)}</span>
                                             <span className="flex items-center gap-1"><Share2 className="w-3 h-3" />{showCount(post.shares)}</span>

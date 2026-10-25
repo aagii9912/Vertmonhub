@@ -17,7 +17,7 @@ import {
 } from '@/lib/marketing/channel-week';
 import { isMetaResultType, metaResultKey } from '@/lib/marketing/meta-results';
 import { CONTENT_STATUS_LABEL, CONTENT_TYPE_LABEL, contentPlatformLabel, type ContentItem, type ContentPlanSummary } from '@/lib/marketing/content-plan';
-import type { SocialWeek, SocialWeekMetric } from '@/lib/marketing/social-week';
+import type { InstagramWeek, SocialWeek, WeekMetric } from '@/lib/marketing/social-week';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
 import { ubDateStr } from '@/lib/utils/date';
 
@@ -63,6 +63,8 @@ export interface WeeklyDeckInput {
     contentPlan?: WeeklyContentPlan;
     /** Facebook хуудасны хадгалсан органик үзүүлэлт ба тухайн долоо хоногийн постууд. */
     social?: SocialWeek | null;
+    /** Instagram аккаунтын хадгалсан органик үзүүлэлт ба тухайн долоо хоногийн media. */
+    instagram?: InstagramWeek | null;
     slides: WeeklySlide[];
     /** Зургийн зам (слайд, контент) → `image/jpeg;base64,...` ба хэмжээ. Ачаалж чадаагүй зураг байхгүй байж болно. */
     images: Record<string, DeckImage>;
@@ -671,7 +673,7 @@ function contentShowcase(pres: PptxGenJS, summary: ContentPlanSummary, images: R
     }
 }
 
-function socialHelper(metric: SocialWeekMetric, rangeDays: number): string {
+function socialHelper(metric: WeekMetric, rangeDays: number): string {
     if (metric.value === null) return 'Meta өгөөгүй';
     const parts: string[] = [];
     if (metric.kind === 'latest' && metric.day) parts.push(`${dot(metric.day)}-ны байдлаар`);
@@ -680,6 +682,14 @@ function socialHelper(metric: SocialWeekMetric, rangeDays: number): string {
     parts.push(`${against} ${count(metric.previous)}`);
     if (metric.delta !== null) parts.push(`${metric.delta > 0 ? '+' : ''}${count(metric.delta)}${metric.deltaPct !== null ? ` (${metric.deltaPct > 0 ? '+' : ''}${metric.deltaPct}%)` : ''}`);
     return parts.join(' · ');
+}
+
+/** Долоо хоногийн метрикийн картууд хоёр эгнээнд тэнцүү (6 → 3+3, 8 → 4+4). */
+function weekMetricRows(slide: Slide, metrics: WeekMetric[], rangeDays: number) {
+    const card = (metric: WeekMetric) => ({ label: metric.label, value: count(metric.value), helper: socialHelper(metric, rangeDays) });
+    const half = Math.ceil(metrics.length / 2);
+    statRow(slide, TOP, metrics.slice(0, half).map(card), 1.7);
+    if (metrics.length > half) statRow(slide, TOP + 1.95, metrics.slice(half).map(card), 1.7);
 }
 
 /** Facebook хуудасны долоо хоногийн органик үзүүлэлт (хадгалсан өдрийн insights) ба нийтэлсэн постууд. */
@@ -695,13 +705,12 @@ function socialPageSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
         slide.addText(`Энэ долоо хоногийн Facebook хуудасны үзүүлэлт хадгалагдаагүй байна${social.syncedTo ? ` (сүүлийн синк ${dot(social.syncedTo)} хүртэл)` : ''}. Маркетинг → Сошиал хэсэгт хуудас холбогдсон эсэх, синкийг шалгана уу.`,
             { x: M, y: TOP, w: CW, h: 0.9, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
     } else {
-        const card = (metric: SocialWeekMetric) => ({ label: metric.label, value: count(metric.value), helper: socialHelper(metric, social.rangeDays) });
-        statRow(slide, TOP, social.metrics.slice(0, 4).map(card), 1.7);
-        statRow(slide, TOP + 1.95, social.metrics.slice(4).map(card), 1.7);
+        weekMetricRows(slide, social.metrics, social.rangeDays);
     }
     note(slide, [
         'Эх сурвалж: Hub-ийн хадгалсан Facebook Page insights (Graph v26, 6 цаг тутмын синк). Meta өдрийг Номхон далайн цагаар тоолдог.',
         '«Дагагч» нь өдрийн эцсийн төлөв, бусад нь долоо хоногийн нийлбэр. Давхардалгүй хүрсэн хүнийг өдрөөр нэмэх боломжгүй тул оруулаагүй.',
+        '«Товч, холбоос дарсан»-ыг (page_total_actions) Meta бүх өдөрт 0 гэж буцаадаг тул оруулаагүй.',
         'Долоо хоног дутуу бол (хурлын өглөө Meta-гийн сүүлийн өдөр дуусаагүй) өмнөх долоо хоногийн мөн өдрүүдтэй харьцуулна. Дагагчийг 7 хоногийн өмнөх өдөртэй харьцуулна.',
         social.syncedTo && social.syncedTo < input.range.to ? `Сүүлийн синк ${social.syncedTo} хүртэл — долоо хоногийн сүүлийн өдрүүд дутуу.` : null,
     ]);
@@ -722,6 +731,51 @@ function socialPageSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
         notes: [
             `Постын тоо нь сүүлийн синкийн${social.posts[0]?.asOf ? ` (${social.posts[0].asOf})` : ''} байдлаарх нийт дүн — пост нийтлэгдсэнээс хойш.`,
             'Meta постын давхардалгүй хүрэлтийг 0 гэж буцаадаг тул оруулаагүй. Hub хуудасны сүүлийн 25 постыг хадгалдаг.',
+        ],
+    });
+}
+
+/**
+ * Instagram аккаунтын долоо хоногийн органик үзүүлэлт (хадгалсан өдрийн insights) ба нийтэлсэн media. Хүрсэн хүн,
+ * оролцсон аккаунт өдрийн давхардалгүй тоо тул долоо хоногт нэмэхгүй; постын хүрэлт бол тухайн постынх л.
+ */
+function instagramWeekSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
+    const instagram = input.instagram;
+    if (!instagram?.account) return;
+    const name = instagram.account.username ? `@${instagram.account.username}` : 'Instagram';
+    const days = Math.max(0, ...instagram.metrics.map(metric => metric.days));
+    const coverage = days && days < instagram.rangeDays ? ` · ${days}/${instagram.rangeDays} өдрийн өгөгдөл` : '';
+    const slide = content(pres, 'Маркетинг · Instagram', `${name} — долоо хоногийн үзүүлэлт`, `${span(input.range)} · Meta-гийн өдөр (Номхон далайн цаг)${coverage}`);
+    if (!instagram.metrics.some(metric => metric.value !== null)) {
+        slide.addText(`Энэ долоо хоногийн Instagram үзүүлэлт хадгалагдаагүй байна${instagram.syncedTo ? ` (сүүлийн синк ${dot(instagram.syncedTo)} хүртэл)` : ''}. Маркетинг → Сошиал хэсэгт Instagram холбогдсон эсэх, insights-ийн эрхийг шалгана уу.`,
+            { x: M, y: TOP, w: CW, h: 0.9, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
+    } else {
+        weekMetricRows(slide, instagram.metrics, instagram.rangeDays);
+    }
+    note(slide, [
+        'Эх сурвалж: Hub-ийн хадгалсан Instagram insights (Graph v26, 6 цаг тутмын синк). Meta өдрийг Номхон далайн цагаар тоолдог.',
+        '«Дагагч» нь синк хийсэн өдрийн төлөв, бусад нь долоо хоногийн нийлбэр. Хүрсэн хүн, оролцсон аккаунт нь өдрийн давхардалгүй тоо — өдрүүдийг нэмэх боломжгүй тул оруулаагүй.',
+        'Долоо хоног дутуу бол (хурлын өглөө Meta-гийн сүүлийн өдөр дуусаагүй) өмнөх долоо хоногийн мөн өдрүүдтэй харьцуулна. Дагагчийг 7 хоногийн өмнөх өдөртэй харьцуулна.',
+        instagram.syncedTo && instagram.syncedTo < input.range.to ? `Сүүлийн синк ${instagram.syncedTo} хүртэл — долоо хоногийн сүүлийн өдрүүд дутуу.` : null,
+    ]);
+
+    const title = 'Энэ долоо хоногт Instagram-д нийтэлсэн пост';
+    if (!instagram.posts.length) {
+        const empty = content(pres, 'Маркетинг · Instagram', title, span(input.range));
+        empty.addText('Энэ долоо хоногт Instagram-д нийтэлсэн пост Hub-д хадгалагдаагүй байна.', { x: M, y: TOP, w: CW, h: 0.5, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
+        return;
+    }
+    const postText = (text: string | null) => text?.replace(/\s+/g, ' ').trim() || '(текстгүй пост)';
+    const postDate = (iso: string | null) => iso ? dot(ubDateStr(new Date(iso)).slice(5)) : '—';
+    tableSlides(pres, {
+        kicker: 'Маркетинг · Instagram', title, subtitle: `${span(input.range)} · ${instagram.posts.length} пост, үзэлтээр эрэмбэлсэн`,
+        head: [headCell('Огноо'), headCell('Пост'), ...['Үзэлт', 'Хүрсэн хүн', 'Like', 'Сэтгэгдэл', 'Хуваалцсан', 'Хадгалсан'].map(text => headCell(text, 'right'))],
+        rows: instagram.posts.map(post => [bodyCell(postDate(post.publishedAt)), bodyCell(clip(postText(post.content), 90)), bodyCell(count(post.views), 'right', { bold: true }),
+            bodyCell(count(post.reach), 'right'), bodyCell(count(post.likes), 'right'), bodyCell(count(post.comments), 'right'), bodyCell(count(post.shares), 'right'), bodyCell(count(post.saved), 'right')]),
+        colW: [0.85, 4.4, 1.2, 1.15, 0.95, 1.2, 1.2, 1.183], perSlide: 10, fontSize: 12,
+        notes: [
+            `Постын тоо нь сүүлийн синкийн${instagram.posts[0]?.asOf ? ` (${instagram.posts[0].asOf})` : ''} байдлаарх нийт дүн — пост нийтлэгдсэнээс хойш.`,
+            'Хүрсэн хүн нь тухайн постыг үзсэн давхардалгүй хүн — постуудыг хооронд нь нэмж болохгүй. Hub сүүлийн 25 нийтлэлийг хадгалдаг.',
         ],
     });
 }
@@ -1106,6 +1160,7 @@ export function buildWeeklyDeck(pres: PptxGenJS, input: WeeklyDeckInput): PptxGe
             contentShowcase(pres, week, input.images);
         }
         socialPageSlides(pres, input);
+        instagramWeekSlides(pres, input);
         for (const slide of input.slides.filter(item => item.part === 'marketing')) customSlide(pres, slide, input.images);
         channelExportSlide(pres, input);
         metaAdsSlides(pres, input);

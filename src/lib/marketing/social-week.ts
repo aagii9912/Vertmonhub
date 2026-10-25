@@ -123,6 +123,13 @@ export interface InstagramWeek {
     posts: InstagramWeekPost[];
 }
 
+/** `GET /api/dashboard/marketing/social-week`-ийн хариу. Instagram-ийн уншилт бүтэлгүйтвэл `instagram: null` + мессеж. */
+export interface SocialWeekResponse {
+    week: SocialWeek;
+    instagram?: InstagramWeek | null;
+    instagramError?: string | null;
+}
+
 const DAY_MS = 86_400_000;
 const daysIn = (range: SocialWeekRange) => Math.round((Date.parse(`${range.to}T00:00:00Z`) - Date.parse(`${range.from}T00:00:00Z`)) / DAY_MS) + 1;
 const shift = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
