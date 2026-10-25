@@ -7,6 +7,8 @@ import { recordAudit } from '@/lib/services/AuditService';
 import { resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { ubDateStr } from '@/lib/utils/date';
 import { isMissingReferralSchema, REFERRAL_UNAVAILABLE, resolveReferralSource } from '@/lib/sales/referral-sources-store';
+import { NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
+import { contractUnitKey } from '@/lib/inventory/report-inventory';
 
 /** YYYY-MM-DD, хуанлийн жинхэнэ өдөр (2026-02-30 биш). */
 const DateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
@@ -123,7 +125,9 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
         return NextResponse.json({ error: 'Захиалга өгсөн огноо 2000 оноос өмнө байж болохгүй' }, { status: 400 });
     }
     // Аудитад өмнөх утгыг хадгална (утас зэрэг холбоо барих засвар түүхгүй алга болохгүй).
-    const beforeColumns = [...new Set([...Object.keys(updateData), ...(settingOrderDate ? ['contract_date'] : [])])];
+    // Төлөв солиход байрыг (product_type + unit_label) мөн уншина — цуцалсныг сэргээхэд доорх шалгалтад.
+    const settingStatus = updateData.contract_status !== undefined;
+    const beforeColumns = [...new Set([...Object.keys(updateData), ...(settingOrderDate ? ['contract_date'] : []), ...(settingStatus ? ['product_type', 'unit_label'] : [])])];
     const { data: before, error: beforeError } = await ownContract(supabase
         .from('property_contracts')
         .select(beforeColumns.join(', '))
@@ -141,6 +145,30 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
         const referral = await resolveReferralSource(supabase, authShop.id, { id: updateData.referral_source_id },
             { current: (previous.referral_source_id as string | null | undefined) ?? null });
         if (!referral.ok) return NextResponse.json({ error: referral.error }, { status: referral.status });
+    }
+    // «Сэргээх»: цуцалсан гэрээг дахин амьд болгоход байранд өөр амьд гэрээ байх ёсгүй (HUB импортын
+    // import_contract_list-ийн «unit_taken»-тэй ижил дүрэм) — эс бөгөөс нэг байр төлөвлөгөө, давхрын зураглалд хоёр удаа орно.
+    // Байрыг давхрын зураглалын түлхүүрээр (contractUnitKey: төрөл + unit_label-ийн таслалаас өмнөх код) тулгана:
+    // «Б1-25» ба «Б1-25, P-12» нэг байр. ilike-ээр өргөн уншаад түлхүүрээр яг шүүнэ (LIKE-ийн тусгай тэмдэгт зөвхөн өргөсгөнө,
+    // `\` escape тул `_` болгоно).
+    const reviving = settingStatus && updateData.contract_status !== 'cancelled' && previous.contract_status === 'cancelled';
+    const unitKey = reviving ? contractUnitKey((previous.product_type as string | null) ?? null, (previous.unit_label as string | null) ?? null) : null;
+    if (unitKey) {
+        const code = unitKey.slice(unitKey.indexOf('|') + 1);
+        const { data: sameCode, error: takenError } = await supabase
+            .from('property_contracts')
+            .select('id, product_type, unit_label')
+            .eq('shop_id', authShop.id)
+            .neq('id', id)
+            .is('deleted_at', null)
+            .or(NOT_CANCELLED_CONTRACT)
+            .ilike('unit_label', `%${code.replace(/\\/g, '_')}%`);
+        if (takenError) throw takenError;
+        const taken = ((sameCode ?? []) as Array<{ product_type: string | null; unit_label: string | null }>)
+            .some(row => contractUnitKey(row.product_type, row.unit_label) === unitKey);
+        if (taken) {
+            return NextResponse.json({ error: `«${code}» байранд өөр идэвхтэй гэрээ байна — нэг байранд хоёр идэвхтэй гэрээ үүсгэхгүй. Тэр гэрээг шалгаад дахин оролдоно уу.` }, { status: 409 });
+        }
     }
     const payload: Record<string, unknown> = { ...updateData };
     if (settingOrderDate) {
@@ -170,11 +198,14 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
     // Зэрэг хадгалалт: хоосон байсан огноог л бөглөнө (өөр хүн түрүүлж оруулсан бол 409).
     if (settingOrderDate) update = update.is('order_date', null);
     if ('contract_date' in payload) update = update.is('contract_date', null);
+    // Сэргээх: байрыг шалгах үеийн цуцалсан төлөв хэвээр байвал л бичнэ (хооронд өөр хүн өөрчилсөн бол 409).
+    // Хоёр өөр цуцалсан гэрээг нэг байранд зэрэг сэргээхийг энэ хаахгүй — тэр нь RPC/DB индекс шаардана.
+    if (reviving) update = update.eq('contract_status', 'cancelled');
     const { data, error } = await update.select().maybeSingle();
 
     if (error) throw error;
     if (!data) {
-        return settingOrderDate
+        return settingOrderDate || reviving
             ? NextResponse.json({ error: 'Гэрээ өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу.' }, { status: 409 })
             : NextResponse.json({ error: 'Гэрээ олдсонгүй' }, { status: 404 });
     }
