@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { planContractListImport, type ContractListContract, type ContractListUnit, type HubRow } from '../list-import';
+import { planContractListImport, storedHubPaidRows, type ContractListContract, type ContractListUnit, type HubRow } from '../list-import';
 
 const shop = '10000000-0000-4000-8000-000000000001';
 const otherShop = '10000000-0000-4000-8000-000000000002';
@@ -372,5 +372,39 @@ describe('import_contract_list with the planner (lib/contracts/list-import)', ()
         const replanned = planContractListImport({ ...input, latestImportDate: '2026-10-21', ...await readState() });
         expect(replanned.ops).toEqual([]);
         expect(replanned.counts).toMatchObject({ unchanged: 4 });
+    });
+
+    it('stores a same-date re-export whose only new data is «Нийт төлсөн дүн» as a zero-op import that becomes the paid source', async () => {
+        /** Сервисийн уншилт: тэр огноонд сүүлд хийсэн импортын мөрүүд. */
+        const sameDateRows = async () => (await db.query<{ rows: unknown }>(`SELECT rows FROM contract_list_imports
+            WHERE shop_id = $1 AND report_date = '2026-10-21' ORDER BY created_at DESC LIMIT 1`, [shop])).rows[0]?.rows ?? null;
+        const input = { transferredIds: new Set<string>(), paymentContractIds: new Set<string>(), reportDate: '2026-10-21', fileName: 'HUB.xlsx', today: '2026-10-21' };
+        const commit = async (planned: ReturnType<typeof planContractListImport>, requestId: string) => call({ requestId, reportDate: '2026-10-21',
+            planHash: createHash('sha256').update(planned.canonical).digest('hex'), ops: planned.ops, rows: planned.rows, summary: planned.summary });
+
+        const first = planContractListImport({ ...input, rows: [hubRow({ paidTotal: 100_000_000 })], latestImportDate: null, ...await readState() });
+        expect(first.ops.length).toBeGreaterThan(0);
+        expect(await commit(first, 'req-1')).toMatchObject({ ok: true });
+
+        const paidOnly = planContractListImport({ ...input, rows: [hubRow({ paidTotal: 150_000_000 })], latestImportDate: '2026-10-21',
+            sameDateImportRows: await sameDateRows(), ...await readState() });
+        expect(paidOnly).toMatchObject({ ops: [], errors: [], blocking: [], paidUpdate: { rows: 1, changed: 1, reimport: true } });
+        const contractsBefore = (await snapshot()).contracts;
+        expect(await commit(paidOnly, 'req-2')).toMatchObject({ ok: true, replayed: false, inserted: 0, updated: 0,
+            summary: { paidUpdate: { rows: 1, changed: 1, reimport: true } } });
+        expect((await snapshot()).contracts).toEqual(contractsBefore);
+        // Хүсэлтийн давталт идемпотент.
+        expect(await commit(paidOnly, 'req-2')).toMatchObject({ ok: true, replayed: true });
+
+        // Төлсөн дүнгийн уншигчийн эрэмбэ (plan-performance-load): огноо, дараа нь сүүлд хийсэн нь.
+        const latest = (await db.query<{ request_id: string; rows: unknown }>(`SELECT request_id, rows FROM contract_list_imports
+            WHERE shop_id = $1 ORDER BY report_date DESC, created_at DESC LIMIT 1`, [shop])).rows[0];
+        expect(latest.request_id).toBe('req-2');
+        expect(storedHubPaidRows(latest.rows).map(row => row.paidTotal)).toEqual([150_000_000]);
+
+        // Ижил файлыг дахин: өөрчлөх зүйлгүй.
+        const again = planContractListImport({ ...input, rows: [hubRow({ paidTotal: 150_000_000 })], latestImportDate: '2026-10-21',
+            sameDateImportRows: await sameDateRows(), ...await readState() });
+        expect(again).toMatchObject({ ops: [], paidUpdate: null });
     });
 });

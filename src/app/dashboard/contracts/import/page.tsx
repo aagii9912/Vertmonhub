@@ -22,7 +22,7 @@ import { ubDateStr } from '@/lib/utils/date';
 import { HUB_STATUS_LABEL } from '@/lib/contracts/labels';
 import type {
     ContractListBlockingItem, ContractListCounts, ContractListFileTotal, ContractListInfoItem, ContractListInsertItem,
-    ContractListMissingItem, ContractListReviewItem, ContractListUnitMismatch, ContractListUpdateGroup,
+    ContractListMissingItem, ContractListPaidUpdate, ContractListReviewItem, ContractListUnitMismatch, ContractListUpdateGroup,
 } from '@/lib/contracts/list-import';
 
 /**
@@ -48,6 +48,8 @@ interface Preview {
     info: ContractListInfoItem[];
     blocking: ContractListBlockingItem[];
     olderThanLatest: string | null;
+    /** Гэрээнд бичигдэхгүй «Нийт төлсөн дүн»-гийн шинэчлэл (null = алга эсвэл хадгалсантай ижил). */
+    paidUpdate: ContractListPaidUpdate | null;
     extraColumns: string[];
     ignoredColumns: string[];
     skipped: Array<{ row: number; reason: string }>;
@@ -63,6 +65,8 @@ const MONEY_FIELDS = new Set(['total_price', 'price_per_sqm', 'prepayment_due', 
 const number = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 /** Мөнгө ERP-ийн файлын форматаар (#,##0) — бүхэл төгрөг. */
 const money = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 0 });
+/** Гэрээнд өөрчлөлтгүй, зөвхөн «Нийт төлсөн дүн» шинэчлэгдэх файл. */
+const paidOnlyOf = (preview: Preview) => (preview.opsCount === 0 && preview.paidUpdate ? preview.paidUpdate : null);
 
 function formatValue(field: string, value: string | number | null): string {
     if (value === null || value === undefined || value === '') return '—';
@@ -146,9 +150,12 @@ function ImportWorkspace({ shopId }: { shopId: string }) {
     async function commit() {
         if (!preview) return;
         const created = preview.counts.insert + preview.counts.insertCancelled;
+        const paidOnly = paidOnlyOf(preview);
         const ok = await confirmToast({
             title: 'Импортыг батлах уу?',
-            description: `${created} шинэ гэрээ, ${preview.counts.update} гэрээний шинэчлэл хадгалагдана. Төлсөн дүн, үлдэгдэл өөрчлөгдөхгүй.`,
+            description: paidOnly
+                ? `Гэрээ өөрчлөгдөхгүй — зөвхөн файлын «Нийт төлсөн дүн» (${paidOnly.rows} мөр) импортын түүхэнд хадгалагдана. Гэрээний төлсөн дүн, үлдэгдэл өөрчлөгдөхгүй.`
+                : `${created} шинэ гэрээ, ${preview.counts.update} гэрээний шинэчлэл хадгалагдана. Төлсөн дүн, үлдэгдэл өөрчлөгдөхгүй.`,
             confirmLabel: 'Батлах',
             cancelLabel: 'Болих',
         });
@@ -248,6 +255,7 @@ function ImportWorkspace({ shopId }: { shopId: string }) {
                     <p className="mt-3 text-sm">
                         <span className="num">{saved.inserted}</span> шинэ · <span className="num">{saved.updated}</span> шинэчилсэн · <span className="num">{preview.counts.unchanged}</span> хэвээр · <span className="num">{preview.reportDate}</span>-ны файл
                     </p>
+                    {paidOnlyOf(preview) && <p className="mt-1 text-xs text-muted-foreground">Зөвхөн «Нийт төлсөн дүн» шинэчлэгдлээ — «Төлөвлөгөөний биелэлт»-д гараар оруулаагүй сарын орсон мөнгө <span className="num">{preview.reportDate}</span>-ны энэ файлаар тооцогдоно.</p>}
                     {preview.stillUndated > 0 && <p className="mt-1 text-xs text-muted-foreground">Огноогүй <span className="num">{preview.stillUndated}</span> гэрээ файлд байхгүй тул огноогүй хэвээр — гэрээ бүрийн дэлгэрэнгүйгээс огноо оруулна.</p>}
                     <div className="mt-4 flex flex-wrap gap-2">
                         <Button href="/dashboard/contracts">Гэрээ харах</Button>
@@ -279,7 +287,8 @@ function ReviewStep({ preview, busy, acceptReview, onAcceptReview, allowOlder, o
     allowOlder: boolean; onAllowOlder: (value: boolean) => void; onCommit: () => void; onCancel: () => void;
 }) {
     const { counts } = preview;
-    const nothing = preview.opsCount === 0;
+    const paidOnly = paidOnlyOf(preview);
+    const nothing = preview.opsCount === 0 && !paidOnly;
     const blocked = preview.blocking.length > 0;
     const disabled = busy || !preview.canCommit || (preview.review.length > 0 && !acceptReview) || (!!preview.olderThanLatest && !allowOlder);
     const undated = preview.missing.filter(item => item.undated).length;
@@ -300,6 +309,17 @@ function ReviewStep({ preview, busy, acceptReview, onAcceptReview, allowOlder, o
             </StatBar>
 
             {nothing && !blocked && <Alert variant="success">Бүгд хэвээр — өөрчлөх зүйлгүй.</Alert>}
+            {paidOnly && !blocked && (
+                <Alert variant="info">
+                    <AlertTitle>Гэрээнд өөрчлөлт алга — зөвхөн «Нийт төлсөн дүн» шинэчлэгдэнэ</AlertTitle>
+                    <AlertDescription>
+                        {paidOnly.reimport
+                            ? <><span className="num">{paidOnly.changed}</span> мөрийн төлсөн дүн ижил огноотой өмнөх импортоос зөрүүтэй.</>
+                            : <>Файлд <span className="num">{paidOnly.rows}</span> мөрийн төлсөн дүн байна.</>}
+                        {' '}Батлахад энэ файл <span className="num">{preview.reportDate}</span>-ны «Нийт төлсөн дүн»-гийн эх болж, «Төлөвлөгөөний биелэлт»-д гараар оруулаагүй сарын орсон мөнгийг тооцоход ашиглагдана. Гэрээний төлсөн дүн, үлдэгдэл өөрчлөгдөхгүй.
+                    </AlertDescription>
+                </Alert>
+            )}
             {preview.olderThanLatest && <OlderFile latest={preview.olderThanLatest} checked={allowOlder} onChange={onAllowOlder} disabled={busy} />}
 
             {blocked && (
