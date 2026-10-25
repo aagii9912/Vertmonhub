@@ -9,7 +9,8 @@ import { buildWeeklySales } from '../src/lib/dashboard/weekly-sales';
 import type { ErpProduct, ErpSale } from '../src/lib/erp/records';
 import { scoreKpi } from '../src/lib/sales/kpi';
 import { buildBudgetOverview } from '../src/lib/marketing/budget';
-import { summarizeSocialWeek } from '../src/lib/marketing/social-week';
+import { summarizeInstagramWeek, summarizeSocialWeek } from '../src/lib/marketing/social-week';
+import type { MarketingConnections } from '../src/lib/marketing/connections';
 import { ubParts } from '../src/lib/utils/date';
 import { managerActivityFixture } from './support/manager-activity';
 import { teamDeckFixtures } from './support/team-deck';
@@ -117,8 +118,10 @@ async function setup(page: Page, restricted = false) {
                 file_name: `${source}.csv`, totals, warnings: [], row_count: 4, note: null, imported_by: userId, created_at: range.to, updated_at: range.to, breakdown, mapping: {} });
             const none = { report: null, exact: false, previous: null, comparison: null };
             return reply({ reports: [], latest: {
+                // Өмнөх долоо хоногийн (залгаа, 7 өдөр) тайлантай — слайдын шошго «Өмнөх 7 хоног».
                 meta_ads: { report: report('meta_ads', { spend: 300.38, currency: 'USD', reach: 270214, impressions: 483209, link_clicks: 800 },
-                    [{ kind: 'campaign', label: '[Block contents] 201 мкв 5 өрөө', values: { spend: 124.41 } }]), exact: true, previous: null,
+                    [{ kind: 'campaign', label: '[Block contents] 201 мкв 5 өрөө', values: { spend: 124.41 } }]), exact: true,
+                    previous: { ...report('meta_ads', { spend: 250, currency: 'USD' }), id: 'meta_ads-previous', ...(({ from, to }) => ({ period_from: from, period_to: to }))(weeklyReviewRange(shiftReviewDate(meetingDate, -7))) },
                     comparison: { spend: { current: 300.38, previous: 250, delta: 50.38, pct: 20.2, comparable: true } } },
                 facebook_page: none,
                 callpro: { report: report('callpro', { answered: 16, missed: 6, abandoned: 1, answer_rate: 66.7, selected: 24 },
@@ -133,14 +136,30 @@ async function setup(page: Page, restricted = false) {
                 { day: day(range.from, i), metric: 'page_media_view', value: 1000 }, { day: day(prior.from, i), metric: 'page_media_view', value: 800 },
                 { day: day(range.from, i), metric: 'page_follows', value: 4806 + i }, { day: day(prior.from, i), metric: 'page_follows', value: 4780 + i },
             ]).flat();
+            const igRows = Array.from({ length: 7 }, (_, i) => [{ day: day(range.from, i), metric: 'views', value: 300 }, { day: day(prior.from, i), metric: 'views', value: 250 }]).flat();
             return reply({ week: {
                 page: { id: '676357242225387', name: 'Туршилтын хуудас' }, range, previousRange: prior, syncedTo: range.to, rangeDays: 7,
                 metrics: summarizeSocialWeek(rows, range, prior),
                 posts: [{ id: '1_2', content: 'Онцлох орон сууц — Facebook пост', publishedAt: `${range.from}T04:00:00Z`, views: 70662, clicks: 327, likes: 289, comments: 0, shares: 7, asOf: range.to }],
-            } });
+            }, instagram: {
+                account: { id: '17841475771440904', username: 'turshilt_ig' }, range, previousRange: prior, syncedTo: range.to, rangeDays: 7,
+                metrics: summarizeInstagramWeek(igRows, range, prior),
+                posts: [{ id: 'ig-1', content: 'Reel — 5 өрөө байрны танилцуулга', publishedAt: `${range.from}T05:00:00Z`, views: 12345, reach: 8100, likes: 210, comments: 14, shares: 9, saved: 31, asOf: range.to }],
+            }, instagramError: null });
         }
+        if (path === '/api/dashboard/marketing/connections') {
+            const synced = { lastAttemptAt: `${range.to}T04:00:00Z`, lastSuccessAt: `${range.to}T04:00:00Z`, from: range.from, to: range.to, error: null };
+            const connections: MarketingConnections = {
+                page: { connected: true, name: 'Туршилтын хуудас', sync: synced },
+                instagram: { connected: true, username: 'turshilt_ig', sync: synced },
+                ads: { accountId: 'act_1129994262383674', tokenSource: 'system', tokenDaysLeft: null, tokenExpired: false, insights: synced, spend: synced, currency: 'USD', mntPerUnit: 3450 },
+            };
+            return reply({ connections });
+        }
+        // 1–9-р сард бүртгэлтэй зардал; 10-р сард бүртгэлгүй → «—», «0 ₮» биш.
         if (path === '/api/marketing/budget') return reply({ year: Number(url.searchParams.get('year')), available: true,
-            overview: buildBudgetOverview(Array(12).fill(10000000), Array.from({ length: 12 }, (_, index) => index < 9 ? 8000000 : 0), Array(12).fill(0)) });
+            overview: buildBudgetOverview(Array(12).fill(10000000), Array.from({ length: 12 }, (_, index) => index < 9 ? 8000000 : 0), Array(12).fill(0)),
+            spendStatus: Array.from({ length: 12 }, (_, index) => ({ month: index + 1, recorded: index < 9, pending: {} })) });
         if (path === '/api/dashboard/kpi-report') return reply({ manager: { name: 'Номин', isSelf: true }, shopName: 'Vertmon · Туршилтын өгөгдөл', year: 2026, month: 10, onboarding: true });
         if (path === '/api/dashboard/reports/weekly-sales') return reply({ meetingDate, projectName: 'Vertmon · Туршилтын өгөгдөл', ...weeklySalesFixture() });
         // «Борлуулалт (албаны загвар)» илтгэлийн эх сурвалж.
@@ -275,7 +294,9 @@ for (const compact of [false, true]) {
         const meta = page.getByRole('region', { name: 'Meta Ads Manager' });
         await expect(meta.getByText('300.38 USD', { exact: true })).toBeVisible();
         await expect(page.getByRole('region', { name: 'CallPro дуудлага' }).getByText(/Алдсан дуудлага их цаг: 12:00 \(3\)/)).toBeVisible();
-        await expect(page.getByText(/Экспорт оруулаагүй: Facebook хуудас, Масс SMS/)).toBeVisible();
+        // Facebook хуудас API-аар холбогдсон (холболтын төлөв) — хуудасны экспорт дутуу гэж тооцохгүй.
+        await expect(page.getByText(/Экспорт оруулаагүй: Масс SMS\./)).toBeVisible();
+        await expect(page.getByText('Facebook хуудас: API-аар (дээрх хуудасны үзүүлэлт).', { exact: true })).toBeVisible();
         expect(copied).toContain('Энэ долоо хоног: 3 гэрээ');
         expect(copied).toContain('Б1 блок орон сууц: гэрээтэй');
         const products = page.getByRole('region', { name: 'Гэрээний бүтээгдэхүүний задаргаа' });
@@ -408,12 +429,20 @@ test('маркетинг өөрийн контент төлөвлөгөөгөө�
     await plan.screenshot({ path: 'output/workday/desktop-weekly-content-plan.png' });
 
     // Facebook хуудасны долоо хоногийн органик үзүүлэлт хадгалсан insights-аас.
-    const channelsSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Суваг: Page, Ads, CallPro, SMS · төсөв', exact: true }) });
+    const channelsSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Суваг: Page, Instagram, Ads, CallPro, SMS · төсөв', exact: true }) });
+    await expect(channelsSection.getByLabel('Холболтын төлөв')).toContainText('Instagram');
     await expect(channelsSection).toContainText('Туршилтын хуудас');
     await expect(channelsSection).toContainText('7,000');
     await expect(channelsSection).toContainText('+1,400 (+25%)');
     await expect(channelsSection).toContainText('Онцлох орон сууц — Facebook пост');
     await channelsSection.getByText('Туршилтын хуудас', { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-2xl")][1]').screenshot({ path: 'output/workday/desktop-weekly-facebook.png' });
+    // Instagram: хуудастай нэг хүсэлтээр, өөрийн карт.
+    const instagramCard = channelsSection.getByRole('region', { name: 'Instagram' });
+    await expect(instagramCard).toContainText('@turshilt_ig');
+    await expect(instagramCard).toContainText('2,100');
+    await expect(instagramCard).toContainText('+350 (+20%)');
+    await expect(instagramCard).toContainText('Reel — 5 өрөө байрны танилцуулга');
+    await instagramCard.screenshot({ path: 'output/workday/desktop-weekly-instagram.png' });
     // Meta зар: слайдтай ижил кампанит ажлын хүснэгт (хаалттай, дарж нээнэ).
     const metaCard = channelsSection.getByRole('region', { name: 'Meta Ads Manager' });
     await metaCard.getByText('Кампанит ажлын хүснэгт (1 мөр)', { exact: true }).click();
@@ -437,9 +466,13 @@ test('маркетинг өөрийн контент төлөвлөгөөгөө�
     await marketingFile.saveAs('output/workday/weekly-marketing.pptx');
     const marketingDeck = await pptxText('output/workday/weekly-marketing.pptx');
     for (const needle of ['МАРКЕТИНГИЙН АЛБА', 'Контент төлөвлөгөө ба гүйцэтгэл', 'Онцлох орон сууц: 201 мкв 5 өрөө', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт', 'Meta зар — долоо хоногийн тойм', 'Өмнөх 7 хоног 250 USD · +50.38 (+20.2%)', 'Meta зар — кампанит ажлаар', '[Block contents] 201 мкв 5 өрөө', 'Төсөв ба зарцуулалт',
-        'Туршилтын хуудас — долоо хоногийн үзүүлэлт', 'Энэ долоо хоногт нийтэлсэн пост', 'Онцлох орон сууц — Facebook пост', '70,662']) {
+        'Туршилтын хуудас — долоо хоногийн үзүүлэлт', 'Энэ долоо хоногт нийтэлсэн пост', 'Онцлох орон сууц — Facebook пост', '70,662',
+        'Холболтын төлөв', '@turshilt_ig — долоо хоногийн үзүүлэлт', 'Энэ долоо хоногт Instagram-д нийтэлсэн пост', 'Reel — 5 өрөө байрны танилцуулга', '12,345']) {
         expect(marketingDeck.text).toContain(needle);
     }
+    expect(marketingDeck.text).not.toContain('ачаалж чадсангүй');
+    // Бүртгэлгүй сарын зарцуулалт «—», хэзээ ч «0 ₮» биш.
+    expect(marketingDeck.text).not.toContain('>0 ₮<');
     for (const needle of ['Энэ долоо хоногийн гэрээ', 'Лидийн эх сурвалж', 'Менежерт шилжсэн', 'Эзэнгүй 3 лид']) expect(marketingDeck.text).not.toContain(needle);
     expect(marketingDeck.media).toHaveLength(1);
     await expect(page.getByText('Маркетингийн слайд (.pptx) татагдлаа')).toBeVisible();
@@ -500,6 +533,7 @@ test('хувийн эрхтэй хэрэглэгч нэгдсэн тайлан �
     expect(state.requests).not.toContain('/api/marketing/performance');
     expect(state.requests).not.toContain('/api/dashboard/weekly-slides');
     expect(state.requests).not.toContain('/api/dashboard/marketing/social-week');
+    expect(state.requests).not.toContain('/api/dashboard/marketing/connections');
     await expect(page.getByRole('button', { name: 'Слайд нэмэх' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Борлуулалт (албаны загвар)' })).toHaveCount(0);
     expect(state.errors).toEqual([]);
