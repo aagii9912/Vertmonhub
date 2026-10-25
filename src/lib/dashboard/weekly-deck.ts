@@ -790,13 +790,14 @@ function socialPageSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
 
 /**
  * Facebook хуудас, CallPro, SMS-ийн оруулсан экспорт — гол үзүүлэлт. Meta зарыг дараагийн слайдууд (`metaAdsSlides`)
- * дэлгэрэнгүй харуулна. Facebook хуудас API-аар холбогдсон бол (`social.page`) экспорт дутуу гэж тооцохгүй.
+ * дэлгэрэнгүй харуулна. Facebook хуудас API-аар холбогдсон бол (`social.page` эсвэл холболтын төлөв) экспорт дутуу гэж тооцохгүй.
  */
 function channelExportSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const channels = input.channels;
     if (!channels) return;
     const meta = !!channels.meta_ads?.report;
-    const pageByApi = !!input.social?.page && !channels.facebook_page?.report;
+    // Хуудасны долоо хоногийг ачаалж чадаагүй ч (`failed.social`) холболтын төлөв хуудас холбогдсоныг мэдэж байж болно.
+    const pageByApi = (!!input.social?.page || !!input.connections?.page.connected) && !channels.facebook_page?.report;
     const present = CHANNEL_SOURCES.filter(source => source !== 'meta_ads' && channels[source]?.report);
     const missing = CHANNEL_SOURCES.filter(source => !channels[source]?.report && !(source === 'facebook_page' && pageByApi));
     const subtitle = [
