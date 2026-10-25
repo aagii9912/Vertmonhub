@@ -59,14 +59,26 @@ const SpinnerIcon = () => (
     </svg>
 );
 
+/**
+ * API route (OAuth эхлэл, татах файл) руу next/link ашиглавал prefetch эсвэл клиент навигаци
+ * route-ийг дахин ажиллуулж OAuth state cookie-г дарж бичдэг. Тиймээс энгийн <a> — бүтэн навигаци.
+ */
+export const isApiHref = (href: string) => href.startsWith('/api/');
+
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ({ className, variant, size, isLoading, href, children, ...props }, ref) => {
         if (href) {
+            const classes = cn(buttonVariants({ variant, size, className }));
+            if (isApiHref(href)) {
+                return (
+                    <a href={href} className={classes}>
+                        {isLoading && <SpinnerIcon />}
+                        {children}
+                    </a>
+                );
+            }
             return (
-                <Link
-                    href={href}
-                    className={cn(buttonVariants({ variant, size, className }))}
-                >
+                <Link href={href} className={classes}>
                     {isLoading && <SpinnerIcon />}
                     {children}
                 </Link>
