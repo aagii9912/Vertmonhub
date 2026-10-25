@@ -9,6 +9,8 @@ import { dashboardJson } from '@/lib/api/dashboardFetch';
 import type { MetaSyncStatus } from '@/lib/marketing/meta-spend';
 import type { MetaInsightsResult, MetaInsightsStatus } from '@/lib/marketing/meta-insights';
 import type { MetaAdsTokenSource } from '@/lib/facebook/ads-auth';
+import { META_ADS_OAUTH_RETURN, metaAdsOAuthNotice } from '@/lib/marketing/meta-ads-oauth-result';
+import { META_SYNC_MAX_DAYS, metaSyncRange } from '@/lib/marketing/meta-sync-range';
 import { marketingInputClass } from './PerformanceEditor';
 
 interface MetaSyncState {
@@ -20,26 +22,29 @@ const ubDateTime = (value: string) => new Date(value).toLocaleString('mn-MN', { 
 export function MetaSpendSync({ shopId, canWrite, from, to }: { shopId?: string; canWrite: boolean; from: string; to: string }) {
     const cache = useQueryClient();
     const [busy, setBusy] = useState(false), [rate, setRate] = useState('');
-    const [oauthError, setOauthError] = useState(false);
+    const [oauthError, setOauthError] = useState<string | null>(null);
     const state = useQuery({ queryKey: ['meta-spend-sync', shopId], enabled: !!shopId, retry: false,
         queryFn: () => dashboardJson<MetaSyncState>('/api/marketing/facebook/ads/spend-sync', { shopId }) });
     const status = state.data?.status;
     const insights = state.data?.insights;
+    // Сервер нэг удаад 93 хүртэл өдөр татна: урт хугацааг сүүлийн 93 өдрөөр нь хязгаарлаж, мэдэгдэнэ.
+    const range = metaSyncRange({ from, to });
     useEffect(() => {
+        // OAuth callback-ийн үр дүн (`?meta_ads=<код>`): амжилт/мэдээлэл toast-аар, алдаа энд байнгын Alert-аар.
         const url = new URL(window.location.href);
-        const result = url.searchParams.get('meta_ads');
-        if (!result) return;
-        if (result === 'connected') toast.success('Meta Ads холбогдлоо.');
-        else if (result === 'system_token') toast.info('Системийн хэрэглэгчийн токен идэвхтэй тул Meta Ads-ийг хэрэглэгчээр холбох шаардлагагүй. Зарын дансыг админ сонгоно.');
-        else setOauthError(true);
-        url.searchParams.delete('meta_ads');
+        const notice = metaAdsOAuthNotice(url.searchParams.get(META_ADS_OAUTH_RETURN.param));
+        if (!notice) return;
+        if (notice.tone === 'success') toast.success(notice.message);
+        else if (notice.tone === 'info') toast.info(notice.message);
+        else setOauthError(notice.message);
+        url.searchParams.delete(META_ADS_OAUTH_RETURN.param);
         window.history.replaceState(null, '', url);
     }, []);
     async function sync(withRate: boolean) {
         setBusy(true);
         try {
             const result = await dashboardJson<{ rows: number; needsRate: boolean; insights?: MetaInsightsResult | { error: string } }>('/api/marketing/facebook/ads/spend-sync', {
-                shopId, method: 'POST', body: JSON.stringify({ from, to, ...(withRate ? { mntPerUnit: Number(rate), currency: status?.currency } : {}) }),
+                shopId, method: 'POST', body: JSON.stringify({ from: range.from, to: range.to, ...(withRate ? { mntPerUnit: Number(rate), currency: status?.currency } : {}) }),
             });
             toast.success(`${result.rows} өдрийн зардлын мөр шинэчлэгдлээ.${result.needsRate ? ' Төгрөгийн ханшаа оруулна уу.' : ''}`);
             if (result.insights && 'error' in result.insights) toast.error(`Дэлгэрэнгүй үр дүн: ${result.insights.error}`);
@@ -63,13 +68,15 @@ export function MetaSpendSync({ shopId, canWrite, from, to }: { shopId?: string;
                 {canWrite && <Button size="sm" variant="secondary" disabled={!state.data?.accountId || !state.data?.connected || busy} isLoading={busy} onClick={() => void sync(false)}>Meta зардал татах</Button>}
             </div>
         </div>
-        {oauthError && <Alert variant="danger">Meta Ads холболт амжилтгүй боллоо. App-ийн ads_read эрх, Meta зөвшөөрөл болон нэвтрэх тохиргоог шалгана уу.</Alert>}
+        {oauthError && <Alert variant="danger">{oauthError}</Alert>}
+        {canWrite && range.clamped && <p className="text-xs text-status-pending">Сонгосон хугацаа {META_SYNC_MAX_DAYS} өдрөөс урт тул «Meta зардал татах» нь сүүлийн {META_SYNC_MAX_DAYS} өдрийг ({range.from} – {range.to}) татна. Өмнөх хэсгийг тусад нь сонгож татна уу.</p>}
         {state.isError && <Alert variant="danger">{state.error.message}<Button size="sm" variant="ghost" onClick={() => void state.refetch()}>Дахин шалгах</Button></Alert>}
         {state.data && !state.data.connected && <p className="text-sm text-muted-foreground">Зардал татахын тулд Meta Ads app-аа холбоно уу.</p>}
         {state.data?.connected && !state.data.accountId && <p className="text-sm text-muted-foreground">Meta зарын данс сонгоогүй байна. <Link className="underline" href="/dashboard/marketing-roi">Зарын данс сонгох</Link></p>}
         {system && <p className="text-xs text-muted-foreground">Meta Ads эрх: Системийн хэрэглэгч (хугацаагүй)</p>}
+        {/* Урт токен авч чадаагүй үед богино (цагийн) токен хадгалагддаг тул цагийг нь ч харуулна. */}
         {state.data?.tokenSource === 'user' && <p className="text-xs text-muted-foreground">Meta Ads эрхийн хугацаа: {state.data.expiresAt
-            ? new Date(state.data.expiresAt).toLocaleDateString('mn-MN', { timeZone: 'Asia/Ulaanbaatar' }) : 'Хугацаагүй'}</p>}
+            ? ubDateTime(state.data.expiresAt) : 'Хугацаагүй'}</p>}
         {state.data?.accountId && <p className="text-xs text-muted-foreground">Данс: {state.data.accountId} · {status?.currency || 'Валютыг анхны синкээр уншина'} · {status?.timezone || 'Цагийн бүс тодорхойгүй'}<br />
             Сүүлийн амжилттай синк: {status?.last_success_at ? ubDateTime(status.last_success_at) : 'Хийгдээгүй'} {status?.last_from && `(${status.last_from} – ${status.last_to})`}</p>}
         {status?.last_error && <Alert variant="danger">{status.last_error} Өмнө хадгалсан зардал хэвээр байна.</Alert>}
