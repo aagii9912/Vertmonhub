@@ -76,12 +76,6 @@ interface SourceRow {
 }
 
 const accountKey = (id: string | null | undefined) => (id ? id.replace(/^act_/, '') : '');
-/** «Meta зардал татах» нэг удаад 93 хүртэл өдөр: урт хугацааны сүүлийн 93 өдрийг татна. Дутуу огноог хэвээр (сервер 400). */
-function syncRange(range: { from: string; to: string }) {
-    if (!isMetaAdsRange(range)) return range;
-    const earliest = new Date(Date.parse(`${range.to}T00:00:00Z`) - 92 * 86_400_000).toISOString().slice(0, 10);
-    return { from: range.from > earliest ? range.from : earliest, to: range.to };
-}
 const pendingText = (pending: Record<string, number>) => formatMetaPending({ mnt: 0, complete: false, pending, native: pending });
 
 const conversionPillVariant = (rate: number) =>
@@ -402,7 +396,8 @@ export default function MarketingROIPage() {
                     </div>
                 )}
                 <div className="p-4">
-                    <MetaSpendSync shopId={shop?.id} canWrite={canWrite} {...syncRange(range)} />
+                    {/* 93 өдрийн хязгаарыг MetaSpendSync өөрөө тогтоож мэдэгдэнэ (lib/marketing/meta-sync-range.ts). */}
+                    <MetaSpendSync shopId={shop?.id} canWrite={canWrite} from={range.from} to={range.to} />
                 </div>
             </Card>
 

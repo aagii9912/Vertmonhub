@@ -227,6 +227,10 @@ async function loadPending(userId: string, shopId: string, flow: PageConnectFlow
 }
 
 const SESSION_EXPIRED = { pages: [], code: 'SESSION_EXPIRED', message: 'Facebook холболтын хугацаа дууссан. Дахин холбоно уу.' };
+const ALREADY_CONNECTED: Record<PageConnectFlow, string> = {
+    facebook: 'Энэ Page өөр төсөлд холбогдсон байна',
+    instagram: 'Энэ Instagram аккаунт өөр төсөлд холбогдсон байна',
+};
 
 /** Сонгох боломжтой Page-үүд (токенгүй) ба insights-д дутуу эрх. Шалгалт: marketing-roi бичих эрх + төсөл. */
 export async function listPendingPages(flow: PageConnectFlow, shopId: string): Promise<Response> {
@@ -272,15 +276,28 @@ export async function selectPendingPage(flow: PageConnectFlow, shopId: string, p
         return NextResponse.json({ error: message }, { status: 502 });
     }
 
+    // Нэг Page / IG аккаунт нэг л төсөлд: webhook, DM, Lead Ads, insights-ийг ID-аар нь төсөлд чиглүүлдэг.
+    // Нөгөө төслийн нэрийг хэлэхгүй (хэрэглэгч тэр төслийн гишүүн биш байж болно).
+    const db = supabaseAdmin();
+    const column = flow === 'facebook' ? 'facebook_page_id' : 'instagram_business_account_id';
+    const { data: owners, error: ownerError } = await db.from('shops').select('id')
+        .eq(column, flow === 'facebook' ? page.id : instagram!.id).neq('id', shopId).limit(1);
+    if (ownerError) {
+        logger.warn('[Page OAuth] давхар холболт шалгаж чадсангүй', { flow, error: ownerError.message });
+        return NextResponse.json({ error: 'Хадгалж чадсангүй. Дахин оролдоно уу.' }, { status: 500 });
+    }
+    if (owners?.length) return NextResponse.json({ error: ALREADY_CONNECTED[flow], code: 'ALREADY_CONNECTED' }, { status: 409 });
+
     const encrypted = encryptToken(pageToken);
     if (!encrypted?.startsWith('enc:v1:')) return NextResponse.json({ error: 'Токен хадгалж чадсангүй.' }, { status: 500 });
     const tokenExpiresAt = pending.user_token_expires_at;
     const update = flow === 'facebook'
         ? { facebook_page_id: page.id, facebook_page_name: page.name, facebook_page_access_token: encrypted, facebook_token_expires_at: tokenExpiresAt }
         : { instagram_business_account_id: instagram!.id, instagram_username: instagram!.username ?? null, instagram_access_token: encrypted, instagram_token_expires_at: tokenExpiresAt };
-    const db = supabaseAdmin();
     const { error } = await db.from('shops').update(update).eq('id', shopId);
     if (error) {
+        // shops.facebook_page_id UNIQUE: шалгалтын дараа өөр төсөл зэрэг хадгалсан бол.
+        if (error.code === '23505') return NextResponse.json({ error: ALREADY_CONNECTED[flow], code: 'ALREADY_CONNECTED' }, { status: 409 });
         logger.warn('[Page OAuth] shop хадгалсангүй', { flow, error: error.message });
         return NextResponse.json({ error: 'Хадгалж чадсангүй. Дахин оролдоно уу.' }, { status: 500 });
     }

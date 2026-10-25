@@ -118,13 +118,14 @@ describe('marketing ROI page', () => {
         expect(JSON.parse(screen.getByTestId('combo-chart').textContent!)[0].spend).toBeNull();
     });
 
-    it('re-reads ROI for a new range and limits the Meta sync to its last 93 days', async () => {
+    it('re-reads ROI for a new range and hands the whole range to the Meta sync, which limits it to 93 days itself', async () => {
         renderPage();
         await screen.findByText('Mandala дуудлага');
         fireEvent.change(screen.getByLabelText('Эхлэх өдөр'), { target: { value: '2026-01-01' } });
         fireEvent.change(screen.getByLabelText('Дуусах өдөр'), { target: { value: '2026-09-30' } });
         await waitFor(() => expect(mocks.json).toHaveBeenCalledWith('/api/dashboard/marketing-roi?from=2026-01-01&to=2026-09-30'));
-        expect(mocks.sync).toHaveBeenLastCalledWith(expect.objectContaining({ from: '2026-06-30', to: '2026-09-30' }));
+        // 93 өдрийн хязгаар, мэдэгдэл: MetaSpendSync.test.tsx.
+        expect(mocks.sync).toHaveBeenLastCalledWith(expect.objectContaining({ from: '2026-01-01', to: '2026-09-30' }));
     });
 
     it('keeps the page when a date is cleared and asks for a valid range without reading', async () => {

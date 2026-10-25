@@ -21,6 +21,7 @@ import { MARKETING_CHANNELS, PerformanceFilterSchema, marketingChannel, performa
 import { nextMeetingDate, weeklyReviewRange } from '@/lib/dashboard/weekly-review';
 import { PerformanceEditor, marketingInputClass, type EditRecord } from '@/components/marketing/PerformanceEditor';
 import { MetaSpendSync } from '@/components/marketing/MetaSpendSync';
+import { META_ADS_OAUTH_RETURN } from '@/lib/marketing/meta-ads-oauth-result';
 import { MetaSpendImport } from '@/components/marketing/MetaSpendImport';
 import { PerformanceKpis, PerformanceChannelTable } from '@/components/marketing/PerformanceKpis';
 import { DepartmentKpis } from '@/components/marketing/DepartmentKpis';
@@ -47,7 +48,10 @@ function MarketingFromUrl() {
     const defaults = monthRange();
     const filter = PerformanceFilterSchema.safeParse({ from: search.get('from') || defaults.from, to: search.get('to') || defaults.to, project: search.get('project') || undefined });
     const initialTab = reportTabs.find(([tab]) => tab === search.get('tab'))?.[0] || 'overview';
-    return <MarketingReport key={`${shop?.id}-${user?.id}-${search.toString()}`} initialFilter={filter.success ? filter.data : defaults} initialTab={initialTab} invalidUrl={!filter.success} />;
+    // MetaSpendSync OAuth-ын үр дүнг (`meta_ads`) URL-аас арилгахад тайланг дахин mount хийхгүй — алдааны мессеж үлдэнэ.
+    const reportParams = new URLSearchParams(search.toString());
+    reportParams.delete(META_ADS_OAUTH_RETURN.param);
+    return <MarketingReport key={`${shop?.id}-${user?.id}-${reportParams.toString()}`} initialFilter={filter.success ? filter.data : defaults} initialTab={initialTab} invalidUrl={!filter.success} />;
 }
 function MarketingReport({ initialFilter, initialTab, invalidUrl }: { initialFilter: PerformanceFilter; initialTab: ReportTab; invalidUrl: boolean }) {
     const { shop, user, loading } = useAuth();
