@@ -393,7 +393,7 @@ function inventorySlide(pres: PptxGenJS, report: WeeklySalesReport) {
  * огноо нь зөвхөн HUB гэрээний жагсаалтын сүүлийн импортынх тул «тэр өдрийн байдлаар» гэж ойлгуулахгүй.
  */
 export function inventorySourceNote(source: NonNullable<WeeklySalesReport['inventory']>['source']) {
-    if (source.kind === 'contracts') return `Эх сурвалж: ${source.source} — гэрээ, байр одоогийн төлөвөөр; ${source.date} нь HUB гэрээний жагсаалтын сүүлийн импортын огноо.`;
+    if (source.kind === 'contracts') return `Эх сурвалж: ${source.source} — гэрээ, байр экспортолсон үеийн төлөвөөр (хурлын дараах импорт, засвар ч орно); ${source.date} нь хурлын өдөр хүртэлх HUB гэрээний жагсаалтын сүүлийн импортын огноо.`;
     return `Эх сурвалж: ${source.kind === 'erp' ? `ERP «${source.source}»` : source.source} (${source.date}).`;
 }
 

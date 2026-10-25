@@ -141,6 +141,12 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
     // «Б1-25» ба «Б1-25, P-12» нэг байр. ilike-ээр өргөн уншаад түлхүүрээр яг шүүнэ (LIKE-ийн тусгай тэмдэгт зөвхөн өргөсгөнө,
     // `\` escape тул `_` болгоно).
     const reviving = settingStatus && updateData.contract_status !== 'cancelled' && previous.contract_status === 'cancelled';
+    // «Цуцлах» зөвхөн идэвхтэй гэрээнд: «Сэргээх» үргэлж «Идэвхтэй» болгодог тул хаагдсан, «Тоот шилжсэн» гэрээг цуцалбал
+    // анхны төлөв алдагдана (хуудас хуучирсан үед ч — UI-ийн canCancelContract-тэй нэг дүрэм).
+    const cancelling = updateData.contract_status === 'cancelled' && previous.contract_status !== 'cancelled';
+    if (cancelling && previous.contract_status !== 'active') {
+        return NextResponse.json({ error: 'Зөвхөн идэвхтэй гэрээг цуцална. Хуудсаа шинэчлээд дахин оролдоно уу.' }, { status: 409 });
+    }
     const unitKey = reviving ? contractUnitKey((previous.product_type as string | null) ?? null, (previous.unit_label as string | null) ?? null) : null;
     if (unitKey) {
         const code = unitKey.slice(unitKey.indexOf('|') + 1);
@@ -190,11 +196,13 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
     // Сэргээх: байрыг шалгах үеийн цуцалсан төлөв хэвээр байвал л бичнэ (хооронд өөр хүн өөрчилсөн бол 409).
     // Хоёр өөр цуцалсан гэрээг нэг байранд зэрэг сэргээхийг энэ хаахгүй — тэр нь RPC/DB индекс шаардана.
     if (reviving) update = update.eq('contract_status', 'cancelled');
+    // Цуцлах: шалгах үеийн идэвхтэй төлөв хэвээр байвал л бичнэ (хооронд HUB импорт хаасан бол 409).
+    if (cancelling) update = update.eq('contract_status', 'active');
     const { data, error } = await update.select().maybeSingle();
 
     if (error) throw error;
     if (!data) {
-        return settingOrderDate || reviving
+        return settingOrderDate || reviving || cancelling
             ? NextResponse.json({ error: 'Гэрээ өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу.' }, { status: 409 })
             : NextResponse.json({ error: 'Гэрээ олдсонгүй' }, { status: 404 });
     }

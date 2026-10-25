@@ -15,6 +15,7 @@ describe('order date rule (PATCH order_date + AI create_contract)', () => {
         expect(orderDateIssue('2026-02-30', '2026-10-26')).toBe('calendar');
         expect(orderDateIssue('2025-02-29', '2026-10-26')).toBe('calendar');
         expect(orderDateIssue('0202-10-01', '2026-10-26')).toBe('too_early');
+        expect(orderDateIssue('0050-10-01', '2026-10-26')).toBe('too_early');
         expect(orderDateIssue('2026-10-27', '2026-10-26')).toBe('future');
     });
 

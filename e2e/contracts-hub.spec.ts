@@ -599,7 +599,7 @@ test('гэрээний хуудас: «Цуцлах» баталгаажуула
     await cancel.click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('heading', { name: '«Б1-31» гэрээг цуцлах уу?' })).toBeVisible();
-    await expect(dialog).toContainText('«Гэрээтэй»-гээс зөвхөн HUB гэрээний жагсаалт импортолсон төсөлд хасагдана');
+    await expect(dialog).toContainText('«Гэрээтэй»-гээс зөвхөн HUB гэрээний жагсаалтын сүүлийн импорт ERP бүтээгдэхүүний экспортоос шинэ');
     await expect(dialog).toContainText('Бүртгэсэн төлбөр, төлбөрийн график устахгүй');
     await expect(dialog).toContainText('«Сэргээх»-ээр «Идэвхтэй» төлөвт буцаана');
     await expect(dialog).toContainText('Байрны төлөв, холбоотой лидийн төлөв энэ үйлдлээр өөрчлөгдөхгүй');

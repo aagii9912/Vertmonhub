@@ -20,7 +20,9 @@ export function isCalendarDate(value: string): boolean {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (!match) return false;
     const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
-    const parsed = new Date(Date.UTC(year, month - 1, day));
+    // Date.UTC 0–99 онд 1900 нэмдэг тул setUTCFullYear-ээр («0050-10-01» → 2000 оноос өмнө, хуанлийн алдаа биш).
+    const parsed = new Date(0);
+    parsed.setUTCFullYear(year, month - 1, day);
     return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
 }
 

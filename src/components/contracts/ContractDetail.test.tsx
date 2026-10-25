@@ -445,7 +445,7 @@ describe('ContractDetail cancel and restore', () => {
         expect(dialog()).toHaveTextContent('Гэрээний тоо, дүн төлөвлөгөөний биелэлт');
         expect(dialog()).toHaveTextContent('Лхагвын тайлангийн CRM гэрээ ба «Огноогүй» тоо');
         // Давхрын зураглал гэрээг зөвхөн HUB горимд давхарлана; захирлын «Хугацаа хэтэрсэн» графикийг төлөвгүй уншина.
-        expect(dialog()).toHaveTextContent('«Гэрээтэй»-гээс зөвхөн HUB гэрээний жагсаалт импортолсон төсөлд хасагдана');
+        expect(dialog()).toHaveTextContent('«Гэрээтэй»-гээс зөвхөн HUB гэрээний жагсаалтын сүүлийн импорт ERP бүтээгдэхүүний экспортоос шинэ');
         expect(dialog()).toHaveTextContent('Бүртгэсэн төлбөр, төлбөрийн график устахгүй');
         expect(dialog()).toHaveTextContent('хугацаа хэтэрсэн хуваарь захирлын самбарын «Хугацаа хэтэрсэн»-д хэвээр');
         expect(dialog()).toHaveTextContent('Байрны төлөв, холбоотой лидийн төлөв энэ үйлдлээр өөрчлөгдөхгүй');

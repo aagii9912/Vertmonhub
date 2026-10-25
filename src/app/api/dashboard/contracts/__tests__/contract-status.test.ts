@@ -126,6 +126,32 @@ describe('PATCH /api/dashboard/contracts/[id] — «Цуцлах» / «Сэрг�
         expect(state.db.tables.data_audit_log).toEqual([]);
     });
 
+    it.each(['closed', 'transferred', null])('cancels only an active contract (%s → 409, nothing written)', async (status) => {
+        stored().contract_status = status;
+        const response = await patch({ contract_status: 'cancelled' });
+        expect(response.status).toBe(409);
+        expect((await response.json()).error).toContain('Зөвхөн идэвхтэй гэрээг цуцална');
+        expect(stored().contract_status).toBe(status);
+        expect(contractWrites()).toEqual([]);
+        expect(state.db.tables.data_audit_log).toEqual([]);
+    });
+
+    it('writes the cancel only while the contract is still active (closed in between → 409, nothing written)', async () => {
+        // Уншсаны дараа, бичихээс өмнө HUB импорт гэрээг хаасан мэт: хоёр дахь property_contracts хандалт = бичилт.
+        const from = state.db.from;
+        let calls = 0;
+        state.db.from = (table: string) => {
+            if (table === 'property_contracts' && ++calls === 2) stored().contract_status = 'closed';
+            return from(table);
+        };
+        const response = await patch({ contract_status: 'cancelled' });
+        expect(response.status).toBe(409);
+        expect((await response.json()).error).toContain('Гэрээ өөрчлөгдсөн байна');
+        expect(stored().contract_status).toBe('closed');
+        expect(contractWrites()).toEqual([]);
+        expect(state.db.tables.data_audit_log).toEqual([]);
+    });
+
     it('does not check the unit when cancelling or for a contract without a unit', async () => {
         state.db.tables.property_contracts.push(row('c-resold'));
         expect((await patch({ contract_status: 'cancelled' })).status).toBe(200);

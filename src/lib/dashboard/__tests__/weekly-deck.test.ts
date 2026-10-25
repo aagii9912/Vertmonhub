@@ -422,7 +422,7 @@ describe('weekly meeting deck (.pptx)', () => {
         const { zip: crmZip, text: crmText } = await render(input({ weeklySales: buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [], crmUndated: 7, monthTarget: null, inventory: inventory('contracts') }) }));
         const blocksIndex = crmText.findIndex(slideText => slideText.includes('Үлдэгдэл блокоор'));
         expect(blocksIndex).toBeGreaterThanOrEqual(0);
-        expect((await notesOf(crmZip))[blocksIndex]).toContain('Эх сурвалж: HUB гэрээ + байрны бүртгэл — гэрээ, байр одоогийн төлөвөөр; 2026-10-22 нь HUB гэрээний жагсаалтын сүүлийн импортын огноо.');
+        expect((await notesOf(crmZip))[blocksIndex]).toContain('Эх сурвалж: HUB гэрээ + байрны бүртгэл — гэрээ, байр экспортолсон үеийн төлөвөөр (хурлын дараах импорт, засвар ч орно); 2026-10-22 нь хурлын өдөр хүртэлх HUB гэрээний жагсаалтын сүүлийн импортын огноо.');
 
         // ERP гэрээний экспорттой бол огноогүйн тоо нь экспортын мөрийнх — тэг биш байсан ч нэрлэхгүй, тайлбар хэвээр.
         const erpSales = weeklySales();
