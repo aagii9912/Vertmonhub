@@ -61,8 +61,13 @@ export function metaDeadlinePassed(deadline?: MetaDeadline | null): boolean {
 }
 
 export interface MetaReadOptions {
-    /** Бүх дахин оролдлогыг оролцуулсан хугацааны хязгаар; өгөөгүй бол 20 сек. */
+    /** Бүх дахин оролдлогыг оролцуулсан хугацааны хязгаар; өгөөгүй бол 20 сек (`deadline`-тай бол аль эрт нь). */
     signal?: AbortSignal;
+    /**
+     * Синкийн нийт хугацаа: `signal` өгөөгүй дуудлага бүр өөрийн 20 сек ба энэ хязгаарын аль эрт дуусахаар
+     * тасарна (`metaStepSignal`) — олон дуудлагатай алхам (метрик бүрээр, дахин ачаалах) хязгаараас хэтрэхгүй.
+     */
+    deadline?: MetaDeadline | null;
     /** false = түр алдаанд дахин оролдохгүй (олон дуудлагатай давталт өөрөө зогсоно). */
     retry?: boolean;
 }
@@ -143,7 +148,7 @@ export async function graphRead<T>(app: MetaGraphApp, path: string, token: strin
     if (!proof) throw new MetaApiError(app.missingSecret);
     const url = new URL(`${BASE}/${path}`);
     for (const [key, value] of Object.entries({ ...params, appsecret_proof: proof })) url.searchParams.set(key, value);
-    const abort = options.signal ?? AbortSignal.timeout(20000);
+    const abort = options.signal ?? metaStepSignal(20000, options.deadline);
     const retries = options.retry === false ? 0 : META_RETRY_DELAYS_MS.length;
     for (let attempt = 0; ; attempt++) {
         const canRetry = attempt < retries;

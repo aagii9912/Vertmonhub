@@ -143,3 +143,18 @@ it('pages ad accounts by rebuilding the trusted URL with the cursor', async () =
     http.mockResolvedValue(reply({ data: [], paging: { next: 'more', cursors: { after: 'same' } } }));
     expect((await settle(getAdAccounts('secret-token'))).error).toBeInstanceOf(Error);
 });
+
+it('cuts a read at the run deadline when no signal is given (each call still has its own 20 s limit)', async () => {
+    http.mockImplementation(async (_url: URL, init: RequestInit) => {
+        if (init.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+        return reply({ id: 'act_1' });
+    });
+    const { error } = await settle(metaRead('act_1', 'secret-token', {}, { deadline: { at: Date.now() - 1, signal: AbortSignal.abort() } }));
+    expect(error).toBeInstanceOf(MetaApiError);
+    expect(http).toHaveBeenCalledTimes(1); // хугацаа дууссан — дахин оролдохгүй
+
+    http.mockClear();
+    const live = await settle(metaRead<{ id: string }>('act_1', 'secret-token', {}, { deadline: { at: Date.now() + 60_000, signal: new AbortController().signal } }));
+    expect(live.value).toEqual({ id: 'act_1' });
+    expect((http.mock.calls[0][1] as RequestInit).signal?.aborted).toBe(false);
+});

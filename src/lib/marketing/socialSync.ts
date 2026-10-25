@@ -79,8 +79,14 @@ function postRow(shopId: string, { post }: PagePost, previous?: KnownCounts) {
  * Нэг shop-ийн Facebook Page-ийн өдрийн insights (сүүлийн SOCIAL_SYNC_DAYS дууссан өдөр, Meta-гийн PT өдөр),
  * сүүлийн нийтлэлүүд ба тэдгээрийн насан туршийн insights-ийг (Улаанбаатарын өнөөдрөөр) хадгална. Meta-гийн
  * өгөөгүй утга мөргүй/null хэвээр, өмнөх өгөгдөл устахгүй. Manual sync route ба cron хоёулаа ашиглана.
+ * `deadline` (cron-ийн нийт хугацаа): Graph-ийн дуудлага бүр түүгээр тасарна, дууссан бол үлдсэн алхмыг алгасна.
  */
-export async function syncShopSocial(supabase: SupabaseClient, shop: SyncShop, days: number = SOCIAL_SYNC_DAYS): Promise<SocialSyncResult> {
+export async function syncShopSocial(
+    supabase: SupabaseClient,
+    shop: SyncShop,
+    days: number = SOCIAL_SYNC_DAYS,
+    options: { deadline?: MetaDeadline | null } = {},
+): Promise<SocialSyncResult> {
     const result: SocialSyncResult = { status: 'not_connected', pageRows: 0, postsStored: 0, postRows: 0, unavailable: [], errors: [] };
     const pageId = shop.facebook_page_id?.trim();
     const token = decryptToken(shop.facebook_page_access_token);
@@ -91,6 +97,9 @@ export async function syncShopSocial(supabase: SupabaseClient, shop: SyncShop, d
     const from = shiftDay(to, -(Math.min(Math.max(Math.trunc(days), 1), 90) - 1));
     Object.assign(result, { from, to });
     const key = { shop_id: shop.id, platform: 'facebook', page_id: pageId };
+    const { deadline = null } = options;
+    const read = { deadline };
+    const timeUp = () => new MetaApiError('Facebook хуудасны синк хийх хугацаа дууслаа — дараагийн синк үргэлжлүүлнэ.');
     const { error: attemptError } = await supabase.from('social_insights_sync')
         .upsert({ ...key, last_attempt_at: new Date().toISOString() }, { onConflict: 'shop_id,platform,page_id' });
     if (attemptError) throw new Error(`social_insights_sync: ${attemptError.message}`);
@@ -98,7 +107,8 @@ export async function syncShopSocial(supabase: SupabaseClient, shop: SyncShop, d
     // 1) Page-ийн өдрийн insights
     let pageOk = false;
     try {
-        const { rows, unavailable } = await fetchPageDailyInsights(pageId, token, from, to);
+        if (metaDeadlinePassed(deadline)) throw timeUp();
+        const { rows, unavailable } = await fetchPageDailyInsights(pageId, token, from, to, read);
         const syncedAt = new Date().toISOString();
         await upsertChunks(supabase, 'social_insights_daily', rows.map(row => ({
             ...key, object_type: 'page', object_id: pageId, day: row.day, metric: row.metric,
@@ -115,7 +125,8 @@ export async function syncShopSocial(supabase: SupabaseClient, shop: SyncShop, d
     // 2) Нийтлэлүүд + насан туршийн insights (өнөөдрийн байдлаар)
     let postsOk = false;
     try {
-        const { posts, unavailable } = await getPagePosts(pageId, token, POST_LIMIT);
+        if (metaDeadlinePassed(deadline)) throw timeUp();
+        const { posts, unavailable } = await getPagePosts(pageId, token, POST_LIMIT, read);
         const valid = posts.filter(item => isPostId(item.post.id) && item.post.id.startsWith(`${pageId}_`));
         const previous = new Map<string, KnownCounts>();
         if (valid.length) {
@@ -164,6 +175,20 @@ export async function syncShopSocial(supabase: SupabaseClient, shop: SyncShop, d
 export const IG_SYNC_DAYS = 30;
 /** Cron (6 цаг тутам) амжилттай синкийн дараа: Meta сүүлийн өдрүүдийг засдаг тул 14 өдрийг дахин бичнэ. */
 export const IG_CRON_DAYS = 14;
+/** Нэг синкийн дээд хязгаар (`syncShopInstagram`-ийн хязгаартай ижил). */
+const IG_MAX_DAYS = 90;
+
+/**
+ * Cron-ийн Instagram цонх: амжилттай синкгүй бол IG_SYNC_DAYS; дараа нь сүүлд амжилттай татсан өдрөөс (`last_to`)
+ * өчигдөр хүртэлх бүх өдөр + IG_CRON_DAYS (Meta сүүлийн өдрүүдийг засдаг), 90 хүртэл — 14 хоногоос урт тасалдлын
+ * (эрх цуцлагдсан, токен дууссан) дараа цоорхой үлдээхгүй. `today` = Meta-гийн (PT) өнөөдөр.
+ */
+export function instagramCronDays(lastTo: string | null | undefined, today: string = metaInsightToday()): number {
+    const last = typeof lastTo === 'string' && /^\d{4}-\d{2}-\d{2}/.test(lastTo) ? lastTo.slice(0, 10) : null;
+    if (!last) return IG_SYNC_DAYS;
+    const gap = Math.round((Date.parse(`${shiftDay(today, -1)}T00:00:00Z`) - Date.parse(`${last}T00:00:00Z`)) / 86_400_000);
+    return Math.min(Math.max(gap + IG_CRON_DAYS, IG_CRON_DAYS), IG_MAX_DAYS);
+}
 const IG_MEDIA_LIMIT = 25;
 
 interface InstagramSyncShop {
@@ -236,7 +261,7 @@ export async function syncShopInstagram(
     const { deadline = null } = options;
     const today = metaInsightToday();
     const to = shiftDay(today, -1);
-    const from = shiftDay(to, -(Math.min(Math.max(Math.trunc(days), 1), 90) - 1));
+    const from = shiftDay(to, -(Math.min(Math.max(Math.trunc(days), 1), IG_MAX_DAYS) - 1));
     Object.assign(result, { from, to });
     const key = { shop_id: shop.id, platform: 'instagram', page_id: igId };
     const accountKey = { ...key, object_type: 'page', object_id: igId };

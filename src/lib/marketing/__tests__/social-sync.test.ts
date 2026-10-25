@@ -61,7 +61,8 @@ afterEach(() => { vi.useRealTimers(); });
 
 it('stores date-keyed Page rows for the last 30 finished Meta days and lifetime post rows for today', async () => {
     const result = await syncShopSocial(supabase, shop);
-    expect(mocks.daily).toHaveBeenCalledWith('42', 'page-token', '2026-09-04', '2026-10-03');
+    expect(mocks.daily).toHaveBeenCalledWith('42', 'page-token', '2026-09-04', '2026-10-03', { deadline: null });
+    expect(mocks.posts).toHaveBeenCalledWith('42', 'page-token', 25, { deadline: null });
     expect(result).toMatchObject({ status: 'partial', from: '2026-09-04', to: '2026-10-03', pageRows: 2, postsStored: 2, postRows: 2, unavailable: ['page_video_views', 'post_clicks'], errors: [] });
 
     const daily = written('social_insights_daily');
@@ -127,6 +128,23 @@ it('does nothing for an unconnected shop and refuses a malformed page id', async
     expect((await syncShopSocial(supabase, { ...shop, facebook_page_id: '42/../me' })).status).toBe('error');
     expect(mocks.daily).not.toHaveBeenCalled();
     expect(upserts).toEqual([]);
+});
+
+it('passes the cron deadline to every Graph read and skips the remaining steps once it has passed', async () => {
+    const live = { at: Date.now() + 60_000, signal: new AbortController().signal };
+    await syncShopSocial(supabase, shop, 30, { deadline: live });
+    expect(mocks.daily.mock.calls[0][4]).toEqual({ deadline: live });
+    expect(mocks.posts.mock.calls[0][3]).toEqual({ deadline: live });
+
+    vi.clearAllMocks();
+    upserts = [];
+    const result = await syncShopSocial(supabase, shop, 30, { deadline: { at: Date.now() - 1, signal: AbortSignal.abort() } });
+    expect(mocks.daily).not.toHaveBeenCalled();
+    expect(mocks.posts).not.toHaveBeenCalled();
+    expect(result.status).toBe('error');
+    // Хугацаа дууссан ч төлвийг (алдааны шалтгаантай) бичнэ — зөвхөн last_attempt_at үлдээхгүй.
+    expect(lastStatus()).toMatchObject({ last_error: 'Facebook хуудасны синк хийх хугацаа дууслаа — дараагийн синк үргэлжлүүлнэ.', page_rows: 0 });
+    expect(lastStatus().last_success_at).toBeUndefined();
 });
 
 it('surfaces database write failures instead of reporting success', async () => {

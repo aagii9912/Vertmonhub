@@ -23,7 +23,8 @@ describe('Meta Graph URLs never reach Sentry with their query', () => {
         expect(scrubMetaBreadcrumb(crumb)).toEqual({ category: 'fetch', data: { url: 'https://graph.facebook.com/v26.0/debug_token', 'http.method': 'GET', status_code: 200 } });
         const other = { category: 'fetch', data: { url: 'https://api.openai.com/v1/responses', 'http.query': '?x=1' } };
         expect(scrubMetaBreadcrumb(other)).toBe(other);
-        expect(scrubMetaBreadcrumb({ category: 'console' })).toEqual({ category: 'console' });
+        const log: { category: string; data?: Record<string, unknown> } = { category: 'console' };
+        expect(scrubMetaBreadcrumb(log)).toBe(log);
     });
 
     it('strips the query from a Graph span (url.full, url.query, http.target, description)', () => {

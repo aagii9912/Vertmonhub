@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { isAuthorizedCron } from '@/lib/auth/cron';
 import { metaDeadline, metaDeadlinePassed } from '@/lib/facebook/daily-spend';
-import { IG_CRON_DAYS, IG_SYNC_DAYS, syncShopInstagram, syncShopSocial } from '@/lib/marketing/socialSync';
+import { instagramCronDays, SOCIAL_SYNC_DAYS, syncShopInstagram, syncShopSocial } from '@/lib/marketing/socialSync';
 import { purgeExpiredPageConnections } from '@/lib/facebook/page-connect';
 import { fetchAllRows } from '@/lib/utils/pagination';
 
@@ -28,8 +28,9 @@ type ShopRow = {
  * GET|POST /api/cron/social-insights-sync
  * Facebook Page эсвэл Instagram холбосон бүх shop: Page-ийн өдрийн insights (сүүлийн 30 дууссан өдөр, нэг
  * дуудлага), нийтлэл ба нийтлэлийн insights; Instagram-ийн аккаунтын өдрийн үзүүлэлт (анхны синк 30, дараа нь
- * 14 өдөр), дагагчийн тоо, media ба media-ийн insights-ийг `social_insights_daily` / `social_posts`-д хадгална
- * (Graph v26). Shop бүрт Page, дараа нь Instagram; shop-уудыг 2-оор зэрэг. Нэг shop-ийн алдаа бусдыг зогсоохгүй.
+ * сүүлд татсан өдрөөс хойших өдрүүд + 14, `instagramCronDays`), дагагчийн тоо, media ба media-ийн insights-ийг
+ * `social_insights_daily` / `social_posts`-д хадгална (Graph v26). Shop бүрт Page, дараа нь Instagram; shop-уудыг
+ * 2-оор зэрэг, бүгд нэг хугацааны хязгаартай (Graph-ийн дуудлага бүр түүгээр тасарна). Нэг shop-ийн алдаа бусдыг зогсоохгүй.
  * Vercel Cron-д зориулсан (GET + Bearer), `x-cron-secret`-ийг бас зөвшөөрнө.
  */
 export async function POST(request: NextRequest) {
@@ -47,12 +48,12 @@ export async function POST(request: NextRequest) {
             .select('id, facebook_page_id, facebook_page_access_token, instagram_business_account_id, instagram_access_token')
             .or('facebook_page_id.not.is.null,instagram_business_account_id.not.is.null')
             .order('id').range(from, to));
-        // Instagram-ийг амжилттай синк хийсэн бол 14 өдөр, эс бөгөөс (анх удаа) 30 өдөр.
-        const synced = await fetchAllRows<{ shop_id: string; page_id: string }>((from, to) => supabase
-            .from('social_insights_sync').select('shop_id, page_id')
+        // Instagram-ийн сүүлд амжилттай татсан өдөр: түүнээс хойших өдрүүд + 14 (анх удаа бол 30) — `instagramCronDays`.
+        const synced = await fetchAllRows<{ shop_id: string; page_id: string; last_to: string | null }>((from, to) => supabase
+            .from('social_insights_sync').select('shop_id, page_id, last_to')
             .eq('platform', 'instagram').not('last_success_at', 'is', null)
             .order('shop_id').order('page_id').range(from, to));
-        const syncedIg = new Set(synced.map(row => `${row.shop_id}|${row.page_id}`));
+        const syncedIg = new Map(synced.map(row => [`${row.shop_id}|${row.page_id}`, row.last_to]));
 
         const statuses: Record<string, number> = {};
         const instagram: Record<string, number> = {};
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
                 }
                 if (shop.facebook_page_id) {
                     try {
-                        const result = await syncShopSocial(supabase, shop);
+                        const result = await syncShopSocial(supabase, shop, SOCIAL_SYNC_DAYS, { deadline });
                         bump(statuses, result.status);
                         totalPosts += result.postsStored;
                         pageRows += result.pageRows;
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
                 if (!igId) continue;
                 if (metaDeadlinePassed(deadline)) { bump(instagram, 'skipped'); continue; }
                 try {
-                    const days = syncedIg.has(`${shop.id}|${igId}`) ? IG_CRON_DAYS : IG_SYNC_DAYS;
+                    const days = instagramCronDays(syncedIg.get(`${shop.id}|${igId}`) ?? null);
                     const result = await syncShopInstagram(supabase, shop, days, { deadline });
                     bump(instagram, result.status);
                     totalPosts += result.postsStored;
