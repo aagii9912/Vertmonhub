@@ -1,14 +1,11 @@
 'use client';
 
 import React from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
-import { useAuth } from '@/contexts/AuthContext';
-import { dashboardMutate } from '@/lib/api/dashboardFetch';
-import type { ContractRow } from '@/hooks/useContracts';
+import { type ContractRow, useSetContractStatus } from '@/hooks/useContracts';
 
 export type ContractStatusChange = 'cancel' | 'restore';
 
@@ -23,12 +20,6 @@ const NEXT_STATUS = { cancel: 'cancelled', restore: 'active' } as const satisfie
 export function canCancelContract(status: string | null | undefined): boolean {
     return status === 'active';
 }
-
-/**
- * Гэрээний төлөв уншдаг жагсаалт, тайлан (useContracts-ийн огноо/менежерийн уншигчидтай ижил) + байрны шатар
- * (`units`: property_units_with_buyer цуцалсан гэрээний худалдан авагчийг харуулдаггүй).
- */
-const CONTRACT_STATUS_READERS = ['contracts', 'director', 'operations-report', 'weekly-sales', 'kpi-report', 'my-stats', 'plan-performance', 'admin-sales-targets', 'units'];
 
 /**
  * Цонхны бичвэр — кодоор шалгасан үр дагавар: гэрээний тоо, дүнг тоолдог тайлангууд цуцалсан гэрээг хасдаг;
@@ -64,22 +55,6 @@ const COPY: Record<ContractStatusChange, { title: (label: string) => string; des
     },
 };
 
-/** Гэрээний төлөвийг цуцлах / сэргээх (PATCH `contract_status`). Хуудас шууд шинэ төлөвийг харуулж, тайлангууд дахин уншина. */
-function useSetContractStatus(contractId: string) {
-    const qc = useQueryClient();
-    const { shop } = useAuth();
-    return useMutation({
-        mutationFn: (change: ContractStatusChange) =>
-            dashboardMutate<{ contract: ContractRow }>(`/api/dashboard/contracts/${contractId}`, 'PATCH', { contract_status: NEXT_STATUS[change] }),
-        onSuccess: (data) => {
-            if (data?.contract) qc.setQueryData(['contracts', 'detail', shop?.id, contractId], { contract: data.contract });
-        },
-        onSettled: () => {
-            for (const key of CONTRACT_STATUS_READERS) void qc.invalidateQueries({ queryKey: [key] });
-        },
-    });
-}
-
 /**
  * «Цуцлах» / «Сэргээх» баталгаажуулах цонх: юу болохыг үнэнээр хэлж, батлахад л PATCH илгээнэ.
  * Алдааг цонхонд харуулж (дахин оролдох эсвэл болих), амжилттай бол хаагдана.
@@ -99,7 +74,7 @@ export function ContractStatusDialog({ contract, change, open, onOpenChange }: {
         onOpenChange(next);
     };
     const confirm = () => {
-        mutation.mutate(change, {
+        mutation.mutate(NEXT_STATUS[change], {
             onSuccess: () => { toast.success(copy.success); mutation.reset(); onOpenChange(false); },
         });
     };

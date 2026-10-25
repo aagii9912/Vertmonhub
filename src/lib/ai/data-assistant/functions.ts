@@ -33,6 +33,7 @@ import { contractIdsByPreviousHolder, listContractTransfers } from '@/lib/servic
 import { propertyStatusLabel, unitStatusLabel, type InventoryStatus } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
 import { loadLatestContractListImport, NOT_CANCELLED_CONTRACT, readLatestContractListImport } from '@/lib/contracts/live';
+import { ORDER_DATE_ERRORS, orderDateIssue } from '@/lib/contracts/order-date';
 import { summarizeContracts, type ContractSummaryRow } from '@/lib/contracts/summary';
 import { periodContractAmount, periodContractCount, undatedContractsHint } from '@/lib/dashboard/contract-dates';
 import { loadReportInventory } from '@/lib/inventory/report-inventory';
@@ -1651,28 +1652,21 @@ export async function deleteViewing(shopId: string, args: any, confirm = false, 
 
 /** Гэрээний борлуулалтын сувгийн анхдагч утга — ERP/HUB, Мандалагийн файлын бичлэгээр («ПРОПЕРТИС» биш). */
 export const DEFAULT_CONTRACT_SALES_CHANNEL = 'Пропертис';
-/** Захиалга өгсөн огнооны доод хязгаар — PATCH /api/dashboard/contracts/[id]-ийн `order_date` дүрэмтэй ижил. */
-const ORDER_DATE_MIN = '2000-01-01';
 export const CONTRACT_ORDER_DATE_REQUIRED = 'Захиалга өгсөн огноог (YYYY-MM-DD) хэрэглэгчээс асууна уу — өнөөдрөөр бүү таамагла: гэрээ энэ огноогоор долоо хоног, сарын тайланд тоологдох ба дараа нь солигдохгүй.';
 /** Огноогүй карт батлагдвал (хуучин эсвэл гараар өөрчилсөн карт) — ажилтанд шууд харагдах тул загварт биш, ажилтанд хэлнэ. */
 export const CONTRACT_ORDER_DATE_MISSING_ON_CONFIRM = 'Захиалга өгсөн огноо алга тул гэрээ үүсгээгүй — туслахаар гэрээг огноотой нь дахин үүсгүүлнэ үү.';
 
 /**
- * «Захиалга өгсөн огноо» (PATCH order_date-ийн дүрэм): YYYY-MM-DD, хуанлийн жинхэнэ өдөр (2026-02-30 биш),
- * 2000-01-01-ээс хойш, өнөөдрөөс (УБ) хойш биш. Огноогүй бол асууна — өнөөдрөөр чимээгүй бөглөхгүй.
+ * «Захиалга өгсөн огноо» (PATCH order_date-тэй нэг дүрэм, `lib/contracts/order-date.ts`).
+ * Огноогүй бол асууна — өнөөдрөөр чимээгүй бөглөхгүй.
  */
 function contractOrderDate(value: unknown): { date: string } | { error: string; missingFields?: string[] } {
     const text = typeof value === 'string' ? value.trim() : '';
     if (!text) return { error: CONTRACT_ORDER_DATE_REQUIRED, missingFields: ['order_date'] };
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
-    if (!match) return { error: 'Захиалга өгсөн огноог YYYY-MM-DD хэлбэрээр өгнө үү (жишээ нь 2026-10-15)', missingFields: ['order_date'] };
-    if (text < ORDER_DATE_MIN) return { error: 'Захиалга өгсөн огноо 2000 оноос өмнө байж болохгүй' };
-    const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
-    const parsed = new Date(Date.UTC(year, month - 1, day));
-    if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) {
-        return { error: `Захиалга өгсөн огноо «${text}» хуанлид байхгүй өдөр байна`, missingFields: ['order_date'] };
-    }
-    if (text > ubDateStr()) return { error: 'Захиалга өгсөн огноо өнөөдрөөс хойш байж болохгүй' };
+    const issue = orderDateIssue(text);
+    if (issue === 'format') return { error: 'Захиалга өгсөн огноог YYYY-MM-DD хэлбэрээр өгнө үү (жишээ нь 2026-10-15)', missingFields: ['order_date'] };
+    if (issue === 'calendar') return { error: `Захиалга өгсөн огноо «${text}» хуанлид байхгүй өдөр байна`, missingFields: ['order_date'] };
+    if (issue) return { error: ORDER_DATE_ERRORS[issue] };
     return { date: text };
 }
 

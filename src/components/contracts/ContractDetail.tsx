@@ -58,7 +58,7 @@ export function ContractDetail({ id }: { id: string }) {
     const paymentsQuery = usePayments(id);
     const pay = paymentsQuery.data;
     const payments = useMemo(() => (pay?.payments ?? []).slice().sort((a, b) => a.installment_number - b.installment_number), [pay]);
-    // ERP-ийн бүтээгдэхүүний экспортоос үүссэн гэрээнд өмнө төлсөн дүн байхгүй: таахгүй, төлбөр бүртгэхгүй.
+    // Төлсөн дүнг ERP хөтөлдөг гэрээнд (ERP экспорт, HUB импорт, AI) өмнө төлсөн дүн байхгүй: таахгүй, төлбөр бүртгэхгүй.
     const paidKnown = c?.paid_amount !== null && c?.paid_amount !== undefined;
     // Хуваарь амжилттай уншигдсан үед л шинэ мөр нэмнэ — алдаатай үед байгаа төлбөрийг дахин оруулахгүй.
     // Зөвхөн идэвхтэй, хаагдсан гэрээнд төлбөр бүртгэнэ (цуцалсныг сервер татгалзана) — товч ч харуулахгүй.
@@ -168,7 +168,7 @@ export function ContractDetail({ id }: { id: string }) {
                                 {paidKnown ? canAddPayment && <>
                                     <p className="max-w-sm text-[12.5px] text-muted-foreground">Урьдчилгаа болон сар бүрийн төлөлтийг энд бүртгэвэл захирлын самбар авлага, хоцролтыг автоматаар харуулна.</p>
                                     <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>
-                                </> : <p className="max-w-sm text-[12.5px] text-muted-foreground">Энэ гэрээ ERP-ийн бүтээгдэхүүний экспортоос үүссэн тул өмнө төлсөн дүн тодорхойгүй. Төлсөн дүнтэй гэрээний экспорт орсны дараа төлбөр бүртгэнэ.</p>}
+                                </> : <p className="max-w-sm text-[12.5px] text-muted-foreground">Энэ гэрээний өмнө төлсөн дүн тодорхойгүй (төлсөн дүнг ERP хөтөлдөг). Төлсөн дүнтэй гэрээний экспорт орсны дараа төлбөр бүртгэнэ.</p>}
                             </div>
                         ) : (
                             <div className="overflow-x-auto">

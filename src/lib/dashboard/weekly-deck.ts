@@ -1,6 +1,6 @@
 import type PptxGenJS from 'pptxgenjs';
 import type { OperationsReport } from './operations-report';
-import { floorTone, type FloorCell, type FloorTone, type WeeklySalesReport } from './weekly-sales';
+import { floorSoldLabel, floorTone, type FloorCell, type FloorTone, type WeeklySalesReport } from './weekly-sales';
 import { arialWidth } from './arial-metrics';
 import type { WeeklyContentPlan, WeeklyUpdate } from './weekly-review';
 import { formatReviewChange, updatePart } from './weekly-review';
@@ -420,8 +420,7 @@ function floorCellText(cell: FloorCell, maxWidth: number, fontSize: number): { t
 
 /** `liveContracts` — HUB горим (`contracts`): ногоон = амьд гэрээ (байрны төлөв биш); ERP, байрны бүртгэлд — төлөвөөр. */
 function legend(slide: Slide, y: number, liveContracts: boolean) {
-    const sold = liveContracts ? 'Амьд гэрээтэй (цуцлаагүй)' : 'Гэрээтэй (зарагдсан, хүлээлгэсэн)';
-    const items: [string, string][] = [[C.successSoft, sold], [C.white, 'Худалдаанд (захиалсан, хадгалсан орно)'], [C.neutralSoft, 'Бартер']];
+    const items: [string, string][] = [[C.successSoft, floorSoldLabel(liveContracts)], [C.white, 'Худалдаанд (захиалсан, хадгалсан орно)'], [C.neutralSoft, 'Бартер']];
     let x = M;
     for (const [color, label] of items) {
         slide.addShape('rect', { x, y: y + 0.06, w: 0.18, h: 0.18, fill: { color }, line: { color: C.line, width: 0.75 } });

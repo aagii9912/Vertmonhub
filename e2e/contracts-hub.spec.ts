@@ -6,7 +6,7 @@ import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { CONTRACT_LIST_COLUMNS } from '../src/lib/contracts/list-format';
 import { summarizeContracts, type ContractSummaryRow } from '../src/lib/contracts/summary';
 import {
-    parseContractList, planContractListImport, type ContractListContract, type ContractListCounts, type ContractListImportPlan, type ContractListUnit,
+    contractListHasWork, parseContractList, planContractListImport, type ContractListContract, type ContractListCounts, type ContractListImportPlan, type ContractListUnit,
 } from '../src/lib/contracts/list-import';
 import { buildPlanPerformance, type PlanContract } from '../src/lib/sales/plan-performance';
 import { emptyMonthlySales, monthlySalesWithBlockTotals, type MonthlySalesMonth } from '../src/lib/sales/monthly';
@@ -137,7 +137,7 @@ async function previewBody(buffer: ArrayBuffer, fileName: string, reportDate: st
     return { status: 200, plan, planHash, body: {
         ...view, sheetName: parse.sheetName, rowCount: parse.rows.length, extraColumns: parse.extraColumns, ignoredColumns: parse.ignoredColumns,
         skipped: parse.skipped, latestImport: { report_date: LATEST }, planHash,
-        opsCount: ops.length, canCommit: ops.length > 0 && plan.blocking.length === 0,
+        opsCount: ops.length, canCommit: contractListHasWork(plan) && plan.blocking.length === 0,
     } };
 }
 

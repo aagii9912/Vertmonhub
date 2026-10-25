@@ -21,7 +21,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, shop: { id: 'shop-a' } }) }));
-vi.mock('@/hooks/useContracts', () => ({
+vi.mock('@/hooks/useContracts', async (importOriginal) => ({
+    // Цуцлах / сэргээх: жинхэнэ hook (PATCH-ийг dashboardFetch-ийн mock-оор шалгана).
+    useSetContractStatus: (await importOriginal<typeof import('@/hooks/useContracts')>()).useSetContractStatus,
     useContract: () => ({ ...mocks.contract, refetch: mocks.refetchContract }),
     usePayments: () => ({ ...mocks.payments, refetch: mocks.refetchPayments }),
     useContractTransfers: () => ({ data: { transfers: [] }, isError: false }),

@@ -5,19 +5,10 @@ import { withRoute } from '@/lib/api/route';
 import { getUserId } from '@/lib/auth/supabase-auth';
 import { recordAudit } from '@/lib/services/AuditService';
 import { resolveSalesProjectScope } from '@/lib/sales/project-scope';
-import { ubDateStr } from '@/lib/utils/date';
 import { isMissingReferralSchema, REFERRAL_UNAVAILABLE, resolveReferralSource } from '@/lib/sales/referral-sources-store';
 import { NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
+import { isCalendarDate, ORDER_DATE_ERRORS, orderDateIssue } from '@/lib/contracts/order-date';
 import { contractUnitKey } from '@/lib/inventory/report-inventory';
-
-/** YYYY-MM-DD, хуанлийн жинхэнэ өдөр (2026-02-30 биш). */
-const DateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
-    const date = new Date(`${value}T00:00:00Z`);
-    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
-});
-/** Захиалга өгсөн огнооны доод хязгаар — төлөвлөгөөний биелэлтийн тайлангийн оны хүрээ (2000–2100)-тэй ижил:
- *  «0202-10-01» мэт алдаа гэрээг бүх тайлангаас чимээгүй хасах ба дараа нь энд солигдохгүй. */
-const ORDER_DATE_MIN = '2000-01-01';
 
 // Эзэмшигчийн нэрийг (customer_name) энд солихгүй — зөвхөн «Гэрээ шилжүүлэх» урсгалаар
 // (POST [id]/transfer → transfer_contract RPC) түүх, аудиттай солигдоно.
@@ -33,7 +24,7 @@ const ContractPatchSchema = z.object({
     project_id: z.string().uuid().nullable().optional(),
     // «Огноо оруулах»: захиалга өгсөн огноо хоосон үед л нэг удаа (солих, арилгахгүй); гэрээний огноо
     // хоосон бол мөн энэ өдөр болно (HUB-ийн дүрэм: захиалга өгсөн огноо = борлуулалтын огноо).
-    order_date: DateString.optional(),
+    order_date: z.string().refine(isCalendarDate).optional(),
     // «Сэжим (хаанаас ирсэн)» — төслийн идэвхтэй жагсаалтаас (одоогийн архивласан сонголт хэвээр үлдэж болно); null = цэвэрлэх.
     referral_source_id: z.guid().nullable().optional(),
 }).strict();
@@ -118,11 +109,9 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
         if (!project) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 400 });
     }
     const settingOrderDate = updateData.order_date !== undefined;
-    if (settingOrderDate && updateData.order_date! > ubDateStr()) {
-        return NextResponse.json({ error: 'Захиалга өгсөн огноо өнөөдрөөс хойш байж болохгүй' }, { status: 400 });
-    }
-    if (settingOrderDate && updateData.order_date! < ORDER_DATE_MIN) {
-        return NextResponse.json({ error: 'Захиалга өгсөн огноо 2000 оноос өмнө байж болохгүй' }, { status: 400 });
+    const orderIssue = settingOrderDate ? orderDateIssue(updateData.order_date!) : null;
+    if (orderIssue === 'future' || orderIssue === 'too_early') {
+        return NextResponse.json({ error: ORDER_DATE_ERRORS[orderIssue] }, { status: 400 });
     }
     // Аудитад өмнөх утгыг хадгална (утас зэрэг холбоо барих засвар түүхгүй алга болохгүй).
     // Төлөв солиход байрыг (product_type + unit_label) мөн уншина — цуцалсныг сэргээхэд доорх шалгалтад.
