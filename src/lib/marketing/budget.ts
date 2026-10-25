@@ -89,9 +89,30 @@ export interface SpendStatusEntry extends SpendEntryLite {
     currency?: string | null;
 }
 
-/** Тухайн оны бүртгэлүүдээс [12] сарын төлөв. Давхардсан гар Meta мөр (`manual_overlap`) аль алинд нь орохгүй. */
-export function monthlySpendStatus(entries: readonly SpendStatusEntry[], year: number): BudgetSpendMonth[] {
+/**
+ * ₮-ийн дүн мэдэгдэж буй эсэх: ₮-д орсон бүртгэлтэй, эсвэл Meta API-аар синк хийсэн өдөртэй ба ханшгүй зардалгүй (синк
+ * хийсэн өдөр мөргүй = Meta баталгаажуулсан 0 ₮). Зөвхөн ханшгүй зардалтай бол ₮-д мэдэгдэхгүй хэвээр («—»).
+ */
+export function spendRecorded(included: boolean, metaSyncedDays: number, pending: Record<string, number>): boolean {
+    return included || (metaSyncedDays > 0 && !Object.values(pending).some(amount => amount > 0));
+}
+
+/** Хугацааны (долоо хоног) зарцуулалтын төлөв `MarketingPerformance`-ийн дүн, чанараас (`budgetSpendCell`-д). */
+export function periodSpendStatus(totals: { hasSpend: boolean }, quality: { pendingCurrencies: Record<string, number>; metaSyncedDays?: number }): Omit<BudgetSpendMonth, 'month'> {
+    return { recorded: spendRecorded(totals.hasSpend, quality.metaSyncedDays ?? 0, quality.pendingCurrencies), pending: quality.pendingCurrencies };
+}
+
+/**
+ * Тухайн оны бүртгэлүүдээс [12] сарын төлөв. Давхардсан гар Meta мөр (`manual_overlap`) аль алинд нь орохгүй.
+ * `metaSyncedDays` = Meta API-аар синк хийсэн өдрүүд (`meta_spend_coverage`): мөргүй ч сар бүртгэлтэй (0 ₮).
+ */
+export function monthlySpendStatus(entries: readonly SpendStatusEntry[], year: number, metaSyncedDays: readonly string[] = []): BudgetSpendMonth[] {
     const out: BudgetSpendMonth[] = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, recorded: false, pending: {} }));
+    const synced = Array(12).fill(0);
+    for (const day of metaSyncedDays) {
+        const match = /^(\d{4})-(\d{2})-\d{2}$/.exec(day);
+        if (match && Number(match[1]) === year) synced[Number(match[2]) - 1]++;
+    }
     for (const entry of entries) {
         const match = /^(\d{4})-(\d{2})-\d{2}$/.exec(entry.spent_at ?? '');
         if (!match || Number(match[1]) !== year) continue;
@@ -103,6 +124,7 @@ export function monthlySpendStatus(entries: readonly SpendStatusEntry[], year: n
         if (native <= 0 || !entry.currency) { row.recorded = true; continue; }
         row.pending[entry.currency] = Math.round(((row.pending[entry.currency] ?? 0) + native) * 1e6) / 1e6;
     }
+    for (const row of out) row.recorded = spendRecorded(row.recorded, synced[row.month - 1] ?? 0, row.pending);
     return out;
 }
 

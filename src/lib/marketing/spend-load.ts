@@ -23,7 +23,17 @@ export function mergeMarketingSpend(manual: MarketingSpend[], daily: MetaSpendRo
     });
     return [...manualRows, ...autoRows].sort((a, b) => b.spent_at.localeCompare(a.spent_at) || a.id.localeCompare(b.id));
 }
+/**
+ * Зарцуулалтын мөрүүд ба Meta API-аар синк хийсэн (`meta_spend_coverage`) өдрүүд. Синк хийсэн өдөр мөргүй бол Meta
+ * тэр өдөр зардалгүй гэж баталгаажуулсан (0 ₮) — «бүртгээгүй» биш (`spendRecorded`, `monthlySpendStatus`).
+ */
+export interface MarketingSpendData { entries: MarketingSpend[]; metaSyncedDays: string[] }
+
 export async function loadMarketingSpend(db: SupabaseClient, shopId: string, fromDate: string, toDate: string) {
+    return (await loadMarketingSpendData(db, shopId, fromDate, toDate)).entries;
+}
+
+export async function loadMarketingSpendData(db: SupabaseClient, shopId: string, fromDate: string, toDate: string): Promise<MarketingSpendData> {
     let hasSourceColumn = true;
     const [manual, daily, coverage, activities] = await Promise.all([
         fetchAllRows<MarketingSpend>((from, to) => db.from('marketing_spend_entries').select('id,spent_at,amount,channel,project_id,marketing_owner_name,marketing_campaign_id,note').eq('shop_id', shopId).is('deleted_at', null).gte('spent_at', fromDate).lte('spent_at', toDate).order('id').range(from, to)),
@@ -46,5 +56,5 @@ export async function loadMarketingSpend(db: SupabaseClient, shopId: string, fro
         fetchAllRows<{ spent_at: string }>((from, to) => db.from('meta_spend_coverage').select('spent_at').eq('shop_id', shopId).gte('spent_at', fromDate).lte('spent_at', toDate).order('account_id').order('spent_at').range(from, to)),
         fetchAllRows<Pick<MarketingActivity, 'id' | 'project_id' | 'marketing_owner_name' | 'external_campaign_id'>>((from, to) => db.from('marketing_campaigns').select('id,project_id,marketing_owner_name,external_campaign_id').eq('shop_id', shopId).order('id').range(from, to)),
     ]);
-    return mergeMarketingSpend(manual, daily, coverage, activities);
+    return { entries: mergeMarketingSpend(manual, daily, coverage, activities), metaSyncedDays: [...new Set(coverage.map(c => c.spent_at))].sort() };
 }

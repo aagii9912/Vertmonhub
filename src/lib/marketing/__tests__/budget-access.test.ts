@@ -1,11 +1,14 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), remove: vi.fn(), shop: vi.fn(), from: vi.fn(), spend: vi.fn() }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), remove: vi.fn(), shop: vi.fn(), from: vi.fn(), spend: vi.fn(), synced: [] as string[] }));
 vi.mock('@/lib/auth/require-permission', () => ({ requireModule: mocks.read, requireModuleWrite: mocks.write, requireModuleDelete: mocks.remove }));
 vi.mock('@/lib/auth/supabase-auth', () => ({ getUserShop: mocks.shop, getUserId: vi.fn(async () => 'user') }));
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: mocks.from }) }));
-vi.mock('@/lib/marketing/spend-load', () => ({ loadMarketingSpend: mocks.spend }));
+vi.mock('@/lib/marketing/spend-load', () => ({
+    loadMarketingSpend: mocks.spend,
+    loadMarketingSpendData: async (...args: unknown[]) => ({ entries: await mocks.spend(...args), metaSyncedDays: mocks.synced }),
+}));
 vi.mock('@/lib/utils/logger', () => ({ logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } }));
 import { GET, PUT, POST, DELETE } from '@/app/api/marketing/budget/route';
 
@@ -105,6 +108,22 @@ it('loads only selected project budgets, spend and real contract revenue; flags 
         expect(queries.find(q => q.table === table)?.eq).toHaveBeenCalledWith('project_id', project);
         expect(queries.find(q => q.table === table)?.eq).toHaveBeenCalledWith('shop_id', 'allowed');
     }
+});
+
+it('marks a month with Meta API synced days but no rows as recorded (0 ₮) for the whole shop, not for one project', async () => {
+    results.marketing_budgets = { data: [{ month: 2, amount: 1000 }], error: null };
+    results.marketing_project_budgets = { data: [{ month: 2, amount: 1000 }], error: null };
+    results.manager_monthly_sales = { data: [], error: null };
+    results.property_contracts = { data: [], error: null };
+    mocks.spend.mockResolvedValue([]);
+    mocks.synced = ['2026-02-01', '2026-02-02'];
+    try {
+        const shopWide = await (await GET(request('GET'))).json();
+        expect(shopWide.spendStatus[1]).toEqual({ month: 2, recorded: true, pending: {} });
+        expect(shopWide.spendStatus[2]).toEqual({ month: 3, recorded: false, pending: {} });
+        const scoped = await (await GET(request('GET', undefined, `&project=${project}`))).json();
+        expect(scoped.spendStatus[1]).toEqual({ month: 2, recorded: false, pending: {} });
+    } finally { mocks.synced = []; }
 });
 
 it('reports missing project migration without writing or hiding unrelated read failures', async () => {

@@ -103,6 +103,15 @@ describe('marketing performance business rules', () => {
         expect(r.channels.find(c => c.id === 'meta_ads')).toMatchObject({ leads: 3, spend: 0, hasSpend: false, costPerLead: null });
         expect(r.previous).toMatchObject({ spend: 0, hasSpend: false, costPerLead: null });
     });
+    it('counts Meta API synced days per period (current, previous) only without a project filter', () => {
+        const data = { ...fixture(), metaSyncedDays: ['2026-07-30', '2026-08-01', '2026-08-31', '2026-09-01'] };
+        const r = buildMarketingPerformance(data, range);
+        expect(r.spendQuality.current.metaSyncedDays).toBe(2);
+        expect(r.spendQuality.previous.metaSyncedDays).toBe(1);
+        // Төсөл сонгосон: Meta мөр тэр төсөлд холбогдоогүй байж болох тул синк хийсэн өдрийг 0 ₮ гэж үзэхгүй.
+        expect(buildMarketingPerformance(data, { ...range, project }).spendQuality.current.metaSyncedDays).toBe(0);
+        expect(buildMarketingPerformance(fixture(), range).spendQuality.current.metaSyncedDays).toBe(0);
+    });
     it('distinguishes absent spending from an explicitly recorded zero and excludes overlaps', () => {
         const data = fixture();
         data.spend[0].exclusion = 'manual_overlap';

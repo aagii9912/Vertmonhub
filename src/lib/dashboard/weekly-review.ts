@@ -4,6 +4,7 @@ import { formatMNT } from '@/lib/utils/currency';
 import { dateSchema, performanceChange, type MarketingPerformance } from '@/lib/marketing/performance';
 import { CONTENT_STATUS_LABEL, CONTENT_TYPE_LABEL, type ContentPlanSummary } from '@/lib/marketing/content-plan';
 import { connectionDiscussionItems, type MarketingConnections } from '@/lib/marketing/connections';
+import { budgetSpendCell, budgetSpendNote, periodSpendStatus } from '@/lib/marketing/budget';
 import { formatOperationsReportText, type OperationsReport } from './operations-report';
 import type { WeeklySalesReport } from './weekly-sales';
 import { periodContractAmount, periodContractCount } from './contract-dates';
@@ -183,8 +184,9 @@ export function formatWeeklyReview(input: {
         ...(input.marketing ? [
             `Дууссан кампанит ажил: ${formatReviewChange(input.marketing.totals.campaigns, input.marketing.previous.campaigns)}`,
             `Дууссан контент: ${formatReviewChange(input.marketing.totals.content, input.marketing.previous.content)}`,
-            `Бүртгэсэн зардал: ${input.marketing.totals.hasSpend || !input.marketing.totals.spendComplete ? formatMNT(input.marketing.totals.spend) : 'бүртгээгүй'}`,
-            `Ханшгүй ${input.marketing.spendQuality.current.missingFx} зардал нийтэд ороогүй.`,
+            // Слайд, картын дүрэм (`budgetSpendCell`): бүртгэлгүй эсвэл зөвхөн ханшгүй зардалтай бол ₮ биш «—» + эх валют.
+            weekSpendLine(input.marketing),
+            ...(input.marketing.spendQuality.current.missingFx ? [`Ханшгүй ${input.marketing.spendQuality.current.missingFx} зардал нийтэд ороогүй.`] : []),
         ] : []),
         '', '3. Ажлын явц, хэлэлцэх зүйл',
         ...(input.updates?.length ? input.updates.flatMap(update => [
@@ -194,6 +196,14 @@ export function formatWeeklyReview(input: {
             `Дараагийн алхам: ${update.next_steps || 'Тэмдэглээгүй'}`, '',
         ]) : [input.updates ? 'Хадгалсан ажлын шинэчлэл алга.' : 'Ажлын шинэчлэлийн мэдээлэл түр боломжгүй.']),
     ].join('\n');
+}
+
+/** «Бүртгэсэн зардал: …» — бүртгэлгүй бол «бүртгээгүй», зөвхөн ханшгүй бол «—» + эх валют (₮ биш), хэсэгчлэн бол ₮ + ханшгүй. */
+function weekSpendLine(marketing: MarketingPerformance): string {
+    const cell = budgetSpendCell(marketing.totals.spend, periodSpendStatus(marketing.totals, marketing.spendQuality.current), formatMNT);
+    if (!cell.known && !cell.pending) return 'Бүртгэсэн зардал: бүртгээгүй';
+    const note = budgetSpendNote(cell);
+    return `Бүртгэсэн зардал: ${cell.value}${note ? ` (${note})` : ''}`;
 }
 
 /** Төлөвлөгөөнд хамаарахгүй гэрээ (Агуулах г.м.) байвал хувьтай нэг суурь болох төлөвлөгөөнд хамаарах дүнг тусад нь. */

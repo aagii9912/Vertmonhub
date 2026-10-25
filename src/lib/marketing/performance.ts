@@ -54,12 +54,13 @@ export interface MarketingSpend {
     project_id: string | null; marketing_owner_name: string | null; marketing_campaign_id: string | null; note: string | null;
 }
 export const SPEND_BASIS = 'Зардал = гар бүртгэл + Meta өдрийн зардал (API / файл). Meta нь зарын дансны цагийн бүсээр; төгрөгт хөрвүүлсэн дүнгээр тооцно. API-аар татсан эсвэл файлаар оруулсан өдрийн гар Meta Ads бүртгэлийг давхардлаас сэргийлж нийтээс хасна; өөр дансны гар зардал байвал тулгана. API-аар баталгаажсан өдрийг файл дарахгүй. Ханшгүй зардал нийтэд орохгүй. Meta snapshot нэмэхгүй.';
-export function spendQuality(rows: MarketingSpend[]) {
+/** `metaSyncedDays` = хугацааны Meta API-аар синк хийсэн өдрийн тоо (`periodSpendStatus`: мөргүй ч 0 ₮ бүртгэлтэй). */
+export function spendQuality(rows: MarketingSpend[], metaSyncedDays = 0) {
     const pending: Record<string, number> = {};
     for (const r of rows.filter(s => s.exclusion === 'missing_fx')) pending[r.currency!] = (pending[r.currency!] ?? 0) + (r.native_amount ?? 0);
     return { missingFx: rows.filter(s => s.exclusion === 'missing_fx').length, pendingCurrencies: pending,
         excludedManual: rows.filter(s => s.exclusion === 'manual_overlap').length,
-        unmappedMeta: rows.filter(s => s.source === 'meta' && !s.marketing_campaign_id).length };
+        unmappedMeta: rows.filter(s => s.source === 'meta' && !s.marketing_campaign_id).length, metaSyncedDays };
 }
 
 export interface MarketingTarget {
@@ -69,6 +70,8 @@ export interface MarketingTarget {
 export interface PerformanceData {
     projects: { id: string; name: string }[]; activities: MarketingActivity[]; leads: MarketingLead[];
     contracts: MarketingContract[]; spend: MarketingSpend[]; targets: MarketingTarget[];
+    /** Meta API-аар синк хийсэн өдрүүд (shop-ийн зарын данс) — зөвхөн төсөл/эрхээр шүүгээгүй нийт тайланд. */
+    metaSyncedDays?: readonly string[];
 }
 const pct = (n: number, d: number) => d > 0 ? Math.round(n / d * 1000) / 10 : null;
 export const performanceChange = (current: number, previous: number) => previous > 0 ? Math.round((current - previous) / previous * 1000) / 10 : null;
@@ -81,6 +84,8 @@ const activityCounts = (rows: MarketingActivity[]) => ({
 
 export function buildMarketingPerformance(data: PerformanceData, filter: PerformanceFilter) {
     const previous = previousRange(filter);
+    // Төсөл сонгосон үед Meta мөр тэр төсөлд холбогдоогүй байж болох тул синк хийсэн өдрийг 0 ₮ гэж үзэхгүй.
+    const syncedDays = (range: { from: string; to: string }) => filter.project ? 0 : (data.metaSyncedDays ?? []).filter(day => day >= range.from && day <= range.to).length;
     function period(range: { from: string; to: string }) {
         const within = (v: string | null) => !!v && date(v) >= range.from && date(v) <= range.to;
         const inProject = (r: { project_id: string | null }) => !filter.project || r.project_id === filter.project;
@@ -169,8 +174,8 @@ export function buildMarketingPerformance(data: PerformanceData, filter: Perform
             variancePct: budget === null || !current.totals.hasSpend || !current.totals.spendComplete ? null : pct(current.totals.spend - budget, budget),
             planPct: pct(current.planned.filter(a => a.status === 'completed' && !!a.completed_on && a.completed_on <= filter.to).length, current.planned.length),
             previousLeads: prev.totals.leads, leadChange: performanceChange(current.totals.leads, prev.totals.leads), targetsComplete },
-        spendQuality: { current: spendQuality(data.spend.filter(s => s.spent_at >= filter.from && s.spent_at <= filter.to && (!filter.project || s.project_id === filter.project))),
-            previous: spendQuality(data.spend.filter(s => s.spent_at >= previous.from && s.spent_at <= previous.to && (!filter.project || s.project_id === filter.project))) },
+        spendQuality: { current: spendQuality(data.spend.filter(s => s.spent_at >= filter.from && s.spent_at <= filter.to && (!filter.project || s.project_id === filter.project)), syncedDays(filter)),
+            previous: spendQuality(data.spend.filter(s => s.spent_at >= previous.from && s.spent_at <= previous.to && (!filter.project || s.project_id === filter.project)), syncedDays(previous)) },
         quality: {
             noProject: current.leads.filter(l => !l.project_id).length,
             noCampaign: current.leads.filter(l => !l.marketing_campaign_id).length,

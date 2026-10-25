@@ -8,7 +8,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
-import { loadMarketingSpend } from '@/lib/marketing/spend-load';
+import { loadMarketingSpendData } from '@/lib/marketing/spend-load';
 import { dateSchema, spendQuality, SPEND_BASIS } from '@/lib/marketing/performance';
 import { hasRealContractFields } from '@/lib/leads/contracts';
 import { ubParts } from '@/lib/utils/date';
@@ -94,8 +94,8 @@ export async function GET(request: NextRequest) {
         }
         if (budgetRes.error) throw budgetRes.error;
 
-        const [shopEntries, revenue] = await Promise.all([
-            loadMarketingSpend(db, authShop.id, `${year}-01-01`, `${year}-12-31`),
+        const [{ entries: shopEntries, metaSyncedDays }, revenue] = await Promise.all([
+            loadMarketingSpendData(db, authShop.id, `${year}-01-01`, `${year}-12-31`),
             (async () => {
                 const series = Array(12).fill(0);
                 if (projectId) {
@@ -131,8 +131,9 @@ export async function GET(request: NextRequest) {
             unassignedSpendCount: projectId ? shopEntries.filter(e => !e.project_id).length : 0,
             available: true,
             overview: buildBudgetOverview(budgets, spend, revenue),
-            // Сар бүрт ₮-д орсон бүртгэлтэй эсэх ба ханшгүй Meta зардал эх валютаар (₮-ийн дүнд ороогүй).
-            spendStatus: monthlySpendStatus(allEntries, year),
+            // Сар бүрт ₮-д орсон бүртгэлтэй эсэх ба ханшгүй Meta зардал эх валютаар (₮-ийн дүнд ороогүй). Meta API-аар синк
+            // хийсэн өдөр мөргүй бол 0 ₮ (бүртгэлтэй) — төсөл сонгосон үед Meta мөр төсөлд холбогдоогүй байж болох тул зөвхөн нийтэд.
+            spendStatus: monthlySpendStatus(allEntries, year, projectId ? [] : metaSyncedDays),
             byChannel: spendByChannel(entries),
             entries: allEntries.slice(0, 100),
             metaAdsTotalSpend: entries.filter(e => e.source === 'meta').reduce((sum, e) => sum + Number(e.amount), 0),

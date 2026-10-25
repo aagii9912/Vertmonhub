@@ -93,10 +93,22 @@ describe('Лхагва гарагийн тайлангийн хугацаа', ()
         const recordedZero = marketingReport([{ id: 'zero', spent_at: '2026-09-25', channel: 'facebook', amount: 0, project_id: null, marketing_owner_name: null, marketing_campaign_id: null, note: null }]);
         expect(formatWeeklyReview({ ...base, marketing: recordedZero })).toContain('Нэг лидийн өртөг: 0₮');
     });
+    it('Meta-д синк хийсэн зардалгүй долоо хоног 0₮; зөвхөн ханшгүй Meta зардал «—» + эх валют, ₮ биш (слайдын дүрэм)', () => {
+        const base = { shopName: 'Тест', meetingDate: '2026-09-30', notices: [] };
+        const synced = marketingReport([], ['2026-09-24', '2026-09-25']);
+        expect(formatWeeklyReview({ ...base, marketing: synced })).toContain('Бүртгэсэн зардал: 0₮');
+        const meta = (id: string, native: number): MarketingSpend => ({ id, spent_at: '2026-09-25', channel: 'meta_ads', amount: 0, exclusion: 'missing_fx', native_amount: native, currency: 'USD', source: 'meta', project_id: null, marketing_owner_name: null, marketing_campaign_id: 'c1', note: null });
+        const text = formatWeeklyReview({ ...base, marketing: marketingReport([meta('a', 400), meta('b', 12.57)], ['2026-09-25']) });
+        expect(text).toContain('Бүртгэсэн зардал: — (Ханшгүй 412.57 USD (₮-д ороогүй))');
+        expect(text).not.toMatch(/Бүртгэсэн зардал: 0₮/);
+        expect(text).toContain('Ханшгүй 2 зардал нийтэд ороогүй.');
+        // Ханшгүй мөргүй бол «Ханшгүй 0 зардал» гэж бичихгүй.
+        expect(formatWeeklyReview({ ...base, marketing: synced })).not.toContain('Ханшгүй 0 зардал');
+    });
 });
 
-function marketingReport(spend: MarketingSpend[]) {
-    return buildMarketingPerformance({ projects: [], activities: [], targets: [], contracts: [], spend,
+function marketingReport(spend: MarketingSpend[], metaSyncedDays: string[] = []) {
+    return buildMarketingPerformance({ projects: [], activities: [], targets: [], contracts: [], spend, metaSyncedDays,
         leads: [null, '2026-09-26T03:00:00Z'].map((handoff, index) => ({ id: String(index), created_at: '2026-09-25T03:00:00Z', source: 'facebook', project_id: null, marketing_owner_name: null, marketing_campaign_id: null, marketing_channel: null, sales_handoff_at: handoff, sales_manager_name: handoff ? 'Номин' : null })),
     }, weeklyReviewRange('2026-09-30'));
 }

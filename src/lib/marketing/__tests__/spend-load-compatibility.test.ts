@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { loadMarketingSpend } from '../spend-load';
+import { loadMarketingSpend, loadMarketingSpendData } from '../spend-load';
 
 function database(error: { code: string; message: string } | null, rowCount = 1) {
     const calls: { columns: string; filters: [string, unknown][]; start: number }[] = [];
@@ -49,4 +49,16 @@ it.each([
     const { db, calls } = database(error);
     await expect(loadMarketingSpend(db, 'shop-a', '2026-09-01', '2026-09-30')).rejects.toThrow(error.message);
     expect(calls).toHaveLength(1);
+});
+
+it('returns the Meta API synced days (coverage) once each, so a synced day without rows reads as 0 ₮', async () => {
+    const coverage = [{ spent_at: '2026-09-02' }, { spent_at: '2026-09-01' }, { spent_at: '2026-09-02' }];
+    const db = { from: (table: string) => {
+        const q = {
+            select: () => q, order: () => q, eq: () => q, gte: () => q, lte: () => q, is: () => q,
+            range: () => Promise.resolve({ data: table === 'meta_spend_coverage' ? coverage : [], error: null }),
+        };
+        return q;
+    } } as unknown as SupabaseClient;
+    expect(await loadMarketingSpendData(db, 'shop-a', '2026-09-01', '2026-09-30')).toEqual({ entries: [], metaSyncedDays: ['2026-09-01', '2026-09-02'] });
 });

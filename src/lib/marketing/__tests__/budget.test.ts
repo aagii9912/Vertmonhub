@@ -8,6 +8,8 @@ import {
     allocateAnnualBudget,
     MarketingBudgetSchema,
     monthlySpendStatus,
+    periodSpendStatus,
+    spendRecorded,
     spendStatusThrough,
     budgetSpendCell,
     budgetSpendNote,
@@ -166,6 +168,30 @@ describe('зарцуулалтын төлөв — бүртгэлгүй ба ха
         } finally {
             process.env.TZ = previous;
         }
+    });
+
+    it('Meta API-аар синк хийсэн өдөр мөргүй сар 0 ₮ бүртгэлтэй; зөвхөн ханшгүй зардалтай бол синктэй ч «—»', () => {
+        const previous = process.env.TZ;
+        process.env.TZ = 'UTC';
+        try {
+            // 2-р сар: синктэй, зардалгүй (кампанит ажил зогссон) → 0 ₮; 10-р сар: синктэй ч зөвхөн ханшгүй USD → «—» хэвээр;
+            // 12-р сар: гар Meta бүртгэл синктэй өдөрт давхардсан (manual_overlap) → Meta-гийн 0 ₮.
+            const months = monthlySpendStatus(entries, 2026, ['2025-02-01', '2026-02-01', '2026-02-02', '2026-10-01', '2026-12-01']);
+            expect(months[1]).toEqual({ month: 2, recorded: true, pending: {} });
+            expect(months[9]).toEqual({ month: 10, recorded: false, pending: { USD: 1234.56 } });
+            expect(months[11]).toEqual({ month: 12, recorded: true, pending: {} });
+            expect(months[2]).toEqual({ month: 3, recorded: false, pending: {} });
+            expect(monthlySpendStatus(entries, 2025, ['2025-02-01'])[1].recorded).toBe(true);
+        } finally {
+            process.env.TZ = previous;
+        }
+        expect(spendRecorded(false, 3, {})).toBe(true);
+        expect(spendRecorded(false, 3, { USD: 412.57 })).toBe(false);
+        expect(spendRecorded(false, 3, { USD: 0 })).toBe(true);
+        expect(spendRecorded(false, 0, {})).toBe(false);
+        expect(spendRecorded(true, 0, { USD: 5 })).toBe(true);
+        expect(periodSpendStatus({ hasSpend: false }, { pendingCurrencies: {}, metaSyncedDays: 7 })).toEqual({ recorded: true, pending: {} });
+        expect(periodSpendStatus({ hasSpend: false }, { pendingCurrencies: { USD: 412.57 } })).toEqual({ recorded: false, pending: { USD: 412.57 } });
     });
 
     it('бүртгэлгүй бол «—», зөвхөн ханшгүй бол «—» + эх валют, хэсэгчлэн бол ₮ + «+ ханшгүй» (хувь доод хязгаар)', () => {

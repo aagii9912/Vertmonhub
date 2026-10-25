@@ -8,7 +8,7 @@ import { knownPeriodAmount, periodContractAmount, periodContractCount, undatedCo
 import { WEEKLY_SLIDE_PART_LABEL, WEEKLY_SLIDE_SECTION_LABEL, type WeeklySlide } from './weekly-slides';
 import type { MarketingPerformance } from '@/lib/marketing/performance';
 import { planValueText, type PlanResolvedValue } from '@/lib/sales/plan-performance';
-import { budgetSpendCell, budgetSpendNote, budgetSpendPct, spendStatusThrough, type BudgetOverview, type BudgetSpendMonth } from '@/lib/marketing/budget';
+import { budgetSpendCell, budgetSpendNote, budgetSpendPct, periodSpendStatus, spendStatusThrough, type BudgetOverview, type BudgetSpendMonth } from '@/lib/marketing/budget';
 import { connectionRows, type ConnectionTone, type MarketingConnections } from '@/lib/marketing/connections';
 import { reportCoverage, type ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
 import { CHANNEL_SOURCE_LABELS, CHANNEL_SOURCES, channelKeyMetrics, channelMetric, formatChannelValue, periodDays, type BreakdownRow } from '@/lib/marketing/channel-reports';
@@ -619,7 +619,7 @@ function budgetSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
         y = TOP + 0.7;
     }
     if (marketing) {
-        const week = budgetSpendCell(marketing.totals.spend, { recorded: marketing.totals.hasSpend, pending: marketing.spendQuality.current.pendingCurrencies }, short);
+        const week = budgetSpendCell(marketing.totals.spend, periodSpendStatus(marketing.totals, marketing.spendQuality.current), short);
         statRow(slide, y, [
             { label: 'Энэ 7 хоногт бүртгэсэн зардал', value: week.value, helper: week.known && !week.pending ? 'Гар бүртгэл + Meta өдрийн зардал' : budgetSpendNote(week) },
             { label: 'Дууссан кампанит ажил', value: count(marketing.totals.campaigns), helper: `Өмнөх ${marketing.previous.campaigns}` },
