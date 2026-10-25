@@ -117,15 +117,27 @@ export function spendStatusThrough(months: readonly BudgetSpendMonth[], through:
 
 /**
  * Зарцуулалтын нүд (хурлын хуудас, слайд): бүртгэлгүй → «—»; зөвхөн ханшгүй → «—» + «Ханшгүй 1,234.56 USD (₮-д ороогүй)»;
- * хэсэгчлэн → ₮ дүн + «+ ханшгүй …». `known` = ₮-ийн дүн бодит (хувь, хэтрэлтийг зөвхөн үед тооцно). Төлөвгүй (хуучин
- * хариу) бол ₮ дүнг хэвээр харуулна.
+ * хэсэгчлэн → ₮ дүн + «+ ханшгүй …» (`lowerBound`: ₮-ийн дүн, хувь доод хязгаар — «45%+»). `known` = ₮-ийн дүн бодит
+ * (хувь, хэтрэлтийг зөвхөн үед тооцно). Төлөвгүй (хуучин хариу) бол ₮ дүнг хэвээр харуулна.
  */
-export function budgetSpendCell(mnt: number, status: Omit<BudgetSpendMonth, 'month'> | null | undefined, format: (value: number) => string): { value: string; pending: string | null; known: boolean } {
-    if (!status) return { value: format(mnt), pending: null, known: true };
+export interface BudgetSpendCell { value: string; pending: string | null; known: boolean; lowerBound: boolean }
+export function budgetSpendCell(mnt: number, status: Omit<BudgetSpendMonth, 'month'> | null | undefined, format: (value: number) => string): BudgetSpendCell {
+    if (!status) return { value: format(mnt), pending: null, known: true, lowerBound: false };
     const positive = Object.fromEntries(Object.entries(status.pending).filter(([, amount]) => amount > 0));
     const text = Object.keys(positive).length ? formatMetaPending({ mnt: 0, complete: false, pending: positive, native: positive }) : null;
-    if (!status.recorded) return { value: '—', pending: text ? `Ханшгүй ${text} (₮-д ороогүй)` : null, known: false };
-    return { value: format(mnt), pending: text ? `+ ханшгүй ${text}` : null, known: true };
+    if (!status.recorded) return { value: '—', pending: text ? `Ханшгүй ${text} (₮-д ороогүй)` : null, known: false, lowerBound: false };
+    return { value: format(mnt), pending: text ? `+ ханшгүй ${text}` : null, known: true, lowerBound: !!text };
+}
+
+/** Нүдний тайлбар: ханшгүй дүн, (₮ бодит бол) `ratio`; бүртгэлгүй бол «Зарцуулалт бүртгээгүй». */
+export function budgetSpendNote(cell: BudgetSpendCell, ratio?: string | null): string {
+    if (!cell.known) return cell.pending ?? 'Зарцуулалт бүртгээгүй';
+    return [cell.pending, ratio].filter(Boolean).join(' · ');
+}
+
+/** Зарцуулалт / төсөв, бүхэл хувь; төсөвгүй бол «төсөвгүй»; ханшгүй зардал үлдсэн бол доод хязгаар «+». */
+export function budgetSpendPct(spend: number, budget: number, lowerBound = false): string {
+    return budget > 0 ? `${Math.round(spend / budget * 100)}%${lowerBound ? '+' : ''}` : 'төсөвгүй';
 }
 
 /** Сувгаар нийлбэрлэнэ (их → бага эрэмбэтэй жагсаалт). */

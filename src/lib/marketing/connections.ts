@@ -44,7 +44,13 @@ export interface ConnectionRow { key: string; label: string; status: string; det
 
 const dot = (day: string) => day.replaceAll('-', '.');
 const dayOf = (iso: string | null) => iso ? dot(ubDateStr(new Date(iso))) : null;
-const clip = (text: string, max: number) => text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+/** Урт алдааг үгийн заагаар тайрна. */
+const clip = (text: string, max: number) => {
+    if (text.length <= max) return text;
+    const cut = text.slice(0, max - 1);
+    const space = cut.lastIndexOf(' ');
+    return `${(space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:—-]+$/, '')}…`;
+};
 
 /** Ханш хадгалсан эсэх: MNT данс ханш шаардахгүй. */
 export const metaRateSaved = (ads: MarketingConnections['ads']) => ads.currency === 'MNT' || (ads.mntPerUnit ?? 0) > 0;

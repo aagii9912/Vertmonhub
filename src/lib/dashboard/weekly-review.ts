@@ -3,6 +3,7 @@ import { ubDateStr } from '@/lib/utils/date';
 import { formatMNT } from '@/lib/utils/currency';
 import { dateSchema, performanceChange, type MarketingPerformance } from '@/lib/marketing/performance';
 import { CONTENT_STATUS_LABEL, CONTENT_TYPE_LABEL, type ContentPlanSummary } from '@/lib/marketing/content-plan';
+import { connectionDiscussionItems, type MarketingConnections } from '@/lib/marketing/connections';
 import { formatOperationsReportText, type OperationsReport } from './operations-report';
 import type { WeeklySalesReport } from './weekly-sales';
 import { periodContractAmount, periodContractCount } from './contract-dates';
@@ -83,10 +84,19 @@ export function formatReviewChange(current: number, previous?: number): string {
 /** Маркетингийн гишүүний шинэчлэл маркетингийн тайланд, бусдынх борлуулалтын тайланд. */
 export const updatePart = (update: Pick<WeeklyUpdate, 'author_role'>): 'sales' | 'marketing' => update.author_role === 'marketing' ? 'marketing' : 'sales';
 
-export interface WeeklyContentPlan { week: ContentPlanSummary; next: ContentPlanSummary }
+/** Тайлант долоо хоног, дараагийн 7 хоног ба (харьцуулах) өмнөх хурлын долоо хоногийн контент төлөвлөгөө. */
+export interface WeeklyContentPlan { week: ContentPlanSummary; next: ContentPlanSummary; previous?: ContentPlanSummary }
 
-/** Хадгалсан саад болон одоогийн ажлын дарааллаас хурлын асуудлыг гаргана (борлуулалт, маркетинг тусдаа). */
-export function weeklyDiscussionItems(input: { sales?: OperationsReport; marketing?: MarketingPerformance; contentPlan?: WeeklyContentPlan; updates?: WeeklyUpdate[] }) {
+/** «Өмнөх 7 хоног: төлөвлөсөн 4 / нийтэлсэн 3» — контент төлөвлөгөөний өмнөх хурлын долоо хоног (хуудас, слайд, текст). */
+export function previousContentText(previous: ContentPlanSummary): string {
+    return `Өмнөх 7 хоног: төлөвлөсөн ${previous.planned} / нийтэлсэн ${previous.published}${previous.pct === null ? '' : ` (${previous.pct}%)`}`;
+}
+
+/**
+ * Хадгалсан саад болон одоогийн ажлын дарааллаас хурлын асуудлыг гаргана (борлуулалт, маркетинг тусдаа).
+ * Маркетингийн холболтын асуудал (Meta зарын данс, синк, токен, ханш) — `connectionDiscussionItems`.
+ */
+export function weeklyDiscussionItems(input: { sales?: OperationsReport; marketing?: MarketingPerformance; contentPlan?: WeeklyContentPlan; updates?: WeeklyUpdate[]; connections?: MarketingConnections | null }) {
     const items: { title: string; detail: string; href?: string; part: 'sales' | 'marketing' }[] = [];
     const health = input.sales?.leads.health;
     if (health?.ownerless) items.push({ title: `Эзэнгүй ${health.ownerless} лид`, detail: 'Хариуцах менежер, дараагийн алхмыг тогтоох.', href: '/dashboard/leads?queue=unassigned', part: 'sales' });
@@ -96,6 +106,7 @@ export function weeklyDiscussionItems(input: { sales?: OperationsReport; marketi
     if (input.marketing?.quality.unknownHandoff) items.push({ title: `Шилжүүлсэн огноогүй ${input.marketing.quality.unknownHandoff} лид`, detail: 'Бодит шилжүүлсэн огноог шалгах; хөрвөлтөд таамгаар оруулахгүй.', part: 'sales' });
     if (input.contentPlan?.week.overdue) items.push({ title: `Хоцорсон ${input.contentPlan.week.overdue} контент`, detail: 'Төлөвлөсөн огноо өнгөрсөн, нийтлээгүй контентын шинэ огноо эсвэл цуцлах шийдвэр.', href: '/marketing/calendar', part: 'marketing' });
     if (input.marketing?.spendQuality.current.missingFx) items.push({ title: `Ханшгүй ${input.marketing.spendQuality.current.missingFx} зардал`, detail: 'Ханшаа нөхөж байж маркетингийн нийт зардал, төсвийн гүйцэтгэлийг үнэлэх.', part: 'marketing' });
+    if (input.connections) items.push(...connectionDiscussionItems(input.connections).map(item => ({ ...item, part: 'marketing' as const })));
     for (const update of input.updates || []) {
         if (update.blockers.trim()) items.push({ title: update.author_name, detail: update.blockers, part: updatePart(update) });
     }
@@ -105,11 +116,12 @@ export function weeklyDiscussionItems(input: { sales?: OperationsReport; marketi
 /** Контент төлөвлөгөөний текст (хурлын тайлан, AI). */
 export function formatContentPlanText(plan: WeeklyContentPlan): string[] {
     const line = (item: ContentPlanSummary['items'][number]) => `  ${item.scheduled_date.slice(5)} ${CONTENT_TYPE_LABEL[item.type] ?? item.type} · ${item.title} — ${CONTENT_STATUS_LABEL[item.status] ?? item.status}${item.assigned_to ? ` (${item.assigned_to})` : ''}`;
-    const { week, next } = plan;
+    const { week, next, previous } = plan;
     return [
         week.planned || week.cancelled
             ? `Контент: төлөвлөсөн ${week.planned} · нийтэлсэн ${week.published}${week.pct === null ? '' : ` (${week.pct}%)`} · хийгдэж буй/бэлэн ${week.inProgress} · хоцорсон ${week.overdue}${week.cancelled ? ` · цуцалсан ${week.cancelled}` : ''}`
             : 'Контент: энэ долоо хоногт төлөвлөсөн контент алга.',
+        ...(previous ? [previousContentText(previous)] : []),
         ...week.items.map(line),
         `Дараагийн 7 хоногийн төлөвлөгөө: ${next.planned} контент`,
         ...next.items.map(line),
@@ -125,6 +137,7 @@ export function formatWeeklyReview(input: {
     marketing?: MarketingPerformance;
     contentPlan?: WeeklyContentPlan;
     updates?: WeeklyUpdate[];
+    connections?: MarketingConnections | null;
     notices: string[];
 }): string {
     const range = weeklyReviewRange(input.meetingDate);

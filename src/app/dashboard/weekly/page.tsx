@@ -23,6 +23,7 @@ import { Avatar, Skeleton } from '@/components/dashboard/v2/primitives';
 import { useWeeklySales, WeeklySalesDetails } from '@/components/weekly/WeeklySalesDetails';
 import { WeeklyMarketingBudget } from '@/components/weekly/WeeklyMarketingBudget';
 import { WeeklyMarketingChannels } from '@/components/weekly/WeeklyMarketingChannels';
+import { useMarketingConnections, WeeklyMarketingConnections } from '@/components/weekly/WeeklyMarketingConnections';
 import { WeeklySocialPage } from '@/components/weekly/WeeklySocialPage';
 import { useWeeklySlides, WeeklySlides } from '@/components/weekly/WeeklySlides';
 import { contentPlanWindow, useContentPlan, WeeklyContentPlan } from '@/components/weekly/WeeklyContentPlan';
@@ -73,6 +74,7 @@ function WeeklyReview() {
     const weeklySalesQuery = useWeeklySales(meetingDate, can('reports'));
     const slidesQuery = useWeeklySlides(meetingDate, can('reports') || can('marketing-roi'));
     const contentQuery = useContentPlan(meetingDate, range, can('marketing-roi'));
+    const connectionsQuery = useMarketingConnections(can('marketing-roi'));
     const tasksQuery = useMyTasks();
     const sales = can('reports') && !salesQuery.isError ? salesQuery.data : undefined;
     const previousSales = can('reports') && !previousSalesQuery.isError ? previousSalesQuery.data : undefined;
@@ -80,11 +82,14 @@ function WeeklyReview() {
     const updates = updatesQuery.isError ? undefined : updatesQuery.data;
     const completedTasks = (tasksQuery.data?.tasks || []).filter(task => task.status === 'done' && task.completed_at && ubDateStr(new Date(task.completed_at)) >= range.from && ubDateStr(new Date(task.completed_at)) <= range.to);
     const weeklySales = can('reports') && !weeklySalesQuery.isError ? weeklySalesQuery.data : undefined;
+    const contentWindow = contentPlanWindow(meetingDate, range);
     const contentPlan = can('marketing-roi') && contentQuery.data ? {
         week: summarizeContentPlan(contentQuery.data.items, range, ubDateStr()),
-        next: summarizeContentPlan(contentQuery.data.items, contentPlanWindow(meetingDate, range).next, ubDateStr()),
+        next: summarizeContentPlan(contentQuery.data.items, contentWindow.next, ubDateStr()),
+        previous: summarizeContentPlan(contentQuery.data.items, contentWindow.previous, ubDateStr()),
     } : undefined;
-    const loading = salesQuery.isFetching || previousSalesQuery.isFetching || marketingQuery.isFetching || updatesQuery.isFetching || weeklySalesQuery.isFetching || slidesQuery.isFetching || contentQuery.isFetching;
+    const connections = can('marketing-roi') ? connectionsQuery.data ?? null : null;
+    const loading = salesQuery.isFetching || previousSalesQuery.isFetching || marketingQuery.isFetching || updatesQuery.isFetching || weeklySalesQuery.isFetching || slidesQuery.isFetching || contentQuery.isFetching || connectionsQuery.isFetching;
     const notices = [
         ...(range.to >= ubDateStr() ? ['Тайлант хугацаа дуусаагүй. Одоогоор бүртгэсэн мэдээллийг харуулж байна.'] : []),
         ...(!can('reports') ? ['Борлуулалтын нэгдсэн тоонд тайлангийн эрх шаардлагатай.'] : salesQuery.error ? [`Борлуулалт: ${salesQuery.error.message}`] : []),
@@ -95,14 +100,14 @@ function WeeklyReview() {
         ...(updatesQuery.error ? [`Ажлын шинэчлэл: ${updatesQuery.error.message}`] : []),
         ...(!updatesQuery.data?.canViewTeam ? ['Ажлын шинэчлэл: зөвхөн миний оруулсан мэдээлэл.'] : []),
     ];
-    const discussionItems = weeklyDiscussionItems({ sales, marketing, contentPlan, updates: updates?.updates });
-    const text = formatWeeklyReview({ shopName: shop?.name || 'Vertmon Hub', meetingDate, sales, previousSales, weeklySales, marketing, contentPlan, updates: updates?.updates, notices });
+    const discussionItems = weeklyDiscussionItems({ sales, marketing, contentPlan, updates: updates?.updates, connections });
+    const text = formatWeeklyReview({ shopName: shop?.name || 'Vertmon Hub', meetingDate, sales, previousSales, weeklySales, marketing, contentPlan, updates: updates?.updates, connections, notices });
     const exportable = !loading && !dirty && !!(sales || marketing || updates);
     const refresh = () => {
         if (can('reports')) { void salesQuery.refetch(); void previousSalesQuery.refetch(); void weeklySalesQuery.refetch(); }
         if (can('marketing-roi')) void marketingQuery.refetch();
         if (can('reports') || can('marketing-roi')) void slidesQuery.refetch();
-        if (can('marketing-roi')) void contentQuery.refetch();
+        if (can('marketing-roi')) { void contentQuery.refetch(); void connectionsQuery.refetch(); }
         void updatesQuery.refetch();
     };
 
@@ -273,8 +278,9 @@ function WeeklyReview() {
 
                     {can('marketing-roi') && <section className="break-inside-avoid space-y-4">
                         <ReportHeading number="02·2" title="Суваг: Page, Ads, CallPro, SMS · төсөв" href="/marketing/channel-reports" />
+                        <WeeklyMarketingConnections query={connectionsQuery} />
                         <WeeklySocialPage meetingDate={meetingDate} />
-                        <WeeklyMarketingChannels from={range.from} to={range.to} />
+                        <WeeklyMarketingChannels from={range.from} to={range.to} pageConnected={!!connections?.page.connected} />
                         <WeeklyMarketingBudget to={range.to} />
                         {marketing && marketing.spendQuality.current.missingFx > 0 && <Alert variant="warning">Ханшгүй {marketing.spendQuality.current.missingFx} зардал нийтэд ороогүй.</Alert>}
                     </section>}

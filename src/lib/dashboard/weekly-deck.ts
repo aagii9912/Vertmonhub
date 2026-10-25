@@ -3,12 +3,13 @@ import type { OperationsReport } from './operations-report';
 import { floorTone, type FloorCell, type FloorTone, type WeeklySalesReport } from './weekly-sales';
 import { arialWidth } from './arial-metrics';
 import type { WeeklyContentPlan, WeeklyUpdate } from './weekly-review';
-import { formatReviewChange, shiftReviewDate, updatePart } from './weekly-review';
+import { formatReviewChange, previousContentText, shiftReviewDate, updatePart } from './weekly-review';
 import { knownPeriodAmount, periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from './contract-dates';
 import { WEEKLY_SLIDE_PART_LABEL, WEEKLY_SLIDE_SECTION_LABEL, type WeeklySlide } from './weekly-slides';
 import type { MarketingPerformance } from '@/lib/marketing/performance';
 import { planValueText, type PlanResolvedValue } from '@/lib/sales/plan-performance';
-import type { BudgetOverview } from '@/lib/marketing/budget';
+import { budgetSpendCell, budgetSpendNote, budgetSpendPct, spendStatusThrough, type BudgetOverview, type BudgetSpendMonth } from '@/lib/marketing/budget';
+import { connectionRows, type ConnectionTone, type MarketingConnections } from '@/lib/marketing/connections';
 import { reportCoverage, type ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
 import { CHANNEL_SOURCE_LABELS, CHANNEL_SOURCES, channelKeyMetrics, channelMetric, formatChannelValue, periodDays, type BreakdownRow } from '@/lib/marketing/channel-reports';
 import {
@@ -42,6 +43,18 @@ export type WeeklyDeckKind = 'sales' | 'marketing';
 export type WeeklyDeckFileKind = WeeklyDeckKind | 'sales-team';
 export const WEEKLY_DECK_LABEL: Record<WeeklyDeckFileKind, string> = { sales: 'Борлуулалт', marketing: 'Маркетинг', 'sales-team': 'Борлуулалт (албаны загвар)' };
 
+/**
+ * Маркетингийн илтгэлийн хөтчөөс уншдаг эх сурвалж. Ачаалж чадаагүй бол тухайн хэсгийн оронд «… мэдээллийг ачаалж
+ * чадсангүй» слайд (шалтгаан тэмдэглэлд) — хэсэг чимээгүй алга болохгүй, татсан хүнд анхааруулга гарна.
+ */
+export type MarketingDeckSource = 'connections' | 'social' | 'channels' | 'budget';
+export const MARKETING_DECK_SOURCE: Record<MarketingDeckSource, { title: string; text: string }> = {
+    connections: { title: 'Холболтын төлөв', text: 'Холболтын төлөвийн мэдээллийг ачаалж чадсангүй.' },
+    social: { title: 'Facebook хуудас', text: 'Facebook хуудасны мэдээллийг ачаалж чадсангүй.' },
+    channels: { title: 'Сувгийн экспорт, Meta зар', text: 'Сувгийн экспорт, Meta зарын мэдээллийг ачаалж чадсангүй.' },
+    budget: { title: 'Төсөв ба зарцуулалт', text: 'Жилийн төсвийн мэдээллийг ачаалж чадсангүй.' },
+};
+
 export interface WeeklyDeckInput {
     kind: WeeklyDeckKind;
     projectName: string;
@@ -58,8 +71,13 @@ export interface WeeklyDeckInput {
     monthSales?: OperationsReport;
     weeklySales?: WeeklySalesReport;
     marketing?: MarketingPerformance;
-    budget?: { year: number; month: number; overview: BudgetOverview } | null;
+    /** `spendStatus` = сар бүрийн бүртгэлтэй эсэх, ханшгүй Meta зардал (хуучин хариунд байхгүй байж болно). */
+    budget?: { year: number; month: number; overview: BudgetOverview; spendStatus?: BudgetSpendMonth[] } | null;
     channels?: ChannelReportMatches | null;
+    /** Маркетингийн холболтын төлөв (нүүрний дараах слайд). */
+    connections?: MarketingConnections | null;
+    /** Ачаалж чадаагүй маркетингийн эх сурвалж → шалтгаан. */
+    failed?: Partial<Record<MarketingDeckSource, string>>;
     /** Маркетингийн контент төлөвлөгөө: тайлант долоо хоног ба дараагийн 7 хоног. */
     contentPlan?: WeeklyContentPlan;
     /** Facebook хуудасны хадгалсан органик үзүүлэлт ба тухайн долоо хоногийн постууд. */
@@ -563,33 +581,83 @@ export function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport, optio
     }
 }
 
-/** Маркетингийн албаны өөрийн төсөв ба зарцуулалт (лид, гэрээгүй). */
+/**
+ * Маркетингийн албаны өөрийн төсөв ба зарцуулалт (лид, гэрээгүй). Бүртгэлгүй сар, долоо хоног «—» (0 ₮ биш); ханшгүй
+ * Meta зардлыг эх валютаар тусад нь, ₮-ийн дүнд нэмэхгүй (`budgetSpendCell`, хуудасны карттай ижил).
+ */
 function budgetSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const budget = input.budget;
-    const spend = input.marketing?.totals;
-    if (!budget && !spend) return;
+    const marketing = input.marketing;
+    const failed = input.failed?.budget;
+    if (!budget && !marketing && !failed) return;
     const slide = content(pres, 'Маркетинг', 'Төсөв ба зарцуулалт', span(input.range));
+    let y = TOP;
     if (budget) {
-        const { overview, month, year } = budget;
+        const { overview, month, year, spendStatus } = budget;
         const ytd = overview.months.filter(row => row.month <= month);
         const ytdSpend = ytd.reduce((sum, row) => sum + row.spend, 0);
         const ytdBudget = ytd.reduce((sum, row) => sum + row.budget, 0);
         const current = overview.months[month - 1];
-        const ratio = (used: number, plan: number) => plan > 0 ? `${Math.round(used / plan * 100)}%` : 'төсөвгүй';
+        const ytdCell = budgetSpendCell(ytdSpend, spendStatus && spendStatusThrough(spendStatus, month), short);
+        const monthCell = budgetSpendCell(current?.spend ?? 0, spendStatus?.[month - 1], short);
         statRow(slide, TOP, [
             { label: `${year} оны үндсэн төсөв`, value: overview.totals.budget ? short(overview.totals.budget) : 'Оруулаагүй', tone: 'gold' },
-            { label: 'Он эхнээс зарцуулсан', value: short(ytdSpend), helper: `${ratio(ytdSpend, ytdBudget)} (энэ хүртэлх сарын төсвөөс)`, tone: ytdBudget > 0 && ytdSpend > ytdBudget ? 'danger' : undefined },
+            { label: 'Он эхнээс зарцуулсан', value: ytdCell.value, helper: budgetSpendNote(ytdCell, `${budgetSpendPct(ytdSpend, ytdBudget, ytdCell.lowerBound)} (энэ хүртэлх сарын төсвөөс)`),
+                tone: ytdCell.known && ytdBudget > 0 && ytdSpend > ytdBudget ? 'danger' : undefined },
             { label: `${month}-р сарын төсөв`, value: current?.budget ? short(current.budget) : 'Оруулаагүй' },
-            { label: `${month}-р сард зарцуулсан`, value: short(current?.spend ?? 0), helper: current ? ratio(current.spend, current.budget) : undefined, tone: current?.status === 'over' ? 'danger' : undefined },
-        ]);
+            { label: `${month}-р сард зарцуулсан`, value: monthCell.value, helper: budgetSpendNote(monthCell, current ? budgetSpendPct(current.spend, current.budget, monthCell.lowerBound) : null) || undefined,
+                tone: monthCell.known && current?.status === 'over' ? 'danger' : undefined },
+        ], 1.7);
+        y = TOP + 1.95;
+    } else if (failed) {
+        slide.addText(MARKETING_DECK_SOURCE.budget.text, { x: M, y: TOP, w: CW, h: 0.5, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
+        y = TOP + 0.7;
     }
-    if (spend) {
-        statRow(slide, budget ? TOP + 1.85 : TOP, [
-            { label: 'Энэ 7 хоногт бүртгэсэн зардал', value: spend.hasSpend || !spend.spendComplete ? short(spend.spend) : '—', helper: spend.spendComplete ? 'Гар бүртгэл + Meta өдрийн зардал' : 'Ханшгүй зардал нийтэд ороогүй' },
-            { label: 'Дууссан кампанит ажил', value: count(spend.campaigns), helper: `Өмнөх ${input.marketing!.previous.campaigns}` },
-        ]);
+    if (marketing) {
+        const week = budgetSpendCell(marketing.totals.spend, { recorded: marketing.totals.hasSpend, pending: marketing.spendQuality.current.pendingCurrencies }, short);
+        statRow(slide, y, [
+            { label: 'Энэ 7 хоногт бүртгэсэн зардал', value: week.value, helper: week.known && !week.pending ? 'Гар бүртгэл + Meta өдрийн зардал' : budgetSpendNote(week) },
+            { label: 'Дууссан кампанит ажил', value: count(marketing.totals.campaigns), helper: `Өмнөх ${marketing.previous.campaigns}` },
+        ], 1.7);
     }
-    note(slide, ['Meta-ийн зардлыг зөвхөн хадгалсан ханшаар төгрөгт хөрвүүлнэ; ханшгүй USD зардал нийтэд орохгүй.']);
+    note(slide, [
+        'Meta-гийн зардлыг зөвхөн хадгалсан ханшаар төгрөгт хөрвүүлнэ; ханшгүй зардлыг эх валютаар тусад нь харуулж, төгрөгийн нийт, хувьд нэмээгүй («+» = доод хязгаар).',
+        'Зарцуулалт бүртгээгүй сар, долоо хоногийг «—» гэж бичнэ (0 ₮ биш).',
+        failed ? `Маркетингийн төсөв: ${sentence(failed)}` : null,
+        failed ? 'Hub-ийн «Лхагва гарагийн хурал» хуудсыг шинэчлээд дахин татна уу.' : null,
+    ]);
+}
+
+/** Алдааны мессежийг нэг цэгтэй өгүүлбэр болгоно. */
+const sentence = (text: string) => `${text.trim().replace(/[.!?]+$/, '')}.`;
+
+/** Ачаалж чадаагүй эх сурвалжийн оронд богино слайд; шалтгаан тэмдэглэлд. */
+function unavailableSlide(pres: PptxGenJS, input: WeeklyDeckInput, source: MarketingDeckSource) {
+    const reason = input.failed?.[source];
+    if (!reason) return;
+    const slide = content(pres, 'Маркетинг', MARKETING_DECK_SOURCE[source].title);
+    slide.addText(MARKETING_DECK_SOURCE[source].text, { x: M, y: TOP, w: CW, h: 0.5, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
+    note(slide, [`${MARKETING_DECK_SOURCE[source].title}: ${sentence(reason)}`, 'Hub-ийн «Лхагва гарагийн хурал» хуудсыг шинэчлээд дахин татна уу.']);
+}
+
+const CONNECTION_TONE: Record<ConnectionTone, string> = { ok: C.success, warn: C.pending, off: C.muted };
+
+/** «Холболтын төлөв»: Facebook хуудас, Instagram, Meta зарын данс, токен, синк, ханш — тайлангийн тоо хаанаас ирснийг. */
+function connectionsSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
+    if (input.failed?.connections) return unavailableSlide(pres, input, 'connections');
+    const connections = input.connections;
+    if (!connections) return;
+    const rows = connectionRows(connections);
+    tableSlides(pres, {
+        kicker: 'Маркетинг', title: 'Холболтын төлөв', subtitle: `Meta (Facebook, Instagram, зар)-тай шууд холболт · ${input.generatedAt}-ны байдлаар`,
+        head: [headCell('Холболт'), headCell('Төлөв'), headCell('Тайлбар')],
+        rows: rows.map(row => [bodyCell(row.label, 'left', { bold: true }), bodyCell(row.status, 'left', { bold: row.tone !== 'off', color: CONNECTION_TONE[row.tone] }), bodyCell(row.detail ?? '—', 'left', { color: C.ink2 })]),
+        colW: [2.6, 3.8, 5.733], perSlide: 8, fontSize: 13, fitHeight: true,
+        notes: [
+            'Холбогдоогүй, алдаатай эх сурвалжийн тоо тайланд дутуу эсвэл хуучирсан байж болно — «Энэ хурлаар шийдэх»-д нэрлэсэн.',
+            'Токены утгыг Hub хэзээ ч харуулахгүй — зөвхөн эх сурвалж (System User / хэрэглэгчийн), дуусах хугацаа.',
+        ],
+    });
 }
 
 /** Лидийн эх сурвалж, хөрвөлт — борлуулалтын үзүүлэлт (маркетингийн албаны ажлын хэмжүүр биш). */
@@ -616,19 +684,23 @@ function contentPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
         slide.addText('Контент төлөвлөгөөний мэдээлэл алга. Маркетинг → Контент календарь хэсэгт долоо хоногийн контентоо төлөвлөж, төлөвийг нь шинэчилнэ.', { x: M, y: TOP, w: CW, h: 0.9, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
         return;
     }
+    const previous = input.contentPlan?.previous;
     statRow(slide, TOP, [
         { label: 'Төлөвлөсөн контент', value: count(week.planned), tone: 'gold' },
         { label: 'Нийтэлсэн', value: count(week.published), helper: week.pct === null ? 'Төлөвлөгөө алга' : `Төлөвлөгөөний ${week.pct}%` },
         { label: 'Хийгдэж буй / бэлэн', value: count(week.inProgress) },
         { label: 'Хоцорсон', value: count(week.overdue), helper: 'Огноо өнгөрсөн, нийтлээгүй', tone: week.overdue ? 'danger' : undefined },
     ]);
+    if (previous) {
+        slide.addText(`${previousContentText(previous)} (${span(shiftedRange(input.range, -7))})`, { x: M, y: TOP + 1.6, w: CW, h: 0.3, fontFace: FONT, fontSize: 12, color: C.ink2, margin: 0, isTextBox: true });
+    }
     if (week.byType.length) {
         const typeW = Math.min(1.6, (CW - 2.0) / week.byType.length);
         slide.addTable([
             [headCell(''), ...week.byType.map(row => headCell(row.label, 'center'))],
             [bodyCell('Төлөвлөсөн', 'left', { bold: true }), ...week.byType.map(row => bodyCell(String(row.planned), 'center'))],
             [bodyCell('Нийтэлсэн', 'left', { bold: true }), ...week.byType.map(row => bodyCell(String(row.published), 'center', { bold: true, color: C.success }))],
-        ], { x: M, y: TOP + 1.9, w: 2.0 + typeW * week.byType.length, colW: [2.0, ...week.byType.map(() => typeW)], fontFace: FONT, fontSize: 14, border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.06, 0.1, 0.06, 0.1] });
+        ], { x: M, y: TOP + 2.05, w: 2.0 + typeW * week.byType.length, colW: [2.0, ...week.byType.map(() => typeW)], fontFace: FONT, fontSize: 14, border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.06, 0.1, 0.06, 0.1] });
     }
     note(slide, ['Цуцалсан контент төлөвлөгөөнд тооцогдохгүй.', week.cancelled ? `Цуцалсан: ${week.cancelled}.` : null, 'Эх сурвалж: Маркетинг → Контент календарь.']);
 }
@@ -1076,6 +1148,7 @@ function closingSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     slide.addText(`${input.projectName} · ${WEEKLY_DECK_LABEL[input.kind]} · Дараагийн хурал ${dot(nextWednesday(input.meetingDate))}`, { x: M + 0.2, y: 3.8, w: CW - 0.4, h: 0.5, fontFace: FONT, fontSize: 16, color: C.navy2, margin: 0, isTextBox: true });
 }
 
+const shiftedRange = (range: { from: string; to: string }, days: number) => ({ from: shiftReviewDate(range.from, days), to: shiftReviewDate(range.to, days) });
 const nextWednesday = (meetingDate: string) => new Date(Date.parse(`${meetingDate}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
 
 /** Бүх слайдыг дарааллаар нь нэмнэ. `pres` — шинэ `new PptxGenJS()` (нэг файлд нэг удаа). */
@@ -1090,6 +1163,8 @@ export function buildWeeklyDeck(pres: PptxGenJS, input: WeeklyDeckInput): PptxGe
     const updates = (input.updates ?? []).filter(update => updatePart(update) === input.kind);
 
     coverSlide(pres, input);
+    // Маркетинг: тоо хаанаас ирснийг (Meta-тай шууд холболт) нүүрний дараа.
+    if (input.kind === 'marketing') connectionsSlide(pres, input);
     discussionSlide(pres, input);
     if (input.kind === 'sales') {
         salesOverviewSlide(pres, input);
@@ -1110,8 +1185,10 @@ export function buildWeeklyDeck(pres: PptxGenJS, input: WeeklyDeckInput): PptxGe
             contentTable(pres, 'Энэ долоо хоногийн контент', span(input.range), week.items, week.overdueItems, 'Энэ долоо хоногт контент төлөвлөөгүй.');
             contentShowcase(pres, week, input.images);
         }
+        unavailableSlide(pres, input, 'social');
         socialPageSlides(pres, input);
         for (const slide of input.slides.filter(item => item.part === 'marketing')) customSlide(pres, slide, input.images);
+        unavailableSlide(pres, input, 'channels');
         channelExportSlide(pres, input);
         metaAdsSlides(pres, input);
         budgetSlide(pres, input);

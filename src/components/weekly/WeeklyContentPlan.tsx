@@ -11,16 +11,17 @@ import {
     CONTENT_STATUS_LABEL, CONTENT_STATUSES, CONTENT_TYPE_LABEL, contentPlatformLabel, summarizeContentPlan,
     type ContentItem, type ContentPlanSummary, type ContentStatus,
 } from '@/lib/marketing/content-plan';
-import { shiftReviewDate } from '@/lib/dashboard/weekly-review';
+import { previousContentText, shiftReviewDate } from '@/lib/dashboard/weekly-review';
 import { ubDateStr } from '@/lib/utils/date';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
 import { ContentItemDialog } from '@/components/marketing/ContentItemDialog';
 
-/** Хурлын долоо хоног ба дараагийн 7 хоногийн контент (нэг хүсэлтээр). */
+/** Өмнөх хурлын долоо хоног (харьцуулалт), хурлын долоо хоног ба дараагийн 7 хоногийн контент (нэг хүсэлтээр). */
 export function contentPlanWindow(meetingDate: string, range: { from: string; to: string }) {
-    return { from: range.from, to: shiftReviewDate(meetingDate, 6), next: { from: meetingDate, to: shiftReviewDate(meetingDate, 6) } };
+    const previous = { from: shiftReviewDate(range.from, -7), to: shiftReviewDate(range.from, -1) };
+    return { from: previous.from, to: shiftReviewDate(meetingDate, 6), previous, next: { from: meetingDate, to: shiftReviewDate(meetingDate, 6) } };
 }
 
 export function useContentPlan(meetingDate: string, range: { from: string; to: string }, enabled: boolean) {
@@ -65,6 +66,7 @@ export function WeeklyContentPlan({ meetingDate, range, query, canWrite, canDele
     const window = contentPlanWindow(meetingDate, range);
     const week = summarizeContentPlan(query.data.items, range, ubDateStr());
     const next = summarizeContentPlan(query.data.items, window.next, ubDateStr());
+    const previous = summarizeContentPlan(query.data.items, window.previous, ubDateStr());
 
     return (
         <div className="space-y-5">
@@ -74,6 +76,7 @@ export function WeeklyContentPlan({ meetingDate, range, query, canWrite, canDele
                 <Figure label="Хийгдэж буй / бэлэн" value={week.inProgress} />
                 <Figure label="Хоцорсон" value={week.overdue} helper="Огноо өнгөрсөн, нийтлээгүй" tone={week.overdue ? 'danger' : undefined} />
             </div>
+            <p className="text-xs text-muted-foreground">{previousContentText(previous)} ({window.previous.from.slice(5)} – {window.previous.to.slice(5)})</p>
             {week.byType.length > 0 && <p className="text-xs text-muted-foreground">{week.byType.map(row => `${row.label} ${row.published}/${row.planned}`).join(' · ')}{week.cancelled ? ` · цуцалсан ${week.cancelled}` : ''}</p>}
 
             <ContentTable title={`Тайлант долоо хоног (${range.from.slice(5)} – ${range.to.slice(5)})`} summary={week} canWrite={canWrite} pending={setStatus.isPending}

@@ -554,6 +554,52 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(size('98,234')).toBe(2600);
     });
 
+    it('marketing deck: connection status right after the cover, previous content week, failed sources in place, budget never «0 ₮»', async () => {
+        const plan = contentPlan();
+        const previousItems = [content('p1', 'Өмнөх reel', '2026-10-01', 'published'), content('p2', 'Өмнөх пост', '2026-10-03', 'planned', { type: 'post' })];
+        const connections = {
+            page: { connected: true, name: 'Elysium Residence', sync: { lastAttemptAt: '2026-10-13T04:00:00Z', lastSuccessAt: '2026-10-13T04:00:00Z', from: '2026-09-13', to: '2026-10-12', error: null } },
+            instagram: { connected: false, username: null, sync: null },
+            ads: { accountId: 'act_1129994262383674', tokenSource: 'user' as const, tokenDaysLeft: 41, tokenExpired: false, insights: { lastAttemptAt: '2026-10-13T04:00:00Z', lastSuccessAt: null, from: null, to: null, error: 'Meta-гийн хандах эрх хүрэлцэхгүй (#200).' }, spend: null, currency: 'USD', mntPerUnit: null },
+        };
+        const months = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, recorded: i < 9, pending: i === 9 ? { USD: 300.38 } : {} }));
+        const budget = { year: 2026, month: 10, overview: buildBudgetOverview(Array(12).fill(10000000), Array.from({ length: 12 }, (_, i) => i < 9 ? 8000000 : 0), Array(12).fill(0)), spendStatus: months };
+        const { text, zip } = await render(input({
+            kind: 'marketing', connections, budget, social: null, failed: { social: 'Facebook хуудасны үзүүлэлтийг уншиж чадсангүй' },
+            contentPlan: { ...plan, previous: summarizeContentPlan(previousItems, { from: '2026-09-30', to: '2026-10-06' }, '2026-10-14') },
+        }));
+        await validXml(zip);
+        const index = (needle: string) => text.findIndex(slideText => slideText.includes(needle));
+        expect(index('Холболтын төлөв')).toBe(1);
+        expect(index('Энэ хурлаар шийдэх')).toBe(2);
+        const status = text[1];
+        expect(status).toMatch(/Facebook хуудас Холбогдсон · Elysium Residence Сүүлд 2026\.10\.13 · 2026\.10\.12 хүртэл/);
+        expect(status).toMatch(/Instagram Холбогдоогүй/);
+        expect(status).toMatch(/Meta токен Хэрэглэгчийн \(OAuth\) 41 хоногийн дараа дуусна/);
+        expect(status).toMatch(/Meta зарын синк Алдаатай Синк алдаатай: Meta-гийн хандах эрх хүрэлцэхгүй \(#200\)\./);
+        expect(status).toMatch(/Төгрөгийн ханш Оруулаагүй/);
+        // Контент: өмнөх хурлын долоо хоногтой зэрэгцүүлнэ.
+        expect(text[index('Төлөвлөсөн контент')]).toContain('Өмнөх 7 хоног: төлөвлөсөн 2 / нийтэлсэн 1 (50%) (2026.09.30 – 2026.10.06)');
+        // Facebook хуудас ачаалж чадаагүй → хэсгийн оронд богино слайд (шалтгаан тэмдэглэлд), хуудас холбогдоогүй гэж бичихгүй.
+        const failedPage = text[index('Facebook хуудасны мэдээллийг ачаалж чадсангүй.')];
+        expect(failedPage).toContain('Facebook хуудас');
+        expect(text.join(' ')).not.toContain('долоо хоногийн үзүүлэлт');
+        expect(await notesOf(zip)).toContain('Facebook хуудас: Facebook хуудасны үзүүлэлтийг уншиж чадсангүй.');
+        expect(index('Facebook хуудасны мэдээллийг ачаалж чадсангүй.')).toBeLessThan(index('Сувгийн экспорт'));
+        // Төсөв: 10-р сард зөвхөн ханшгүй USD → «—» + эх валют; энэ 7 хоногт ₮-ийн бүртгэлтэй (1.2 сая ₮).
+        const budgetSlide = text[index('Төсөв ба зарцуулалт')];
+        expect(budgetSlide).toMatch(/10-р сард зарцуулсан — Ханшгүй 300\.38 USD \(₮-д ороогүй\)/);
+        expect(budgetSlide).toMatch(/Он эхнээс зарцуулсан 72 сая ₮ \+ ханшгүй 300\.38 USD · 72%\+ \(энэ хүртэлх сарын төсвөөс\)/);
+        expect(budgetSlide).toMatch(/Энэ 7 хоногт бүртгэсэн зардал 1\.2 сая ₮ Гар бүртгэл \+ Meta өдрийн зардал/);
+        expect(budgetSlide).not.toMatch(/(^|\s)0 ₮/);
+    });
+
+    it('sales deck has no marketing connection slide', async () => {
+        const { text } = await render(input({ connections: { page: { connected: false, name: null, sync: null }, instagram: { connected: false, username: null, sync: null },
+            ads: { accountId: null, tokenSource: null, tokenDaysLeft: null, tokenExpired: false, insights: null, spend: null, currency: null, mntPerUnit: null } } }));
+        expect(text.join(' ')).not.toContain('Холболтын төлөв');
+    });
+
     it('marketing deck adds no Meta slides when the week has no Meta report', async () => {
         const none = { report: null, exact: false, longer: false, previous: null, comparison: null };
         const { text } = await render(input({ kind: 'marketing', channels: withMeta(none) }));
