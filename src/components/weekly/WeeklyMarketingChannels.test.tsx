@@ -119,3 +119,68 @@ it('compares per-type results with the previous fully covered week', async () =>
     expect(calls).toHaveTextContent('Дуудлага (Meta)76Нэг дуудлагын өртөг: 1.86 USD+17 (+28.8%)');
     expect(within(card).queryByText(/Өдөр дутуу/)).not.toBeInTheDocument();
 });
+
+it('shows the Meta summary the meeting slides show: CTR, CPM, untyped spend and every campaign by spend', async () => {
+    const base = metaReport();
+    const report = metaReport({ origin: 'api', file_name: null, data_to: '2026-09-29', totals: { ...base.totals, reach: 41200, frequency: 3.72, ctr_link: 0.48, cpm: 1.52, cost_per_link_click: 0.32 } });
+    respond({ report, exact: true, longer: false, previous: null, comparison: null });
+    show();
+    const card = await screen.findByRole('region', { name: 'Meta Ads Manager' });
+    const metrics = within(card).getAllByRole('term').map(term => term.textContent);
+    expect(metrics).toEqual(['Зарцуулсан дүн', 'Impressions (харагдалт)', 'Reach (хүрсэн хүн)', 'Frequency (давтамж)', 'Link clicks', 'Link CTR', 'CPM (1000 харагдалтын өртөг)', 'Нэг link click-ийн өртөг']);
+    expect(within(card).getByText('0.48%')).toBeInTheDocument();
+    expect(within(card).getByText('1.52 USD')).toBeInTheDocument();
+    // 233.1 − (141.09 + 43.21 + 6.95): Meta API төрөлгүй кампанит ажлын зардлыг нийтэд л оруулдаг.
+    expect(within(card).getByText('Үр дүнгийн төрөлгүй зардал: 41.85 USD')).toBeInTheDocument();
+    expect(within(card).getByText('Кампанит ажлын хүснэгт (4 мөр)')).toBeInTheDocument();
+    const table = within(card).getByRole('region', { name: 'Задаргаа: Кампанит ажил', hidden: true });
+    // Зардлаар буурахаар, зардалгүй (зогссон) кампанит ажил ч хүснэгтэд байна.
+    expect(within(table).getAllByRole('rowheader', { hidden: true }).map(cell => cell.textContent)).toEqual(['Дуудлага', 'Пост', 'Хүрэлт', 'Зогссон']);
+    expect(within(table).getAllByRole('row', { hidden: true })[1]).toHaveTextContent(/^Дуудлага141\.09 USD76Дуудлага \(Meta\)$/);
+});
+
+it('marks API reach results summed over campaigns as approximate and gives the right reason for a missing count', async () => {
+    const base = metaReport();
+    const report = metaReport({
+        origin: 'api', file_name: null, data_to: '2026-09-29',
+        totals: { ...base.totals, results_reach: 50000, spend_reach: 40, cost_per_result_reach: 0.8, spend_other: 12.5 },
+        breakdown: [
+            ...base.breakdown.filter(row => row.tag !== 'reach'),
+            { kind: 'campaign', label: 'Хүрэлт 1', tag: 'reach', values: { spend: 24, results: 30000, reach: 30000 } },
+            { kind: 'campaign', label: 'Хүрэлт 2', tag: 'reach', values: { spend: 16, results: 20000, reach: 20000 } },
+            { kind: 'campaign', label: 'Awareness', tag: 'other', values: { spend: 12.5, results: null } },
+        ],
+        warnings: [{ code: 'non_additive', level: 'info', message: 'нийлбэр' }],
+    });
+    respond({ report, exact: true, longer: false, previous: null, comparison: null });
+    show();
+    const card = await screen.findByRole('region', { name: 'Meta Ads Manager' });
+    const lines = within(within(card).getByText('Үр дүн төрлөөр').parentElement!).getAllByRole('listitem');
+    const reach = lines.find(item => item.textContent?.startsWith('Хүрсэн хүн'))!;
+    expect(reach).toHaveTextContent(/^Хүрсэн хүн \(үр дүн\)≈ 50,0001000 хүнд хүрэх өртөг: ≈ 0\.8 USD \/ 1000 хүн$/);
+    expect(within(card).getByText(/^≈ Хүрсэн хүн \(үр дүн\): reach зорилготой кампанит ажлуудын давхардалгүй reach-ийн нийлбэр/)).toBeInTheDocument();
+    // Хүрсэн хүн биш төрлийн «—» нь Meta тоо өгөөгүйгээс — reach-ийн тайлбар биш.
+    const other = lines.find(item => item.textContent?.startsWith('Бусад үр дүн'))!;
+    expect(within(other).getByTitle('Meta үр дүнгийн тоо өгөөгүй — зардлыг л харуулав')).toHaveTextContent('—');
+    expect(within(card).queryByTitle(/Хүрсэн хүнийг өдөр/)).not.toBeInTheDocument();
+});
+
+it('orders a mixed-currency file\'s campaigns by impressions, never by unconverted spend', async () => {
+    const base = metaReport();
+    const totals = Object.fromEntries(Object.entries(base.totals).filter(([key]) => !/^(?:spend|cost_|currency)/.test(key)));
+    const report = metaReport({
+        totals,
+        breakdown: [
+            { kind: 'campaign', label: 'MNT small', tag: 'calls', values: { spend: 50000, impressions: 1000, results: 2 } },
+            { kind: 'campaign', label: 'USD big', tag: 'calls', values: { spend: 400, impressions: 90000, results: 40 } },
+        ],
+        warnings: [{ code: 'mixed_currency', level: 'warning', message: 'USD, MNT' }],
+    });
+    respond({ report, exact: true, longer: false, previous: null, comparison: null });
+    show();
+    const card = await screen.findByRole('region', { name: 'Meta Ads Manager' });
+    expect(within(card).getByText('Кампанит ажлын хүснэгт (2 мөр, харагдалтаар)')).toBeInTheDocument();
+    const table = within(card).getByRole('region', { name: 'Задаргаа: Кампанит ажил', hidden: true });
+    expect(within(table).getAllByRole('rowheader', { hidden: true }).map(cell => cell.textContent)).toEqual(['USD big', 'MNT small']);
+    expect(within(card).queryByRole('list', { name: 'Их зардалтай кампанит ажил' })).not.toBeInTheDocument();
+});

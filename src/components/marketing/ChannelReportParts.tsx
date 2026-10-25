@@ -5,18 +5,16 @@ import {
     type BreakdownRow, type ChannelSource, type ChannelSplitWeek, type ChannelTotals, type ChannelWarning, type MetricDelta,
 } from '@/lib/marketing/channel-reports';
 import {
-    META_RESULT_DEFS, META_RESULT_TYPES, metaResultCostKey, metaResultKey, metaResultSpendKey, presentMetaResultTypes, type MetaResultType,
+    META_RESULT_DEFS, isMetaResultType, metaResultCostKey, metaResultKey, metaResultSpendKey, presentMetaResultTypes,
 } from '@/lib/marketing/meta-results';
+import { channelCurrency, metaCostText, metaMissingResultsReason, metaRowTypeLabel } from '@/lib/marketing/channel-week';
 import { Alert } from '@/components/ui/Alert';
 import { Badge } from '@/components/ui/Badge';
-
-const currencyOf = (totals: ChannelTotals) => typeof totals.currency === 'string' ? totals.currency : null;
-const isResultType = (tag: string | undefined): tag is MetaResultType => !!tag && (META_RESULT_TYPES as readonly string[]).includes(tag);
 
 /** Үзүүлэлтийн утгыг төрлөөр нь (тоо, хувь, hh:mm:ss, валюттай мөнгө) форматлана. */
 export function formatMetric(source: ChannelSource, key: string, value: unknown, totals: ChannelTotals): string {
     const def = channelMetric(source, key);
-    return typeof value === 'number' && def ? formatChannelValue(value, def.kind, currencyOf(totals)) : '—';
+    return typeof value === 'number' && def ? formatChannelValue(value, def.kind, channelCurrency(totals)) : '—';
 }
 
 /** «6/7 өдөр» — өгөгдөл хамарсан өдөр / тайлангийн өдөр. */
@@ -64,12 +62,6 @@ export function ChannelTotalsGrid({ source, totals, missing = [], comparison, ke
     </dl>;
 }
 
-/** Нэг үр дүнгийн өртөг: reach бол «/1000 хүн». */
-function costText(type: MetaResultType, value: unknown, currency: string | null): string {
-    if (typeof value !== 'number') return '—';
-    return `${formatChannelValue(value, 'money', currency)}${META_RESULT_DEFS[type].costScale === 1000 ? ' / 1000 хүн' : ''}`;
-}
-
 /**
  * Meta-гийн үр дүн төрөл бүрээр: тоо, кампанит ажлын зорилгоор хуваарилсан зардал, нэг үр дүнгийн
  * өртөг. Хүрсэн хүн (reach)-ийг өдрөөр нэмдэггүй тул тоо нь «—» байж болно (зардлыг харуулна).
@@ -80,7 +72,7 @@ export function MetaResultsByType({ totals, comparison }: { totals: ChannelTotal
         if (typeof totals.results !== 'number') return null;
         // Төрөлгүй (Result indicator сонгоогүй) хуучин тайлан.
         return <p className="text-sm"><span className="text-muted-foreground">Results (үр дүн, төрөл тодорхойгүй):</span> <span className="num font-semibold">{formatChannelValue(totals.results, 'count')}</span>
-            {typeof totals.cost_per_result === 'number' && <span className="text-muted-foreground"> · нэг үр дүн {formatChannelValue(totals.cost_per_result, 'money', currencyOf(totals))}</span>}</p>;
+            {typeof totals.cost_per_result === 'number' && <span className="text-muted-foreground"> · нэг үр дүн {formatChannelValue(totals.cost_per_result, 'money', channelCurrency(totals))}</span>}</p>;
     }
     return <div className="max-w-full overflow-x-auto rounded-lg border border-border" tabIndex={0} role="region" aria-label="Үр дүн төрлөөр">
         <table className="w-full min-w-[420px] text-left text-xs">
@@ -94,11 +86,11 @@ export function MetaResultsByType({ totals, comparison }: { totals: ChannelTotal
                 return <tr key={type} className="border-t border-border">
                     <th scope="row" className="px-3 py-2 font-medium">{def.label}</th>
                     <td className="num px-3 py-2 text-right">
-                        {typeof results === 'number' ? formatChannelValue(results, 'count') : <span className="text-muted-foreground" title="Хүрсэн хүнийг өдөр, кампанит ажлаар нэмэхгүй">—</span>}
+                        {typeof results === 'number' ? formatChannelValue(results, 'count') : <span className="text-muted-foreground" title={metaMissingResultsReason(type)}>—</span>}
                         {comparison && typeof results === 'number' && <span className="block text-[11px]"><DeltaText delta={comparison[metaResultKey(type)]} /></span>}
                     </td>
                     <td className="num px-3 py-2 text-right">{formatMetric('meta_ads', metaResultSpendKey(type), totals[metaResultSpendKey(type)], totals)}</td>
-                    <td className="num px-3 py-2 text-right" title={def.costLabel}>{costText(type, totals[metaResultCostKey(type)], currencyOf(totals))}</td>
+                    <td className="num px-3 py-2 text-right" title={def.costLabel}>{metaCostText(type, totals[metaResultCostKey(type)], channelCurrency(totals))}</td>
                 </tr>;
             })}</tbody>
         </table>
@@ -137,12 +129,12 @@ export function ChannelBreakdownTable({ source, rows, totals, limit = 20 }: { so
     const keys = meta
         ? META_BREAKDOWN_KEYS.filter(key => list.some(r => typeof r.values[key] === 'number'))
         : channelMetrics(source).map(m => m.key).filter(key => list.some(r => typeof r.values[key] === 'number')).slice(0, 6);
-    const typed = meta && list.some(r => isResultType(r.tag));
+    const typed = meta && list.some(r => isMetaResultType(r.tag));
     const title = { campaign: 'Кампанит ажил', day: 'Өдөр', group: 'Бүлэг', hour: 'Цаг' }[list[0].kind];
     const header = (key: string) => meta && key === 'results' ? 'Үр дүн' : meta && key === 'cost_per_result' ? 'Нэг үр дүнгийн өртөг' : channelMetric(source, key)?.label;
     const cell = (row: BreakdownRow, key: string) => {
         const value = row.values[key];
-        if (meta && isResultType(row.tag) && key === 'cost_per_result') return costText(row.tag, value, currencyOf(totals));
+        if (meta && isMetaResultType(row.tag) && key === 'cost_per_result') return metaCostText(row.tag, value, channelCurrency(totals));
         if (meta && key === 'results') return typeof value === 'number' ? formatChannelValue(value, 'count') : '—';
         return formatMetric(source, key, value, totals);
     };
@@ -156,7 +148,7 @@ export function ChannelBreakdownTable({ source, rows, totals, limit = 20 }: { so
             <tbody>{list.slice(0, limit).map((row, index) => <tr key={`${row.kind}:${row.label}:${row.tag ?? ''}:${index}`} className="border-t border-border">
                 <th scope="row" className="max-w-64 break-words px-3 py-2 font-medium">{row.label}</th>
                 {keys.map(key => <td key={key} className="num px-3 py-2 text-right">{cell(row, key)}</td>)}
-                {typed && <td className="px-3 py-2 text-muted-foreground">{isResultType(row.tag) ? META_RESULT_DEFS[row.tag].label : 'Тодорхойгүй'}</td>}
+                {typed && <td className="px-3 py-2 text-muted-foreground">{metaRowTypeLabel(row)}</td>}
             </tr>)}</tbody>
         </table>
         {list.length > limit && <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">Эхний {limit} мөр харагдаж байна (нийт {list.length}).</p>}
@@ -209,7 +201,7 @@ export function ChannelSplitWeeks({ weeks, currency, showCalls, selected, onTogg
                     <th scope="row" className="num whitespace-nowrap px-3 py-2 font-medium">{week.from} – {week.to}</th>
                     <td className="num px-3 py-2 text-right">{typeof week.totals.spend === 'number' ? formatChannelValue(week.totals.spend, 'money', currency) : '—'}</td>
                     {showCalls && <td className="num px-3 py-2 text-right">{typeof calls === 'number' ? formatChannelValue(calls, 'count') : '0'}</td>}
-                    {showCalls && <td className="num px-3 py-2 text-right">{costText('calls', week.totals[metaResultCostKey('calls')], currency)}</td>}
+                    {showCalls && <td className="num px-3 py-2 text-right">{metaCostText('calls', week.totals[metaResultCostKey('calls')], currency)}</td>}
                     <td className="whitespace-nowrap px-3 py-2">{coverage ? <span className={partial ? 'text-status-pending' : undefined} title={week.missingDays.length ? `Өгөгдөлгүй: ${week.missingDays.join(', ')}` : undefined}>{coverage}</span> : '—'}</td>
                     <td className="px-3 py-2"><SavedWeekState week={week} chosen={pick ? chosen : !week.skip} /></td>
                 </tr>;

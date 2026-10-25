@@ -6,86 +6,70 @@ import { ArrowUpRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson } from '@/lib/api/dashboardFetch';
 import { cn } from '@/lib/utils';
-import {
-    CHANNEL_SOURCE_LABELS, CHANNEL_SOURCES, channelKeyMetrics, channelMetric, type ChannelSource, type MetricDelta,
-} from '@/lib/marketing/channel-reports';
+import { CHANNEL_LIMITS, CHANNEL_SOURCE_LABELS, CHANNEL_SOURCES, channelKeyMetrics, channelMetric, formatChannelValue, type ChannelSource, type MetricDelta } from '@/lib/marketing/channel-reports';
 import { reportCoverage, type ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
 import {
-    META_RESULT_DEFS, META_RESULT_TYPES, metaResultCostKey, metaResultKey, metaResultSpendKey, presentMetaResultTypes, type MetaResultType,
-} from '@/lib/marketing/meta-results';
+    META_WEEK_KEYS, channelCurrency, comparisonBlockedByCoverage, formatChannelDelta, formatChannelMetric, metaCampaignRows, metaCampaignsBySpend, metaCostText,
+    metaMissingResultsReason, metaReachIsSum, metaResultsByType, metaUntypedSpend,
+} from '@/lib/marketing/channel-week';
+import { META_RESULT_DEFS, isMetaResultType, metaResultKey } from '@/lib/marketing/meta-results';
+import { ChannelBreakdownTable } from '@/components/marketing/ChannelReportParts';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
 
 type ChannelResponse = { latest: ChannelReportMatches };
 
-/** Хурлын тайланд харуулах нэмэлт үзүүлэлт (эх үүсвэр бүрийн гол үзүүлэлтийн дараа). Meta-гийн үр дүнг төрлөөр нь доор. */
-const EXTRA: Record<ChannelSource, string[]> = {
-    meta_ads: [],
+/**
+ * Хурлын тайланд харуулах үзүүлэлт. Meta зар = Лхагвагийн слайдын «Meta зар — долоо хоногийн тойм»-той
+ * ижил (`META_WEEK_KEYS`); бусад эх үүсвэрт гол үзүүлэлтийн дараа нэмэлт. Meta-гийн үр дүнг төрлөөр нь доор.
+ */
+const EXTRA: Record<Exclude<ChannelSource, 'meta_ads'>, string[]> = {
     facebook_page: ['viewers', 'link_clicks', 'views_ads', 'views_organic'],
     callpro: ['selected', 'calls_total', 'unique_callers'],
     sms: ['delivery_rate'],
 };
-
-/** Мөнгө: 0.01-ээс бага өртгийг (постын оролцоо ~0.0037) 0 болгохгүй — 4 орон хүртэл. */
-function money(value: number, currency?: string) {
-    const digits = value !== 0 && Math.abs(value) < 0.01 ? 4 : 2;
-    return `${value.toLocaleString('en-US', { maximumFractionDigits: digits })}${currency ? ` ${currency}` : ''}`;
-}
-
-function format(source: ChannelSource, key: string, value: number | string | null | undefined, currency?: string) {
-    if (value === null || value === undefined || value === '') return '—';
-    if (typeof value === 'string') return value;
-    const kind = channelMetric(source, key)?.kind;
-    if (kind === 'money') return money(value, currency);
-    if (kind === 'percent') return `${value}%`;
-    if (kind === 'duration') {
-        const seconds = Math.round(value);
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        return h ? `${h} ц ${m} мин` : `${m} мин ${seconds % 60} сек`;
-    }
-    return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
-}
+const cardKeys = (source: ChannelSource): string[] => source === 'meta_ads' ? [...META_WEEK_KEYS] : [...channelKeyMetrics(source), ...EXTRA[source]];
 
 function Delta({ delta }: { delta?: MetricDelta }) {
     if (delta && !delta.comparable && delta.reason === 'coverage') return <span className="text-[11px] text-muted-foreground">өдөр дутуу — харьцуулаагүй</span>;
-    if (!delta?.comparable || delta.delta === null) return <span className="text-[11px] text-muted-foreground">өмнөх —</span>;
-    const sign = delta.delta > 0 ? '+' : '';
-    return <span className={cn('text-[11px]', delta.delta > 0 ? 'text-status-success' : delta.delta < 0 ? 'text-status-danger' : 'text-muted-foreground')}>
-        {sign}{delta.delta.toLocaleString('en-US', { maximumFractionDigits: 2 })}{delta.pct !== null ? ` (${sign}${delta.pct}%)` : ''}
-    </span>;
+    const text = formatChannelDelta(delta);
+    if (!text || !delta) return <span className="text-[11px] text-muted-foreground">өмнөх —</span>;
+    return <span className={cn('text-[11px]', delta.delta! > 0 ? 'text-status-success' : delta.delta! < 0 ? 'text-status-danger' : 'text-muted-foreground')}>{text}</span>;
 }
 
-const isResultType = (tag: string | undefined): tag is MetaResultType => !!tag && (META_RESULT_TYPES as readonly string[]).includes(tag);
-/** Нэг үр дүнгийн өртөг (reach бол 1000 хүнд). */
-const costOf = (type: MetaResultType, value: unknown, currency?: string) =>
-    typeof value === 'number' ? `${money(value, currency)}${META_RESULT_DEFS[type].costScale === 1000 ? ' / 1000 хүн' : ''}` : '—';
-
-/** Meta-гийн үр дүн төрөл бүрээр: тоо (reach-ийг өдрөөр нэмэхгүй тул «—» байж болно) ба нэг үр дүнгийн өртөг. */
-function MetaResults({ totals, comparison, currency }: { totals: Record<string, number | string>; comparison: Record<string, MetricDelta> | null; currency?: string }) {
-    const types = presentMetaResultTypes(totals);
+/**
+ * Meta-гийн үр дүн төрөл бүрээр: тоо («—» = тоо ирээгүй, зардлыг харуулна) ба нэг үр дүнгийн өртөг. Төрөл хооронд
+ * нийлбэргүй. `reachSum` = API-ийн хүрсэн хүн нь хэд хэдэн кампанит ажлын reach-ийн нийлбэр (давхцаж болно) → «≈».
+ */
+function MetaResults({ totals, comparison, currency, reachSum }: { totals: Record<string, number | string>; comparison: Record<string, MetricDelta> | null; currency: string | null; reachSum: boolean }) {
+    const types = metaResultsByType(totals);
     if (!types.length) return null;
+    const untyped = metaUntypedSpend(totals);
+    const approx = (type: string) => reachSum && type === 'reach';
     return <div className="mt-3 border-t border-border pt-2">
         <p className="mb-1 text-[11px] font-medium text-muted-foreground">Үр дүн төрлөөр</p>
         <ul className="space-y-1.5 text-[12px]">
-            {types.map(type => {
-                const def = META_RESULT_DEFS[type];
-                const results = totals[metaResultKey(type)];
-                const cost = totals[metaResultCostKey(type)];
-                const spend = totals[metaResultSpendKey(type)];
-                const delta = comparison?.[metaResultKey(type)];
-                return <li key={type} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3">
-                    <span className="min-w-0">{def.label}</span>
-                    <span className="num text-right font-semibold" title={typeof results === 'number' ? undefined : 'Хүрсэн хүнийг өдөр, кампанит ажлаар нэмэхгүй'}>{typeof results === 'number' ? results.toLocaleString('en-US') : '—'}</span>
+            {types.map(row => {
+                const delta = comparison?.[metaResultKey(row.type)];
+                return <li key={row.type} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3">
+                    <span className="min-w-0">{row.label}</span>
+                    <span className="num text-right font-semibold" title={row.results === null ? metaMissingResultsReason(row.type) : approx(row.type) ? REACH_SUM_NOTE : undefined}>
+                        {row.results === null ? '—' : `${approx(row.type) ? '≈ ' : ''}${row.results.toLocaleString('en-US')}`}
+                    </span>
                     <span className="num col-span-2 flex flex-wrap gap-x-2 text-[11px] text-muted-foreground">
-                        {/* Өртөг тооцох боломжгүй (reach) бол тухайн төрлийн зардлыг харуулна. */}
-                        <span>{typeof cost === 'number' ? `${def.costLabel}: ${costOf(type, cost, currency)}` : `Зардал: ${typeof spend === 'number' ? money(spend, currency) : '—'}`}</span>
-                        {typeof results === 'number' && delta && (delta.delta !== null || delta.reason === 'coverage') && <Delta delta={delta} />}
+                        {/* Өртөг тооцох боломжгүй (тоо ирээгүй) бол тухайн төрлийн зардлыг харуулна. */}
+                        <span>{row.cost !== null ? `${META_RESULT_DEFS[row.type].costLabel}: ${approx(row.type) ? '≈ ' : ''}${metaCostText(row.type, row.cost, currency)}` : `Зардал: ${row.spend !== null ? formatChannelValue(row.spend, 'money', currency) : '—'}`}</span>
+                        {row.results !== null && delta && (delta.delta !== null || delta.reason === 'coverage') && <Delta delta={delta} />}
                     </span>
                 </li>;
             })}
         </ul>
+        {/* Meta API төрөлгүй кампанит ажлын зардлыг анхааруулгагүйгээр нийтэд л оруулдаг — нийт ≠ Σ төрлийн зардал. */}
+        {untyped !== null && <p className="num mt-1.5 text-[11px] text-muted-foreground">Үр дүнгийн төрөлгүй зардал: {formatChannelValue(untyped, 'money', currency)}</p>}
+        {reachSum && types.some(row => row.type === 'reach' && row.results !== null) && <p className="mt-1.5 text-[11px] text-muted-foreground">≈ {REACH_SUM_NOTE}</p>}
     </div>;
 }
+
+const REACH_SUM_NOTE = 'Хүрсэн хүн (үр дүн): reach зорилготой кампанит ажлуудын давхардалгүй reach-ийн нийлбэр — кампанит ажил хооронд давхцаж болно.';
 
 /** Meta Ads, Facebook хуудас, CallPro, масс SMS-ийн экспорт — хурлын долоо хоногийн тоо, өмнөх тайлантай харьцуулсан. */
 export function WeeklyMarketingChannels({ from, to }: { from: string; to: string }) {
@@ -106,18 +90,19 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
                 {CHANNEL_SOURCES.filter(source => query.data.latest[source]?.report).map(source => {
                     const match = query.data.latest[source];
                     const report = match.report!;
-                    const currency = typeof report.totals.currency === 'string' ? report.totals.currency : undefined;
-                    const keys = [...channelKeyMetrics(source), ...EXTRA[source]].filter(key => report.totals[key] !== undefined);
+                    const currency = channelCurrency(report.totals);
+                    const keys = cardKeys(source).filter(key => report.totals[key] !== undefined);
                     const coverage = reportCoverage(report);
                     // Өдрийн хамралт дутуу долоо хоногийг өмнөхтэй тулгахгүй — хавтан бүрт биш, нэг удаа тайлбарлана.
-                    const partial = Object.values(match.comparison ?? {}).some(delta => delta.reason === 'coverage');
+                    const partial = comparisonBlockedByCoverage(match.comparison);
                     const warnings = report.warnings.filter(warning => warning.level === 'warning');
                     const missedByHour = source === 'callpro'
                         ? report.breakdown.filter(row => row.kind === 'hour' && (row.values.missed ?? 0) > 0).sort((a, b) => (b.values.missed ?? 0) - (a.values.missed ?? 0)).slice(0, 3)
                         : [];
-                    const campaigns = source === 'meta_ads'
-                        ? report.breakdown.filter(row => row.kind === 'campaign' && (row.values.spend ?? 0) > 0).sort((a, b) => (b.values.spend ?? 0) - (a.values.spend ?? 0)).slice(0, 4)
-                        : [];
+                    // Кампанит ажил × үр дүнгийн төрөл, зардлаар (слайдын «Meta зар — кампанит ажлаар»-тай ижил дараалал);
+                    // нийт зардалгүй (валют холилдсон) файлд мөрийн зардал алга тул «их зардалтай» жагсаалт гарахгүй.
+                    const allCampaigns = source === 'meta_ads' ? metaCampaignRows(report) : [];
+                    const campaigns = allCampaigns.filter(row => (row.values.spend ?? 0) > 0).slice(0, 4);
                     return (
                         <section key={source} className="break-inside-avoid rounded-2xl border border-border p-4" aria-label={CHANNEL_SOURCE_LABELS[source]}>
                             <header className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
@@ -138,20 +123,24 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
                             <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
                                 {keys.map(key => <div key={key}>
                                     <dt className="text-[11px] text-muted-foreground">{channelMetric(source, key)?.label ?? key}</dt>
-                                    <dd className="num text-[15px] font-semibold">{format(source, key, report.totals[key], currency)}</dd>
+                                    <dd className="num text-[15px] font-semibold">{formatChannelMetric(source, key, report.totals[key], currency)}</dd>
                                     {!partial && <dd><Delta delta={match.comparison?.[key]} /></dd>}
                                 </div>)}
                             </dl>
-                            {source === 'meta_ads' && <MetaResults totals={report.totals} comparison={partial ? null : match.comparison} currency={currency} />}
+                            {source === 'meta_ads' && <MetaResults totals={report.totals} comparison={partial ? null : match.comparison} currency={currency} reachSum={metaReachIsSum(report)} />}
                             {campaigns.length > 0 && <ul className="mt-3 space-y-1 border-t border-border pt-2 text-[11.5px] text-fg-2" aria-label="Их зардалтай кампанит ажил">
                                 {campaigns.map((row, index) => <li key={`${row.label}:${row.tag ?? ''}:${index}`} className="flex justify-between gap-3">
                                     <span className="min-w-0 truncate">{row.label}</span>
                                     <span className="num shrink-0">
-                                        {isResultType(row.tag) && <span className="text-muted-foreground">{typeof row.values.results === 'number' ? `${row.values.results.toLocaleString('en-US')} ` : ''}{META_RESULT_DEFS[row.tag].label} · </span>}
-                                        {format(source, 'spend', row.values.spend, currency)}
+                                        {isMetaResultType(row.tag) && <span className="text-muted-foreground">{typeof row.values.results === 'number' ? `${row.values.results.toLocaleString('en-US')} ` : ''}{META_RESULT_DEFS[row.tag].label} · </span>}
+                                        {formatChannelMetric(source, 'spend', row.values.spend, currency)}
                                     </span>
                                 </li>)}
                             </ul>}
+                            {allCampaigns.length > 0 && <details className="mt-2 text-[11.5px]">
+                                <summary className="cursor-pointer text-muted-foreground hover:text-foreground print:hidden">Кампанит ажлын хүснэгт ({allCampaigns.length} мөр{metaCampaignsBySpend(report.totals) ? '' : ', харагдалтаар'})</summary>
+                                <div className="mt-2"><ChannelBreakdownTable source="meta_ads" rows={allCampaigns} totals={report.totals} limit={CHANNEL_LIMITS.breakdown} /></div>
+                            </details>}
                             {missedByHour.length > 0 && <p className="mt-3 border-t border-border pt-2 text-[11.5px] text-fg-2">
                                 Алдсан дуудлага их цаг: {missedByHour.map(row => `${row.label} (${row.values.missed})`).join(', ')}
                             </p>}
