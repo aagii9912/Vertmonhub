@@ -6,6 +6,9 @@ import PptxGenJS from 'pptxgenjs';
 import { SaxesParser } from 'saxes';
 import { buildTeamDeck, teamDeckPeriod, wholePct, type TeamDeckInput } from '../team-deck';
 import { BOTTOM, weeklyDeckFileName } from '../weekly-deck';
+import { EMPTY_REPORT_BRANDING, hasReportBranding } from '../report-branding';
+import { buildSalesActivity } from '../sales-activity';
+import { DEFAULT_DAILY_REPORT_CONFIG } from '../daily-report';
 import { activity, CASH_NUMBERS, elysiumFloorMaps, negotiations, plan, range, teamInput, weeklySales } from './team-deck-fixture';
 import { lineOverflows, slideTables, wordOverflows } from './table-layout';
 
@@ -245,6 +248,24 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(meetings).toMatch(/<a:t>Нийт<\/a:t>[\s\S]*?<a:t>12<\/a:t>/);
     });
 
+    it('meeting pies and the legend give one model key one label (the colour never carries two names)', async () => {
+        // Хуучин хариу шиг: 10/14–10/20-нд Б1 E7-г өөр талбайгаар нэрлэсэн — тайлбар ба бүх графикт нэг нэр.
+        const base = teamInput();
+        const weeks = base.meetings!.weeks.map((week, index) => index === 3
+            ? { ...week, byModel: week.byModel.map(model => model.key === 'B1|E7' ? { ...model, label: 'Б1 E7 · 85.19 м² · 3 өрөө' } : model) } : week);
+        const { zip, xml } = await render(teamInput({ meetings: { ...base.meetings!, weeks } }));
+        const charts = await Promise.all(Object.keys(zip.files).filter(name => /^ppt\/charts\/chart\d+\.xml$/.test(name)).map(name => zip.file(name)!.async('string')));
+        const pies = charts.filter(chart => chart.includes('<c:pieChart>'));
+        expect(pies).toHaveLength(3);
+        for (const pie of pies) {
+            expect(pie).toContain('Б1 E7 · 89.73 м² · 3 өрөө');
+            expect(pie).not.toContain('85.19');
+        }
+        const slide = xml.find(part => part.includes('НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ'))!;
+        expect(slide).toContain('<a:t>Б1 E7 · 89.73 м² · 3 өрөө</a:t>');
+        expect(slide).not.toContain('85.19');
+    });
+
     it('meeting pies: a fully recorded empty week says «Болсон уулзалт алга», a straddling week is a lower bound «N+»', async () => {
         const base = teamInput();
         const weeks = base.meetings!.weeks.map((week, index) => index === 0 ? { ...week, coverage: 'full' as const }
@@ -273,8 +294,39 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const series = chart[1].split('<c:ser>');
         expect(series[3]).toContain('<c:pt idx="3"><c:v>0</c:v></c:pt>');
         expect(series[2]).toContain('<c:pt idx="1"><c:v></c:v></c:pt>');
-        // 10/01–10/06-ны шинэ уулзалт (бүртгэл 10/05-нд эхэлсэн) — графикийн доор «N+».
-        expect(at(text, 'ТООН МЭДЭЭЛЭЛ')).toContain('Доод хязгаар (N+): 10/01–10/06 · Шинэ уулзалт 2+ — бүртгэл 7 хоногийн дунд эхэлсэн.');
+        // 10/01–10/06-ны шинэ уулзалт (бүртгэл 10/05-нд эхэлсэн) — графикийн доор «N+», эх сурвалжийг нэрлэнэ.
+        expect(at(text, 'ТООН МЭДЭЭЛЭЛ')).toContain('Доод хязгаар (N+): 10/01–10/06 · Шинэ уулзалт 2+ — уулзалтын бүртгэл 7 хоногийн дунд эхэлсэн.');
+    });
+
+    it('activity «N+» notes name the source that started mid-period: daily-report counts, not meeting records (prod 10-28 deck)', async () => {
+        // Өдрийн тайлангийн тоо 10-08-нд эхэлсэн, уулзалтын бүртгэл 09-01-ээс бүрэн: «N+» нь зөвхөн дуудлага, чат.
+        const cell = (report_date: string, metric: string, value: number) => ({ report_date, manager_name: 'Хонгорзул', metric, value });
+        const report = buildSalesActivity({
+            meetingDate: '2026-10-21', config: DEFAULT_DAILY_REPORT_CONFIG, configSaved: true, configInvalid: false,
+            counts: [
+                cell('2026-10-08', 'call.l1.total', 12), cell('2026-10-09', 'call.personal.total', 7), cell('2026-10-09', 'chat.page', 4),
+                cell('2026-10-15', 'call.l1.total', 20), cell('2026-10-15', 'chat.page', 6),
+            ],
+            confirmedDates: [], meetings: [{ day: '2026-10-02', type: 'new_customer' }, { day: '2026-10-09', type: 'new_customer' }, { day: '2026-10-16', type: 'repeat_customer' }],
+            meetingsSince: '2026-09-01', countsSince: '2026-10-08', targets: null, targetsAvailable: true,
+        });
+        const { text, notes } = await render(teamInput({ activity: report }));
+        const slide = at(text, 'ТООН МЭДЭЭЛЭЛ');
+        expect(slide).toContain('Доод хязгаар (N+): 10/07–10/13 · Төслийн утас 12+; 10/07–10/13 · Менежер дугаар 7+; 10/07–10/13 · Чат 4+ — өдрийн тайлангийн тоо 7 хоногийн дунд эхэлсэн.');
+        expect(slide).not.toContain('уулзалтын бүртгэл');
+        const note = notes[text.indexOf(slide)];
+        expect(note).toContain('«N+» — өдрийн тайлангийн тоо хугацааны дунд эхэлсэн тул доод хязгаар (Төслийн утас, Менежерийн дуудлага, Чат)');
+        expect(note).not.toContain('уулзалтын бүртгэл хугацааны дунд');
+        // Эхэлсэн өдрийг тайлангийн өөрийн тэмдэглэл нэрлэнэ.
+        expect(note).toContain('Өдрийн тайлангийн тоо 2026-10-08-нээс эхэлсэн');
+
+        // Хоёулаа дунд нь эхэлсэн бол хоёуланг нэрлэнэ.
+        const both = activity();
+        both.buckets = both.buckets.map(bucket => bucket.label === '10/07–10/13' ? { ...bucket, partial: { ...bucket.partial, hotline: true } } : bucket);
+        const mixed = await render(teamInput({ activity: both }));
+        const mixedSlide = at(mixed.text, 'ТООН МЭДЭЭЛЭЛ');
+        expect(mixedSlide).toContain('10/07–10/13 · 7786 Оператор 40+ — өдрийн тайлангийн тоо ба уулзалтын бүртгэл 7 хоногийн дунд эхэлсэн.');
+        expect(mixed.notes[mixed.text.indexOf(mixedSlide)]).toContain('«N+» — өдрийн тайлангийн тоо ба уулзалтын бүртгэл хугацааны дунд эхэлсэн тул доод хязгаар (7786 Оператор, Шинэ уулзалт)');
     });
 
     it('negotiations exported after the meeting say on the slide that the list and prices are as of the export day', async () => {
@@ -309,6 +361,23 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(plain.text[0]).toBe('Elysium Residence 2026 оны 10.14-10.20 хүртэлх тайлан');
         expect(plain.xml[0]).not.toContain('<p:pic>');
         expect(at(plain.text, 'ДАВХРЫН ЗУРАГЛАЛ — ELYSIUM RESIDENCE Б1 БЛОК')).toBeTruthy();
+    });
+
+    it('the cover note says the branding is not configured for an unsaved project (all-null branding row), not only for a failed read', async () => {
+        const UNSET = 'Илтгэлийн брэнд (нүүрний зураг, лого, хөл бичвэр) тохируулаагүй эсвэл уншиж чадаагүй — анхдагч загвар.';
+        // Хадгалаагүй төсөлд GET `available: true` + бүх талбар null ирдэг (`readReportBranding`).
+        const unsaved = await render(teamInput({ branding: { ...EMPTY_REPORT_BRANDING }, coverImage: null, logo: null }));
+        expect(unsaved.notes[0]).toContain(UNSET);
+        expect(unsaved.text[0]).toBe('Elysium Residence 2026 оны 10.14-10.20 хүртэлх тайлан');
+        const blank = await render(teamInput({ branding: { ...EMPTY_REPORT_BRANDING, displayName: '  ', footerText: '', updatedAt: '2026-10-20T10:00:00Z' }, coverImage: null, logo: null }));
+        expect(blank.notes[0]).toContain(UNSET);
+        expect((await render(teamInput({ branding: null, coverImage: null, logo: null }))).notes[0]).toContain(UNSET);
+        // Аль нэг талбар (зөвхөн хөл бичвэр ч) тохируулсан бол тэмдэглэлгүй.
+        expect((await render(teamInput())).notes[0]).not.toContain('тохируулаагүй');
+        const footerOnly = await render(teamInput({ branding: { ...EMPTY_REPORT_BRANDING, footerText: 'ВЕРТМОН ПРОПЕРТИС ХХК' }, coverImage: null, logo: null }));
+        expect(footerOnly.notes[0]).not.toContain('тохируулаагүй');
+        expect(hasReportBranding(null)).toBe(false);
+        expect(hasReportBranding({ ...EMPTY_REPORT_BRANDING, logoPath: 'branding/x/y.png' })).toBe(true);
     });
 
     it('a failed source shows «мэдээлэл ачаалж чадсангүй» on its slides and keeps the rest', async () => {
@@ -373,6 +442,13 @@ describe('team-format Wednesday deck (.pptx)', () => {
             // Хүснэгт хөл, слайдын дугаараас (7.02") дээш дуусна.
             expect(table.y + table.rowH.reduce((sum, h) => sum + h, 0)).toBeLessThanOrEqual(BOTTOM + 1e-6);
             expect(notes[index]).toContain('«…»-ээр товчилсон');
+            // HUB горим: ногоон = Hub-ийн бүх амьд гэрээ (огноогүй хуучин гэрээ ч), зөвхөн HUB жагсаалтынх гэж бичихгүй.
+            expect(notes[index]).toContain('Ногоон = Hub-ийн бүх амьд (цуцлаагүй) гэрээтэй байр — зөвхөн HUB гэрээний жагсаалтаас импортолсон гэрээ биш');
+            expect(notes[index]).not.toContain('(HUB гэрээний жагсаалт)');
+            // Огноо нь HUB импортынх; гэрээ, байр одоогийн төлөвөөр (тэр өдрийн байдлаар биш).
+            expect(notes[index]).toContain('Эх сурвалж: HUB гэрээ + байрны бүртгэл — гэрээ, байр одоогийн төлөвөөр; 2026-10-20 нь HUB гэрээний жагсаалтын сүүлийн импортын огноо.');
+            expect(notes[index]).not.toContain('Эх сурвалж: HUB гэрээ + байрны бүртгэл (2026-10-20).');
+            expect(text[index]).toContain('Амьд гэрээтэй (цуцлаагүй)');
         }
         const b2 = xml[text.indexOf(at(text, 'ДАВХРЫН ЗУРАГЛАЛ — ЭЛИЗИУМ Б2 БЛОК'))];
         expect(b2).toMatch(/<a:t>57\.87 м² Чанцал[^<]*…<\/a:t>/);

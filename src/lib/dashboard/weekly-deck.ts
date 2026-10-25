@@ -384,8 +384,17 @@ function inventorySlide(pres: PptxGenJS, report: WeeklySalesReport) {
         rows: inventory.blocks.map(row => [bodyCell(row.block, 'left', { bold: true }), bodyCell(row.label), bodyCell(String(row.total), 'right'),
             ...statuses.map(status => bodyCell(String(row.statuses[status] ?? 0), 'right', status === 'available' ? { bold: true, color: C.brand } : {})), bodyCell(String(row.barter), 'right')]),
         colW: [1.9, 1.9, 1.0, 1.25, 1.25, 1.25, 1.25, 1.33, 1.0], perSlide: 13, fontSize: 12,
-        notes: ['«Хүлээлгэсэн» байр зарагдсанд тооцогдоно, «Худалдаанд»-д хэзээ ч орохгүй.'],
+        notes: ['«Хүлээлгэсэн» байр зарагдсанд тооцогдоно, «Худалдаанд»-д хэзээ ч орохгүй.', ...(inventory.source.kind === 'contracts' ? [inventorySourceNote(inventory.source)] : [])],
     });
+}
+
+/**
+ * Үлдэгдлийн эх сурвалжийн тэмдэглэл. HUB горимд (`contracts`) гэрээ, байрыг одоогийн төлөвөөр уншдаг (`report-inventory.ts`) —
+ * огноо нь зөвхөн HUB гэрээний жагсаалтын сүүлийн импортынх тул «тэр өдрийн байдлаар» гэж ойлгуулахгүй.
+ */
+export function inventorySourceNote(source: NonNullable<WeeklySalesReport['inventory']>['source']) {
+    if (source.kind === 'contracts') return `Эх сурвалж: ${source.source} — гэрээ, байр одоогийн төлөвөөр; ${source.date} нь HUB гэрээний жагсаалтын сүүлийн импортын огноо.`;
+    return `Эх сурвалж: ${source.kind === 'erp' ? `ERP «${source.source}»` : source.source} (${source.date}).`;
 }
 
 const FLOOR_FILL: Record<FloorTone, string> = { sold: C.successSoft, available: C.white, barter: C.neutralSoft };
@@ -409,8 +418,10 @@ function floorCellText(cell: FloorCell, maxWidth: number, fontSize: number): { t
     return { text: base, clipped: true };
 }
 
-function legend(slide: Slide, y: number) {
-    const items: [string, string][] = [[C.successSoft, 'Гэрээтэй (зарагдсан, хүлээлгэсэн)'], [C.white, 'Худалдаанд (захиалсан, хадгалсан орно)'], [C.neutralSoft, 'Бартер']];
+/** `liveContracts` — HUB горим (`contracts`): ногоон = амьд гэрээ (байрны төлөв биш); ERP, байрны бүртгэлд — төлөвөөр. */
+function legend(slide: Slide, y: number, liveContracts: boolean) {
+    const sold = liveContracts ? 'Амьд гэрээтэй (цуцлаагүй)' : 'Гэрээтэй (зарагдсан, хүлээлгэсэн)';
+    const items: [string, string][] = [[C.successSoft, sold], [C.white, 'Худалдаанд (захиалсан, хадгалсан орно)'], [C.neutralSoft, 'Бартер']];
     let x = M;
     for (const [color, label] of items) {
         slide.addShape('rect', { x, y: y + 0.06, w: 0.18, h: 0.18, fill: { color }, line: { color: C.line, width: 0.75 } });
@@ -427,6 +438,16 @@ export function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport, optio
     // Мөр ≥ 0.2" (8pt) байхаар хуваана: 23 хүртэл мөртэй блок нэг слайдад багтана, түүнээс олон бол тэнцүү хуваагдана.
     // Нэг давхар × загварт хэд хэдэн байр бол тэр давхар байрны тоогоор мөр эзэлнэ (өндрийг урьдчилан тооцно).
     const maxLines = Math.floor((BOTTOM - TOP) / 0.2) - 2;
+    const liveContracts = report.inventory?.source.kind === 'contracts';
+    // HUB горимд ногоон = байрны бүртгэлтэй таарсан Hub-ийн бүх амьд гэрээ (`report-inventory.ts`): HUB жагсаалтынхаас гадна
+    // ERP бүтээгдэхүүний экспортоос үүссэн огноогүй хуучин гэрээ ч. Огноогүйн тоо зөвхөн CRM-ийн гэрээгээр тайлагнасан үед
+    // ижил гэрээнээс (устгаагүй, цуцлаагүй) тоологдоно — ERP гэрээний экспорттой бол тэр нь экспортын мөр тул нэрлэхгүй.
+    const undatedLive = liveContracts && report.sources.contracts === 'crm' ? report.sources.undatedContracts : 0;
+    const liveNotes = liveContracts ? [
+        'Ногоон = Hub-ийн бүх амьд (цуцлаагүй) гэрээтэй байр — зөвхөн HUB гэрээний жагсаалтаас импортолсон гэрээ биш: ERP бүтээгдэхүүний экспортоос үүссэн огноогүй хуучин гэрээ байвал тэр ч орно (бартер гэрээтэй нь саарал). Гэрээтэй байрны талбай нь гэрээлсэн талбай.',
+        // Тоо нь бүх төрлийнх; зураглалд зөвхөн давхартай орон сууц, бартер нь саарал — үүнийг тэмдэглэлд хэлнэ.
+        undatedLive ? `Hub-д огноогүй ${undatedLive.toLocaleString('en-US')} амьд гэрээ бий (бүх төрлөөр; ихэвчлэн HUB жагсаалтад ороогүй хуучин гэрээ) — үүнээс орон сууцных нь байр бүртгэлтэй таарвал энд ногоон (бартер бол саарал).` : null,
+    ] : [];
     for (const map of report.inventory?.floorMaps ?? []) {
         const lineCount = (row: (typeof map.floors)[number]) => Math.max(1, ...map.models.map(model => row.cells[model]?.length ?? 0));
         const totalLines = map.floors.reduce((sum, row) => sum + lineCount(row), 0);
@@ -442,7 +463,7 @@ export function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport, optio
             let clipped = false;
             const title = options.title ? options.title(map.block) : `Орон сууцны үлдэгдэл — ${map.block} блок`;
             const slide = content(pres, options.kicker ?? 'Үлдэгдэл', `${title}${chunks.length > 1 ? ` (${chunk + 1}/${chunks.length})` : ''}`);
-            legend(slide, 1.3);
+            legend(slide, 1.3, liveContracts);
             const countW = 0.9;
             const floorW = 0.85;
             const margin = 0.03;
@@ -473,7 +494,7 @@ export function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport, optio
             note(slide, [
                 `${map.block} блок: гэрээтэй ${map.totals.sold}, худалдаанд ${map.totals.available}, бартер ${map.totals.barter}.`,
                 'Цэнхэр тоо = худалдаанд байгаа байр (м²). Захиалсан, хадгалсан байр «Худалдаанд»-д орно.',
-                report.inventory?.source.kind === 'contracts' ? 'Ногоон = Хабын амьд гэрээтэй байр (HUB гэрээний жагсаалт). Гэрээтэй байрны талбай нь гэрээлсэн талбай.' : null,
+                ...liveNotes,
                 clipped ? 'Нүдэнд нэг мөрөөр багтаагүй менежерийн нэрийг «…»-ээр товчилсон (бүтэн нэр — гэрээний жагсаалтад).' : null,
                 ...(options.notes ?? []),
             ]);
