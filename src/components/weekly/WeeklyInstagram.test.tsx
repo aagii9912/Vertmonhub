@@ -72,3 +72,18 @@ it('says when Instagram is not connected, has no stored days, or could not be re
     show(<WeeklyInstagram meetingDate="2026-10-28" />);
     expect(await screen.findByText('Instagram: Instagram-ийн үзүүлэлтийг уншиж чадсангүй. Шинэчилж дахин оролдоно уу.')).toBeInTheDocument();
 });
+
+it('keeps the «6/7 өдрийн өгөгдөл» flag when the follower snapshot is from the unfinished Meta day and marks a partial previous week', async () => {
+    const rows: SocialDailyRow[] = [
+        ...days(range.from, 6).map(day => ({ day, metric: 'views', value: 1000 })),
+        // Өмнөх долоо хоногийн 3 өдөр л хадгалагдсан (анхны синк тасарсан).
+        ...days(previousRange.from, 3).map(day => ({ day, metric: 'views', value: 800 })),
+        // Дагагчийн тоо синкийн өдөр (дуусаагүй Meta-гийн Мягмар) — 7 дахь өдөр.
+        ...days(range.from, 7).map(day => ({ day, metric: 'followers_count', value: 812 })),
+    ];
+    mocks.json.mockResolvedValue({ week: page, instagram: instagram({ metrics: summarizeInstagramWeek(rows, range, previousRange) }), instagramError: null });
+    show(<WeeklyInstagram meetingDate="2026-10-14" />);
+    const card = await screen.findByRole('region', { name: 'Instagram' });
+    expect(within(card).getByText(/6\/7 өдрийн өгөгдөл · синк 2026-10-12 хүртэл/)).toBeInTheDocument();
+    expect(within(card).getByText('Үзэлт').parentElement!.textContent).toBe('Үзэлт6,0006/7 өдөр · өмнөх 7 хоногийн мөн өдрүүд 2,400 (3/6 өдөр)');
+});

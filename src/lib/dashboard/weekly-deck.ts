@@ -20,6 +20,7 @@ import { META_SAME_DAYS_SKIP } from '@/lib/marketing/meta-channel-report';
 import { isMetaResultType, metaResultKey } from '@/lib/marketing/meta-results';
 import { CONTENT_STATUS_LABEL, CONTENT_TYPE_LABEL, contentPlatformLabel, type ContentItem, type ContentPlanSummary } from '@/lib/marketing/content-plan';
 import type { InstagramWeek, SocialWeek, WeekMetric } from '@/lib/marketing/social-week';
+import { previousCoverageNote, weekCoverageDays } from '@/lib/marketing/social-metrics';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
 import { ubDateStr } from '@/lib/utils/date';
 
@@ -744,7 +745,9 @@ function socialHelper(metric: WeekMetric, rangeDays: number): string {
     if (metric.kind === 'latest' && metric.day) parts.push(`${dot(metric.day)}-ны байдлаар`);
     else if (metric.days && metric.days < rangeDays) parts.push(`${metric.days}/${rangeDays} өдөр`);
     const against = metric.comparison === 'week-ago' ? '7 хоногийн өмнө' : metric.comparison === 'same-days' ? 'Өмнөх 7 хоногийн мөн өдрүүд' : 'Өмнөх 7 хоног';
-    parts.push(`${against} ${count(metric.previous)}`);
+    // Өмнөх талын өдөр дутуу бол хэсэгчилсэн нийлбэрийг бүтэн хугацааных мэт харуулахгүй («(3/7 өдөр)»).
+    const previousNote = previousCoverageNote(metric);
+    parts.push(`${against} ${count(metric.previous)}${previousNote ? ` (${previousNote})` : ''}`);
     if (metric.delta !== null) parts.push(`${metric.delta > 0 ? '+' : ''}${count(metric.delta)}${metric.deltaPct !== null ? ` (${metric.deltaPct > 0 ? '+' : ''}${metric.deltaPct}%)` : ''}`);
     return parts.join(' · ');
 }
@@ -763,7 +766,7 @@ function socialPageSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     if (!social?.page) return;
     const pageName = social.page.name || 'Facebook хуудас';
     const known = social.metrics.filter(metric => metric.value !== null);
-    const days = Math.max(0, ...social.metrics.map(metric => metric.days));
+    const days = weekCoverageDays(social.metrics);
     const coverage = days && days < social.rangeDays ? ` · ${days}/${social.rangeDays} өдрийн өгөгдөл` : '';
     const slide = content(pres, 'Маркетинг · Facebook', `${pageName} — долоо хоногийн үзүүлэлт`, `${span(input.range)} · Meta-гийн өдөр (Номхон далайн цаг)${coverage}`);
     if (!known.length) {
@@ -808,7 +811,8 @@ function instagramWeekSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     const instagram = input.instagram;
     if (!instagram?.account) return;
     const name = instagram.account.username ? `@${instagram.account.username}` : 'Instagram';
-    const days = Math.max(0, ...instagram.metrics.map(metric => metric.days));
+    // Дагагчийн тоо дуусаагүй Meta-гийн өдрийнх тул «N/7 өдөр»-т тоолохгүй (`weekCoverageDays`).
+    const days = weekCoverageDays(instagram.metrics);
     const coverage = days && days < instagram.rangeDays ? ` · ${days}/${instagram.rangeDays} өдрийн өгөгдөл` : '';
     const slide = content(pres, 'Маркетинг · Instagram', `${name} — долоо хоногийн үзүүлэлт`, `${span(input.range)} · Meta-гийн өдөр (Номхон далайн цаг)${coverage}`);
     if (!instagram.metrics.some(metric => metric.value !== null)) {

@@ -4,7 +4,7 @@ import {
     IG_WEEK_METRICS, SOCIAL_WEEK_METRICS, latestSocialRanges, loadInstagramWeek, loadLatestInstagramWeek, loadLatestSocialWeek, loadSocialWeek,
     summarizeInstagramWeek, summarizeSocialWeek, summarizeWeekMetrics, type SocialDailyRow,
 } from '../social-week';
-import { PAGE_METRIC_INFO } from '../social-metrics';
+import { PAGE_METRIC_INFO, previousCoverageNote, weekCoverageDays } from '../social-metrics';
 
 const range = { from: '2026-10-07', to: '2026-10-13' };
 const previousRange = { from: '2026-09-30', to: '2026-10-06' };
@@ -32,6 +32,33 @@ describe('summarizeSocialWeek', () => {
             ...days(previousRange.from, 7).map((day, i) => ({ day, metric: 'page_media_view', value: i === 6 ? 1000 : 80 })),
         ];
         expect(metric(rows, 'page_media_view')).toMatchObject({ value: 600, days: 6, comparison: 'same-days', previous: 480, delta: 120, deltaPct: 25 });
+    });
+
+    it('reports how many days the previous sum covers, so a partial base is never shown as a full week', () => {
+        // Instagram-ийн анхны синк хурдны хязгаарт тасарсан: өмнөх долоо хоногийн 3 өдөр л хадгалагдсан.
+        const rows: SocialDailyRow[] = [
+            ...days(range.from, 7).map(day => ({ day, metric: 'page_media_view', value: 100 })),
+            ...days('2026-10-04', 3).map(day => ({ day, metric: 'page_media_view', value: 50 })),
+        ];
+        const views = metric(rows, 'page_media_view');
+        expect(views).toMatchObject({ value: 700, previous: 150, days: 7, previousDays: 3, delta: null, deltaPct: null });
+        expect(previousCoverageNote(views)).toBe('3/7 өдөр');
+        // Бүтэн бол тэмдэглэлгүй; төлөв (дагагч) метрикт хамаарахгүй.
+        const full = [...rows, ...days(previousRange.from, 4).map(day => ({ day, metric: 'page_media_view', value: 50 }))];
+        expect(previousCoverageNote(metric(full, 'page_media_view'))).toBeNull();
+        expect(previousCoverageNote({ kind: 'latest', previous: 900, previousDays: 0, days: 1 })).toBeNull();
+        expect(previousCoverageNote({ kind: 'sum', previous: null, previousDays: 0, days: 7 })).toBeNull();
+    });
+
+    it('counts week coverage over summed metrics only — a follower snapshot of the unfinished Meta day does not make the week complete', () => {
+        const rows: SocialDailyRow[] = [
+            ...days(range.from, 6).map(day => ({ day, metric: 'page_media_view', value: 100 })),
+            ...days(range.from, 7).map(day => ({ day, metric: 'page_follows', value: 1000 })),
+        ];
+        const metrics = summarizeSocialWeek(rows, range, previousRange);
+        expect(Math.max(...metrics.map(item => item.days))).toBe(7);
+        expect(weekCoverageDays(metrics)).toBe(6);
+        expect(weekCoverageDays([])).toBe(0);
     });
 
     it('returns null, never zero, when Meta returned nothing; skips the non-additive unique reach', () => {

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import { ubDateStr } from '@/lib/utils/date';
+import { weekCoverageDays } from '@/lib/marketing/social-metrics';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
 import { count, useInstagramWeek, WeekMetricCard } from './WeeklySocialPage';
 
@@ -22,7 +23,8 @@ export function WeeklyInstagram({ meetingDate }: { meetingDate: string }) {
         return <p className="text-xs text-muted-foreground">Instagram холбогдоогүй. <Link href="/marketing/social" className="text-brand-strong hover:underline focus-ring">Маркетинг → Сошиал</Link> хэсэгт холбоно.</p>;
     }
     const known = instagram.metrics.some(metric => metric.value !== null);
-    const days = Math.max(0, ...instagram.metrics.map(metric => metric.days));
+    // Дагагчийн тоо дуусаагүй Meta-гийн өдрийнх тул «N/7 өдөр»-т тоолохгүй (`weekCoverageDays`).
+    const days = weekCoverageDays(instagram.metrics);
     const top = instagram.posts.slice(0, 3);
     const name = instagram.account.username ? `@${instagram.account.username}` : 'Instagram';
     return (

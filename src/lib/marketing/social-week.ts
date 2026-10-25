@@ -62,6 +62,8 @@ export interface WeekMetric<M extends string = string> {
     day: string | null;
     /** Өгөгдөлтэй өдрийн тоо. */
     days: number;
+    /** Харьцуулах (өмнөх) талын өгөгдөлтэй өдрийн тоо — `days`-ээс цөөн бол `previous` хэсэгчилсэн (`previousCoverageNote`). */
+    previousDays: number;
     /** Харьцуулах хоёр тал адил тооны өдөртэй үед л өөрчлөлт; бусад үед null. */
     delta: number | null;
     deltaPct: number | null;
@@ -179,7 +181,7 @@ export function summarizeWeekMetrics<M extends string>(
         const delta = current.value !== null && previous.value !== null && current.days > 0 && previous.days === expected ? current.value - previous.value : null;
         return {
             metric, label, kind,
-            value: current.value, previous: previous.value, comparison, day: current.day, days: current.days,
+            value: current.value, previous: previous.value, comparison, day: current.day, days: current.days, previousDays: previous.days,
             delta, deltaPct: delta !== null && previous.value ? Math.round(delta / previous.value * 1000) / 10 : null,
         };
     });

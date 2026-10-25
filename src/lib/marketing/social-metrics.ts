@@ -138,3 +138,20 @@ export function summarizeDaily(values: DailyMetricValue[], kind: SocialMetricKin
     if (kind !== 'sum') return { value: last.value, day: last.day, days: known.length };
     return { value: known.reduce((total, v) => total + v.value, 0), day: last.day, days: known.length };
 }
+
+/**
+ * Долоо хоногийн «N/7 өдрийн өгөгдөл»: нийлбэр (`sum`) метрикийн хамгийн их өдрийн тоо. Дагагч зэрэг төлөв (`latest`)
+ * синк хийсэн, дуусаагүй Meta-гийн өдрийнх байж болох тул тоолохгүй — тэгвэл дутуу долоо хоног бүтэн мэт харагдана.
+ */
+export function weekCoverageDays(metrics: readonly { kind: SocialMetricKind; days: number }[]): number {
+    return Math.max(0, ...metrics.filter(metric => metric.kind === 'sum').map(metric => metric.days));
+}
+
+/**
+ * Харьцуулах (өмнөх) талын өгөгдөлтэй өдөр харьцуулсан өдрөөс цөөн бол «3/7 өдөр» — хэсэгчилсэн нийлбэрийг бүтэн
+ * хугацааны дүн мэт харуулахгүй (өөрчлөлтийг ч тооцдоггүй). Төлөв (`latest`) метрикт хамаарахгүй.
+ */
+export function previousCoverageNote(metric: { kind: SocialMetricKind; previous: number | null; previousDays?: number; days: number }): string | null {
+    if (metric.kind === 'latest' || metric.previous === null || metric.previousDays === undefined || metric.previousDays >= metric.days) return null;
+    return `${metric.previousDays}/${metric.days} өдөр`;
+}

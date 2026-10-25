@@ -8,6 +8,7 @@ import { dashboardJson } from '@/lib/api/dashboardFetch';
 import { ubDateStr } from '@/lib/utils/date';
 import { cn } from '@/lib/utils';
 import type { SocialWeek, SocialWeekResponse, WeekMetric } from '@/lib/marketing/social-week';
+import { previousCoverageNote, weekCoverageDays } from '@/lib/marketing/social-metrics';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
 
 export const count = (value: number | null) => value === null ? '—' : value.toLocaleString('en-US');
@@ -41,7 +42,7 @@ export function WeeklySocialPage({ meetingDate }: { meetingDate: string }) {
     if (!week.page) {
         return <p className="text-xs text-muted-foreground">Facebook хуудас холбогдоогүй. <Link href="/marketing/social" className="text-brand-strong hover:underline focus-ring">Маркетинг → Сошиал</Link> хэсэгт холбоно.</p>;
     }
-    const days = Math.max(0, ...week.metrics.map(metric => metric.days));
+    const days = weekCoverageDays(week.metrics);
     const top = week.posts.slice(0, 3);
     return (
         <div className="rounded-2xl border border-border p-5">
@@ -77,13 +78,14 @@ export function WeeklySocialPage({ meetingDate }: { meetingDate: string }) {
 /** Долоо хоногийн нэг метрик: утга, харьцуулалт («—» = Meta өгөөгүй). Instagram-ийн карт ч ашиглана. */
 export function WeekMetricCard({ metric, rangeDays }: { metric: WeekMetric; rangeDays: number }) {
     const sign = metric.delta !== null && metric.delta > 0 ? '+' : '';
+    const previousNote = previousCoverageNote(metric);
     return (
         <div>
             <p className="text-xs text-muted-foreground">{metric.label}</p>
             <p className="num mt-1.5 text-lg font-semibold">{count(metric.value)}</p>
             {metric.value === null ? <p className="mt-0.5 text-xs text-muted-foreground">Meta өгөөгүй</p> : <p className="mt-0.5 text-xs text-muted-foreground">
                 {metric.kind === 'latest' && metric.day ? `${metric.day}-ны байдлаар · ` : metric.days && metric.days < rangeDays ? `${metric.days}/${rangeDays} өдөр · ` : ''}
-                {metric.comparison === 'week-ago' ? '7 хоногийн өмнө' : metric.comparison === 'same-days' ? 'өмнөх 7 хоногийн мөн өдрүүд' : 'өмнөх 7 хоног'} {count(metric.previous)}
+                {metric.comparison === 'week-ago' ? '7 хоногийн өмнө' : metric.comparison === 'same-days' ? 'өмнөх 7 хоногийн мөн өдрүүд' : 'өмнөх 7 хоног'} {count(metric.previous)}{previousNote ? ` (${previousNote})` : ''}
                 {metric.delta !== null && (
                     <span className={cn('ml-1', metric.delta > 0 ? 'text-status-success' : metric.delta < 0 ? 'text-status-danger' : '')}>
                         {sign}{count(metric.delta)}{metric.deltaPct !== null ? ` (${sign}${metric.deltaPct}%)` : ''}
