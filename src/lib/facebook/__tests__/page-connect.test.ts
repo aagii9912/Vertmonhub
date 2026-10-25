@@ -1,23 +1,31 @@
 // @vitest-environment node
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const mocks = vi.hoisted(() => ({ user: vi.fn(), shop: vi.fn(), subscribe: vi.fn(), ops: [] as Array<{ table: string; op: string; args: unknown[] }>, pending: null as Record<string, unknown> | null }));
+const mocks = vi.hoisted(() => ({
+    user: vi.fn(), shop: vi.fn(), subscribe: vi.fn(), ops: [] as Array<{ table: string; op: string; args: unknown[] }>, pending: null as Record<string, unknown> | null,
+    /** shops-ийн select (давхар холболтын шалгалт) ба update-ийн хариу. */
+    owners: [] as Array<{ id: string }>, updateError: null as { code: string; message: string } | null,
+}));
 vi.mock('@/lib/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('@/lib/crypto/tokens', () => ({
     encryptToken: (value: string) => `enc:v1:${value}`,
     decryptToken: (value: string | null) => value?.startsWith('enc:v1:') ? value.slice(7) : value ?? null,
 }));
 vi.mock('@/lib/facebook/marketing-api', () => ({ subscribePageToApp: mocks.subscribe }));
-/** Supabase-ийн гинжин дуудлагыг бичиж авна; `maybeSingle` нь pending мөрийг буцаана. */
+/** Supabase-ийн гинжин дуудлагыг бичиж авна; `maybeSingle` нь pending мөрийг, shops-ийн select/update нь `owners`/`updateError`-ийг буцаана. */
 function chain(table: string) {
-    const record = (op: string, args: unknown[]) => mocks.ops.push({ table, op, args });
+    const own: string[] = [];
+    const record = (op: string, args: unknown[]) => { own.push(op); mocks.ops.push({ table, op, args }); };
     const builder: Record<string, unknown> = {};
-    for (const op of ['select', 'delete', 'update', 'upsert', 'eq', 'lt']) {
+    for (const op of ['select', 'delete', 'update', 'upsert', 'eq', 'neq', 'lt', 'limit']) {
         builder[op] = (...args: unknown[]) => { record(op, args); return builder; };
     }
     builder.maybeSingle = async () => ({ data: mocks.pending, error: null });
-    builder.then = (resolve: (value: unknown) => void) => resolve({ data: null, error: null });
+    builder.then = (resolve: (value: unknown) => void) => resolve(
+        table === 'shops' && own[0] === 'select' ? { data: mocks.owners, error: null }
+            : table === 'shops' && own[0] === 'update' ? { data: null, error: mocks.updateError }
+                : { data: null, error: null });
     return builder;
 }
 vi.mock('@/lib/auth/supabase-auth', () => ({
@@ -71,6 +79,8 @@ beforeEach(() => {
     vi.clearAllMocks();
     mocks.ops.length = 0;
     mocks.pending = null;
+    mocks.owners = [];
+    mocks.updateError = null;
     vi.stubGlobal('fetch', http);
     vi.stubEnv('FACEBOOK_APP_ID', 'fb-app');
     vi.stubEnv('FACEBOOK_APP_SECRET', 'app-secret');
@@ -191,7 +201,9 @@ it('selects a listed page server-side: fresh page token, encrypted on the projec
         facebook_page_id: '101', facebook_page_name: 'Mandala Garden', facebook_page_access_token: 'enc:v1:page-token-1',
         facebook_token_expires_at: '2026-12-01T00:00:00.000Z',
     });
-    expect(ops('shops', 'eq')[0].args).toEqual(['id', 'shop-1']);
+    // Давхар холболтын шалгалт (өөр төсөл), дараа нь энэ төслийн мөр.
+    expect(ops('shops', 'eq').map(o => o.args)).toEqual([['facebook_page_id', '101'], ['id', 'shop-1']]);
+    expect(ops('shops', 'neq')[0].args).toEqual(['id', 'shop-1']);
     expect(ops('meta_page_connect_pending', 'delete')).toHaveLength(1);
     expect(mocks.subscribe).toHaveBeenCalledWith('101', 'page-token-1');
     const detail = http.mock.calls.map(([input]) => input as URL).find(url => url.pathname === '/v26.0/101')!;
@@ -221,4 +233,43 @@ it('reports pages without an Instagram account instead of storing an empty selec
     const { callback } = await connect('instagram');
     expect(new URL((await callback()).headers.get('location')!).searchParams.get('ig_error')).toBe('no_instagram_account');
     expect(ops('meta_page_connect_pending', 'upsert')).toEqual([]);
+});
+
+describe('a Page or Instagram account already connected to another project', () => {
+    const pending = (pages: unknown[]) => {
+        mocks.pending = { user_token: 'enc:v1:long-user-token', user_token_expires_at: null, expires_at: new Date(Date.now() + 60_000).toISOString(), pages, granted_scopes: [] };
+    };
+
+    it('answers 409 for the Page instead of a generic 500 and saves nothing', async () => {
+        pending([{ id: '101', name: 'Mandala Garden' }]);
+        mocks.owners = [{ id: 'shop-2' }];
+        const response = await selectPendingPage('facebook', 'shop-1', '101');
+        expect(response.status).toBe(409);
+        expect(await response.json()).toEqual({ error: 'Энэ Page өөр төсөлд холбогдсон байна', code: 'ALREADY_CONNECTED' });
+        expect(ops('shops', 'update')).toEqual([]);
+        expect(ops('meta_page_connect_pending', 'delete')).toEqual([]); // дахин өөр Page сонгох боломжтой
+        expect(mocks.subscribe).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 for the Instagram account, checked by its business account id', async () => {
+        pending([{ id: '101', name: 'Mandala Garden', instagram: { id: '1789', username: 'mandala' } }]);
+        mocks.owners = [{ id: 'shop-2' }];
+        const response = await selectPendingPage('instagram', 'shop-1', '101');
+        expect(response.status).toBe(409);
+        expect(await response.json()).toEqual({ error: 'Энэ Instagram аккаунт өөр төсөлд холбогдсон байна', code: 'ALREADY_CONNECTED' });
+        expect(ops('shops', 'eq')[0].args).toEqual(['instagram_business_account_id', '1789']);
+        expect(ops('shops', 'update')).toEqual([]);
+    });
+
+    it('maps the unique-index race on facebook_page_id to the same 409', async () => {
+        pending([{ id: '101', name: 'Mandala Garden' }]);
+        mocks.updateError = { code: '23505', message: 'duplicate key value violates unique constraint "shops_facebook_page_id_key"' };
+        const response = await selectPendingPage('facebook', 'shop-1', '101');
+        expect(response.status).toBe(409);
+        expect((await response.json()).error).toBe('Энэ Page өөр төсөлд холбогдсон байна');
+        expect(ops('meta_page_connect_pending', 'delete')).toEqual([]);
+
+        mocks.updateError = { code: '57014', message: 'canceling statement due to statement timeout' };
+        expect((await selectPendingPage('facebook', 'shop-1', '101')).status).toBe(500);
+    });
 });
