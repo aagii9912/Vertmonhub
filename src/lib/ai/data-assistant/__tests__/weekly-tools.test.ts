@@ -36,8 +36,10 @@ describe('get_weekly_sales_report', () => {
         const result = await run('get_weekly_sales_report', {});
         expect(mocks.load).toHaveBeenCalledWith(expect.anything(), { shopId: 'shop-1', meetingDate: nextMeetingDate(), canSeeCustomers: false });
         expect(result.week.lines).toHaveLength(40);
+        expect(result.month.lines).toHaveLength(40);
+        expect(result.month).toMatchObject({ count: 45, linesShown: 40 });
         expect(result.week.count).toBe(45);
-        expect(result.inventory).toEqual({ source: expect.objectContaining({ source: 'Elysium ERP' }), blocks: expect.any(Array), floorTotals: [{ block: 'Б1', sold: 0, available: 1, other: 0, barter: 0 }] });
+        expect(result.inventory).toEqual({ source: expect.objectContaining({ source: 'Elysium ERP' }), blocks: expect.any(Array), floorTotals: [{ block: 'Б1', sold: 0, available: 1, barter: 0 }] });
         expect(result.plainText).toContain('Энэ долоо хоног: 45 гэрээ');
     });
 

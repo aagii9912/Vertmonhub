@@ -26,12 +26,15 @@ export function isMissingContractListSchema(error: { code?: string; message?: st
 
 /**
  * Сүүлийн HUB гэрээний жагсаалтын импорт (файлын огноогоор, ижил огноонд сүүлд хийсэн нь) — бүх уншигчийн нэг эх.
- * Хүснэгт байхгүй бол `available: false`; бусад уншилтын алдааг дамжуулна.
+ * `upTo` өгвөл тэр өдөр хүртэлх файлын огноотой импортоос (өнгөрсөн хурлын тайланд). Хүснэгт байхгүй бол
+ * `available: false`; бусад уншилтын алдааг дамжуулна.
  */
-export async function readLatestContractListImport(db: SupabaseClient, shopId: string): Promise<{ latest: LatestContractListImport | null; available: boolean }> {
-    const { data, error } = await db.from('contract_list_imports')
+export async function readLatestContractListImport(db: SupabaseClient, shopId: string, options: { upTo?: string } = {}): Promise<{ latest: LatestContractListImport | null; available: boolean }> {
+    let query = db.from('contract_list_imports')
         .select('report_date, file_name, row_count, created_at, created_by_name')
-        .eq('shop_id', shopId)
+        .eq('shop_id', shopId);
+    if (options.upTo) query = query.lte('report_date', options.upTo);
+    const { data, error } = await query
         .order('report_date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(1)

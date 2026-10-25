@@ -17,6 +17,9 @@
  *    амьд гэрээний төлсөн дүн бүгд мэдэгдэж байвал л бүтэн; заримынх нь NULL бол доод хязгаар; бүгд NULL бол «—».
  *    Дэвтэрт мөнгөн орлого огт бүртгэгдээгүй бол «—» (Бүртгэл алга), анхны орлогоос өмнөх сар «—» — хэзээ ч 0₮ биш.
  *    Урьдчилгааны нөхцлийн дүн, хоцролт, нийт − урьдчилгааг хэзээ ч орсон мөнгө гэж тооцохгүй.
+ *  • HUB файлд «Нийт төлсөн дүн» байвал (W5/W6, эзэмшигч 2026-10-22) системийн орсон мөнгө = тухайн сард захиалсан
+ *    амьд гэрээний файлын огноогоор төлсөн дүнгийн нийлбэр (cohort, `source: 'hub_paid'`); дэвтрийг уншихгүй. Файлд
+ *    дүнгүй/тулгагдаагүй гэрээ, огноогүй амьд гэрээтэй блок-сар доод хязгаар. Гар блокийн дүн давамгайлна (M1).
  */
 import {
     hasMonthlySalesBreakdown, MONTHLY_SALES_BLOCKS, MONTHLY_SALES_METRICS, monthlySalesAttainment,
@@ -68,6 +71,8 @@ const fromCents = (value: number) => value / 100;
 export interface PlanContract extends PlanBucketSource {
     id: string;
     contract_date: string | null;
+    /** Захиалгын огноо — зөвхөн HUB «Нийт төлсөн дүн»-ийн тулгалтад (cohort-ын сар = contract_date). */
+    order_date?: string | null;
     contract_status: string | null;
     total_price: number | string | null;
     prepayment_due?: number | string | null;
@@ -100,6 +105,11 @@ export interface PlanPerformanceInput {
     latestImportDate: string | null;
     /** overdue_amount багана (migration 20261022140000) байхгүй бол false. */
     overdueAvailable?: boolean;
+    /**
+     * HUB файлын «Нийт төлсөн дүн» (`hubPaidByContract`): гэрээ → файлын огноогоор төлсөн дүн (null = мөрөнд дүн хоосон;
+     * Map-д байхгүй = файлд тулгагдаагүй). Өгвөл орсон мөнгөний систем дүн = тухайн сард захиалсан гэрээний cohort.
+     */
+    hubPaid?: { asOf: string; paid: ReadonlyMap<string, number | null> } | null;
 }
 
 export interface PlanValue { value: number | null; lowerBound: boolean }
@@ -120,16 +130,32 @@ export interface PlanCell {
 
 export interface PlanScopeCells {
     metrics: Partial<Record<PlanMetricKey, PlanCell>>;
-    /** «Нөхцлөөр төлөх урьдчилгаа» — тухайн сард захиалсан гэрээний нөхцлийн дүн (орсон мөнгө биш). */
+    /**
+     * «Нөхцлөөр төлөх урьдчилгаа» — тухайн сард захиалсан амьд гэрээний `prepayment_due`-ийн нийлбэр (орсон мөнгө биш).
+     * Лхагвын илтгэлийн «Нийт» (энэ сарын гэрээний урьдчилгаа, орсон + хүлээгдэж буй; W6, `advanceOfMonth`) нь яг энэ
+     * утга — мэдээлэл, мөнгөн урсгал гэж нэрлэхгүй, төлөвлөгөөтэй хувь гаргахгүй.
+     */
     prepaymentDue: number | null;
     prepaymentMissing: number;
+    /**
+     * Энэ хүрээний огноогүй амьд гэрээ (аль ч сарынх байж болно) — гэрээний гүйцэтгэлийн «+»-тэй ижил дүрмээр энэ сарын
+     * урьдчилгааг доод хязгаар болгоно. Нийт = Б1 + Б2 + зогсоол (+ блокоор задлаагүй төлөвлөгөөтэй сард бусад блокийн
+     * орон сууц); «Төлөвлөгөөнд хамаарахгүй» орохгүй.
+     */
+    undated: number;
+    /** `prepaymentDue` доод хязгаар («+»): урьдчилгааны дүнгүй гэрээ (`prepaymentMissing`) эсвэл хүрээнд огноогүй гэрээ байна. */
+    prepaymentLowerBound: boolean;
 }
+
+/** Сарын нэмэлт (stretch) төлөвлөгөө — нийт дүн, блокгүй; null = оруулаагүй (мөнгө нь санхүүгийн эрхгүйд үргэлж null). */
+export interface PlanStretch { contract: number | null; cashflow: number | null }
 
 export interface PlanMonthRow {
     month: number;
     key: string;
     status: 'past' | 'current' | 'future';
     blockPlanned: boolean;
+    stretch: PlanStretch;
     total: PlanScopeCells;
     blocks: Record<MonthlySalesBlock, PlanScopeCells>;
     /** Б1/Б2-оос бусад блокийн орон сууц: задаргаагүй төлөвлөгөөтэй сард нийтэд орсон. */
@@ -160,7 +186,8 @@ export interface PlanPerformance {
     throughMonth: number | null;
     currentMonth: number | null;
     months: PlanMonthRow[];
-    ytd: { total: PlanYearScope; blocks: Record<MonthlySalesBlock, PlanYearScope> };
+    /** stretch: 1–M сарын нэмэлт төлөвлөгөөний нийлбэр; аль нэг сард оруулаагүй бол null (үндсэн төлөвлөгөөний дүрэм). */
+    ytd: { total: PlanYearScope; blocks: Record<MonthlySalesBlock, PlanYearScope>; stretch: PlanStretch };
     undated: {
         count: number;
         amount: number;
@@ -180,8 +207,13 @@ export interface PlanPerformance {
     /**
      * null = санхүүгийн эрхгүй (cashHidden). none = амьд гэрээний төлсөн дүн бүгд тодорхойгүй; no_ledger = дэвтэрт
      * мөнгөн орлого бүртгэгдээгүй («Бүртгэл алга»); ledgerSince-ээс өмнөх сар тодорхойгүй.
+     * source 'hub_paid' = HUB файлын «Нийт төлсөн дүн» (hubPaidAsOf = файлын огноо): full = амьд гэрээ бүр файлд дүнтэй,
+     * partial = unknownPaid гэрээний дүн файлд алга (тэдгээрийн блок-сар «+»).
      */
-    cash: null | { availability: 'full' | 'partial' | 'none' | 'no_ledger'; unknownPaid: number; liveContracts: number; ledgerSince: string | null };
+    cash: null | {
+        availability: 'full' | 'partial' | 'none' | 'no_ledger'; unknownPaid: number; liveContracts: number; ledgerSince: string | null;
+        source: 'ledger' | 'hub_paid'; hubPaidAsOf: string | null;
+    };
 }
 
 const UNDATED_LIST_LIMIT = 100;
@@ -276,6 +308,17 @@ export function resolveMonthMetric(
     return { value: total.actual, lowerBound: total.lowerBound, source: total.source };
 }
 
+/**
+ * Нэмэлт төлөвлөгөөний он эхнээс (1–M сар) нийлбэр — үндсэн төлөвлөгөөний дүрэм (yearCell-ийн sumPlan): 1–M сар бүгдэд
+ * оруулсан үед л; аль нэг сар дутуу бол null («—»), хэсэгчилсэн нийлбэрийг 1–M сарын гүйцэтгэлтэй харьцуулж хувь хөөргөхгүй.
+ */
+function stretchSum(months: PlanMonthRow[], key: keyof PlanStretch, throughMonth: number | null): number | null {
+    if (throughMonth === null) return null;
+    const span = months.slice(0, throughMonth).map(row => row.stretch[key]);
+    return span.length && span.every(value => value !== null)
+        ? fromCents(span.reduce((sum, value) => sum + cents(value ?? 0), 0)) : null;
+}
+
 /** Төлөвлөгөөний биелэлтийн цэвэр тооцоо. */
 export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerformance {
     const { year } = input;
@@ -340,12 +383,16 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
     }
 
     // Орсон мөнгө: амьд гэрээний төлсөн дүн мэдэгдэх эсэх, дэвтэрт орлого бүртгэгдсэн эсэх (paid_amount-ийг импорт
-    // шууд бичдэг — хоосон дэвтэр нь «сард 0₮» биш, тодорхойгүй).
-    const unknownPaid = live.filter(contract => toNumber(contract.paid_amount) === null).length;
+    // шууд бичдэг — хоосон дэвтэр нь «сард 0₮» биш, тодорхойгүй). HUB «Нийт төлсөн дүн» байвал түүгээр (W5/W6).
+    const hub = cashVisible && input.hubPaid ? input.hubPaid : null;
+    const unknownPaid = hub
+        ? live.filter(contract => typeof hub.paid.get(contract.id) !== 'number').length
+        : live.filter(contract => toNumber(contract.paid_amount) === null).length;
     const earliestReceipt = (input.receipts ?? []).reduce<string | null>((min, receipt) => (!min || receipt.month < min ? receipt.month : min), null);
     const ledgerSince = input.ledgerSince !== undefined ? input.ledgerSince : earliestReceipt ? `${earliestReceipt}-01` : null;
     const ledgerMonth = ledgerSince?.slice(0, 7) ?? null;
-    const availability: 'full' | 'partial' | 'none' | 'no_ledger' = live.length > 0 && unknownPaid === live.length ? 'none'
+    const availability: 'full' | 'partial' | 'none' | 'no_ledger' = hub ? (unknownPaid > 0 ? 'partial' : 'full')
+        : live.length > 0 && unknownPaid === live.length ? 'none'
         : ledgerSince === null ? 'no_ledger' : unknownPaid > 0 ? 'partial' : 'full';
     const cashAgg = new Map<string, number>(); // `${month}|${scope|outside|unassigned}` → cents
     for (const receipt of input.receipts ?? []) {
@@ -356,6 +403,29 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
         const key = `${month}|${scope}`;
         cashAgg.set(key, (cashAgg.get(key) ?? 0) + cents(receipt.amount));
     }
+
+    // HUB cohort: сар × хүрээ — тухайн сард захиалсан амьд гэрээний файлын төлсөн дүн (мэдэгдэх / тодорхойгүй гэрээний тоо).
+    const hubAgg = new Map<string, { cents: number; known: number; unknown: number }>();
+    if (hub) {
+        for (const contract of live) {
+            if (!contract.contract_date?.startsWith(prefix)) continue;
+            const month = Number(contract.contract_date.slice(5, 7));
+            if (!(month >= 1 && month <= 12)) continue;
+            const key = `${month}|${scopeOf.get(contract.id) ?? 'outside'}`;
+            const row = hubAgg.get(key) ?? { cents: 0, known: 0, unknown: 0 };
+            const paid = hub.paid.get(contract.id);
+            if (typeof paid === 'number') { row.cents += cents(paid); row.known++; } else row.unknown++;
+            hubAgg.set(key, row);
+        }
+    }
+    /** Дүнгүй/тулгагдаагүй гэрээ, эсвэл хүрээнд огноогүй амьд гэрээ байвал доод хязгаар; мэдэгдэх дүнгүй бол «—» (0 биш). */
+    const hubCashAuto = (month: number, scope: string): PlanValue => {
+        const row = hubAgg.get(`${month}|${scope}`) ?? { cents: 0, known: 0, unknown: 0 };
+        const lowerBound = row.unknown > 0 || (undatedByScope[scope as PlanScope | 'outside'] ?? 0) > 0;
+        const value = fromCents(row.cents);
+        return lowerBound && (row.known === 0 || value === 0) ? { value: null, lowerBound: true } : { value, lowerBound };
+    };
+    const cashOf = (month: number, scope: string): PlanValue => (hub ? hubCashAuto(month, scope) : cashAuto(month, scope));
 
     const contractAuto = (month: number, scope: PlanScope, kind: 'count' | 'amount'): PlanValue => {
         const row = agg.get(`${month}|${scope}`) ?? emptyAgg();
@@ -369,10 +439,14 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
         if (availability === 'partial') return value ? { value, lowerBound: true } : { value: null, lowerBound: true };
         return { value, lowerBound: false };
     };
-    const prepayment = (rows: ScopeAgg[]) => {
+    const prepayment = (rows: ScopeAgg[], undated: number): Omit<PlanScopeCells, 'metrics'> => {
         const count = rows.reduce((sum, row) => sum + row.count, 0);
         const known = rows.reduce((sum, row) => sum + row.prepaymentKnown, 0);
-        return { prepaymentDue: known ? fromCents(rows.reduce((sum, row) => sum + row.prepaymentCents, 0)) : null, prepaymentMissing: count - known };
+        const prepaymentMissing = count - known;
+        return {
+            prepaymentDue: known ? fromCents(rows.reduce((sum, row) => sum + row.prepaymentCents, 0)) : null, prepaymentMissing,
+            undated, prepaymentLowerBound: prepaymentMissing > 0 || undated > 0,
+        };
     };
 
     const months: PlanMonthRow[] = input.months.map(row => {
@@ -380,16 +454,18 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
         const status = throughMonth === null || month > throughMonth ? 'future' : month === currentMonth ? 'current' : 'past';
         const future = status === 'future';
         const blockPlanned = hasBlockPlan(row.block_amounts);
-        const blockCells = Object.fromEntries(MONTHLY_SALES_BLOCKS.map(block => [block, { metrics: {}, ...prepayment([agg.get(`${month}|${block}`) ?? emptyAgg()]) }])) as Record<MonthlySalesBlock, PlanScopeCells>;
+        const blockCells = Object.fromEntries(MONTHLY_SALES_BLOCKS.map(block => [block, { metrics: {}, ...prepayment([agg.get(`${month}|${block}`) ?? emptyAgg()], undatedByScope[block]) }])) as Record<MonthlySalesBlock, PlanScopeCells>;
         const otherAgg = agg.get(`${month}|residential_other`) ?? emptyAgg();
         const totalRows = [...MONTHLY_SALES_BLOCKS.map(block => agg.get(`${month}|${block}`) ?? emptyAgg()), ...(blockPlanned ? [] : [otherAgg])];
-        const total: PlanScopeCells = { metrics: {}, ...prepayment(totalRows) };
+        const totalUndated = MONTHLY_SALES_BLOCKS.reduce((sum, block) => sum + undatedByScope[block], 0) + (blockPlanned ? 0 : undatedByScope.residential_other);
+        const total: PlanScopeCells = { metrics: {}, ...prepayment(totalRows, totalUndated) };
         for (const metric of metrics) {
             const autoBlocks = Object.fromEntries(MONTHLY_SALES_BLOCKS.map(block => [block,
-                metric.key === 'cashflow' ? cashAuto(month, block) : contractAuto(month, block, metric.key === 'contract_count' ? 'count' : 'amount')])) as Record<MonthlySalesBlock, PlanValue>;
+                metric.key === 'cashflow' ? cashOf(month, block) : contractAuto(month, block, metric.key === 'contract_count' ? 'count' : 'amount')])) as Record<MonthlySalesBlock, PlanValue>;
             const extraParts: PlanValue[] = [];
-            if (!blockPlanned) extraParts.push(metric.key === 'cashflow' ? cashAuto(month, 'residential_other') : contractAuto(month, 'residential_other', metric.key === 'contract_count' ? 'count' : 'amount'));
-            if (metric.key === 'cashflow') extraParts.push(cashAuto(month, 'unassigned'));
+            if (!blockPlanned) extraParts.push(metric.key === 'cashflow' ? cashOf(month, 'residential_other') : contractAuto(month, 'residential_other', metric.key === 'contract_count' ? 'count' : 'amount'));
+            // Гэрээгүй бүртгэсэн төлбөр зөвхөн дэвтэрт; HUB cohort гэрээгээр л.
+            if (metric.key === 'cashflow' && !hub) extraParts.push(cashAuto(month, 'unassigned'));
             const resolved = resolveMetric(row, metric, autoBlocks, extraParts.length ? combine(extraParts) : null, future);
             total.metrics[metric.key] = resolved.total;
             for (const block of MONTHLY_SALES_BLOCKS) blockCells[block].metrics[metric.key] = resolved.blocks[block];
@@ -400,10 +476,11 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
             .filter(([key]) => blockPlanned || !key.startsWith('residential|'))
             .map(([, entry]) => ({ label: entry.label, count: entry.count, amount: fromCents(entry.amountCents) }))
             .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'mn'));
-        const outsideCash = cashVisible ? combine([cashAuto(month, 'outside'), ...(blockPlanned ? [cashAuto(month, 'residential_other')] : [])]).value : null;
+        const outsideCash = cashVisible ? combine([cashOf(month, 'outside'), ...(blockPlanned ? [cashOf(month, 'residential_other')] : [])]).value : null;
         const cancelledRow = cancelled.get(month) ?? { count: 0, amountCents: 0 };
         return {
             month, key: `${year}-${String(month).padStart(2, '0')}`, status, blockPlanned, total, blocks: blockCells,
+            stretch: { contract: row.stretch_target_amount ?? null, cashflow: cashVisible ? row.stretch_cashflow_target_amount ?? null : null },
             otherResidential: { count: otherAgg.count, amount: fromCents(otherAgg.amountCents), inTotal: !blockPlanned },
             outside: {
                 count: outsideRows.reduce((sum, item) => sum + item.count, 0), amount: fromCents(outsideRows.reduce((sum, item) => sum + item.amountCents, 0)),
@@ -436,6 +513,7 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
         blocks: Object.fromEntries(MONTHLY_SALES_BLOCKS.map(block => [block, { metrics: Object.fromEntries(metrics.map(metric => [metric.key,
             yearCell(row => row.blocks[block].metrics[metric.key], month => metricNumber(month, block, metric.plan),
                 month => hasMonthlySalesBreakdown(month, metric.plan) ? month[metric.plan] : null)])) }])),
+        stretch: { contract: stretchSum(months, 'contract', throughMonth), cashflow: stretchSum(months, 'cashflow', throughMonth) },
     } as PlanPerformance['ytd'];
 
     // Төлбөр хоцролт: сүүлийн HUB файлын огноотой snapshot (гэрээний жагсаалтын хавтан, AI-тай нэг дүрэм).
@@ -469,7 +547,10 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
         },
         cancelled: { count: cancelledTotal.count, amount: fromCents(cancelledTotal.amountCents) },
         transferred: [...transferred.values()].reduce((sum, value) => sum + value, 0),
-        cash: cashVisible ? { availability, unknownPaid, liveContracts: live.length, ledgerSince } : null,
+        cash: cashVisible ? {
+            availability, unknownPaid, liveContracts: live.length, ledgerSince: hub ? null : ledgerSince,
+            source: hub ? 'hub_paid' : 'ledger', hubPaidAsOf: hub?.asOf ?? null,
+        } : null,
     };
 }
 

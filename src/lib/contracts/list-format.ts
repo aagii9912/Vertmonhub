@@ -143,6 +143,17 @@ export function contractListNames(contract: Pick<ContractListSource, 'customer_f
     return { first: name, last: null, fallback: name !== null };
 }
 
+/**
+ * Тайлангийн «О.Нэр» (Б.Мэндбаяр — борлуулалтын албаны Лхагвын илтгэлийн хэлбэр): овгийн эхний үсэг + нэр.
+ * Нэр, овог хоёулаа байхгүй бол бүтэн нэр (компани г.м.). Регистрийн дугаарыг хэзээ ч оруулахгүй.
+ */
+export function customerShortName(contract: Pick<ContractListSource, 'customer_first_name' | 'customer_last_name' | 'customer_name'>): string | null {
+    const first = textOrNull(contract.customer_first_name);
+    const last = textOrNull(contract.customer_last_name);
+    if (first && last) return `${Array.from(last)[0].toLocaleUpperCase('mn')}.${first}`;
+    return textOrNull(contract.customer_name) ?? first ?? last;
+}
+
 /** 'YYYY-MM-DD' → тухайн өдрийн локал 00:00 (xlsx бичигч локал wall-clock огноог тэр өдрийн нүд болгоно). */
 function dateCell(value: string | null | undefined): Date | null {
     const match = typeof value === 'string' ? /^(\d{4})-(\d{2})-(\d{2})/.exec(value) : null;

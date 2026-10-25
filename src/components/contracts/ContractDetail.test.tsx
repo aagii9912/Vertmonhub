@@ -9,7 +9,12 @@ const mocks = vi.hoisted(() => ({
     contract: {} as Record<string, unknown>,
     payments: {} as Record<string, unknown>,
     refetchContract: vi.fn(), refetchPayments: vi.fn(),
-    update: vi.fn(), add: vi.fn(), confirm: vi.fn(), toastError: vi.fn(), toastSuccess: vi.fn(), setOrderDate: vi.fn(),
+    update: vi.fn(), add: vi.fn(), confirm: vi.fn(), toastError: vi.fn(), toastSuccess: vi.fn(), setOrderDate: vi.fn(), setManager: vi.fn(),
+    mode: { isManager: false } as { isManager: boolean } | undefined,
+    managerOptions: [] as Array<{ name: string; roster: boolean; contracts: number }>,
+    referrals: { sources: [] as Array<{ id: string; name: string; sort_order: number; archived_at: string | null }>, available: true } as
+        { sources: Array<{ id: string; name: string; sort_order: number; archived_at: string | null }>; available: boolean } | undefined,
+    setReferral: vi.fn(),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, shop: { id: 'shop-a' } }) }));
@@ -20,6 +25,13 @@ vi.mock('@/hooks/useContracts', () => ({
     useAddPayment: () => ({ mutateAsync: mocks.add, isPending: false }),
     useUpdatePayment: () => ({ mutate: mocks.update, isPending: false }),
     useSetContractOrderDate: () => ({ mutate: mocks.setOrderDate, isPending: false }),
+    useContractManagerOptions: () => ({ data: mocks.managerOptions, isLoading: false, isError: false }),
+    useSetContractManager: () => ({ mutate: mocks.setManager, isPending: false }),
+}));
+vi.mock('@/hooks/useDashboardMode', () => ({ useDashboardMode: () => ({ data: mocks.mode }) }));
+vi.mock('@/hooks/useReferralSources', () => ({
+    useReferralSources: () => ({ data: mocks.referrals, isError: false }),
+    useSetContractReferral: () => ({ mutate: mocks.setReferral, isPending: false }),
 }));
 vi.mock('@/hooks/useLeads', () => ({ useLeadDetail: () => ({ data: undefined }) }));
 vi.mock('@/lib/navigation/pageTitle', () => ({ usePageTitle: vi.fn() }));
@@ -42,6 +54,9 @@ beforeEach(() => {
     mocks.contract = loaded({ contract });
     mocks.payments = loaded({ payments: [unpaid] });
     mocks.confirm.mockResolvedValue(true);
+    mocks.mode = { isManager: false };
+    mocks.managerOptions = [];
+    mocks.referrals = { sources: [], available: true };
 });
 
 describe('ContractDetail load states', () => {
@@ -254,5 +269,83 @@ describe('ContractDetail HUB fields', () => {
         const [options] = mocks.confirm.mock.calls[0] as [{ description: string }];
         expect(options.description).toContain('Гэрээний огноо 2026-10-05 хэвээр');
         expect(mocks.setOrderDate).not.toHaveBeenCalled();
+    });
+});
+
+describe('ContractDetail manager', () => {
+    it('lets an unrestricted writer pick the manager of a HUB contract from the roster or names already on contracts', async () => {
+        mocks.contract = loaded({ contract: { ...contract, sales_manager: null } });
+        mocks.managerOptions = [{ name: 'Khongoroo', roster: true, contracts: 0 }, { name: 'Хонгорзул.Мөнхгэрэл', roster: false, contracts: 12 }];
+        render(<ContractDetail id="contract-1" />);
+        fireEvent.click(screen.getByRole('button', { name: /Менежер оруулах/ }));
+        const select = screen.getByRole('combobox', { name: 'Менежер' });
+        expect(within(select).getByRole('option', { name: 'Хонгорзул.Мөнхгэрэл · гэрээнд 12' })).toBeInTheDocument();
+        fireEvent.change(select, { target: { value: 'Хонгорзул.Мөнхгэрэл' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Менежер хадгалах' }));
+        await waitFor(() => expect(mocks.setManager).toHaveBeenCalledWith('Хонгорзул.Мөнхгэрэл', expect.any(Object)));
+        expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Менежерийг «Хонгорзул.Мөнхгэрэл» болгох уу?' }));
+    });
+
+    it('shows the manager read-only to restricted managers, readers and while the mode is unknown', () => {
+        mocks.contract = loaded({ contract: { ...contract, sales_manager: 'Ариунбилэг.Нямхүү' } });
+        for (const [user, mode] of [[writer, { isManager: true }], [reader, { isManager: false }], [writer, undefined]] as const) {
+            mocks.user = user;
+            mocks.mode = mode;
+            const { unmount } = render(<ContractDetail id="contract-1" />);
+            expect(screen.getAllByText('Ариунбилэг.Нямхүү').length).toBeGreaterThan(0);
+            expect(screen.queryByRole('button', { name: /Солих|Менежер оруулах/ })).not.toBeInTheDocument();
+            unmount();
+        }
+    });
+});
+
+describe('ContractDetail referral source', () => {
+    const facebook = { id: 'ref-facebook', name: 'Facebook', sort_order: 10, archived_at: null };
+    const neighbour = { id: 'ref-neighbour', name: 'Ойрхон амьдардаг', sort_order: 20, archived_at: null };
+    const barmash = { id: 'ref-barmash', name: 'Бармаш түрээслэгч', sort_order: 30, archived_at: '2026-10-20T00:00:00Z' };
+
+    it('lets a writer pick «Сэжим (хаанаас ирсэн)» from the active list, keeping the current archived choice visible', async () => {
+        mocks.referrals = { sources: [facebook, neighbour, barmash], available: true };
+        mocks.contract = loaded({ contract: { ...contract, referral_source_id: 'ref-barmash' } });
+        render(<ContractDetail id="contract-1" />);
+        expect(screen.getByText('Бармаш түрээслэгч')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /Солих/ }));
+        const select = screen.getByRole('combobox', { name: 'Сэжим (хаанаас ирсэн)' });
+        expect(within(select).getAllByRole('option').map(option => option.textContent)).toEqual(['Сонгоогүй', 'Facebook', 'Ойрхон амьдардаг', 'Бармаш түрээслэгч (архив)']);
+        fireEvent.change(select, { target: { value: 'ref-neighbour' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Сэжим (хаанаас ирсэн) хадгалах' }));
+        expect(mocks.setReferral).toHaveBeenCalledWith('ref-neighbour', expect.any(Object));
+    });
+
+    it('clears the choice with «Сонгоогүй» and does not save an unchanged value', () => {
+        mocks.referrals = { sources: [facebook], available: true };
+        mocks.contract = loaded({ contract: { ...contract, referral_source_id: 'ref-facebook' } });
+        render(<ContractDetail id="contract-1" />);
+        fireEvent.click(screen.getByRole('button', { name: /Солих/ }));
+        fireEvent.click(screen.getByRole('button', { name: 'Сэжим (хаанаас ирсэн) хадгалах' }));
+        expect(mocks.setReferral).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: /Солих/ }));
+        fireEvent.change(screen.getByRole('combobox', { name: 'Сэжим (хаанаас ирсэн)' }), { target: { value: '' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Сэжим (хаанаас ирсэн) хадгалах' }));
+        expect(mocks.setReferral).toHaveBeenCalledWith(null, expect.any(Object));
+    });
+
+    it('is read-only for readers, without a list or before the migration, and shows the list API name as a fallback', () => {
+        const cases = [
+            { user: reader, referrals: { sources: [facebook], available: true }, row: { referral_source_id: 'ref-facebook' }, text: 'Facebook' },
+            { user: writer, referrals: { sources: [], available: true }, row: { referral_source_id: null }, text: null },
+            { user: writer, referrals: { sources: [], available: false }, row: { referral_source_id: null }, text: null },
+            { user: writer, referrals: undefined, row: { referral_source_id: 'ref-x', referral_source_name: 'Танил' }, text: 'Танил' },
+        ];
+        for (const item of cases) {
+            mocks.user = item.user;
+            mocks.referrals = item.referrals;
+            mocks.contract = loaded({ contract: { ...contract, sales_manager: 'Ариунбилэг', ...item.row } });
+            const { unmount } = render(<ContractDetail id="contract-1" />);
+            if (item.text) expect(screen.getByText(item.text)).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /^Сонгох$/ })).not.toBeInTheDocument();
+            expect(screen.queryByRole('combobox', { name: 'Сэжим (хаанаас ирсэн)' })).not.toBeInTheDocument();
+            unmount();
+        }
     });
 });

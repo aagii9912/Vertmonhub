@@ -181,7 +181,7 @@ export interface AuditRow {
     created_at: string;
 }
 const AUDIT_ENTITY_LABEL: Record<string, string> = {
-    customer: 'Харилцагч', lead: 'Лид', contract: 'Гэрээ', lead_category: 'Лидийн ангилал', property: 'Байр', viewing: 'Уулзалт', unit: 'Нэгж',
+    customer: 'Харилцагч', lead: 'Лид', contract: 'Гэрээ', lead_category: 'Лидийн ангилал', referral_source: 'Сэжим (хаанаас ирсэн)', property: 'Байр', viewing: 'Уулзалт', unit: 'Нэгж',
 };
 const AUDIT_ACTION_LABEL: Record<string, string> = { create: 'нэмэв', update: 'засав', delete: 'устгав', transfer: 'шилжүүлэв' };
 /** Түгээмэл талбарын нэр; бусад нь баганын нэрээрээ. */

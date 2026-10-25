@@ -8,6 +8,7 @@ import {
     type WeeklySlidePart,
 } from '@/lib/dashboard/weekly-slides';
 import { mediaParts } from '@/lib/dashboard/weekly-slides-store';
+import { sniffReportImage } from '@/lib/dashboard/report-media';
 
 /**
  * Хурлын слайдын зураг (постер, дэлгэцийн зураг) — хувийн `report-media` bucket.
@@ -15,12 +16,6 @@ import { mediaParts } from '@/lib/dashboard/weekly-slides-store';
  * GET: нэвтрэлт, shop-ийн гишүүнчлэл, зураг хадгалагдсан слайдын хэсгийн модулийг татах бүрд шалгана.
  * Слайдад хараахан ороогүй зургийг зөвхөн оруулсан хүн харна.
  */
-function sniff(bytes: Uint8Array): keyof typeof REPORT_MEDIA_TYPES | null {
-    if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
-    const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-    if (bytes.length > png.length && png.every((byte, index) => bytes[index] === byte)) return 'image/png';
-    return null;
-}
 
 export async function POST(request: NextRequest) {
     try {
@@ -36,7 +31,7 @@ export async function POST(request: NextRequest) {
         if (!(file instanceof File)) return NextResponse.json({ error: 'Зураг олдсонгүй' }, { status: 400 });
         if (file.size > WEEKLY_SLIDE_LIMITS.imageBytes) return NextResponse.json({ error: 'Зургийн хэмжээ 4MB-аас хэтэрсэн байна' }, { status: 400 });
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const type = sniff(bytes);
+        const type = sniffReportImage(bytes);
         if (!type) return NextResponse.json({ error: 'Зөвхөн JPEG эсвэл PNG зураг оруулна' }, { status: 400 });
         const [shop, userId] = await Promise.all([getUserShop(), getUserId()]);
         if (!userId) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });

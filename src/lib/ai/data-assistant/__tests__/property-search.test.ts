@@ -42,7 +42,7 @@ beforeEach(() => {
     reads.length = 0;
     expressions.length = 0;
     failedTable = undefined;
-    tables = { properties: [], property_units: [], projects: [], erp_imports: [] };
+    tables = { properties: [], property_units: [], projects: [], erp_imports: [], contract_list_imports: [], property_contracts: [] };
     mocks.from.mockImplementation((table: string) => {
         if (!(table in tables)) throw new Error(`Unexpected source: ${table}`);
         let rows = tables[table];
@@ -61,15 +61,19 @@ beforeEach(() => {
             },
             or: (expression: string) => {
                 expressions.push(expression);
-                const predicates = [...expression.matchAll(/([a-z_]+)\.in\.\(([^)]+)\)|([a-z_]+)\.ilike\.%([^%]*)%/g)];
-                rows = rows.filter(r => predicates.some(m => m[1]
-                    ? m[2].split(',').includes(r[m[1]])
-                    : String(r[m[3]] ?? '').toLowerCase().includes(m[4].toLowerCase())));
+                const predicates = [...expression.matchAll(/([a-z_]+)\.in\.\(([^)]+)\)|([a-z_]+)\.ilike\.%([^%]*)%|([a-z_]+)\.is\.null|([a-z_]+)\.neq\.([^,]+)/g)];
+                rows = rows.filter(r => predicates.some(m => m[1] ? m[2].split(',').includes(r[m[1]])
+                    : m[3] ? String(r[m[3]] ?? '').toLowerCase().includes(m[4].toLowerCase())
+                        : m[5] ? r[m[5]] == null : r[m[6]] != null && String(r[m[6]]) !== m[7]));
                 return chain;
             },
             order: () => chain,
             limit: (value: number) => { end = value - 1; return chain; },
             range: (start: number, to: number) => { from = start; end = to; return chain; },
+            maybeSingle: () => {
+                reads.push(table);
+                return Promise.resolve(failedTable === table ? { data: null, error: { message: `${table} unavailable` } } : { data: rows[from] ?? null, error: null });
+            },
             then: (resolve: (value: unknown) => unknown) => {
                 reads.push(table);
                 return Promise.resolve({
@@ -298,6 +302,27 @@ describe('ERP product export as the current inventory', () => {
         tables.property_units = [unit('440')];
         tables.erp_imports = [snapshot('future', '2999-01-01', [product('Б1-2')]), snapshot('sales', '2026-10-01', [])];
         expect(asRows(await fetchProperties('shop-1', { rooms: 2 })).map(r => [r.source, r.id])).toEqual([['property_units', '440']]);
+    });
+
+    it('answers from the unit register with live HUB contracts when the HUB import is newer than the export (one rule with the weekly report)', async () => {
+        tables.projects = [{ id: 'p-el', shop_id: 'shop-1', name: 'Elysium Residence', district: null }];
+        // ERP экспорт (09-26) хуучин: Б1-2 «Худалдаанд» гэсэн ч HUB-ийн амьд гэрээтэй; Б1-3 «Гэрээ баталгаажсан» гэсэн ч амьд гэрээгүй.
+        tables.erp_imports = [snapshot('products', '2026-09-26', [
+            product('Б1-2', { 'Нийт борлуулах үнэ': '300000000' }), product('Б1-3', { 'Нийт борлуулах үнэ': '310000000', 'Бүтээгдэхүүний төлөв': 'Гэрээ баталгаажсан' }),
+        ])];
+        tables.contract_list_imports = [{ shop_id: 'shop-1', report_date: '2026-10-22', file_name: 'HUB data 1.xlsx', row_count: 83, created_at: '2026-10-22T14:32:00Z', created_by_name: null }];
+        tables.property_units = [
+            unit('Б1-2', { block: 'Б1', code: 'Б1-2', unit_number: '0', status: 'available', raw_status: 'Худалдаанд', model: 'E2', updated_sale_area: '0' }),
+            unit('Б1-3', { block: 'Б1', code: 'Б1-3', unit_number: '0', status: 'sold', raw_status: 'Гэрээ баталгаажсан', model: 'E3', updated_sale_area: '0' }),
+        ];
+        tables.property_contracts = [
+            { id: 'c1', shop_id: 'shop-1', product_type: 'residential', unit_label: 'Б1-2', contract_status: 'active', contract_date: '2026-10-08', sales_manager: null, sales_channel: null, contracted_area: '64.16', deleted_at: null },
+            { id: 'c2', shop_id: 'shop-1', product_type: 'residential', unit_label: 'Б1-3', contract_status: 'cancelled', contract_date: '2026-07-27', sales_manager: null, sales_channel: null, contracted_area: '80', deleted_at: null },
+        ];
+        expect(asRows(await fetchProperties('shop-1', { rooms: 2 }, { canSeeErpPrice: true }))).toEqual([expect.objectContaining({
+            source: 'hub_contracts', as_of: '2026-10-22', price_as_of: '2026-09-26', code: 'Б1-3', status: 'available', price: 310000000,
+        })]);
+        expect(asRows(await fetchProperties('shop-1', { rooms: 2, status: 'sold' })).map(r => [r.code, r.status, r.price])).toEqual([['Б1-2', 'sold', null]]);
     });
 
     it('reports an empty export as no stock, not as a read failure', async () => {

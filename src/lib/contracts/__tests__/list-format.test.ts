@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     CONTRACT_LIST_COLUMNS, CONTRACT_LIST_MONEY_FORMAT, CONTRACT_LIST_NUMFMT, HUB_STATUS_LABEL, HUB_TYPE_LABEL,
-    contractListNames, contractListPricePerSqm, contractListRow, contractUnitNumber, dbFloor, hubContractStatus,
+    contractListNames, contractListPricePerSqm, contractListRow, contractUnitNumber, customerShortName, dbFloor, hubContractStatus,
     hubFloor, hubProductType, isDerivedPricePerSqm,
 } from '../list-format';
 
@@ -111,5 +111,15 @@ describe('HUB гэрээний жагсаалтын толь', () => {
         // Тэгээр эхэлсэн тоот текстээр (дахин импортлоход «Б2-084» байр хэвээр олдоно).
         expect(contractListRow({ legacy_unit_number: '084' })['Тоот']).toBe('084');
         expect(contractListRow({ legacy_unit_number: '84' })['Тоот']).toBe(84);
+    });
+});
+
+describe('customerShortName', () => {
+    it('prints «О.Нэр» like the sales team deck, else the full name, never a registration number', () => {
+        expect(customerShortName({ customer_first_name: 'Мэндбаяр', customer_last_name: 'Батаа', customer_name: 'Батаа Мэндбаяр УП12345678' })).toBe('Б.Мэндбаяр');
+        expect(customerShortName({ customer_first_name: 'Золзаяа', customer_last_name: 'лхагва', customer_name: null })).toBe('Л.Золзаяа');
+        expect(customerShortName({ customer_first_name: null, customer_last_name: null, customer_name: 'Монкон ХХК' })).toBe('Монкон ХХК');
+        expect(customerShortName({ customer_first_name: 'Ганчимэг', customer_last_name: null, customer_name: null })).toBe('Ганчимэг');
+        expect(customerShortName({ customer_first_name: ' ', customer_last_name: null, customer_name: null })).toBeNull();
     });
 });

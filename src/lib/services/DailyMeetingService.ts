@@ -18,6 +18,7 @@ import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { shiftDate, ubDateStart } from '@/lib/sales/activity';
 import { assertProjectManager, ProjectScopeError } from '@/lib/sales/project-scope';
 import { classifyPhoneLeads, findProjectLeadsByPhone, loadProjectManagerNames, type ProjectPhoneLead } from '@/lib/services/ViewingService';
+import { resolveReferralSource } from '@/lib/sales/referral-sources-store';
 
 export interface DailyMeetingActor {
     userId: string;
@@ -72,6 +73,9 @@ export async function recordDailyMeeting(
         if (error instanceof ProjectScopeError) return fail(error.status, error.message);
         throw error;
     }
+    // «Сэжим (хаанаас ирсэн)»: шинэ харилцагчийн уулзалтад заавал (төсөлд идэвхтэй сонголт байгаа үед).
+    const referral = await resolveReferralSource(db, shopId, { id: input.referral_source_id }, { newMeetingType: input.meeting_type });
+    if (!referral.ok) return fail(referral.status, referral.error);
 
     let matches: ProjectPhoneLead[] | null;
     let activeManagers: Set<string>;
@@ -113,6 +117,8 @@ export async function recordDailyMeeting(
             interest_level: input.interest_level,
             // Түүхэнд зөвхөн харагдах нэр (утас биш).
             customer_label: leadDisplayName(lead ?? customerName).slice(0, 200),
+            // Сэжимгүй үед түлхүүрийг илгээхгүй (migration-ий өмнөх RPC мэдэхгүй түлхүүрийг татгалздаг).
+            ...(referral.referralSourceId ? { referral_source_id: referral.referralSourceId } : {}),
         },
     });
     const row = data as { viewing_id?: string; lead_id?: string | null; lead_created?: boolean } | null;

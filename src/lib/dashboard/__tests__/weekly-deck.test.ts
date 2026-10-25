@@ -327,6 +327,24 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(plan).not.toMatch(/Гэрээний гүйцэтгэл 2 тэрбум ₮ Удирдлагын баталгаажуулсан/);
     });
 
+    it('sales deck: cash entered for only some blocks is a lower bound, not the whole month; finance-hidden cash never resolves', async () => {
+        const month = { from: '2026-10-01', to: '2026-10-31' };
+        const target = { ...M1_TARGET, cashflow_target_amount: 1_605_898_800, manual_cashflow_actual_amount: 187_824_800, block_amounts: {
+            b1: { target_amount: 2_807_220_000, cashflow_target_amount: 842_166_000 },
+            b2: { target_amount: 2_245_776_000, cashflow_target_amount: 673_732_800, manual_cashflow_actual_amount: 161_844_800 },
+            parking: { target_amount: 300_000_000, cashflow_target_amount: 90_000_000, manual_cashflow_actual_amount: 25_980_000 },
+        } };
+        const partial = buildMonthlyPerformance([target], month, true, M1_CONTRACTS);
+        expect(partial.months[0].resolvedCash).toEqual({ value: 187_824_800, lowerBound: true, source: 'mixed' });
+        const { text } = await render(input({ monthSales: { ...operations(month.from, month.to), monthlyPerformance: partial } }));
+        const plan = text.find(slideText => slideText.includes('сарын төлөвлөгөө ба гүйцэтгэл'))!;
+        expect(plan).toMatch(/Орсон мөнгөний гүйцэтгэл 188 сая ₮\+ Удирдлагын оруулсан блокууд — бусад блок оруулаагүй Гүйцэтгэлийн хувь 12%\+/);
+        // Бүх блок (Б1-д тодорхой 0) оруулсан бол бүрэн.
+        const full = buildMonthlyPerformance([{ ...target, block_amounts: { ...target.block_amounts, b1: { ...target.block_amounts.b1, manual_cashflow_actual_amount: 0 } } }], month, true, M1_CONTRACTS);
+        expect(full.months[0].resolvedCash).toMatchObject({ value: 187_824_800, lowerBound: false });
+        expect(buildMonthlyPerformance([target], month, false, M1_CONTRACTS).months[0].resolvedCash).toBeNull();
+    });
+
     it('sales deck: totals of unknown paid amounts are a lower bound, and ERP cash is not divided by the month cash plan', async () => {
         const month = { from: '2026-10-01', to: '2026-10-31' };
         const monthSales = { ...operations(month.from, month.to), monthlyPerformance: buildMonthlyPerformance([{ year: 2026, month: 10,
@@ -354,6 +372,24 @@ describe('weekly meeting deck (.pptx)', () => {
     it('marketing deck without a content plan says where to plan instead of inventing numbers', async () => {
         const { text } = await render(input({ kind: 'marketing', contentPlan: undefined }));
         expect(text.join(' ')).toContain('Контент календарь хэсэгт долоо хоногийн контентоо төлөвлөж');
+    });
+
+    it('sales deck: a 22-floor block fits one floor-map slide with three columns (reserved folded into for sale, barter labelled)', async () => {
+        const units: ErpProduct[] = [];
+        for (let floor = 2; floor <= 23; floor++) for (const model of ['E3', 'E4']) units.push({
+            key: `u${floor}${model}`, code: `Б1-${floor}${model}`, block: 'Б1', floor, model, kind: 'residential', rooms: 3, area: 80.91, price: null,
+            status: floor === 12 && model === 'E3' ? 'sold' : floor === 5 ? 'reserved' : floor === 15 && model === 'E4' ? 'ordered' : 'available',
+            statusLabel: '', barter: floor === 15 && model === 'E4', manager: floor === 12 && model === 'E3' ? 'Ариунбилэг.Нямхүү' : null,
+        });
+        const report = buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [], monthTarget: null,
+            inventory: { info: { date: '2026-10-22', source: 'HUB гэрээ + байрны бүртгэл', kind: 'contracts' }, rows: units } });
+        expect(report.inventory!.floorMaps[0].totals).toEqual({ sold: 1, available: 42, barter: 1 });
+        const { text } = await render(input({ weeklySales: report }));
+        const maps = text.filter(slideText => slideText.includes('Орон сууцны үлдэгдэл'));
+        expect(maps).toHaveLength(1);
+        expect(maps[0]).not.toContain('(1/2)');
+        expect(maps[0]).not.toContain('Бусад');
+        for (const needle of ['23 давхар', '2 давхар', '80.91 м² Ариунбилэг', '80.91 м² Бартер', 'НИЙТ', 'Худалдаанд (захиалсан, хадгалсан орно)']) expect(maps[0]).toContain(needle);
     });
 
     it('names each file after the project, part and meeting date without path characters', () => {

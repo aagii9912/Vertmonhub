@@ -29,7 +29,7 @@ export interface ToolDefinition {
  
 const readDefinitions: ToolDefinition[] = [
     {
-        name: 'get_viewing_options', description: 'Уулзалтад сонгож болох бодит нөөцийн блок, загвар, талбай, давхар, баталсан төлбөрийн нөхцөлийг авна. Худалдан авагчийн мэдээлэлгүй. Тоот хэрэгтэй бол загвар ба давхраар шүүнэ.',
+        name: 'get_viewing_options', description: 'Уулзалтад сонгож болох бодит нөөцийн блок, загвар, талбай, давхар, баталсан төлбөрийн нөхцөл, «Сэжим (хаанаас ирсэн)»-ийн сонголтуудыг (referral_sources) авна. Худалдан авагчийн мэдээлэлгүй. Тоот хэрэгтэй бол загвар ба давхраар шүүнэ.',
         parameters: { type: SchemaType.OBJECT, properties: { project_id: { type: SchemaType.STRING }, block: { type: SchemaType.STRING }, model: { type: SchemaType.STRING }, floor: { type: SchemaType.INTEGER } } },
     },
     {
@@ -76,7 +76,7 @@ const readDefinitions: ToolDefinition[] = [
     },
     {
         name: 'list_properties',
-        description: 'Байрны бодит нөөц ба зарын сангаас хайх. "2 өрөө байр байна уу?" гэхэд rooms=2-оор шууд хайна. Анхдагч төлөв available, нэгжийн ангилал residential. Нөөцийг төслийн хамгийн сүүлийн ERP бүтээгдэхүүний экспортоос (source=erp_products, as_of = экспортын огноо), экспорт байхгүй эсвэл phase-ээр шүүх үед байрны бүртгэлээс (source=property_units, as_of = сүүлд шинэчилсэн огноо) уншина. Жагсаалт хязгаартай, нийт тоо биш. Байрны бүртгэлд үнэ байхгүй, ERP-ийн үнэ зөвхөн эрхтэй хэрэглэгчид харагдана: үнийн шалгууртай үед unverifiedUnits нь төсөвт багтсан гэсэн үг биш, үнийг тодруулна. Дүүргийг зөвхөн бүртгэлтэй төслийн байршлаар батална; байршилгүй нэгж дүүргийн хайлтад орохгүй. Mandala Garden, Mandala Tower, Elysium гэх мэт.',
+        description: 'Байрны бодит нөөц ба зарын сангаас хайх. "2 өрөө байр байна уу?" гэхэд rooms=2-оор шууд хайна. Анхдагч төлөв available, нэгжийн ангилал residential. Нөөцийг Лхагвын тайлантай нэг дүрмээр уншина: HUB гэрээний жагсаалтын импорт шинэ бол байрны бүртгэл дээр амьд гэрээг давхарласан нөөцөөс (source=hub_contracts, as_of = HUB файлын огноо, гэрээтэй байр = зарагдсан, ERP үнэ байвал price_as_of), эс бөгөөс төслийн хамгийн сүүлийн ERP бүтээгдэхүүний экспортоос (source=erp_products, as_of = экспортын огноо), аль нь ч байхгүй эсвэл phase-ээр шүүх үед байрны бүртгэлээс (source=property_units, as_of = сүүлд шинэчилсэн огноо). Жагсаалт хязгаартай, нийт тоо биш. Байрны бүртгэлд үнэ байхгүй, ERP-ийн үнэ зөвхөн эрхтэй хэрэглэгчид харагдана: үнийн шалгууртай үед unverifiedUnits нь төсөвт багтсан гэсэн үг биш, үнийг тодруулна. Дүүргийг зөвхөн бүртгэлтэй төслийн байршлаар батална; байршилгүй нэгж дүүргийн хайлтад орохгүй. Mandala Garden, Mandala Tower, Elysium гэх мэт.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -601,14 +601,16 @@ const writeDefinitions: ToolDefinition[] = [
                 interests: viewingInterestsParameter,
                 interest_level: { type: SchemaType.INTEGER, minimum: 1, maximum: 5 },
                 feedback: { type: SchemaType.STRING, description: 'Харилцагчийн санал' },
-                notes: { type: SchemaType.STRING, description: 'Сэжим / тэмдэглэл' }
+                notes: { type: SchemaType.STRING, description: 'Тэмдэглэл (чөлөөт текст)' },
+                referral_source: { type: SchemaType.STRING, description: 'Сэжим (хаанаас ирсэн): get_viewing_options-ийн referral_sources-оос яг нэр. Шинэ харилцагчийн уулзалтад (жагсаалттай төсөлд) заавал — хэрэглэгчээс асууна, бүү таамагла' }
             }
         }
     },
     {
-        name: 'update_viewing', description: 'Товлосон эсвэл болсон уулзалтын сонирхсон байр, төлбөрийн нөхцөл, сэжим, санал, төрлийг засна. Өмнөх ба шинэ мэдээлэл, тооцооллыг баталгаажуулна. Гэрээ, мөнгөн орлого үүсгэхгүй.',
+        name: 'update_viewing', description: 'Товлосон эсвэл болсон уулзалтын сонирхсон байр, төлбөрийн нөхцөл, «Сэжим (хаанаас ирсэн)», тэмдэглэл, санал, төрлийг засна. Өмнөх ба шинэ мэдээлэл, тооцооллыг баталгаажуулна. Гэрээ, мөнгөн орлого үүсгэхгүй.',
         parameters: { type: SchemaType.OBJECT, properties: { viewing_id: { type: SchemaType.STRING }, interests: viewingInterestsParameter,
-            agent_notes: { type: [SchemaType.STRING, 'null'], description: 'Сэжим / тэмдэглэл' },
+            agent_notes: { type: [SchemaType.STRING, 'null'], description: 'Тэмдэглэл (чөлөөт текст)' },
+            referral_source: { type: [SchemaType.STRING, 'null'], description: 'Сэжим (хаанаас ирсэн): get_viewing_options-ийн referral_sources-оос яг нэр; null = цэвэрлэх' },
             customer_feedback: { type: [SchemaType.STRING, 'null'] },
             meeting_type: { type: SchemaType.STRING, enum: ['new_customer', 'repeat_customer', 'existing_buyer'] },
         }, required: ['viewing_id'], additionalProperties: false },

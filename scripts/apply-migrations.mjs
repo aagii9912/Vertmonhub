@@ -29,6 +29,35 @@ const [from, to] = args.filter((arg) => /^\d{14}$/.test(arg));
 
 // Энэ хувилбаруудын оруулсны дараах шалгалт (объект бий эсэх). Бусад хувилбарт шалгалтгүй.
 const VERIFY = {
+    '20261023152000': `SELECT EXISTS (SELECT 1 FROM pg_class WHERE oid = to_regclass('public.report_branding') AND relrowsecurity)
+        AND NOT has_table_privilege('authenticated', 'public.report_branding', 'SELECT,INSERT,UPDATE,DELETE')
+        AND NOT has_table_privilege('anon', 'public.report_branding', 'SELECT,INSERT,UPDATE,DELETE')
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'weekly_report_slides_image_paths_max'
+            AND pg_get_constraintdef(oid) ILIKE '%<= 9%')
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'weekly_report_slides_section_allowed'
+            AND pg_get_constraintdef(oid) ILIKE '%construction%') AS ok`,
+    '20261023151000': `SELECT EXISTS (SELECT 1 FROM pg_class WHERE oid = to_regclass('public.sales_referral_sources') AND relrowsecurity)
+        AND NOT has_table_privilege('authenticated', 'public.sales_referral_sources', 'SELECT,INSERT,UPDATE,DELETE')
+        AND NOT has_table_privilege('anon', 'public.sales_referral_sources', 'SELECT,INSERT,UPDATE,DELETE')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+            AND table_name = 'property_viewings' AND column_name = 'referral_source_id')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+            AND table_name = 'property_contracts' AND column_name = 'referral_source_id')
+        AND has_function_privilege('service_role', 'public.create_scoped_sales_viewing(uuid,uuid,uuid,text,uuid[],jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.create_scoped_sales_viewing(uuid,uuid,uuid,text,uuid[],jsonb)', 'EXECUTE')
+        AND has_function_privilege('service_role', 'public.record_daily_report_meeting(uuid,uuid,text,uuid[],text,date,jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.record_daily_report_meeting(uuid,uuid,text,uuid[],text,date,jsonb)', 'EXECUTE') AS ok`,
+    '20261023150000': `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+            AND table_name = 'team_sales_targets' AND column_name = 'stretch_target_amount')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+            AND table_name = 'team_sales_targets' AND column_name = 'stretch_cashflow_target_amount')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+            AND table_name = 'team_sales_targets' AND column_name = 'activity_targets')
+        AND has_function_privilege('service_role', 'public.rename_sales_manager(uuid,text,text,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.rename_sales_manager(uuid,text,text,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.rename_sales_manager(uuid,text,text,uuid)', 'EXECUTE')
+        AND has_function_privilege('service_role', 'public.save_team_monthly_sales(uuid,integer,jsonb,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.save_team_monthly_sales(uuid,integer,jsonb,uuid)', 'EXECUTE') AS ok`,
     '20261022160000': `SELECT NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
         AND table_name = 'team_sales_targets' AND column_name IN ('target_count', 'manual_contract_actual_count'))
         AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'

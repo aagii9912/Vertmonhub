@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import {
-    parseReportMediaPath, REPORT_MEDIA_BUCKET, WEEKLY_SLIDE_COLUMNS, WEEKLY_SLIDE_LIMITS, WEEKLY_SLIDE_PART_SECTIONS,
-    type WeeklySlide, type WeeklySlideCreate, type WeeklySlidePart, type WeeklySlidePatch,
+    isTextOnlySlide, parseReportMediaPath, REPORT_MEDIA_BUCKET, WEEKLY_SLIDE_COLUMNS, WEEKLY_SLIDE_LIMITS, WEEKLY_SLIDE_PART_SECTIONS,
+    type WeeklySlide, type WeeklySlideCopy, type WeeklySlideCreate, type WeeklySlidePart, type WeeklySlidePatch, type WeeklySlideSection,
 } from './weekly-slides';
 
 /**
@@ -26,6 +26,10 @@ export async function slideActor(db: SupabaseClient, userId: string): Promise<Sl
 export function slideDatabaseError(error: { code?: string; message: string }) {
     if (['42P01', 'PGRST205'].includes(error.code || '')) {
         return NextResponse.json({ error: 'Хурлын слайд хадгалах хэсэг хараахан идэвхжээгүй байна. Админд хандаж шинэчлэлийг суулгана уу.' }, { status: 503 });
+    }
+    // Zod урьдчилан шалгадаг тул CHECK зөрчил = DB хуучин (20261023152000: 9 зураг, «Барилгын явц» ороогүй).
+    if (error.code === '23514') {
+        return NextResponse.json({ error: 'Слайдын шинэчлэл (9 хүртэл зураг, «Барилгын явц») өгөгдлийн санд хараахан суугаагүй байна. Админд хандана уу.' }, { status: 503 });
     }
     return safeErrorResponse(error, 'Слайдыг хадгалах эсвэл уншихад алдаа гарлаа.');
 }
@@ -112,6 +116,50 @@ export async function reorderWeeklySlides(db: SupabaseClient, shopId: string, me
         if (error) return { error };
     }
     return { ok: true };
+}
+
+/**
+ * Өмнөх хурлын зураггүй слайдууд: энэ хурлаас өмнөх, тухайн хэсэг × сэдэвт зураггүй слайдтай хамгийн сүүлийн хурал
+ * (долоо хоног алгассан ч). Зурагтай слайд хуулагдахгүй — файл нь оруулсан хүнийх (`foreignPath`).
+ */
+export async function previousTextSlides(db: SupabaseClient, shopId: string, meetingDate: string, part: WeeklySlidePart, section: WeeklySlideSection): Promise<{ from: string | null; slides: WeeklySlide[] } | { error: PostgrestError }> {
+    const { data, error } = await db.from('weekly_report_slides').select(WEEKLY_SLIDE_COLUMNS)
+        .eq('shop_id', shopId).eq('part', part).eq('section', section).eq('image_paths', '{}').lt('meeting_date', meetingDate)
+        .order('meeting_date', { ascending: false }).order('position').order('created_at').limit(WEEKLY_SLIDE_LIMITS.slides);
+    if (error) return { error };
+    const slides = ((data ?? []) as WeeklySlide[]).filter(isTextOnlySlide);
+    const from = slides[0]?.meeting_date ?? null;
+    return { from, slides: slides.filter(slide => slide.meeting_date === from) };
+}
+
+const slideKey = (slide: Pick<WeeklySlide, 'section' | 'title' | 'note'>) => `${slide.section}\u0000${slide.title}\u0000${slide.note}`;
+
+/**
+ * «Өмнөх хурлаас хуулах»: өмнөх хурлын тухайн сэдвийн зураггүй слайдуудыг энэ хурлын хэсгийн төгсгөлд хуулна
+ * (зохиогч = хуулсан хүн). Энэ хуралд ижил сэдэв, гарчиг, тайлбартай слайд байвал алгасна — дахин дарвал давхардахгүй.
+ */
+export async function copyPreviousSlides(db: SupabaseClient, shopId: string, actor: SlideActor, input: WeeklySlideCopy): Promise<Result<{ copied: WeeklySlide[]; skipped: number; from: string | null }>> {
+    const previous = await previousTextSlides(db, shopId, input.meetingDate, input.part, input.section);
+    if ('error' in previous) return previous;
+    if (!previous.slides.length) return { copied: [], skipped: 0, from: null };
+    const current = await db.from('weekly_report_slides').select('section,title,note,image_paths,position')
+        .eq('shop_id', shopId).eq('meeting_date', input.meetingDate).eq('part', input.part)
+        .order('position', { ascending: false }).limit(WEEKLY_SLIDE_LIMITS.slides * 2);
+    if (current.error) return { error: current.error };
+    const rows = (current.data ?? []) as Array<Pick<WeeklySlide, 'section' | 'title' | 'note' | 'image_paths' | 'position'>>;
+    const existing = new Set(rows.filter(isTextOnlySlide).map(slideKey));
+    const fresh = previous.slides.filter(slide => !existing.has(slideKey(slide)));
+    const skipped = previous.slides.length - fresh.length;
+    if (!fresh.length) return { copied: [], skipped, from: previous.from };
+    if (rows.length + fresh.length > WEEKLY_SLIDE_LIMITS.slides) return { invalid: `Нэг хэсэгт ${WEEKLY_SLIDE_LIMITS.slides} хүртэл слайд нэмнэ.` };
+    const start = rows.length ? (rows[0].position as number) + 1 : 0;
+    const { data, error } = await db.from('weekly_report_slides').insert(fresh.map((slide, index) => ({
+        shop_id: shopId, meeting_date: input.meetingDate, part: input.part, section: slide.section,
+        title: slide.title, note: slide.note, image_paths: [], position: Math.min(10_000, start + index),
+        author_id: actor.userId, author_name: actor.name.slice(0, 120),
+    }))).select(WEEKLY_SLIDE_COLUMNS);
+    if (error) return { error };
+    return { copied: ((data ?? []) as WeeklySlide[]).sort((a, b) => a.position - b.position), skipped, from: previous.from };
 }
 
 /**

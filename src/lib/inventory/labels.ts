@@ -56,3 +56,9 @@ export const PROPERTY_STATUSES = Object.keys(PROPERTY_STATUS_META) as PropertySt
 
 export const propertyStatusLabel = (value: string | null | undefined) => lookup(PROPERTY_STATUS_META, value)?.label || value || '—';
 export const propertyStatusTone = (value: string | null | undefined): Tone => lookup(PROPERTY_STATUS_META, value)?.tone || 'neutral';
+
+/** Байрны тоот: `unit_number`, эс бөгөөс код. Elysium-ийн ERP-д тоотгүй орон сууцны `unit_number` нь '0' — тэр үед код (Б1-53). */
+export function unitDisplayNumber(unit: { unit_number?: string | null; code?: string | null }): string | null {
+    const number = unit.unit_number?.trim();
+    return (number && number !== '0' ? number : null) || unit.code || null;
+}

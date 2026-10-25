@@ -19,6 +19,8 @@ const PatchSchema = z.object({
     property_id: z.guid().nullable().optional(),
     meeting_type: z.enum(['new_customer', 'repeat_customer', 'existing_buyer']).optional(),
     interests: ViewingInterestsSchema.optional(),
+    /** «Сэжим (хаанаас ирсэн)» — төслийн жагсаалтын id; null = цэвэрлэх (засварт заавал биш). */
+    referral_source_id: z.guid().nullable().optional(),
 });
 
 /**

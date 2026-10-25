@@ -28,7 +28,11 @@ describe('daily report meeting input', () => {
     it('parses each action strictly with Mongolian errors', () => {
         expect(DailyMeetingRequestSchema.parse({ action: 'record', date: '2026-10-19', manager: ' Сараа ', customer_phone: '99112233', notes: '  ' }))
             .toEqual({ action: 'record', date: '2026-10-19', manager: 'Сараа', meeting_type: 'new_customer', customer_phone: '99112233',
-                anonymous: false, notes: null, feedback: null, interest_level: null });
+                anonymous: false, notes: null, feedback: null, interest_level: null, referral_source_id: null });
+        // «Сэжим (хаанаас ирсэн)»: GUID эсвэл хоосон; нэр биш.
+        expect(DailyMeetingRequestSchema.parse({ action: 'record', date: '2026-10-19', manager: 'Сараа', customer_phone: '99112233',
+            referral_source_id: '00000000-0000-4000-8000-0000000000f1' })).toMatchObject({ referral_source_id: '00000000-0000-4000-8000-0000000000f1' });
+        expect(DailyMeetingRequestSchema.safeParse({ action: 'record', date: '2026-10-19', manager: 'Сараа', customer_phone: '99112233', referral_source_id: 'Facebook' }).success).toBe(false);
         const extra = DailyMeetingRequestSchema.safeParse({ action: 'reassign', date: '2026-10-19', viewing_id: '00000000-0000-4000-8000-000000000001', manager: 'Сараа', status: 'completed' });
         expect(extra.success).toBe(false);
         if (!extra.success) expect(dailyMeetingInputError(extra.error)).toBe('Уулзалтын мэдээллийг шалгана уу');

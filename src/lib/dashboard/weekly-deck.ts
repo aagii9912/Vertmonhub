@@ -1,6 +1,7 @@
 import type PptxGenJS from 'pptxgenjs';
 import type { OperationsReport } from './operations-report';
-import type { WeeklySalesReport } from './weekly-sales';
+import { floorTone, type FloorCell, type FloorTone, type WeeklySalesReport } from './weekly-sales';
+import { arialWidth } from './arial-metrics';
 import type { WeeklyContentPlan, WeeklyUpdate } from './weekly-review';
 import { formatReviewChange, updatePart } from './weekly-review';
 import { knownPeriodAmount, periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from './contract-dates';
@@ -31,7 +32,9 @@ import { ubDateStr } from '@/lib/utils/date';
 export interface DeckImage { data: string; width: number; height: number }
 
 export type WeeklyDeckKind = 'sales' | 'marketing';
-export const WEEKLY_DECK_LABEL: Record<WeeklyDeckKind, string> = { sales: 'Борлуулалт', marketing: 'Маркетинг' };
+/** Татах файлын төрөл: борлуулалт, маркетинг ба борлуулалтын албаны загвар (`team-deck.ts`, W2). */
+export type WeeklyDeckFileKind = WeeklyDeckKind | 'sales-team';
+export const WEEKLY_DECK_LABEL: Record<WeeklyDeckFileKind, string> = { sales: 'Борлуулалт', marketing: 'Маркетинг', 'sales-team': 'Борлуулалт (албаны загвар)' };
 
 export interface WeeklyDeckInput {
     kind: WeeklyDeckKind;
@@ -61,83 +64,88 @@ export interface WeeklyDeckInput {
     updates?: WeeklyUpdate[];
 }
 
-const W = 13.333;
-const H = 7.5;
-const M = 0.6;
-const CW = W - M * 2;
-const FONT = 'Arial';
-const C = {
+/*
+ * Доорх хэмжээ, өнгө, формат, слайдын туслахыг багийн загварын илтгэл (`team-deck.ts`) хуваалцана —
+ * хуулбарлахгүй, нэг загвар (Arial, Hub-ийн өнгө, LAYOUT_WIDE 13.333×7.5).
+ */
+export const W = 13.333;
+export const H = 7.5;
+export const M = 0.6;
+export const CW = W - M * 2;
+export const FONT = 'Arial';
+export const C = {
     ink: '12151C', ink2: '3A404C', muted: '5C6474', line: 'E3E6EB', surface: 'F0F2F5', white: 'FFFFFF',
     brand: '2D5FDD', brandSoft: 'EBF0FD', navy: '0E1A3A', navy2: 'A9B8E8',
     success: '13784A', successSoft: 'E5F5EC', pending: '9A5A00', pendingSoft: 'FDF2DF',
     danger: 'C0362C', dangerSoft: 'FCEBE9', neutralSoft: 'E6E9EE', gold: 'A9823F',
 } as const;
-const CONTENT = 'VH_CONTENT';
-const COVER = 'VH_COVER';
-const TOP = 1.7;
-const BOTTOM = 6.85;
+export const CONTENT = 'VH_CONTENT';
+export const COVER = 'VH_COVER';
+export const TOP = 1.7;
+export const BOTTOM = 6.85;
 
-const dot = (date: string) => date.replaceAll('-', '.');
+export const dot = (date: string) => date.replaceAll('-', '.');
 const span = (range: { from: string; to: string }) => `${dot(range.from)} – ${dot(range.to)}`;
-const count = (value: number | null | undefined) => value === null || value === undefined ? '—' : value.toLocaleString('en-US');
+export const count = (value: number | null | undefined) => value === null || value === undefined ? '—' : value.toLocaleString('en-US');
 const pct = (value: number | null | undefined) => value === null || value === undefined ? '—' : `${value}%`;
-const area = (value: number | null) => value === null ? '—' : value.toLocaleString('en-US', { maximumFractionDigits: 2 });
-const money = (value: number | null | undefined) => value === null || value === undefined ? '—' : formatMNT(value);
+export const area = (value: number | null) => value === null ? '—' : value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+export const money = (value: number | null | undefined) => value === null || value === undefined ? '—' : formatMNT(value);
 const short = (value: number | null | undefined) => value === null || value === undefined ? '—' : formatMNTShort(value);
-const clip = (text: string, max: number) => text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
-const managerShort = (name: string | null) => name?.split('.')[0]?.trim() || '—';
+export const clip = (text: string, max: number) => text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+export const managerShort = (name: string | null) => name?.split('.')[0]?.trim() || '—';
 
 type Slide = PptxGenJS.Slide;
 type Cell = PptxGenJS.TableCell;
 
-function defineLayouts(pres: PptxGenJS, projectName: string) {
+/** Нүүр (хар хөх) ба агуулгын мастер; агуулгын слайдын хөлд `footer` бичвэр ба слайдын дугаар. */
+export function defineLayouts(pres: PptxGenJS, footer: string) {
     pres.defineSlideMaster({ title: COVER, background: { color: C.navy } });
     pres.defineSlideMaster({
         title: CONTENT,
         background: { color: C.white },
         objects: [
-            { text: { text: `VERTMON HUB · ${projectName}`, options: { x: M, y: 7.02, w: 8, h: 0.3, fontFace: FONT, fontSize: 9, color: C.muted, margin: 0 } } },
+            { text: { text: footer, options: { x: M, y: 7.02, w: 8, h: 0.3, fontFace: FONT, fontSize: 9, color: C.muted, margin: 0 } } },
         ],
         slideNumber: { x: W - M - 0.6, y: 7.02, w: 0.6, h: 0.3, fontFace: FONT, fontSize: 9, color: C.muted, align: 'right' },
     });
 }
 
-function header(slide: Slide, kicker: string, title: string, subtitle?: string) {
+export function header(slide: Slide, kicker: string, title: string, subtitle?: string) {
     slide.addText(kicker.toUpperCase(), { x: M, y: 0.38, w: CW, h: 0.28, fontFace: FONT, fontSize: 11, bold: true, color: C.brand, charSpacing: 1, margin: 0, isTextBox: true });
     slide.addText(title, { x: M, y: 0.68, w: CW, h: 0.6, fontFace: FONT, fontSize: 26, bold: true, color: C.ink, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
     if (subtitle) slide.addText(subtitle, { x: M, y: 1.28, w: CW, h: 0.3, fontFace: FONT, fontSize: 12, color: C.muted, margin: 0, isTextBox: true });
 }
 
-function content(pres: PptxGenJS, kicker: string, title: string, subtitle?: string): Slide {
+export function content(pres: PptxGenJS, kicker: string, title: string, subtitle?: string): Slide {
     const slide = pres.addSlide({ masterName: CONTENT });
     header(slide, kicker, title, subtitle);
     return slide;
 }
 
-function note(slide: Slide, lines: (string | false | null | undefined)[]) {
+export function note(slide: Slide, lines: (string | false | null | undefined)[]) {
     const text = lines.filter(Boolean).join('\n');
     if (text) slide.addNotes(text);
 }
 
 /** Тоон карт: шошго, том тоо, доор тайлбар. */
-function stat(slide: Slide, x: number, y: number, w: number, h: number, label: string, value: string, helper?: string, tone?: 'danger' | 'gold') {
+export function stat(slide: Slide, x: number, y: number, w: number, h: number, label: string, value: string, helper?: string, tone?: 'danger' | 'gold') {
     slide.addShape('roundRect', { x, y, w, h, fill: { color: C.surface }, line: { color: C.surface }, rectRadius: 0.08 });
     slide.addText(label, { x: x + 0.22, y: y + 0.16, w: w - 0.44, h: 0.3, fontFace: FONT, fontSize: 11, color: C.muted, margin: 0, isTextBox: true });
     slide.addText(value, { x: x + 0.22, y: y + 0.46, w: w - 0.44, h: 0.62, fontFace: FONT, fontSize: value.length > 14 ? 20 : 26, bold: true, color: tone === 'danger' ? C.danger : tone === 'gold' ? C.gold : C.ink, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
     if (helper) slide.addText(helper, { x: x + 0.22, y: y + 1.08, w: w - 0.44, h: Math.max(0.3, h - 1.2), fontFace: FONT, fontSize: 10, color: C.muted, margin: 0, valign: 'top', isTextBox: true });
 }
 
-function statRow(slide: Slide, y: number, items: { label: string; value: string; helper?: string; tone?: 'danger' | 'gold' }[], h = 1.55) {
+export function statRow(slide: Slide, y: number, items: { label: string; value: string; helper?: string; tone?: 'danger' | 'gold' }[], h = 1.55) {
     const gap = 0.25;
     const w = (CW - gap * (items.length - 1)) / items.length;
     items.forEach((item, index) => stat(slide, M + index * (w + gap), y, w, h, item.label, item.value, item.helper, item.tone));
 }
 
-const headCell = (text: string, align: 'left' | 'right' | 'center' = 'left'): Cell => ({ text, options: { bold: true, color: C.muted, fill: { color: C.surface }, align } });
-const bodyCell = (text: string, align: 'left' | 'right' | 'center' = 'left', extra: PptxGenJS.TableCellProps = {}): Cell => ({ text, options: { color: C.ink, align, ...extra } });
+export const headCell = (text: string, align: 'left' | 'right' | 'center' = 'left'): Cell => ({ text, options: { bold: true, color: C.muted, fill: { color: C.surface }, align } });
+export const bodyCell = (text: string, align: 'left' | 'right' | 'center' = 'left', extra: PptxGenJS.TableCellProps = {}): Cell => ({ text, options: { color: C.ink, align, ...extra } });
 
 /** Хүснэгтийг шаардлагатай бол хэд хэдэн слайдад хуваана (гарчигт «1/2»). */
-function tableSlides(pres: PptxGenJS, opts: {
+export function tableSlides(pres: PptxGenJS, opts: {
     kicker: string; title: string; subtitle?: string; head: Cell[]; rows: Cell[][]; footer?: Cell[];
     colW: number[]; perSlide: number; fontSize?: number; notes?: string[];
 }) {
@@ -240,7 +248,10 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
         : value.source === 'manual' ? 'Удирдлагын баталгаажуулсан' : value.source === 'mixed' ? 'Холимог: гар + CRM' : 'CRM-ийн гэрээ';
     const resolvedPct = (value: PlanResolvedValue, target: number | null) => value.value === null || !target ? '—'
         : `${Math.round(value.value / target * 100)}%${value.lowerBound ? '+' : ''}`;
-    const cashActual = month?.manual_cashflow_actual_amount ?? null;
+    // Орсон мөнгө M1 дүрмээр (блок = гараар оруулсан нүд; оруулаагүй блоктой бол «+»). Хуучин хариунд resolvedCash алга бол хадгалсан нийт.
+    const cashResolved: PlanResolvedValue | null = month ? month.resolvedCash ?? (month.manual_cashflow_actual_amount === null ? null
+        : { value: month.manual_cashflow_actual_amount, lowerBound: false, source: 'manual' }) : null;
+    const cashActual = cashResolved?.value ?? null;
     // Төлөвлөгөөнд хамаарах огноогүй гэрээ л төлөвлөгөөтэй харьцуулсан дүнг бүрэн бус болгоно (Агуулах г.м. биш).
     const undated = weekly?.sources.undatedPlanContracts ?? 0;
     // Удирдлагын баталгаажуулсан дүн байхгүй бол гэрээний бүртгэл — зөвхөн төлөвлөгөөнд хамаарах (Б1/Б2/Зогсоол) гэрээ;
@@ -276,9 +287,11 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const cashVisible = !!input.monthSales?.monthlyPerformance?.cashflowVisible;
     statRow(slide, TOP + rowStep * 2, cashVisible ? [
         { label: 'Орсон мөнгөний төлөвлөгөө', value: short(month?.cashflow_target_amount ?? null), tone: 'gold' },
-        { label: 'Орсон мөнгөний гүйцэтгэл', value: short(cashActual ?? weekly?.cash?.delta ?? null), helper: cashActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly?.cash ? `ERP зөрүү ${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : undefined },
+        { label: 'Орсон мөнгөний гүйцэтгэл', value: cashActual !== null ? `${short(cashActual)}${cashResolved?.lowerBound ? '+' : ''}` : short(weekly?.cash?.delta ?? null),
+            helper: cashActual !== null ? (cashResolved?.lowerBound ? 'Удирдлагын оруулсан блокууд — бусад блок оруулаагүй' : 'Удирдлагын баталгаажуулсан')
+                : weekly?.cash ? `ERP зөрүү ${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : undefined },
         // ERP-ийн зөрүү хоёр snapshot-ын хоорондох (ихэвчлэн долоо хоног) мөнгө — сарын төлөвлөгөөтэй харьцуулахгүй.
-        { label: 'Гүйцэтгэлийн хувь', value: ratio(cashActual, month?.cashflow_target_amount ?? null) },
+        { label: 'Гүйцэтгэлийн хувь', value: `${ratio(cashActual, month?.cashflow_target_amount ?? null)}${cashResolved?.lowerBound && cashActual !== null && month?.cashflow_target_amount ? '+' : ''}` },
     ] : [
         { label: 'Мөнгөн орлого (ERP)', value: short(weekly?.cash?.delta ?? null), helper: weekly?.cash ? `${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : 'Хоёр долоо хоногийн ERP экспорт хэрэгтэй' },
         { label: 'Төлбөрийн хоцролт', value: short(weekly?.receivables?.overdue ?? null), helper: weekly?.receivables ? `${weekly.receivables.overdueContracts} гэрээ · үлдэгдэл ${short(weekly.receivables.balance)}` : 'ERP гэрээний экспорт хэрэгтэй', tone: weekly?.receivables?.overdue ? 'danger' : undefined },
@@ -295,7 +308,7 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
 }
 
 /** Хүснэгтийн хөлийн нийлбэр: бүгд тодорхойгүй бол «—», зарим нь бол мэдэгдэхийн нийлбэр «+» — хоосныг 0 гэж нэмэхгүй. */
-function footerSum(values: Array<number | null>): string {
+export function footerSum(values: Array<number | null>): string {
     const known = values.filter((value): value is number => value !== null);
     if (!known.length) return values.length ? '—' : money(0);
     const total = money(known.reduce((sum, value) => sum + value, 0));
@@ -375,14 +388,29 @@ function inventorySlide(pres: PptxGenJS, report: WeeklySalesReport) {
     });
 }
 
-type FloorMap = NonNullable<WeeklySalesReport['inventory']>['floorMaps'][number];
-type FloorCell = FloorMap['floors'][number]['cells'][string][number];
-const floorFill = (cell: FloorCell) => cell.barter && cell.status !== 'available' ? C.neutralSoft
-    : cell.status === 'sold' || cell.status === 'handed_over' ? C.successSoft
-        : cell.status === 'available' ? C.white : C.pendingSoft;
+const FLOOR_FILL: Record<FloorTone, string> = { sold: C.successSoft, available: C.white, barter: C.neutralSoft };
+/** PowerPoint-ийн мөр таслалтын зөрүүнд үлдээх нөөц (нүдний ашиглах өргөний хувь). */
+const FIT_SAFETY = 0.97;
+/**
+ * Нүдний бичвэр: талбай (м²), гэрээтэйд менежерийн нэр, гэрээгүй бартерт «Бартер». Нэг мөрөнд багтахгүй бол нэрийг
+ * «…»-ээр товчилно — мөр хоёр болбол хүснэгт хөл, слайдын дугаар руу (22 давхар нэг слайдад) урсана.
+ */
+function floorCellText(cell: FloorCell, maxWidth: number, fontSize: number): { text: string; clipped: boolean } {
+    const tone = floorTone(cell);
+    const label = tone === 'sold' && cell.manager ? managerShort(cell.manager) : tone === 'barter' ? (cell.manager ? managerShort(cell.manager) : 'Бартер') : '';
+    const base = cell.area !== null ? `${area(cell.area)} м²` : cell.code;
+    if (!label) return { text: base, clipped: false };
+    const fits = (text: string) => arialWidth(text, fontSize, tone === 'available') <= maxWidth * FIT_SAFETY;
+    if (fits(`${base} ${label}`)) return { text: `${base} ${label}`, clipped: false };
+    for (let length = label.length - 1; length >= 1; length--) {
+        const text = `${base} ${label.slice(0, length).trimEnd()}…`;
+        if (fits(text)) return { text, clipped: true };
+    }
+    return { text: base, clipped: true };
+}
 
 function legend(slide: Slide, y: number) {
-    const items: [string, string][] = [[C.successSoft, 'Гэрээтэй (зарагдсан, хүлээлгэсэн)'], [C.white, 'Худалдаанд'], [C.pendingSoft, 'Бусад (захиалсан, хадгалсан)'], [C.neutralSoft, 'Бартер']];
+    const items: [string, string][] = [[C.successSoft, 'Гэрээтэй (зарагдсан, хүлээлгэсэн)'], [C.white, 'Худалдаанд (захиалсан, хадгалсан орно)'], [C.neutralSoft, 'Бартер']];
     let x = M;
     for (const [color, label] of items) {
         slide.addShape('rect', { x, y: y + 0.06, w: 0.18, h: 0.18, fill: { color }, line: { color: C.line, width: 0.75 } });
@@ -391,42 +419,65 @@ function legend(slide: Slide, y: number) {
     }
 }
 
-/** Давхрын зураглал: давхар × загвар, худалдаанд байгаа байр цагаан, зарагдсанд менежерийн нэр. */
-function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport) {
-    // Мөр ≥ 0.22" (8pt) байхаар хуваана: 21-ээс олон давхартай блок 2+ слайдад тэнцүү хуваагдана.
-    const maxFloors = Math.floor((BOTTOM - TOP) / 0.22) - 2;
+/**
+ * Давхрын зураглал: давхар × загвар, худалдаанд байгаа байр цагаан, гэрээтэйд менежерийн нэр.
+ * `options` (багийн загварын илтгэл): толгойн дээд шошго, гарчиг (блокоор; хуваагдвал «(1/2)» нэмнэ), нэмэлт тэмдэглэл.
+ */
+export function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport, options: { kicker?: string; title?: (block: string) => string; notes?: string[] } = {}) {
+    // Мөр ≥ 0.2" (8pt) байхаар хуваана: 23 хүртэл мөртэй блок нэг слайдад багтана, түүнээс олон бол тэнцүү хуваагдана.
+    // Нэг давхар × загварт хэд хэдэн байр бол тэр давхар байрны тоогоор мөр эзэлнэ (өндрийг урьдчилан тооцно).
+    const maxLines = Math.floor((BOTTOM - TOP) / 0.2) - 2;
     for (const map of report.inventory?.floorMaps ?? []) {
-        const chunks = Math.max(1, Math.ceil(map.floors.length / maxFloors));
-        const chunkSize = Math.ceil(map.floors.length / chunks);
-        for (let chunk = 0; chunk < chunks; chunk++) {
-            const floors = map.floors.slice(chunk * chunkSize, (chunk + 1) * chunkSize);
-            const slide = content(pres, 'Үлдэгдэл', `Орон сууцны үлдэгдэл — ${map.block} блок${chunks > 1 ? ` (${chunk + 1}/${chunks})` : ''}`);
+        const lineCount = (row: (typeof map.floors)[number]) => Math.max(1, ...map.models.map(model => row.cells[model]?.length ?? 0));
+        const totalLines = map.floors.reduce((sum, row) => sum + lineCount(row), 0);
+        const target = Math.ceil(totalLines / Math.max(1, Math.ceil(totalLines / maxLines)));
+        const chunks: Array<typeof map.floors> = [];
+        let used = 0;
+        for (const row of map.floors) {
+            if (!chunks.length || (used + lineCount(row) > target && chunks[chunks.length - 1].length)) { chunks.push([]); used = 0; }
+            chunks[chunks.length - 1].push(row);
+            used += lineCount(row);
+        }
+        chunks.forEach((floors, chunk) => {
+            let clipped = false;
+            const title = options.title ? options.title(map.block) : `Орон сууцны үлдэгдэл — ${map.block} блок`;
+            const slide = content(pres, options.kicker ?? 'Үлдэгдэл', `${title}${chunks.length > 1 ? ` (${chunk + 1}/${chunks.length})` : ''}`);
             legend(slide, 1.3);
-            const countW = 1.0;
-            const floorW = 0.75;
-            const modelW = (CW - floorW - countW * 4) / Math.max(1, map.models.length);
-            const rowH = Math.min(0.42, (BOTTOM - TOP) / (floors.length + 2));
-            const fontSize = rowH >= 0.3 ? 9 : 8;
-            const head = [headCell('Давхар'), ...map.models.map(model => headCell(model, 'center')), headCell('Гэрээтэй', 'center'), headCell('Худалдаанд', 'center'), headCell('Бусад', 'center'), headCell('Бартер', 'center')]
+            const countW = 0.9;
+            const floorW = 0.85;
+            const margin = 0.03;
+            const modelW = (CW - floorW - countW * 3) / Math.max(1, map.models.length);
+            const lines = floors.map(lineCount);
+            const unit = Math.min(0.42, (BOTTOM - TOP) / (lines.reduce((sum, value) => sum + value, 0) + 2));
+            const fontSize = unit >= 0.3 ? 9 : 8;
+            const head = [headCell('Давхар'), ...map.models.map(model => headCell(model, 'center')), headCell('Гэрээтэй', 'center'), headCell('Худалдаанд', 'center'), headCell('Бартер', 'center')]
                 .map(cell => ({ ...cell, options: { ...cell.options, fontSize: 8 } }));
             const rows = floors.map(row => [
-                bodyCell(`${row.floor}`, 'left', { bold: true, color: C.ink2 }),
+                bodyCell(`${row.floor} давхар`, 'left', { bold: true, color: C.ink2 }),
                 ...map.models.map(model => {
                     const cells = row.cells[model] ?? [];
                     if (!cells.length) return bodyCell('', 'center', { fill: { color: C.surface } });
-                    const text = cells.map(cell => `${cell.area !== null ? area(cell.area) : cell.code}${cell.status !== 'available' && cell.manager ? ` ${managerShort(cell.manager)}` : ''}`).join('\n');
-                    return bodyCell(text, 'center', { fill: { color: floorFill(cells[0]) }, color: cells[0].status === 'available' ? C.brand : C.ink, bold: cells[0].status === 'available' });
+                    const tone = floorTone(cells[0]);
+                    const texts = cells.map(cell => floorCellText(cell, modelW - margin * 2, fontSize));
+                    clipped ||= texts.some(item => item.clipped);
+                    return bodyCell(texts.map(item => item.text).join('\n'), 'center', { fill: { color: FLOOR_FILL[tone] }, color: tone === 'available' ? C.brand : C.ink, bold: tone === 'available' });
                 }),
-                bodyCell(String(row.counts.sold), 'center'), bodyCell(String(row.counts.available), 'center', { bold: true, color: C.brand }), bodyCell(String(row.counts.other), 'center'), bodyCell(String(row.counts.barter), 'center'),
+                bodyCell(String(row.counts.sold), 'center'), bodyCell(String(row.counts.available), 'center', { bold: true, color: C.brand }), bodyCell(String(row.counts.barter), 'center'),
             ]);
-            const last = chunk === chunks - 1;
-            const footer = [bodyCell('Нийт', 'left', { bold: true, colspan: map.models.length + 1 }), bodyCell(String(map.totals.sold), 'center', { bold: true }), bodyCell(String(map.totals.available), 'center', { bold: true, color: C.brand }), bodyCell(String(map.totals.other), 'center', { bold: true }), bodyCell(String(map.totals.barter), 'center', { bold: true })];
+            const last = chunk === chunks.length - 1;
+            const footer = [bodyCell('НИЙТ', 'left', { bold: true, colspan: map.models.length + 1 }), bodyCell(String(map.totals.sold), 'center', { bold: true }), bodyCell(String(map.totals.available), 'center', { bold: true, color: C.brand }), bodyCell(String(map.totals.barter), 'center', { bold: true })];
             slide.addTable([head, ...rows, ...(last ? [footer] : [])], {
-                x: M, y: TOP, w: CW, colW: [floorW, ...map.models.map(() => modelW), countW, countW, countW, countW], rowH, fontFace: FONT, fontSize,
-                border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.01, 0.03, 0.01, 0.03], autoPage: false,
+                x: M, y: TOP, w: CW, colW: [floorW, ...map.models.map(() => modelW), countW, countW, countW], rowH: [unit, ...lines.map(rowLines => rowLines * unit), ...(last ? [unit] : [])],
+                fontFace: FONT, fontSize, border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.01, margin, 0.01, margin], autoPage: false,
             });
-            note(slide, [`${map.block} блок: гэрээтэй ${map.totals.sold}, худалдаанд ${map.totals.available}, бусад ${map.totals.other}, бартер ${map.totals.barter}.`, 'Цэнхэр тоо = худалдаанд байгаа байр (м²).']);
-        }
+            note(slide, [
+                `${map.block} блок: гэрээтэй ${map.totals.sold}, худалдаанд ${map.totals.available}, бартер ${map.totals.barter}.`,
+                'Цэнхэр тоо = худалдаанд байгаа байр (м²). Захиалсан, хадгалсан байр «Худалдаанд»-д орно.',
+                report.inventory?.source.kind === 'contracts' ? 'Ногоон = Хабын амьд гэрээтэй байр (HUB гэрээний жагсаалт). Гэрээтэй байрны талбай нь гэрээлсэн талбай.' : null,
+                clipped ? 'Нүдэнд нэг мөрөөр багтаагүй менежерийн нэрийг «…»-ээр товчилсон (бүтэн нэр — гэрээний жагсаалтад).' : null,
+                ...(options.notes ?? []),
+            ]);
+        });
     }
 }
 
@@ -641,27 +692,53 @@ function channelExportSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     note(slide, ['Reach, Viewers зэрэг давхардах тоог мөрүүдээр нэмээгүй. Meta-ийн зардал зарын дансны валютаар (ихэвчлэн USD), төгрөгтэй нэмээгүй.']);
 }
 
-function imageGrid(slide: Slide, images: DeckImage[], box: { x: number; y: number; w: number; h: number }) {
+/**
+ * Зургийн мөрүүд: мөр бүрийн зургийн тоо ба тэгш багана эсэх. ≤ 6 — тэгш багана (≤ 3 нэг мөр, 4 босоо бол нэг мөр,
+ * эс бөгөөс 2×2, 5–6 гурваар, сүүлийн мөр зүүнээс). 7–9 — мөр бүр өөрийн тоогоор бүтэн өргөнд: бүгд босоо бол хоёр мөр,
+ * дээр нь цөөн (9 = 4 + 5, багийн илтгэлийн 15-р слайд), эс бөгөөс гурван мөр, доор нь олон (7 = 2 + 2 + 3).
+ */
+export function imageGridRows(images: readonly Pick<DeckImage, 'width' | 'height'>[]): { rows: number[]; uniformCols: number | null } {
     const n = images.length;
     const portrait = images.every(image => image.height > image.width);
-    const cols = n <= 3 ? n : n === 4 ? (portrait ? 4 : 2) : 3;
-    const rows = Math.ceil(n / cols);
+    if (n <= 6) {
+        const cols = n <= 3 ? Math.max(1, n) : n === 4 ? (portrait ? 4 : 2) : 3;
+        return { rows: Array.from({ length: Math.ceil(n / cols) }, (_, row) => Math.min(cols, n - row * cols)), uniformCols: cols };
+    }
+    const count = portrait ? 2 : Math.ceil(n / 3);
+    const base = Math.floor(n / count);
+    const extra = n % count;
+    return { rows: Array.from({ length: count }, (_, row) => base + (row >= count - extra ? 1 : 0)), uniformCols: null };
+}
+
+export function imageGrid(slide: Slide, images: DeckImage[], box: { x: number; y: number; w: number; h: number }) {
+    const { rows, uniformCols } = imageGridRows(images);
     const gap = 0.25;
-    const cellW = (box.w - gap * (cols - 1)) / cols;
-    const cellH = (box.h - gap * (rows - 1)) / rows;
-    images.forEach((image, index) => {
-        const ratio = image.width > 0 && image.height > 0 ? image.width / image.height : 1;
-        let w = cellW;
-        let h = w / ratio;
-        if (h > cellH) { h = cellH; w = h * ratio; }
-        const x = box.x + (index % cols) * (cellW + gap) + (cellW - w) / 2;
-        const y = box.y + Math.floor(index / cols) * (cellH + gap) + (cellH - h) / 2;
-        slide.addImage({ data: image.data, x, y, w, h, altText: `Слайдын зураг ${index + 1}` });
+    const cellH = (box.h - gap * (rows.length - 1)) / rows.length;
+    let index = 0;
+    rows.forEach((count, row) => {
+        const cols = uniformCols ?? count;
+        const cellW = (box.w - gap * (cols - 1)) / cols;
+        for (let col = 0; col < count; col++, index++) {
+            const image = images[index];
+            const ratio = image.width > 0 && image.height > 0 ? image.width / image.height : 1;
+            let w = cellW;
+            let h = w / ratio;
+            if (h > cellH) { h = cellH; w = h * ratio; }
+            const x = box.x + col * (cellW + gap) + (cellW - w) / 2;
+            const y = box.y + row * (cellH + gap) + (cellH - h) / 2;
+            slide.addImage({ data: image.data, x, y, w, h, altText: `Слайдын зураг ${index + 1}` });
+        }
     });
 }
 
-/** Зураг (≤ 6) ба тайлбар: богино тайлбар доор, урт бол баруун талд. Зураггүй бол тайлбар бүтэн слайдад. */
-function layoutImages(slide: Slide, loaded: DeckImage[], text: string, top: number) {
+/** «Энэ сард хийгдэх ажил»: мөр бүр нэг цэг (гараар бичсэн «•», «-» тэмдгийг хасна, хоосон мөр алгасна). */
+function bulletRuns(text: string): PptxGenJS.TextProps[] {
+    const lines = text.split('\n').map(line => line.trim().replace(/^[•·▪◦*\-–—]\s*/, '').trim()).filter(Boolean);
+    return lines.map((line, index) => ({ text: line, options: { bullet: { indent: 18 }, breakLine: index < lines.length - 1 } }));
+}
+
+/** Зураг (≤ 9) ба тайлбар: богино тайлбар доор, урт бол баруун талд. Зураггүй бол тайлбар бүтэн слайдад. `bullets` — мөр бүр цэг. */
+function layoutImages(slide: Slide, loaded: DeckImage[], text: string, top: number, bullets = false) {
     if (loaded.length) {
         const longNote = text.length > 220;
         const box = longNote
@@ -669,24 +746,33 @@ function layoutImages(slide: Slide, loaded: DeckImage[], text: string, top: numb
             : { x: M, y: top, w: CW, h: (text ? 5.95 : BOTTOM) - top };
         imageGrid(slide, loaded, box);
         if (text) {
-            slide.addText(clip(text, 1400), longNote
+            slide.addText(bullets ? bulletRuns(clip(text, 1400)) : clip(text, 1400), longNote
                 ? { x: M + CW * 0.62 + 0.3, y: top, w: CW * 0.38 - 0.3, h: BOTTOM - top, fontFace: FONT, fontSize: 13, color: C.ink2, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true }
                 : { x: M, y: 6.05, w: CW, h: 0.8, fontFace: FONT, fontSize: 14, color: C.ink2, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true });
         }
     } else if (text) {
-        slide.addText(clip(text, 2000), { x: M, y: top, w: CW, h: BOTTOM - top, fontFace: FONT, fontSize: text.length > 700 ? 13 : text.length > 300 ? 16 : 20, color: C.ink, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true, paraSpaceAfter: 6 });
+        slide.addText(bullets ? bulletRuns(clip(text, 2000)) : clip(text, 2000), { x: M, y: top, w: CW, h: BOTTOM - top, fontFace: FONT, fontSize: text.length > 700 ? 13 : text.length > 300 ? 16 : 20, color: C.ink, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true, paraSpaceAfter: 6 });
     }
 }
 
-/** Хэрэглэгчийн оруулсан слайд: сэдэв, зураг (≤ 6), тайлбар/дүгнэлт. */
-function customSlide(pres: PptxGenJS, slideData: WeeklySlide, images: Record<string, DeckImage>) {
-    const label = `${WEEKLY_SLIDE_PART_LABEL[slideData.part]} · ${WEEKLY_SLIDE_SECTION_LABEL[slideData.section]}`;
-    const slide = content(pres, label, slideData.title || WEEKLY_SLIDE_SECTION_LABEL[slideData.section]);
+/** Зөвхөн зурагтай слайдын коллажийн дээд зах (толгойгүй; доод зах нь хөлийн дээр). */
+const PHOTO_TOP = 0.45;
+
+/**
+ * Хэрэглэгчийн оруулсан слайд: сэдэв, зураг (≤ 9), тайлбар/дүгнэлт. Гарчиг, тайлбаргүй зурагтай слайд = зөвхөн зураг:
+ * толгойгүй, захын зай доторх бүтэн коллаж (багийн илтгэлийн 14–15-р слайд). «Энэ сард хийгдэх ажил» — мөр бүр цэг.
+ */
+export function customSlide(pres: PptxGenJS, slideData: WeeklySlide, images: Record<string, DeckImage>) {
     const loaded = slideData.image_paths.map(path => images[path]).filter((image): image is DeckImage => !!image);
     const missing = slideData.image_paths.length - loaded.length;
     const text = slideData.note.trim();
-    layoutImages(slide, loaded, text, TOP - 0.25);
+    const label = `${WEEKLY_SLIDE_PART_LABEL[slideData.part]} · ${WEEKLY_SLIDE_SECTION_LABEL[slideData.section]}`;
+    const photoOnly = !slideData.title.trim() && !text && loaded.length > 0;
+    const slide = photoOnly ? pres.addSlide({ masterName: CONTENT }) : content(pres, label, slideData.title || WEEKLY_SLIDE_SECTION_LABEL[slideData.section]);
+    if (photoOnly) imageGrid(slide, loaded, { x: M, y: PHOTO_TOP, w: CW, h: BOTTOM - PHOTO_TOP });
+    else layoutImages(slide, loaded, text, TOP - 0.25, slideData.section === 'plan');
     note(slide, [
+        photoOnly ? label : null,
         `Оруулсан: ${slideData.author_name || '—'}`,
         missing ? `${missing} зураг ачаалж чадсангүй — Hub-ийн хурлын хуудсанд шалгана уу.` : null,
         text.length > 1400 && loaded.length ? text : null,
@@ -727,7 +813,7 @@ export function buildWeeklyDeck(pres: PptxGenJS, input: WeeklyDeckInput): PptxGe
     pres.title = `${input.projectName} · ${WEEKLY_DECK_LABEL[input.kind]} · Лхагва гарагийн хурал ${input.meetingDate}`;
     pres.subject = `Тайлант хугацаа ${input.range.from} – ${input.range.to}`;
     pres.theme = { headFontFace: FONT, bodyFontFace: FONT };
-    defineLayouts(pres, input.projectName);
+    defineLayouts(pres, `VERTMON HUB · ${input.projectName}`);
     const updates = (input.updates ?? []).filter(update => updatePart(update) === input.kind);
 
     coverSlide(pres, input);
@@ -766,7 +852,7 @@ export function buildWeeklyDeck(pres: PptxGenJS, input: WeeklyDeckInput): PptxGe
     return pres;
 }
 
-export function weeklyDeckFileName(projectName: string, meetingDate: string, kind: WeeklyDeckKind): string {
+export function weeklyDeckFileName(projectName: string, meetingDate: string, kind: WeeklyDeckFileKind): string {
     const safe = projectName.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Vertmon';
     return `${safe} - ${WEEKLY_DECK_LABEL[kind]} - Лхагва ${meetingDate}.pptx`;
 }

@@ -5,7 +5,9 @@
  *  - ERP-ийн гэрээний экспорт (`property.sale`) — тайлант долоо хоног болон сарын гэрээ,
  *    менежерээр, хоцролт/үлдэгдэл. Хоёр snapshot байвал «Нийт төлсөн дүн»-гийн зөрүүгээр
  *    мөнгөн орлогыг тооцно (snapshot-ын огноогоор, тайлант долоо хоногтой яг давхцахгүй байж болно).
- *  - ERP-ийн бүтээгдэхүүний экспорт эсвэл CRM-ийн `property_units` — үлдэгдэл, давхрын зураглал.
+ *  - Үлдэгдэл, давхрын зураглал: HUB гэрээ давхарласан байрны бүртгэл, ERP-ийн бүтээгдэхүүний экспорт эсвэл
+ *    `property_units` (`lib/inventory/report-inventory.ts`). Давхрын зураглалд гэрээтэй (ногоон), бартер (саарал),
+ *    бусад нь «Худалдаанд» — захиалсан, хадгалсан ч орно (эзний шийдвэр W14, 2026-10-22).
  *  - ERP гэрээ алга бол CRM-ийн `property_contracts`.
  * Лид, уулзалтын тоо үйл ажиллагааны тайлангаас (`/api/dashboard/reports/operations`) ирнэ.
  *
@@ -16,6 +18,7 @@ import { PRODUCT_KIND_LABEL } from '@/lib/erp/records';
 import type { InventoryStatus } from '@/lib/inventory/labels';
 import { UNIT_STATUS_LABEL } from '@/lib/inventory/labels';
 import { contractPlanScope, countsTowardPlan } from '@/lib/sales/plan-performance';
+import type { ReportInventorySourceKind } from '@/lib/inventory/report-inventory';
 import { knownPeriodAmount, undatedContractsHint } from './contract-dates';
 
 const DAY = 86_400_000;
@@ -50,6 +53,12 @@ export interface ContractLine {
     block: string | null;
     unit: string | null;
     customer: string | null;
+    /** Өрөөний тоо: гэрээнд байвал түүнийг, эс бөгөөс үлдэгдлийн байрнаас (ижил ангилал + код). */
+    rooms?: number | null;
+    /** Давхар (тоо): гэрээнд байвал түүнийг, эс бөгөөс үлдэгдлийн байрнаас; «B1» зэрэг тоон бус давхар → null. */
+    floor?: number | null;
+    /** «Сэжим» (хаанаас ирсэн) — нэгтгэгч холбох хүртэл үргэлж null. */
+    referral?: string | null;
     area: number | null;
     pricePerSqm: number | null;
     advanceCondition: string | null;
@@ -60,6 +69,9 @@ export interface ContractLine {
     channel: string | null;
     status: string;
 }
+
+/** Тайлангийн гэрээний мөр: өрөө, давхар, сэжим үргэлж бөглөгдсөн (тодорхойгүй бол null). */
+export type ReportContractLine = ContractLine & { rooms: number | null; floor: number | null; referral: string | null };
 
 export interface SnapshotInfo { date: string; source: string }
 
@@ -75,8 +87,8 @@ export interface WeeklySalesInput {
     crmUndated?: number;
     /** Тэдгээрийн бүтээгдэхүүн, блок — төлөвлөгөөнд хамаарах огноогүй гэрээг тоолоход (Агуулах г.м. хувийг «+» болгохгүй). */
     crmUndatedLines?: Array<{ kind: ProductKind; block: string | null }>;
-    /** ERP бүтээгдэхүүн эсвэл CRM нэгж (ижил хэлбэрт хувиргасан). */
-    inventory: { info: SnapshotInfo & { kind: 'erp' | 'crm' }; rows: ErpProduct[] } | null;
+    /** Тайлангийн үлдэгдэл (ижил хэлбэрт хувиргасан); `unmatchedContracts` — байр нь олдоогүй амьд гэрээ. */
+    inventory: { info: SnapshotInfo & { kind: ReportInventorySourceKind }; rows: ErpProduct[]; unmatchedContracts?: number } | null;
     /** Сарын гэрээний төлөвлөгөө (₮). Тохируулаагүй бол null. */
     monthTarget: number | null;
     /**
@@ -115,7 +127,11 @@ function summarize(lines: ContractLine[]) {
     };
 }
 
-type FloorCell = { code: string; model: string | null; area: number | null; status: InventoryStatus | null; statusLabel: string; barter: boolean; manager: string | null };
+export type FloorCell = { code: string; model: string | null; area: number | null; status: InventoryStatus | null; statusLabel: string; barter: boolean; manager: string | null };
+export type FloorTone = 'sold' | 'available' | 'barter';
+/** Давхрын зураглалын нүд: бартер (худалдаанд биш) → саарал, зарагдсан/хүлээлгэсэн → гэрээтэй, бусад бүгд «Худалдаанд». */
+export const floorTone = (cell: Pick<FloorCell, 'barter' | 'status'>): FloorTone =>
+    cell.barter && cell.status !== 'available' ? 'barter' : cell.status === 'sold' || cell.status === 'handed_over' ? 'sold' : 'available';
 
 export function buildWeeklySales(input: WeeklySalesInput) {
     const { range } = input;
@@ -124,12 +140,20 @@ export function buildWeeklySales(input: WeeklySalesInput) {
     const notes: string[] = [];
 
     // Гэрээ: ERP байвал түүнээс, үгүй бол CRM-ээс. Цуцлагдсан гэрээг тоолохгүй.
-    const allLines = input.sales
+    // Өрөө, давхар дутуу бол үлдэгдлийн ижил ангилал + кодтой байрнаас (HUB/ERP гэрээнд байдаггүй).
+    const units = new Map((input.inventory?.rows ?? []).map(unit => [`${unit.kind}|${unit.code}`, unit]));
+    const enrich = (line: ContractLine): ReportContractLine => {
+        const unit = line.unit && (line.rooms == null || line.floor == null) ? units.get(`${line.kind}|${line.unit.split(',')[0].trim()}`) : undefined;
+        return { ...line, rooms: line.rooms ?? unit?.rooms ?? null, floor: line.floor ?? unit?.floor ?? null, referral: line.referral ?? null };
+    };
+    const allLines = (input.sales
         ? input.sales.rows.filter(sale => sale.status !== 'cancelled').map(saleToLine)
-        : input.crmContracts ?? [];
+        : input.crmContracts ?? []).map(enrich);
     if (!input.sales) notes.push(input.crmContracts ? 'ERP гэрээний экспорт оруулаагүй тул CRM-ийн гэрээг ашиглав.' : 'Гэрээний мэдээлэл алга.');
-    const weekLines = allLines.filter(line => within(line.date, range.from, range.to)).sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || a.key.localeCompare(b.key));
-    const monthLines = allLines.filter(line => line.date?.startsWith(month));
+    const byDate = (a: ContractLine, b: ContractLine) => (a.date ?? '').localeCompare(b.date ?? '') || a.key.localeCompare(b.key);
+    const weekLines = allLines.filter(line => within(line.date, range.from, range.to)).sort(byDate);
+    // Сарын эхнээс тайлант өдөр (range.to) хүртэл — хурлын өдрийн snapshot-д орсон дараагийн гэрээг тоолохгүй.
+    const monthLines = allLines.filter(line => within(line.date, `${month}-01`, range.to));
     const previousWeek = { from: shift(range.from, -7), to: shift(range.to, -7) };
     const undated = input.sales ? allLines.filter(line => !line.date).length : input.crmUndated ?? 0;
     // Төлөвлөгөөтэй харьцуулахдаа зөвхөн төлөвлөгөөнд хамаарах гэрээ («Төлөвлөгөөний биелэлт»-тэй нэг дүрэм) —
@@ -218,17 +242,13 @@ export function buildWeeklySales(input: WeeklySalesInput) {
                     (cells[unit.model ?? '—'] ||= []).push({ code: unit.code, model: unit.model, area: unit.area, status: unit.status, statusLabel: unit.statusLabel, barter: unit.barter, manager: unit.manager });
                 }
                 const list = Object.values(cells).flat();
+                const tones = list.map(floorTone);
                 return {
                     floor, cells,
-                    counts: {
-                        sold: list.filter(cell => !cell.barter && (cell.status === 'sold' || cell.status === 'handed_over')).length,
-                        available: list.filter(cell => cell.status === 'available').length,
-                        other: list.filter(cell => !cell.barter && cell.status !== 'sold' && cell.status !== 'handed_over' && cell.status !== 'available').length,
-                        barter: list.filter(cell => cell.barter && cell.status !== 'available').length,
-                    },
+                    counts: { sold: tones.filter(t => t === 'sold').length, available: tones.filter(t => t === 'available').length, barter: tones.filter(t => t === 'barter').length },
                 };
             });
-            const totals = floors.reduce((acc, row) => ({ sold: acc.sold + row.counts.sold, available: acc.available + row.counts.available, other: acc.other + row.counts.other, barter: acc.barter + row.counts.barter }), { sold: 0, available: 0, other: 0, barter: 0 });
+            const totals = floors.reduce((acc, row) => ({ sold: acc.sold + row.counts.sold, available: acc.available + row.counts.available, barter: acc.barter + row.counts.barter }), { sold: 0, available: 0, barter: 0 });
             return { block, models, floors, totals };
         });
         return {
@@ -239,6 +259,7 @@ export function buildWeeklySales(input: WeeklySalesInput) {
         };
     })() : null;
     if (!inventory) notes.push('Байрны үлдэгдлийн мэдээлэл алга (ERP бүтээгдэхүүний экспорт эсвэл байрны бүртгэл).');
+    if (input.inventory?.unmatchedContracts) notes.push(`${input.inventory.unmatchedContracts} амьд гэрээний байр байрны бүртгэлд олдоогүй тул үлдэгдэлд тооцогдоогүй.`);
 
     const week = summarize(weekLines);
     const monthSummary = summarize(monthLines);
@@ -247,7 +268,8 @@ export function buildWeeklySales(input: WeeklySalesInput) {
     const previousWeekLines = allLines.filter(line => within(line.date, previousWeek.from, previousWeek.to));
     return {
         range,
-        month: { month, weeks, ...monthSummary, byWeek: monthByWeek,
+        // `lines` — сарын амьд гэрээ огноо, түлхүүрээр (Лхагвын илтгэлийн сарын гэрээний хүснэгт).
+        month: { month, weeks, ...monthSummary, lines: [...monthLines].sort(byDate), byWeek: monthByWeek,
             planCount: planLines.length, planTotal, outsidePlanCount: monthLines.length - planLines.length,
             target: input.monthTarget, attainmentPct: input.monthTarget && knownPeriodAmount(planTotal, planLines.length, undatedPlan) !== null ? Math.round(planTotal / input.monthTarget * 100) : null },
         week: { ...week, lines: weekLines },

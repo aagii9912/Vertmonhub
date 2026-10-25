@@ -83,7 +83,7 @@ beforeEach(() => {
     mocks.from.mockReset();
     requests.length = 0;
     failedTable = undefined;
-    tables = { properties: [], property_units: [], projects: [], erp_imports: [], ai_shop_memory: [] };
+    tables = { properties: [], property_units: [], projects: [], erp_imports: [], ai_shop_memory: [], contract_list_imports: [] };
     mocks.from.mockImplementation((table: string) => {
         if (!(table in tables)) throw new Error(`Unexpected source: ${table}`);
         let rows = tables[table];
@@ -97,6 +97,7 @@ beforeEach(() => {
             order: () => chain,
             range: (from: number, to: number) => { rows = rows.slice(from, to + 1); return chain; },
             limit: (value: number) => { limit = value; return chain; },
+            maybeSingle: () => Promise.resolve(failedTable === table ? { data: null, error: { message: 'Inventory database unavailable' } } : { data: rows[0] ?? null, error: null }),
             then: (resolve: (value: unknown) => unknown) => Promise.resolve({
                 data: failedTable === table ? null : rows.slice(0, limit),
                 error: failedTable === table ? { message: 'Inventory database unavailable' } : null,

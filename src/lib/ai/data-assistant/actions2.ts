@@ -196,10 +196,11 @@ export async function getWeeklySalesReportTool(shopId: string, args: Args, perms
     const canSeeCustomers = perms.role === 'super_admin' || !!perms.modules?.includes('contracts');
     try {
         const report = await loadWeeklySales(db(), { shopId, meetingDate: meeting.date, canSeeCustomers });
-        const { inventory, week, ...rest } = report;
+        const { inventory, week, month, ...rest } = report;
         return {
             ...rest,
             week: { ...week, lines: week.lines.slice(0, 40), linesShown: Math.min(40, week.lines.length) },
+            month: { ...month, lines: month.lines.slice(0, 40), linesShown: Math.min(40, month.lines.length) },
             // Давхрын зураглалын нүднүүд хэт том тул блокийн нийлбэрээр өгнө (бүтэн нь хуудсан дээр).
             inventory: inventory ? { source: inventory.source, blocks: inventory.blocks, floorTotals: inventory.floorMaps.map((map) => ({ block: map.block, ...map.totals })) } : null,
             plainText: formatWeeklySalesText(report).join('\n').trim(),

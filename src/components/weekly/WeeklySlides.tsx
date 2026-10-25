@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, CopyPlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
@@ -34,7 +34,7 @@ export function useWeeklySlides(meetingDate: string, enabled: boolean) {
 
 const PART_HINT: Record<WeeklySlidePart, string> = {
     marketing: 'Контент төлөвлөгөөнөөс гадуурх слайд: Page / Ads / CallPro / SMS / сэжим хуудасны дэлгэцийн зураг, дүгнэлт. Контентын постерыг контент төлөвлөгөөнд хавсаргана. Слайд бүр PowerPoint-д тусдаа слайд болно.',
-    sales: 'Өдөрлөгийн зураг, хүлээлцсэн байдал, яригдаж буй гэрээ, энэ сарын ажил зэрэг системээс гардаггүй слайд.',
+    sales: 'Өдөрлөгийн зураг, барилгын явц, хүлээлцсэн байдал, яригдаж буй гэрээ, энэ сарын ажил зэрэг системээс гардаггүй слайд. Гарчиг, тайлбаргүй зурагтай слайд PowerPoint-д толгойгүй бүтэн коллаж болно.',
 };
 
 /** Хурлын тайлангийн нэмэлт слайдууд (хэсэг тус бүр): харах, нэмэх, засах, дараалал, устгах. */
@@ -44,6 +44,7 @@ export function WeeklySlides({ part, meetingDate, query, canWrite, canDelete }: 
     const { shop, user } = useAuth();
     const queryClient = useQueryClient();
     const [editing, setEditing] = useState<WeeklySlide | 'new' | null>(null);
+    const [copying, setCopying] = useState(false);
     const slides = (query.data?.slides ?? []).filter(slide => slide.part === part).sort((a, b) => a.position - b.position);
     const refresh = () => queryClient.invalidateQueries({ queryKey: ['weekly-slides', shop?.id] });
     const reorder = useMutation({
@@ -70,7 +71,10 @@ export function WeeklySlides({ part, meetingDate, query, canWrite, canDelete }: 
         <div className="space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">{PART_HINT[part]}</p>
-                {canWrite && <Button size="sm" variant="secondary" className="print:hidden" onClick={() => setEditing('new')}><Plus />Слайд нэмэх</Button>}
+                {canWrite && <div className="flex shrink-0 flex-wrap gap-2 print:hidden">
+                    <Button size="sm" variant="tertiary" onClick={() => setCopying(true)}><CopyPlus />Өмнөх хурлаас хуулах</Button>
+                    <Button size="sm" variant="secondary" onClick={() => setEditing('new')}><Plus />Слайд нэмэх</Button>
+                </div>}
             </div>
             {slides.length ? <ol className="grid gap-3 md:grid-cols-2">
                 {slides.map((slide, index) => {
@@ -104,6 +108,7 @@ export function WeeklySlides({ part, meetingDate, query, canWrite, canDelete }: 
             </ol> : <p className="rounded-xl bg-surface-2 p-4 text-sm text-muted-foreground">{canWrite ? 'Нэмэлт слайд алга. «Слайд нэмэх» дарж дэлгэцийн зургаа оруулна уу.' : 'Нэмэлт слайд алга.'}</p>}
             {editing && <SlideEditor key={editing === 'new' ? 'new' : editing.id} part={part} meetingDate={meetingDate} slide={editing === 'new' ? undefined : editing}
                 onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void refresh(); }} />}
+            {copying && <CopyPreviousDialog part={part} meetingDate={meetingDate} onClose={() => setCopying(false)} onCopied={() => { setCopying(false); void refresh(); }} />}
         </div>
     );
 }
@@ -116,7 +121,7 @@ function SlideEditor({ part, meetingDate, slide, onClose, onSaved }: { part: Wee
     const [note, setNote] = useState(slide?.note ?? '');
     const [images, setImages] = useState<DraftImage[]>(() => draftImages(slide?.image_paths ?? []));
     const [uploading, setUploading] = useState(0);
-    const addFiles = makeImageUploader(part, images, setImages, setUploading);
+    const addFiles = makeImageUploader(part, images, setImages, setUploading, WEEKLY_SLIDE_LIMITS.images);
     const paths = savedPaths(images);
     const save = useMutation({
         mutationFn: () => slide
@@ -146,9 +151,9 @@ function SlideEditor({ part, meetingDate, slide, onClose, onSaved }: { part: Wee
                             <Input id="slide-title" value={title} maxLength={WEEKLY_SLIDE_LIMITS.title} onChange={event => setTitle(event.target.value)} />
                         </FormField>
                         <FormField label={`Зураг (${images.length}/${WEEKLY_SLIDE_LIMITS.images})`}>
-                            <ReportImagePicker images={images} setImages={setImages} addFiles={addFiles} />
+                            <ReportImagePicker images={images} setImages={setImages} addFiles={addFiles} max={WEEKLY_SLIDE_LIMITS.images} />
                         </FormField>
-                        <FormField label="Тайлбар, дүгнэлт" htmlFor="slide-note" hint="Слайдын доор (урт бол хажууд) харагдана.">
+                        <FormField label="Тайлбар, дүгнэлт" htmlFor="slide-note" hint={section === 'plan' ? 'Мөр бүр PowerPoint-д нэг цэг болно.' : 'Слайдын доор (урт бол хажууд) харагдана. Гарчиг, тайлбаргүй бол зөвхөн зураг.'}>
                             <Textarea id="slide-note" rows={4} value={note} maxLength={WEEKLY_SLIDE_LIMITS.note} onChange={event => setNote(event.target.value)}
                                 placeholder="Жишээ: Алдсан дуудлага 12:00 болон 15:00–16:00 цагт төвлөрч байна." />
                         </FormField>
@@ -158,6 +163,62 @@ function SlideEditor({ part, meetingDate, slide, onClose, onSaved }: { part: Wee
                 <DialogFooter>
                     <Button type="button" variant="secondary" disabled={save.isPending} onClick={onClose}>Болих</Button>
                     <Button type="submit" form="weekly-slide-form" isLoading={save.isPending} disabled={empty || uploading > 0}>{uploading ? 'Зураг оруулж байна…' : 'Хадгалах'}</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+type CopyPreview = { from: string | null; slides: WeeklySlide[] };
+
+/** «Өмнөх хурлаас хуулах»: сэдэв сонгоод өмнөх хурлын зураггүй слайдуудыг энэ хуралд хуулна (зурагтайг хуулахгүй). */
+function CopyPreviousDialog({ part, meetingDate, onClose, onCopied }: { part: WeeklySlidePart; meetingDate: string; onClose: () => void; onCopied: () => void }) {
+    const { shop } = useAuth();
+    const sections = WEEKLY_SLIDE_PART_SECTIONS[part];
+    const [section, setSection] = useState<WeeklySlideSection>(sections.includes('plan') ? 'plan' : sections[0]);
+    const preview = useQuery<CopyPreview>({
+        queryKey: ['weekly-slides-copy', shop?.id, meetingDate, part, section],
+        queryFn: ({ signal }) => dashboardJson(`/api/dashboard/weekly-slides/copy?meetingDate=${meetingDate}&part=${part}&section=${section}`, { signal, shopId: shop?.id }),
+        enabled: !!shop?.id, staleTime: 0, retry: 1,
+    });
+    const copy = useMutation({
+        mutationFn: () => dashboardMutate<{ copied: WeeklySlide[]; skipped: number }>('/api/dashboard/weekly-slides/copy', 'POST', { meetingDate, part, section }, { shopId: shop?.id }),
+        onSuccess: result => {
+            toast.success(result.copied.length ? `${result.copied.length} слайд хуулагдлаа` : 'Эдгээр слайд энэ хуралд аль хэдийн байна');
+            onCopied();
+        },
+    });
+    const slides = preview.data?.slides ?? [];
+
+    return (
+        <Dialog open onOpenChange={open => { if (!open && !copy.isPending) onClose(); }}>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+                <DialogHeader>
+                    <DialogTitle>Өмнөх хурлаас хуулах</DialogTitle>
+                    <DialogDescription>Сонгосон сэдвийн өмнөх хурлын зураггүй слайдыг энэ хуралд хуулна. Зурагтай слайд хуулагдахгүй — зургийг дахин оруулна.</DialogDescription>
+                </DialogHeader>
+                <FieldGroup>
+                    <FormField label="Сэдэв" htmlFor="copy-section">
+                        <Select value={section} onValueChange={value => setSection(value as WeeklySlideSection)}>
+                            <SelectTrigger id="copy-section"><SelectValue /></SelectTrigger>
+                            <SelectContent>{sections.map(value => <SelectItem key={value} value={value}>{WEEKLY_SLIDE_SECTION_LABEL[value]}</SelectItem>)}</SelectContent>
+                        </Select>
+                    </FormField>
+                </FieldGroup>
+                {preview.isPending ? <Skeleton className="h-20" />
+                    : preview.isError ? <Alert variant="danger">{preview.error.message}</Alert>
+                    : slides.length ? <div className="space-y-2">
+                        <p className="text-xs text-muted-foreground">{preview.data?.from}-ны хурлаас {slides.length} слайд:</p>
+                        <ul className="space-y-2">{slides.map(slide => <li key={slide.id} className="rounded-xl border border-border p-3">
+                            {slide.title && <p className="break-words text-sm font-semibold">{slide.title}</p>}
+                            {slide.note.trim() && <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-xs text-fg-2">{slide.note}</p>}
+                        </li>)}</ul>
+                    </div>
+                    : <p className="rounded-xl bg-surface-2 p-4 text-sm text-muted-foreground">Өмнөх хурлуудад энэ сэдвийн зураггүй слайд алга.</p>}
+                {copy.error && <Alert variant="danger">{copy.error.message}</Alert>}
+                <DialogFooter>
+                    <Button type="button" variant="secondary" disabled={copy.isPending} onClick={onClose}>Болих</Button>
+                    <Button type="button" isLoading={copy.isPending} disabled={!slides.length} onClick={() => copy.mutate()}>Хуулах</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

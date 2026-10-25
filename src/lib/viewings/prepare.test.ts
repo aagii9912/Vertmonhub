@@ -31,6 +31,13 @@ it('derives an exact unit label from scoped inventory, never from caller text', 
     expect(result[0].unit_label).toBe('1301');
     expect(filters).toEqual([['id', unitId], ['shop_id', 's'], ['project_id', 'p']]);
 });
+it('labels an Elysium unit without a unit number (ERP «0») by its code instead of «0»', async () => {
+    const unitId = '12345678-1234-1234-1234-123456789012';
+    const chain = { select: () => chain, eq: () => chain, maybeSingle: async () => ({ data: { unit_number: '0', code: 'Б1-53' }, error: null }) };
+    vi.mocked(quoteViewingSelection).mockResolvedValue({ available: false, quote: null, reason: 'Үнэ алга' });
+    const result = await prepareViewingInterests({ from: () => chain } as unknown as SupabaseClient, 's', 'p', [{ ...input, unit_id: unitId }], { projectIds: null, managerName: null });
+    expect(result[0].unit_label).toBe('Б1-53');
+});
 it('rejects forged quote totals, cross-project actors and invalid inventory rather than saving a fake snapshot', async () => {
     await expect(prepareViewingInterests(db, 's', 'p', [{ ...input, quote: { total_amount: 1 } }], { projectIds: null, managerName: null })).rejects.toMatchObject({ status: 400 });
     await expect(prepareViewingInterests(db, 's', 'p', [input], { projectIds: ['other'], managerName: 'Бат' })).rejects.toMatchObject({ status: 404 });

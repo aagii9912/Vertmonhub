@@ -490,7 +490,8 @@ test('төлөвлөгөөний биелэлт: төлөвлөгөө / гүйц
     await expect(sep.nth(3)).toHaveText('700,000,000');
     await expect(sep.nth(4)).toHaveText('387,980,000+*');
     await expect(sep.nth(5)).toHaveText('55.4%+');
-    await expect(sep.nth(6)).toHaveText('116,394,000');
+    // Нөхцлөөр төлөх урьдчилгаа ч доод хязгаар: огноогүй Б1 гэрээ 9-р сарынх байж болно.
+    await expect(sep.nth(6)).toHaveText('116,394,000+');
     // 10-р сар (явцын): Б1-д энэ сард гэрээгүй + огноогүй → тодорхойгүй, нийт нь Б2 + Зогсоолын доод хязгаар.
     await expect(month(10).getByRole('rowheader')).toContainText('явцын');
     await expect(month(10).locator('td').nth(4)).toHaveText('624,090,000+*');
@@ -516,12 +517,18 @@ test('төлөвлөгөөний биелэлт: төлөвлөгөө / гүйц
     await expect(b2Oct.nth(4)).toHaveText('624,090,000*');
     await expect(b2Oct.nth(5)).toHaveText('156%');
     await expect(b2Oct.nth(5).locator('span')).toHaveClass(/text-gold/);
+    // Б2-т огноогүй гэрээгүй — урьдчилгаа бүрэн дүн («+»-гүй).
+    await expect(b2Oct.nth(6)).toHaveText(/^[\d,]+$/);
     await page.getByRole('group', { name: 'Блок' }).getByRole('button', { name: 'Нийт', exact: true }).click();
 
     // Санхүүтэй (super_admin): мөнгөн урсгал — 9-р сар гараар 190,000,000 / 250,000,000 = 76%.
     const cash = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Мөнгөн урсгал · Нийт' }) });
     await expect(cash).toBeVisible();
-    await expect(cash.getByText('Орсон мөнгө бүртгэгдээгүй', { exact: true })).toBeVisible();
+    // HUB-д төлсөн дүн алга, харин 9-р сард гараар оруулсан дүн бий — «бүртгэгдээгүй» биш (c9e92d6f).
+    await expect(cash.getByText('Зөвхөн гараар оруулсан орсон мөнгө', { exact: true })).toBeVisible();
+    await expect(cash.getByText('Орсон мөнгө бүртгэгдээгүй', { exact: true })).toHaveCount(0);
+    // Гэрээний хүснэгттэй адил «Жилийн төлөвлөгөөнөөс» мөр.
+    await expect(cash.getByRole('rowheader', { name: 'Жилийн төлөвлөгөөнөөс' })).toBeVisible();
     const cashSep = cash.locator('tbody tr').filter({ has: page.getByRole('rowheader', { name: '9-р сар', exact: true }) }).locator('td');
     await expect(cashSep.nth(0)).toHaveText('250,000,000');
     await expect(cashSep.nth(1)).toHaveText('190,000,000');
