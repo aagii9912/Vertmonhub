@@ -234,11 +234,11 @@ describe('loadInstagramWeek', () => {
             shops: { instagram_business_account_id: IG, instagram_username: 'elysiumbymoncon' },
             social_insights_sync: { last_to: '2026-10-12' },
             social_insights_daily: (filters: Filter[]) => isPost(filters) ? [
-                { object_id: '1791', metric: 'views', value: '1500', day: '2026-10-13' },
-                { object_id: '1791', metric: 'reach', value: '1100', day: '2026-10-13' },
-                { object_id: '1791', metric: 'saved', value: '9', day: '2026-10-13' },
-                { object_id: '1791', metric: 'views', value: '600', day: '2026-10-10' },
-                { object_id: '1790', metric: 'shares', value: '4', day: '2026-10-13' },
+                { object_id: '1791', metric: 'views', value: '1500', day: '2026-10-13', page_id: IG },
+                { object_id: '1791', metric: 'reach', value: '1100', day: '2026-10-13', page_id: IG },
+                { object_id: '1791', metric: 'saved', value: '9', day: '2026-10-13', page_id: IG },
+                { object_id: '1791', metric: 'views', value: '600', day: '2026-10-10', page_id: IG },
+                { object_id: '1790', metric: 'shares', value: '4', day: '2026-10-13', page_id: IG },
             ] : [
                 ...days(range.from, 7).map(day => ({ day, metric: 'views', value: '300' })),
                 { day: '2026-10-13', metric: 'followers_count', value: '812' },
@@ -261,6 +261,29 @@ describe('loadInstagramWeek', () => {
         expect(calls).toContainEqual({ table: 'social_insights_sync', op: 'eq', args: ['platform', 'instagram'] });
         expect(calls).toContainEqual({ table: 'social_posts', op: 'eq', args: ['platform', 'instagram'] });
         expect(calls).toContainEqual({ table: 'social_posts', op: 'gte', args: ['published_at', '2026-10-06T16:00:00.000Z'] });
+    });
+
+    it('leaves out media of a previously connected Instagram account (its rows carry the other account id)', async () => {
+        const OLD = '17841400000000001';
+        const { db } = fakeDb({
+            shops: { instagram_business_account_id: IG, instagram_username: 'elysiumbymoncon' },
+            social_insights_sync: { last_to: '2026-10-12' },
+            social_insights_daily: (filters: Filter[]) => isPost(filters) ? [
+                { object_id: '1791', metric: 'views', value: '1500', day: '2026-10-13', page_id: IG },
+                // @mandalatower-ийн media: Elysium-д андуурч холбож байх үед хадгалагдсан.
+                { object_id: '1888', metric: 'views', value: '9000', day: '2026-10-11', page_id: OLD },
+                { object_id: '1888', metric: 'reach', value: '7000', day: '2026-10-11', page_id: OLD },
+            ] : [],
+            social_posts: [
+                { external_post_id: '1888', content: 'Tower reel', likes: 90, comments: 5, shares: 2, published_at: '2026-10-09T01:00:00Z' },
+                { external_post_id: '1791', content: 'Reel', likes: 31, comments: 4, shares: 3, published_at: '2026-10-08T01:00:00Z' },
+                // Insights татагдаагүй (мөргүй) media — аль аккаунтынх нь тодорхойгүй тул хасахгүй.
+                { external_post_id: '1792', content: 'Шинэ пост', likes: 1, comments: 0, shares: null, published_at: '2026-10-12T01:00:00Z' },
+            ],
+        });
+        const week = await loadInstagramWeek(db, 'shop', range, previousRange);
+        expect(week.posts.map(post => post.id)).toEqual(['1791', '1792']);
+        expect(JSON.stringify(week.posts)).not.toContain('9000');
     });
 
     it('reads the latest synced Instagram week for the marketing dashboard', async () => {

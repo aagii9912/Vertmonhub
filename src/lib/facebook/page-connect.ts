@@ -280,13 +280,29 @@ export async function selectPendingPage(flow: PageConnectFlow, shopId: string, p
     // Нөгөө төслийн нэрийг хэлэхгүй (хэрэглэгч тэр төслийн гишүүн биш байж болно).
     const db = supabaseAdmin();
     const column = flow === 'facebook' ? 'facebook_page_id' : 'instagram_business_account_id';
-    const { data: owners, error: ownerError } = await db.from('shops').select('id')
-        .eq(column, flow === 'facebook' ? page.id : instagram!.id).neq('id', shopId).limit(1);
+    const connectedId = flow === 'facebook' ? page.id : instagram!.id;
+    const otherOwner = () => db.from('shops').select('id').eq(column, connectedId).neq('id', shopId).limit(1);
+    const { data: owners, error: ownerError } = await otherOwner();
     if (ownerError) {
         logger.warn('[Page OAuth] давхар холболт шалгаж чадсангүй', { flow, error: ownerError.message });
         return NextResponse.json({ error: 'Хадгалж чадсангүй. Дахин оролдоно уу.' }, { status: 500 });
     }
     if (owners?.length) return NextResponse.json({ error: ALREADY_CONNECTED[flow], code: 'ALREADY_CONNECTED' }, { status: 409 });
+    // Instagram-д UNIQUE индекс алга (idx_shops_instagram_id энгийн индекс): шалгалт ба бичилтийн хооронд өөр төсөл
+    // зэрэг хадгалж болно. Тиймээс өмнөх IG холболтыг уншиж, бичсэний дараа дахин шалгаад давхардвал буцааж тавина.
+    const IG_COLUMNS = 'instagram_business_account_id, instagram_username, instagram_access_token, instagram_token_expires_at';
+    let previousInstagram: Record<string, unknown> | null = null;
+    if (flow === 'instagram') {
+        const { data, error: previousError } = await db.from('shops').select(IG_COLUMNS).eq('id', shopId).maybeSingle();
+        if (previousError) {
+            logger.warn('[Page OAuth] өмнөх Instagram холболтыг уншиж чадсангүй', { flow, error: previousError.message });
+            return NextResponse.json({ error: 'Хадгалж чадсангүй. Дахин оролдоно уу.' }, { status: 500 });
+        }
+        previousInstagram = {
+            instagram_business_account_id: data?.instagram_business_account_id ?? null, instagram_username: data?.instagram_username ?? null,
+            instagram_access_token: data?.instagram_access_token ?? null, instagram_token_expires_at: data?.instagram_token_expires_at ?? null,
+        };
+    }
 
     const encrypted = encryptToken(pageToken);
     if (!encrypted?.startsWith('enc:v1:')) return NextResponse.json({ error: 'Токен хадгалж чадсангүй.' }, { status: 500 });
@@ -296,10 +312,22 @@ export async function selectPendingPage(flow: PageConnectFlow, shopId: string, p
         : { instagram_business_account_id: instagram!.id, instagram_username: instagram!.username ?? null, instagram_access_token: encrypted, instagram_token_expires_at: tokenExpiresAt };
     const { error } = await db.from('shops').update(update).eq('id', shopId);
     if (error) {
-        // shops.facebook_page_id UNIQUE: шалгалтын дараа өөр төсөл зэрэг хадгалсан бол.
+        // shops.facebook_page_id UNIQUE (shops_facebook_page_id_key): шалгалтын дараа өөр төсөл зэрэг хадгалсан бол.
+        // instagram_business_account_id UNIQUE биш тул Instagram-ийн давхардлыг доорх дахин шалгалт барина.
         if (error.code === '23505') return NextResponse.json({ error: ALREADY_CONNECTED[flow], code: 'ALREADY_CONNECTED' }, { status: 409 });
         logger.warn('[Page OAuth] shop хадгалсангүй', { flow, error: error.message });
         return NextResponse.json({ error: 'Хадгалж чадсангүй. Дахин оролдоно уу.' }, { status: 500 });
+    }
+    if (previousInstagram) {
+        const { data: raced, error: raceError } = await otherOwner();
+        if (raceError || raced?.length) {
+            // Зөвхөн өөрийн бичлэгийг (энэ IG ID хэвээр бол) буцаана. Хоёр төсөл зэрэг бол хоёулаа 409 → нэг нь дахин сонгоно.
+            const { error: rollbackError } = await db.from('shops').update(previousInstagram).eq('id', shopId).eq(column, connectedId);
+            logger.warn('[Page OAuth] Instagram давхар холболтыг буцаалаа', { flow, race: !!raced?.length, error: raceError?.message ?? rollbackError?.message ?? null });
+            return raceError
+                ? NextResponse.json({ error: 'Хадгалж чадсангүй. Дахин оролдоно уу.' }, { status: 500 })
+                : NextResponse.json({ error: ALREADY_CONNECTED[flow], code: 'ALREADY_CONNECTED' }, { status: 409 });
+        }
     }
     await db.from('meta_page_connect_pending').delete().eq('user_id', userId).eq('shop_id', shopId).eq('flow', flow);
 

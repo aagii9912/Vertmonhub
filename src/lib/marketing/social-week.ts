@@ -208,19 +208,26 @@ function publishedBounds(range: SocialWeekRange): { start: string; end: string }
 /**
  * Нийтлэл бүрийн насан туршийн метрикийн хамгийн сүүлийн хадгалсан утга: синк бүр Улаанбаатарын өдрөөр мөр
  * нэмдэг тул өдрөөр буурахаар эрэмбэлээд эхнийхийг авна. Түлхүүр `${нийтлэл}|${метрик}`.
+ * `account` (Instagram): `social_posts`-д аккаунтын багана алга тул нийтлэлийн мөрийн `page_id`-аар (= IG ID)
+ * зөвхөн одоо холбосон аккаунтын утгыг авна; өөр (өмнө холбосон) аккаунтын мөртэй, энэ аккаунтын нэг ч мөргүй
+ * нийтлэл `foreign` — тайланд оруулахгүй. Мөргүй нийтлэлийг (insights татагдаагүй) хасахгүй.
  */
-async function latestPostValues(db: SupabaseClient, shopId: string, platform: 'facebook' | 'instagram', ids: string[], metrics: readonly string[]) {
-    const rows = ids.length ? await fetchAllRows<{ object_id: string; metric: string; value: unknown; day: string }>((from, to) => db.from('social_insights_daily')
-        .select('object_id, metric, value, day')
+async function latestPostValues(db: SupabaseClient, shopId: string, platform: 'facebook' | 'instagram', ids: string[], metrics: readonly string[], account?: string) {
+    const rows = ids.length ? await fetchAllRows<{ object_id: string; metric: string; value: unknown; day: string; page_id: string | null }>((from, to) => db.from('social_insights_daily')
+        .select('object_id, metric, value, day, page_id')
         .eq('shop_id', shopId).eq('platform', platform).eq('object_type', 'post')
         .in('object_id', ids).in('metric', [...metrics])
         .order('day', { ascending: false }).order('object_id').order('metric').range(from, to)) : [];
     const latest = new Map<string, { value: number | null; day: string }>();
+    const seen = new Set<string>(), own = new Set<string>();
     for (const row of rows) {
+        seen.add(String(row.object_id));
+        if (account && String(row.page_id ?? '') !== account) continue;
+        own.add(String(row.object_id));
         const key = `${row.object_id}|${row.metric}`;
         if (!latest.has(key)) latest.set(key, { value: num(row.value), day: String(row.day) });
     }
-    return latest;
+    return { latest, foreign: new Set([...seen].filter(id => !own.has(id))) };
 }
 
 const POST_METRICS = { views: 'post_media_view', clicks: 'post_clicks' } as const;
@@ -252,7 +259,7 @@ export async function loadSocialWeek(db: SupabaseClient, shopId: string, range: 
     // Постын насан туршийн үзэлт, товшилт (хамгийн сүүлийн синкийн өдрийнх).
     // Meta постын давхардалгүй хүрэлтийг (post_total_media_view_unique) 0 гэж буцаадаг тул ашиглахгүй.
     const ids = (posts.data ?? []).map(row => String(row.external_post_id));
-    const latest = await latestPostValues(db, shopId, 'facebook', ids, Object.values(POST_METRICS));
+    const { latest } = await latestPostValues(db, shopId, 'facebook', ids, Object.values(POST_METRICS));
 
     const weekPosts: SocialWeekPost[] = (posts.data ?? []).map(row => {
         const id = String(row.external_post_id);
@@ -332,8 +339,9 @@ export async function loadInstagramWeek(db: SupabaseClient, shopId: string, rang
     for (const result of [sync, daily, posts]) if (result.error) throw new Error(result.error.message);
 
     const ids = (posts.data ?? []).map(row => String(row.external_post_id));
-    const latest = await latestPostValues(db, shopId, 'instagram', ids, Object.values(IG_POST_METRICS));
-    const weekPosts: InstagramWeekPost[] = (posts.data ?? []).map(row => {
+    // Өмнө холбосон өөр IG аккаунтын media-г энэ аккаунтын (@username) тайланд оруулахгүй.
+    const { latest, foreign } = await latestPostValues(db, shopId, 'instagram', ids, Object.values(IG_POST_METRICS), igId);
+    const weekPosts: InstagramWeekPost[] = (posts.data ?? []).filter(row => !foreign.has(String(row.external_post_id))).map(row => {
         const id = String(row.external_post_id);
         const value = (metric: string) => latest.get(`${id}|${metric}`);
         const views = value(IG_POST_METRICS.views);

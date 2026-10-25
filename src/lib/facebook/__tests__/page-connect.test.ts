@@ -6,6 +6,10 @@ const mocks = vi.hoisted(() => ({
     user: vi.fn(), shop: vi.fn(), subscribe: vi.fn(), ops: [] as Array<{ table: string; op: string; args: unknown[] }>, pending: null as Record<string, unknown> | null,
     /** shops-ийн select (давхар холболтын шалгалт) ба update-ийн хариу. */
     owners: [] as Array<{ id: string }>, updateError: null as { code: string; message: string } | null,
+    /** Давхар холболтын дараалсан шалгалтын хариу (хоосон бол `owners`). */
+    ownerChecks: [] as Array<Array<{ id: string }>>,
+    /** shops-ийн өмнөх Instagram холболт (`maybeSingle`). */
+    previousShop: null as Record<string, unknown> | null,
 }));
 vi.mock('@/lib/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('@/lib/crypto/tokens', () => ({
@@ -21,9 +25,9 @@ function chain(table: string) {
     for (const op of ['select', 'delete', 'update', 'upsert', 'eq', 'neq', 'lt', 'limit']) {
         builder[op] = (...args: unknown[]) => { record(op, args); return builder; };
     }
-    builder.maybeSingle = async () => ({ data: mocks.pending, error: null });
+    builder.maybeSingle = async () => ({ data: table === 'shops' ? mocks.previousShop : mocks.pending, error: null });
     builder.then = (resolve: (value: unknown) => void) => resolve(
-        table === 'shops' && own[0] === 'select' ? { data: mocks.owners, error: null }
+        table === 'shops' && own[0] === 'select' ? { data: mocks.ownerChecks.length ? mocks.ownerChecks.shift() : mocks.owners, error: null }
             : table === 'shops' && own[0] === 'update' ? { data: null, error: mocks.updateError }
                 : { data: null, error: null });
     return builder;
@@ -80,6 +84,8 @@ beforeEach(() => {
     mocks.ops.length = 0;
     mocks.pending = null;
     mocks.owners = [];
+    mocks.ownerChecks = [];
+    mocks.previousShop = null;
     mocks.updateError = null;
     vi.stubGlobal('fetch', http);
     vi.stubEnv('FACEBOOK_APP_ID', 'fb-app');
@@ -259,6 +265,30 @@ describe('a Page or Instagram account already connected to another project', () 
         expect(await response.json()).toEqual({ error: 'Энэ Instagram аккаунт өөр төсөлд холбогдсон байна', code: 'ALREADY_CONNECTED' });
         expect(ops('shops', 'eq')[0].args).toEqual(['instagram_business_account_id', '1789']);
         expect(ops('shops', 'update')).toEqual([]);
+    });
+
+    it('rolls back an Instagram selection that raced with another project (no unique index on the IG id) and answers 409', async () => {
+        pending([{ id: '101', name: 'Tower', instagram: { id: '1789', username: 'mandalatower' } }]);
+        mocks.previousShop = { instagram_business_account_id: '1700', instagram_username: 'old', instagram_access_token: 'enc:v1:old-token', instagram_token_expires_at: null };
+        // Эхний шалгалт: өөр эзэнгүй; бичсэний дараах шалгалт: зэрэг хадгалсан өөр төсөл.
+        mocks.ownerChecks = [[], [{ id: 'shop-2' }]];
+        const response = await selectPendingPage('instagram', 'shop-1', '101');
+        expect(response.status).toBe(409);
+        expect(await response.json()).toEqual({ error: 'Энэ Instagram аккаунт өөр төсөлд холбогдсон байна', code: 'ALREADY_CONNECTED' });
+        const updates = ops('shops', 'update').map(op => op.args[0]);
+        expect(updates).toEqual([
+            expect.objectContaining({ instagram_business_account_id: '1789', instagram_access_token: 'enc:v1:page-token-1' }),
+            { instagram_business_account_id: '1700', instagram_username: 'old', instagram_access_token: 'enc:v1:old-token', instagram_token_expires_at: null },
+        ]);
+        // Буцаалт зөвхөн энэ IG ID хэвээр бол (дараа нь өөр сонголт хийсэн бол дарахгүй).
+        expect(ops('shops', 'eq').slice(-2).map(op => op.args)).toEqual([['id', 'shop-1'], ['instagram_business_account_id', '1789']]);
+        expect(ops('meta_page_connect_pending', 'delete')).toEqual([]);
+
+        // Давхардалгүй бол хадгалаад зөвхөн нэг update.
+        mocks.ops.length = 0;
+        mocks.ownerChecks = [[], []];
+        expect((await selectPendingPage('instagram', 'shop-1', '101')).status).toBe(200);
+        expect(ops('shops', 'update')).toHaveLength(1);
     });
 
     it('maps the unique-index race on facebook_page_id to the same 409', async () => {
