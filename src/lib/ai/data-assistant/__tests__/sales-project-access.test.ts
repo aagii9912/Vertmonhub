@@ -18,6 +18,7 @@ function from(table: string) {
         select: () => chain,
         eq: (key: string, value: unknown) => { filters.push(row => row[key] === value); return chain; },
         is: (key: string, value: unknown) => { filters.push(row => (row[key] ?? null) === value); return chain; },
+        not: (key: string, _op: string, value: unknown) => { filters.push(row => (row[key] ?? null) !== value); return chain; },
         in: (key: string, values: unknown[]) => { filters.push(row => values.includes(row[key])); return chain; },
         limit: (n: number) => { cap = n; return chain; }, order: () => chain, range: () => chain,
         ilike: () => chain, or: () => chain,
@@ -83,7 +84,8 @@ describe('AI uses the same project and personal lead boundary', () => {
         expect(await executeDataTool('log_call', { lead_id: otherId, summary: 'Call' }, 'shop', perms, 'user', true)).toHaveProperty('error');
         expect(await executeDataTool('update_lead_status', { lead_id: otherId, new_status: 'contacted' }, 'shop', perms, 'user', true)).toHaveProperty('error');
         expect(await executeDataTool('schedule_viewing', { lead_id: otherId, scheduled_at: '2026-10-02T10:00:00+08:00' }, 'shop', perms, 'user', true)).toHaveProperty('error');
-        expect(await executeDataTool('create_contract', { lead_id: otherId, customer_name: 'Бусдын' }, 'shop', perms, 'user', true)).toHaveProperty('error');
+        // Огноотой — огнооны алдаа биш, лидийн хамрах хүрээний шалгалт өөрөө татгалзана.
+        expect(await executeDataTool('create_contract', { lead_id: otherId, customer_name: 'Бусдын', order_date: '2026-10-15' }, 'shop', perms, 'user', true)).toEqual({ error: 'Лид олдсонгүй' });
         expect(state.writes).toEqual([]);
         expect(state.rows.leads[1].status).toBe('new');
     });
@@ -116,7 +118,7 @@ describe('AI uses the same project and personal lead boundary', () => {
 
     it('stamps a linked contract from the authorized lead and rechecks confirmation', async () => {
         state.rows.leads[0].customer_id = 'customer';
-        const args = { lead_id: ownId, customer_name: 'Өөрийн', total_price: 100 };
+        const args = { lead_id: ownId, customer_name: 'Өөрийн', total_price: 100, order_date: '2026-10-15' };
         expect(await executeDataTool('create_contract', args, 'shop', perms, 'user', false)).toHaveProperty('requiresConfirmation', true);
         state.rows.leads[0].sales_manager_name = 'Сараа';
         expect(await executeDataTool('create_contract', args, 'shop', perms, 'user', true)).toHaveProperty('error');
@@ -124,6 +126,7 @@ describe('AI uses the same project and personal lead boundary', () => {
         state.rows.leads[0].sales_manager_name = 'Батаа';
         expect(await executeDataTool('create_contract', { ...args, customer_id: 'other-customer' }, 'shop', perms, 'user', true)).toHaveProperty('error');
         expect(await executeDataTool('create_contract', args, 'shop', perms, 'user', true, 'Хуурамч нэр')).toMatchObject({ success: true });
-        expect(state.rows.property_contracts[0]).toMatchObject({ shop_id: 'shop', project_id: garden, customer_id: 'customer', sales_manager: 'Батаа', lead_id: ownId });
+        expect(state.rows.property_contracts[0]).toMatchObject({ shop_id: 'shop', project_id: garden, customer_id: 'customer', sales_manager: 'Батаа', lead_id: ownId,
+            order_date: '2026-10-15', contract_date: '2026-10-15' });
     });
 });

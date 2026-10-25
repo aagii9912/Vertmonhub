@@ -32,7 +32,7 @@ import { formatMNT } from '@/lib/utils/currency';
 import { contractIdsByPreviousHolder, listContractTransfers } from '@/lib/services/ContractService';
 import { propertyStatusLabel, unitStatusLabel, type InventoryStatus } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
-import { loadLatestContractListImport, NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
+import { loadLatestContractListImport, NOT_CANCELLED_CONTRACT, readLatestContractListImport } from '@/lib/contracts/live';
 import { summarizeContracts, type ContractSummaryRow } from '@/lib/contracts/summary';
 import { periodContractAmount, periodContractCount, undatedContractsHint } from '@/lib/dashboard/contract-dates';
 import { loadReportInventory } from '@/lib/inventory/report-inventory';
@@ -1649,12 +1649,72 @@ export async function deleteViewing(shopId: string, args: any, confirm = false, 
 
 // ---- Contracts (гэрээ) ----
 
+/** Гэрээний борлуулалтын сувгийн анхдагч утга — ERP/HUB, Мандалагийн файлын бичлэгээр («ПРОПЕРТИС» биш). */
+export const DEFAULT_CONTRACT_SALES_CHANNEL = 'Пропертис';
+/** Захиалга өгсөн огнооны доод хязгаар — PATCH /api/dashboard/contracts/[id]-ийн `order_date` дүрэмтэй ижил. */
+const ORDER_DATE_MIN = '2000-01-01';
+export const CONTRACT_ORDER_DATE_REQUIRED = 'Захиалга өгсөн огноог (YYYY-MM-DD) хэрэглэгчээс асууна уу — өнөөдрөөр бүү таамагла: гэрээ энэ огноогоор долоо хоног, сарын тайланд тоологдох ба дараа нь солигдохгүй.';
+/** Огноогүй карт батлагдвал (хуучин эсвэл гараар өөрчилсөн карт) — ажилтанд шууд харагдах тул загварт биш, ажилтанд хэлнэ. */
+export const CONTRACT_ORDER_DATE_MISSING_ON_CONFIRM = 'Захиалга өгсөн огноо алга тул гэрээ үүсгээгүй — туслахаар гэрээг огноотой нь дахин үүсгүүлнэ үү.';
+
+/**
+ * «Захиалга өгсөн огноо» (PATCH order_date-ийн дүрэм): YYYY-MM-DD, хуанлийн жинхэнэ өдөр (2026-02-30 биш),
+ * 2000-01-01-ээс хойш, өнөөдрөөс (УБ) хойш биш. Огноогүй бол асууна — өнөөдрөөр чимээгүй бөглөхгүй.
+ */
+function contractOrderDate(value: unknown): { date: string } | { error: string; missingFields?: string[] } {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (!text) return { error: CONTRACT_ORDER_DATE_REQUIRED, missingFields: ['order_date'] };
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    if (!match) return { error: 'Захиалга өгсөн огноог YYYY-MM-DD хэлбэрээр өгнө үү (жишээ нь 2026-10-15)', missingFields: ['order_date'] };
+    if (text < ORDER_DATE_MIN) return { error: 'Захиалга өгсөн огноо 2000 оноос өмнө байж болохгүй' };
+    const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) {
+        return { error: `Захиалга өгсөн огноо «${text}» хуанлид байхгүй өдөр байна`, missingFields: ['order_date'] };
+    }
+    if (text > ubDateStr()) return { error: 'Захиалга өгсөн огноо өнөөдрөөс хойш байж болохгүй' };
+    return { date: text };
+}
+
+/**
+ * Шинэ гэрээний төлсөн дүн, үлдэгдлийг ERP хөтөлдөг эсэх (ERP-ээр удирддаг төсөл — Elysium):
+ *  • HUB гэрээний жагсаалтын импорттой — гэрээний эзэн ERP; импорт төлсөн дүн, үлдэгдлийг хэзээ ч бичихгүй,
+ *    шинэ гэрээнд NULL (эзэмшигчийн шийдвэр 2026-10-22, `lib/contracts/list-import.ts`);
+ *  • эсвэл амьд гэрээ бүрийн төлсөн дүн тодорхойгүй (NULL) — ERP-ийн бүтээгдэхүүний экспортоос үүссэн
+ *    (`lib/erp/product-contracts.ts`); гэрээний хуудас ч энэ үед төлсөн дүнг «—» гэж харуулдаг.
+ * Ийм төсөлд paid_amount/balance = NULL («—», PaymentService төлбөр бүртгэхгүй) — 0₮, нийт үнээр зохиохгүй.
+ * Хоёр дахь дүрэм нь гэрээний хуудасны `showPaid`, төлөвлөгөөний биелэлтийн 'none'-тэй ижил: HUB-гүй төсөлд нэг ч амьд
+ * гэрээний төлсөн дүн мэдэгдэж байвал (хуучин AI хэрэгслийн paid 0-оор үүсгэсэн гэрээ ч) CRM төсөл гэж үзнэ.
+ * Уншиж чадаагүй бол таахгүй — алдаа шиднэ.
+ */
+async function contractPaidOwnedByErp(shopId: string): Promise<boolean> {
+    const live = () => supabaseAdmin.from('property_contracts').select('id').eq('shop_id', shopId)
+        .is('deleted_at', null).or(NOT_CANCELLED_CONTRACT);
+    const [hub, unknownPaid, knownPaid] = await Promise.all([
+        readLatestContractListImport(supabaseAdmin, shopId),
+        live().is('paid_amount', null).limit(1),
+        live().not('paid_amount', 'is', null).limit(1),
+    ]);
+    if (unknownPaid.error) throw new Error(unknownPaid.error.message);
+    if (knownPaid.error) throw new Error(knownPaid.error.message);
+    if (hub.latest) return true;
+    return (unknownPaid.data?.length ?? 0) > 0 && (knownPaid.data?.length ?? 0) === 0;
+}
+
 export async function createContract(shopId: string, args: any, confirm = false, salesManagerName = '', scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     if (!args.customer_name) return { error: 'customer_name шаардлагатай' };
     // get_lead_details нэргүй лидэд шошго буцаадаг — гэрээний худалдан авагч болгож хэзээ ч бичихгүй.
     const buyerName = normalizeLeadName(args.customer_name);
     if (!buyerName) return { error: ANONYMOUS_BUYER_NAME_REQUIRED };
-    args = { ...args, customer_name: buyerName };
+    // Гэрээ захиалга өгсөн өдрийнхөө долоо хоног, сард тоологдоно (PATCH order_date нь бөглөгдсөн огноог солихгүй).
+    const orderDate = contractOrderDate(args.order_date);
+    if ('error' in orderDate) {
+        return confirm && orderDate.error === CONTRACT_ORDER_DATE_REQUIRED ? { error: CONTRACT_ORDER_DATE_MISSING_ON_CONFIRM } : orderDate;
+    }
+    const givenChannel = typeof args.sales_channel === 'string' ? args.sales_channel.trim() : '';
+    const salesChannel = !givenChannel || givenChannel.toLowerCase() === DEFAULT_CONTRACT_SALES_CHANNEL.toLowerCase()
+        ? DEFAULT_CONTRACT_SALES_CHANNEL : givenChannel;
+    args = { ...args, customer_name: buyerName, order_date: orderDate.date, sales_channel: salesChannel };
     let projectId: string | null = null;
     let customerId = args.customer_id || null;
     if (args.lead_id) {
@@ -1677,12 +1737,21 @@ export async function createContract(shopId: string, args: any, confirm = false,
     if (args.total_price != null && !isAmount(args.total_price)) return { error: 'total_price-ийг төгрөгөөр, зөвхөн тоогоор өгнө үү' };
     const preview = {
         Харилцагч: args.customer_name, Утас: args.customer_phone || '-',
+        'Захиалга өгсөн огноо': orderDate.date,
         'Нийт үнэ': args.total_price ? formatMNT(args.total_price) : '-',
         'Төсөл/блок': args.block_name || '-', 'Байр': args.unit_number || '-',
+        Суваг: salesChannel,
         Менежер: salesManagerName || '-',
     };
     if (!confirm) return confirmNeeded('create_contract', args, `Шинэ гэрээ: ${args.customer_name}`, preview);
 
+    let paidByErp: boolean;
+    try {
+        paidByErp = await contractPaidOwnedByErp(shopId);
+    } catch (e) {
+        logger.error('[createContract] paid source check failed', { error: e });
+        return { error: 'Гэрээний төлсөн дүнг ERP хөтөлдөг эсэхийг шалгаж чадсангүй. Дахин оролдоно уу.' };
+    }
     const insert: Record<string, unknown> = {
         shop_id: shopId,
         project_id: projectId,
@@ -1691,19 +1760,24 @@ export async function createContract(shopId: string, args: any, confirm = false,
         customer_name: args.customer_name,
         customer_phone: args.customer_phone || null,
         total_price: args.total_price ?? null,
-        balance: args.total_price ?? null,
+        // ERP-ийн төсөлд төлсөн дүн, үлдэгдэл тодорхойгүй (NULL, баганын анхдагч 0 биш); бусад төсөлд өмнөх шигээ
+        // төлсөн 0 (анхдагч), үлдэгдэл = нийт үнэ — төлбөрийн RPC, «үлдэгдэлтэй» шүүлт, цуглуулалтын хувь үүнд тулгуурладаг.
+        ...(paidByErp ? { paid_amount: null, balance: null } : { balance: args.total_price ?? null }),
         block_name: args.block_name || null,
         unit_number: args.unit_number || null,
         contract_number: args.contract_number || null,
-        sales_channel: args.sales_channel || 'ПРОПЕРТИС',
+        sales_channel: salesChannel,
         sales_manager: salesManagerName || null,
-        contract_date: ubDateStr(),
+        // «Захиалга өгсөн огноо» = борлуулалтын огноо (HUB импортын дүрэм): order_date ба contract_date хоёуланд.
+        order_date: orderDate.date,
+        contract_date: orderDate.date,
         lead_id: args.lead_id || null,
         customer_id: customerId,
     };
     const { data, error } = await supabaseAdmin.from('property_contracts').insert(insert).select('id, customer_name').single();
     if (error) return { error: `Алдаа: ${error.message}` };
-    return { success: true, message: `"${data.customer_name}"-ийн гэрээ үүсгэлээ${salesManagerName ? ` (менежер: ${salesManagerName})` : ''}.`, contractId: data.id };
+    const paidNote = paidByErp ? ' Төлсөн дүн, үлдэгдэл тодорхойгүй (ERP хөтөлдөг) — «—», 0₮ биш.' : '';
+    return { success: true, message: `"${data.customer_name}"-ийн гэрээ үүсгэлээ (захиалга өгсөн огноо ${orderDate.date}${salesManagerName ? `, менежер: ${salesManagerName}` : ''}).${paidNote}`, contractId: data.id };
 }
 
 export async function deleteContract(shopId: string, args: any, confirm = false) {

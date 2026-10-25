@@ -147,7 +147,7 @@ const readDefinitions: ToolDefinition[] = [
                 customer_search: { type: SchemaType.STRING, description: 'Харилцагчийн нэр/утас/регистер дугаараар хайх (шилжүүлсэн гэрээний өмнөх эзэмшигч ч орно)' },
                 contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
                 sales_manager: { type: SchemaType.STRING, description: 'Борлуулагч менежерийн нэр' },
-                sales_channel: { type: SchemaType.STRING, description: 'Борлуулалтын суваг (ПРОПЕРТИС, БАРТЕР, ТҮРЭЭС гэх мэт)' },
+                sales_channel: { type: SchemaType.STRING, description: 'Борлуулалтын суваг, гэрээний өгөгдлийн бичлэгээр яг тааруулна (Пропертис, Бартер гэх мэт)' },
                 block_name: { type: SchemaType.STRING, description: 'Төсөл/блокийн нэр (Mandala Garden, Elysium Б1 г.м.)' },
                 overdue_only: { type: SchemaType.BOOLEAN, description: 'Зөвхөн хоцролттой гэрээ (Төлбөр хоцролт ₮ > 0 эсвэл хуваарийн хоцролтын хоног > 0)' },
                 has_balance: { type: SchemaType.BOOLEAN, description: 'Зөвхөн үлдэгдэл төлбөртэй гэрээ' },
@@ -617,17 +617,18 @@ const writeDefinitions: ToolDefinition[] = [
     },
     {
         name: 'create_contract',
-        description: 'Шинэ үл хөдлөхийн гэрээ үүсгэх. Бичих эрхтэй ажилтан ашиглана. Баталгаажуулалт авна. Борлуулалтын менежерийн нэрээр хадгална.',
+        description: 'Шинэ үл хөдлөхийн гэрээ үүсгэх. Бичих эрхтэй ажилтан ашиглана. Баталгаажуулалт авна. Борлуулалтын менежерийн нэрээр хадгална. Захиалга өгсөн огноог (order_date) хэрэглэгчээс заавал асуу — өнөөдрөөр бүү бөглө, бүү таамагла: гэрээ тэр өдрийн долоо хоног, сарын тайланд тоологдох ба дараа нь солигдохгүй. Төлсөн дүн, үлдэгдлийг энд өгөхгүй (ERP-ийн төсөлд тодорхойгүй хэвээр).',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 customer_name: { type: SchemaType.STRING, description: 'Худалдан авагчийн жинхэнэ нэр («Нэргүй харилцагч» шошго биш)' },
+                order_date: { type: SchemaType.STRING, description: 'Захиалга өгсөн огноо YYYY-MM-DD (УБ; өнөөдрөөс хойш биш, 2000 оноос хойш). Заавал — хэрэглэгчээс асуу, өнөөдрөөр бүү бөглө. Гэрээний огноо ч энэ болно' },
                 customer_phone: { type: SchemaType.STRING, description: 'Утас' },
                 total_price: { type: SchemaType.NUMBER, description: 'Нийт үнэ (MNT)' },
                 block_name: { type: SchemaType.STRING, description: 'Төсөл/блокийн нэр' },
                 unit_number: { type: SchemaType.STRING, description: 'Байрны дугаар' },
                 contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
-                sales_channel: { type: SchemaType.STRING, description: 'Борлуулалтын суваг (default: ПРОПЕРТИС)' },
+                sales_channel: { type: SchemaType.STRING, description: 'Борлуулалтын суваг, гэрээний өгөгдлийн бичлэгээр (Пропертис, Бартер гэх мэт; default: Пропертис)' },
                 product_type: { type: SchemaType.STRING, enum: ['residential', 'parking', 'industry', 'commercial'], description: 'Бүтээгдэхүүний төрөл (default: residential)' },
                 lead_id: { type: SchemaType.STRING, description: 'Холбогдох лийдийн ID' },
                 customer_id: { type: SchemaType.STRING, description: 'Холбогдох харилцагчийн ID' }
