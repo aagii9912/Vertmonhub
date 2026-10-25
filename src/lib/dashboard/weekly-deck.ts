@@ -107,22 +107,11 @@ const clipWords = (text: string, max: number) => {
 export const managerShort = (name: string | null) => name?.split('.')[0]?.trim() || '—';
 
 /**
- * Arial-ийн тэмдэгтийн ойролцоо өргөн (em): нарийн тэмдэгт, цифр, том үсэг, өргөн жижиг үсэг, бусад.
- * Слайдын хайрцагт текст багтах эсэхийг (мөр шилжилт, картын тоо) урьдчилан тооцоход л — PowerPoint,
- * Keynote, QuickLook `fit: 'shrink'`-ийг файл засахаас нааш хэрэгжүүлдэггүй.
+ * Arial-ийн бичвэрийн өргөн (em): `arialWidth`-ийн (тэмдэгт бүрийн advance width) 72pt-ийн инч = em. Слайдын
+ * хайрцагт текст багтах эсэхийг (мөр шилжилт, картын тоо) урьдчилан тооцоход л — PowerPoint, Keynote, QuickLook
+ * `fit: 'shrink'`-ийг файл засахаас нааш хэрэгжүүлдэггүй. Давхрын зураглал ч ижил хэмжүүрээр (нэг загвар).
  */
-function textEm(text: string, bold = false): number {
-    let em = 0;
-    for (const ch of text) {
-        if (/[\s.,:;'|!()\[\]ilIjtfr\-]/.test(ch)) em += 0.3;
-        else if (/\d/.test(ch)) em += 0.556;
-        else if (/[—%@]/.test(ch)) em += 0.95;
-        else if (/[mwMWшщжюыфмШЩЖЮЫФМ]/.test(ch)) em += 0.85 * (bold ? 1.07 : 1);
-        else if (/[A-ZА-ЯЁӨҮ]/.test(ch)) em += 0.68 * (bold ? 1.07 : 1);
-        else em += 0.54 * (bold ? 1.07 : 1);
-    }
-    return em;
-}
+const textEm = (text: string, bold = false): number => arialWidth(text, 72, bold);
 /**
  * Өгсөн өргөнд (инч) үгийн заагаар ороосон мөрийн тоо; нэг мөрт багтахгүй үг тэмдэгтээр хуваагдана.
  * Өргөний 5%-ийг нөөцөлнө (дүгнэлт дутуу бус, илүү гарах нь дээр).
@@ -193,7 +182,7 @@ export function stat(slide: Slide, x: number, y: number, w: number, h: number, l
     slide.addText(label, { x: x + 0.22, y: y + 0.16, w: w - 0.44, h: 0.3, fontFace: FONT, fontSize: 11, color: C.muted, margin: 0, isTextBox: true });
     // Хэмжээг өргөнөөр нь сонгоно («12,345.67 USD» 26pt-д 2 мөр болж доорх тайлбарыг дардаг).
     let size = value.length > 14 ? 20 : 26;
-    while (size > 14 && textEm(value, true) * size / 72 * 1.03 > w - 0.44) size -= 2;
+    while (size > 14 && arialWidth(value, size, true) * 1.03 > w - 0.44) size -= 2;
     slide.addText(value, { x: x + 0.22, y: y + 0.46, w: w - 0.44, h: 0.62, fontFace: FONT, fontSize: size, bold: true, color: tone === 'danger' ? C.danger : tone === 'gold' ? C.gold : C.ink, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
     if (helper) slide.addText(helper, { x: x + 0.22, y: y + 1.08, w: w - 0.44, h: Math.max(0.3, h - 1.2), fontFace: FONT, fontSize: 10, color: C.muted, margin: 0, valign: 'top', isTextBox: true });
 }
@@ -826,11 +815,11 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     const card = (key: string) => {
         const def = channelMetric('meta_ads', key);
         const value = totals[key];
-        const money = def?.kind === 'money';
+        const isMoney = def?.kind === 'money';
         const parts: string[] = [];
-        if (typeof value !== 'number') parts.push(money && mixedCurrency ? 'Өөр валют холилдсон — тооцоогүй' : missingHelper[key] ?? 'Тооцоогүй');
+        if (typeof value !== 'number') parts.push(isMoney && mixedCurrency ? 'Өөр валют холилдсон — тооцоогүй' : missingHelper[key] ?? 'Тооцоогүй');
         else {
-            if (money && !currency) parts.push('Валют тодорхойгүй — төгрөг биш');
+            if (isMoney && !currency) parts.push('Валют тодорхойгүй — төгрөг биш');
             const delta = match.comparison?.[key];
             if (compared && delta) {
                 if (delta.reason === 'currency') parts.push('Валют өөр — харьцуулаагүй');
@@ -924,7 +913,7 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     // 3. Кампанит ажлаар.
     const campaigns = metaCampaignRows(report);
     if (!campaigns.length) return;
-    const money = metaCampaignsBySpend(totals);
+    const bySpend = metaCampaignsBySpend(totals);
     const withReach = campaigns.some(row => typeof row.values.reach === 'number');
     // Ижил нэртэй мөр = нэг кампанит ажлын өөр төрөл эсвэл ижил нэртэй өөр кампанит ажил — ялгах ID задаргаанд алга тул мөрөөр л тоолно.
     const distinct = new Set(campaigns.map(row => row.label)).size === campaigns.length;
@@ -934,7 +923,7 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
     tableSlides(pres, {
         kicker, title: 'Meta зар — кампанит ажлаар',
         subtitle: [span(period), distinct ? `${campaigns.length} кампанит ажил` : `${campaigns.length} мөр (кампанит ажил × үр дүнгийн төрөл)`,
-            money ? 'зардлаар эрэмбэлсэн' : 'харагдалтаар эрэмбэлсэн', truncated ? 'эхний 100 мөр' : null].filter(Boolean).join(' · '),
+            bySpend ? 'зардлаар эрэмбэлсэн' : 'харагдалтаар эрэмбэлсэн', truncated ? 'эхний 100 мөр' : null].filter(Boolean).join(' · '),
         head: [headCell('Кампанит ажил'), headCell('Үр дүнгийн төрөл'), headCell('Үр дүн', 'right'), headCell(`Нэг үр дүнгийн өртөг${unit}`, 'right'), headCell(`Зардал${unit}`, 'right'),
             headCell('Impressions', 'right'), ...(withReach ? [headCell('Reach', 'right')] : []), headCell('Link clicks', 'right')],
         rows: campaigns.map(row => [
@@ -943,7 +932,7 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
             // «(үр дүн)» дагавар баганын гарчигт байгаа тул хасна.
             bodyCell(metaRowTypeLabel(row).replace(/ \(үр дүн\)$/, ''), 'left', isMetaResultType(row.tag) ? {} : { color: C.muted }),
             bodyCell(count(value(row, 'results')), 'right', { bold: true }), bodyCell(metaRowCost(row), 'right'),
-            bodyCell(money && value(row, 'spend') !== null ? formatChannelValue(value(row, 'spend')!, 'money') : '—', 'right'),
+            bodyCell(bySpend && value(row, 'spend') !== null ? formatChannelValue(value(row, 'spend')!, 'money') : '—', 'right'),
             bodyCell(count(value(row, 'impressions')), 'right'), ...(withReach ? [bodyCell(count(value(row, 'reach')), 'right')] : []), bodyCell(count(value(row, 'link_clicks')), 'right'),
         ]),
         colW, perSlide: 11, fontSize: 11, fitHeight: true,
@@ -951,7 +940,7 @@ function metaAdsSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
             'Кампанит ажил бүр үр дүнгийн төрлөөрөө тусдаа мөр: олон төрлийн ad set-тэй кампанит ажил хэд хэдэн мөртэй. Ижил нэртэй өөр кампанит ажил ч тусдаа мөр.',
             'Үр дүнг төрөл хооронд нэмэхгүй. Reach нь тухайн кампанит ажлын Meta-гийн давхардалгүй тоо (ирсэн мөрт л); мөрүүдийн reach-ийг нэмж нийт хүрсэн хүн гаргахгүй.',
             reachSum ? '«Үр дүн төрлөөр» слайдын хүрсэн хүн (≈) нь reach зорилготой кампанит ажлуудын reach-ийн нийлбэр — давхцаж болно.' : null,
-            money ? currencyNote : mixedCurrency
+            bySpend ? currencyNote : mixedCurrency
                 ? 'Файлд өөр валют холилдсон тул кампанит ажлын зардал, өртгийг харуулаагүй, харьцуулахгүйн тулд харагдалтаар эрэмбэлсэн.'
                 : 'Тайланд зардал алга (экспортод зардлын багана сонгоогүй) тул кампанит ажлын зардал, өртгийг харуулаагүй; харагдалтаар эрэмбэлсэн.',
             truncated ? 'Задаргаанд зардлаар эхний 100 мөр хадгалагдсан; нийт дүнд бүх кампанит ажил орсон.' : null,
