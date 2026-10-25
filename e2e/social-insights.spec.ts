@@ -31,7 +31,7 @@ async function setup(page: Page) {
                 : { connected: false, page: null });
         }
         if (path === '/api/marketing/facebook/posts') {
-            return reply({ posts: [{ id: '102_1', message: 'Нээлтийн өдөр', image: null, permalink: null, created_time: '2026-10-02T02:00:00+0000', likes: 14, comments: null, shares: 0, insights: { views: 900, viewers: null, clicks: 12, reactions: null } }], unavailable: [] });
+            return reply({ posts: [{ id: '102_1', message: 'Нээлтийн өдөр', image: null, permalink: null, created_time: '2026-10-02T02:00:00+0000', likes: 14, comments: null, shares: 0, insights: { views: 900, clicks: 12, reactions: null } }], unavailable: [] });
         }
         if (path === '/api/marketing/facebook/insights') {
             expect(url.searchParams.get('days')).toBe('28');
@@ -85,7 +85,8 @@ test('connects a Facebook Page server-side after OAuth and shows v26 insights wi
     await expect(video).toContainText('өгөгдөлгүй');
     await expect(page.locator('div.bg-surface-2', { hasText: 'Үзсэн хүн' })).toContainText('2026-10-03-ны байдлаар');
     await expect(page.getByText(/2026-09-06 – 2026-10-03 \(28 өдөр/)).toBeVisible();
-    await expect(page.getByTitle('Үзсэн хүн (нийтлэлийн насан туршид)')).toContainText('—');
+    // Давхардалгүй үзэгчийг Meta бүх постод 0 гэж буцаадаг тул Facebook таб постын үзэлтийг харуулна.
+    await expect(page.getByTitle('Үзэлт (нийтлэлийн насан туршид)')).toContainText('900');
     // Meta fan_count-ийг өгөөгүй (Page like хасагдаж байгаа) — 0 биш «—».
     await expect(page.getByText('Like тоо').locator('xpath=ancestor::div[2]')).toContainText('—');
     expect(state.errors).toEqual([]);

@@ -65,7 +65,7 @@ interface FacebookPostData {
     likes: number | null;
     comments: number | null;
     shares: number | null;
-    insights?: { views: number | null; viewers: number | null; clicks: number | null };
+    insights?: { views: number | null; clicks: number | null };
 }
 
 /** /api/marketing/facebook/insights — Meta-гийн өгөөгүй утга null. */
@@ -967,9 +967,9 @@ function FacebookTabContent({
                                                     <Share2 className="w-3.5 h-3.5" />
                                                     {showCount(post.shares)}
                                                 </span>
-                                                <span className="flex items-center gap-1" title="Үзсэн хүн (нийтлэлийн насан туршид)">
+                                                <span className="flex items-center gap-1" title="Үзэлт (нийтлэлийн насан туршид)">
                                                     <Eye className="w-3.5 h-3.5" />
-                                                    {showCount(post.insights?.viewers)}
+                                                    {showCount(post.insights?.views)}
                                                 </span>
                                                 <span className="ml-auto">{formatDate(post.created_time)}</span>
                                             </div>

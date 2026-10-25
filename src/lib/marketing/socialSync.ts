@@ -51,7 +51,8 @@ type KnownCounts = { likes: number | null; comments: number | null; shares: numb
 /**
  * Meta энэ удаа өгөөгүй тоо (жишээ нь эрх цуцлагдсан) өмнө хадгалсан мэдэгдэж буй утгыг дарахгүй.
  * `reach` хоосон: Meta постын давхардалгүй хүрэлтийг (post_total_media_view_unique) бүх постод 0 гэж буцаадаг
- * (2026-10-25, Elysium-ийн 330 мөр бүгд 0) — бодит тоо биш тул хадгалахгүй, өмнөх 0-ийг ч NULL болгоно.
+ * (2026-10-25, Elysium-ийн 330 мөр бүгд 0) — бодит тоо биш тул асуухгүй (`POST_LIFETIME_METRICS`), хадгалахгүй,
+ * өмнөх 0-ийг ч NULL болгоно.
  */
 function postRow(shopId: string, { post }: PagePost, previous?: KnownCounts) {
     const row = {

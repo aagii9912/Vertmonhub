@@ -40,10 +40,12 @@ export const PAGE_METRIC_INFO: Record<PageDailyMetric, SocialMetricInfo> = {
     page_video_views: { label: 'Видео үзэлт', kind: 'sum' },
 };
 
-/** Нийтлэлийн насан туршийн (lifetime) метрик. */
+/**
+ * Нийтлэлийн насан туршийн (lifetime) метрик. `post_total_media_view_unique`-ийг (давхардалгүй үзсэн хүн) асуухгүй:
+ * Meta бүх постод 0 гэж буцаадаг (2026-10-25, Elysium-ийн 330 мөр бүгд 0) — бодит тоо биш тул хадгалахгүй, харуулахгүй.
+ */
 export const POST_LIFETIME_METRICS = [
     'post_media_view',
-    'post_total_media_view_unique',
     'post_clicks',
     'post_reactions_by_type_total',
 ] as const;
@@ -51,7 +53,6 @@ export type PostLifetimeMetric = typeof POST_LIFETIME_METRICS[number];
 
 export const POST_METRIC_INFO: Record<PostLifetimeMetric, SocialMetricInfo> = {
     post_media_view: { label: 'Үзэлт', kind: 'latest' },
-    post_total_media_view_unique: { label: 'Үзсэн хүн', kind: 'latest' },
     post_clicks: { label: 'Товшилт', kind: 'latest' },
     post_reactions_by_type_total: { label: 'Reaction', kind: 'latest' },
 };

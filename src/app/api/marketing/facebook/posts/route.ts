@@ -29,8 +29,8 @@ export const GET = withRoute({ module: 'marketing-roi', error: 'Facebook posts �
                 // Graph хуваалцаагүй нийтлэлд `shares` талбарыг буцаадаггүй.
                 shares: post.shares ? count(post.shares.count) : 0,
                 insights: {
+                    // Давхардалгүй үзсэн хүнийг (post_total_media_view_unique) Meta бүх постод 0 гэж буцаадаг тул өгөхгүй.
                     views: insights.post_media_view?.value ?? null,
-                    viewers: insights.post_total_media_view_unique?.value ?? null,
                     clicks: insights.post_clicks?.value ?? null,
                     reactions: insights.post_reactions_by_type_total?.breakdown ?? null,
                 },

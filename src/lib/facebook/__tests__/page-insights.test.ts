@@ -125,6 +125,8 @@ it('loads posts with lifetime insights in one call; reactions keep their breakdo
         id: '42_1', created_time: '2026-10-01T00:00:00+0000', likes: { summary: { total_count: 4 } },
         insights: { data: [
             { name: 'post_media_view', values: [{ value: 900 }] },
+            // Асуугаагүй ч ирсэн давхардалгүй үзэгч (Meta бүх постод 0) — хадгалахгүй.
+            { name: 'post_total_media_view_unique', values: [{ value: 0 }] },
             { name: 'post_reactions_by_type_total', values: [{ value: { like: 3, love: 1 } }] },
         ] },
     }] }));
@@ -135,7 +137,8 @@ it('loads posts with lifetime insights in one call; reactions keep their breakdo
         post_reactions_by_type_total: { value: 4, breakdown: { like: 3, love: 1 } },
     });
     expect(posts[0].insights.post_total_media_view_unique).toBeUndefined();
-    expect(urls()[0].searchParams.get('fields')).toContain(`insights.metric(${POST_LIFETIME_METRICS.join(',')})`);
+    expect(urls()[0].searchParams.get('fields')).toContain('insights.metric(post_media_view,post_clicks,post_reactions_by_type_total)');
+    expect(POST_LIFETIME_METRICS).not.toContain('post_total_media_view_unique');
 });
 
 it('probes post metrics once when one is removed, and reloads with the valid ones', async () => {
@@ -151,7 +154,7 @@ it('probes post metrics once when one is removed, and reloads with the valid one
     const { posts, unavailable } = await getPagePosts('42', 'page-token');
     expect(unavailable).toEqual(['post_clicks']);
     expect(posts[0].insights.post_media_view).toEqual({ value: 5, breakdown: null });
-    expect(urls().at(-1)!.searchParams.get('fields')).toContain('insights.metric(post_media_view,post_total_media_view_unique,post_reactions_by_type_total)');
+    expect(urls().at(-1)!.searchParams.get('fields')).toContain('insights.metric(post_media_view,post_reactions_by_type_total)');
 });
 
 it('returns posts without insights when insights permission is missing, marking every post metric unavailable', async () => {

@@ -50,7 +50,7 @@ beforeEach(() => {
     mocks.posts.mockResolvedValue({
         posts: [
             { post: { id: '42_1', message: 'Нээлт', created_time: '2026-10-01T02:00:00+0000', likes: { summary: { total_count: 5 } }, comments: { summary: { total_count: 2 } } },
-              insights: { post_total_media_view_unique: { value: 800, breakdown: null }, post_reactions_by_type_total: { value: 6, breakdown: { like: 5, love: 1 } } } },
+              insights: { post_media_view: { value: 800, breakdown: null }, post_reactions_by_type_total: { value: 6, breakdown: { like: 5, love: 1 } } } },
             { post: { id: '42_2', created_time: '2026-10-02T02:00:00+0000', shares: { count: 3 } }, insights: {} },
             { post: { id: '99_7', created_time: '2026-10-02T02:00:00+0000' }, insights: {} }, // өөр Page-ийн ID
         ],
@@ -70,7 +70,7 @@ it('stores date-keyed Page rows for the last 30 finished Meta days and lifetime 
         expect.objectContaining({ day: '2026-10-03', metric: 'page_follows', value: 12000 }),
     ]);
     expect(daily.filter(r => r.object_type === 'post')).toEqual([
-        expect.objectContaining({ object_id: '42_1', page_id: '42', day: '2026-10-05', metric: 'post_total_media_view_unique', value: 800, breakdown: null }),
+        expect.objectContaining({ object_id: '42_1', page_id: '42', day: '2026-10-05', metric: 'post_media_view', value: 800, breakdown: null }),
         expect.objectContaining({ object_id: '42_1', day: '2026-10-05', metric: 'post_reactions_by_type_total', value: 6, breakdown: { like: 5, love: 1 } }),
     ]);
     // Meta-гийн өгөөгүй метрик мөргүй — хэзээ ч 0 бичихгүй.
