@@ -562,7 +562,7 @@ describe('weekly meeting deck (.pptx)', () => {
             instagram: { connected: false, username: null, sync: null },
             ads: { accountId: 'act_1129994262383674', tokenSource: 'user' as const, tokenDaysLeft: 41, tokenExpired: false, insights: { lastAttemptAt: '2026-10-13T04:00:00Z', lastSuccessAt: null, from: null, to: null, error: 'Meta-гийн хандах эрх хүрэлцэхгүй (#200).' }, spend: null, currency: 'USD', mntPerUnit: null },
         };
-        const months = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, recorded: i < 9, pending: i === 9 ? { USD: 300.38 } : {} }));
+        const months = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, recorded: i < 9, pending: (i === 9 ? { USD: 300.38 } : {}) as Record<string, number> }));
         const budget = { year: 2026, month: 10, overview: buildBudgetOverview(Array(12).fill(10000000), Array.from({ length: 12 }, (_, i) => i < 9 ? 8000000 : 0), Array(12).fill(0)), spendStatus: months };
         const { text, zip } = await render(input({
             kind: 'marketing', connections, budget, social: null, failed: { social: 'Facebook хуудасны үзүүлэлтийг уншиж чадсангүй' },

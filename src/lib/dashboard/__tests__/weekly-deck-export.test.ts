@@ -30,7 +30,7 @@ const marketing = () => buildMarketingPerformance({
     projects: [], targets: [], contracts: [], activities: [], leads: [],
     spend: [{ id: 'meta:1', spent_at: '2026-10-22', amount: 0, channel: 'meta_ads', source: 'meta', exclusion: 'missing_fx', native_amount: 1234.56, currency: 'USD', project_id: null, marketing_owner_name: null, marketing_campaign_id: null, note: null }],
 }, range);
-const spendStatus: BudgetSpendMonth[] = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, recorded: i < 9, pending: i === 9 ? { USD: 1234.56 } : {} }));
+const spendStatus: BudgetSpendMonth[] = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, recorded: i < 9, pending: (i === 9 ? { USD: 1234.56 } : {}) as Record<string, number> }));
 const connections: MarketingConnections = {
     page: { connected: true, name: 'Elysium Residence', sync: { lastAttemptAt: '2026-10-27T04:00:00Z', lastSuccessAt: '2026-10-27T04:00:00Z', from: '2026-09-27', to: '2026-10-26', error: null } },
     instagram: { connected: true, username: 'elysiumbymoncon', sync: null },
