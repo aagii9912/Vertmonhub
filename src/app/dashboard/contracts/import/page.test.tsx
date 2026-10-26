@@ -144,3 +144,24 @@ it('requires confirming a file dated before the latest import', async () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Хуучин файлыг мэдсээр оруулж байна' }));
     expect(screen.getByRole('button', { name: 'Файл шалгах' })).toBeEnabled();
 });
+
+it('enables «Батлах» for a re-export whose only change is «Нийт төлсөн дүн» and says only paid totals are updated', async () => {
+    transport.fetch.mockResolvedValueOnce(reply(200, preview({ review: [], updates: [], inserts: [], blocking: [], opsCount: 0, canCommit: true,
+        counts: { insert: 0, insertCancelled: 0, update: 0, unchanged: 83, review: 0, blocking: 0, missing: 10 },
+        extraColumns: ['Нийт төлсөн дүн'], paidUpdate: { rows: 76, changed: 12, reimport: true } })))
+        .mockResolvedValueOnce(reply(201, { ok: true, import_id: 'i-2', inserted: 0, updated: 0, replayed: false }));
+    renderPage();
+    await upload();
+    expect(screen.getByText('Гэрээнд өөрчлөлт алга — зөвхөн «Нийт төлсөн дүн» шинэчлэгдэнэ')).toBeInTheDocument();
+    expect(screen.getByText(/мөрийн төлсөн дүн ижил огноотой өмнөх импортоос зөрүүтэй/)).toHaveTextContent('12 мөрийн төлсөн дүн');
+    expect(screen.getByText(/мөрийн төлсөн дүн ижил огноотой өмнөх импортоос зөрүүтэй/)).toHaveTextContent('«Төлөвлөгөөний биелэлт»-д гараар оруулаагүй сарын орсон мөнгийг');
+    expect(screen.queryByText('Бүгд хэвээр — өөрчлөх зүйлгүй.')).not.toBeInTheDocument();
+
+    const confirm = screen.getByRole('button', { name: 'Батлах' });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    expect(transport.confirm).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining('зөвхөн файлын «Нийт төлсөн дүн» (76 мөр)') }));
+    expect(await screen.findByText('Хадгалсан')).toBeInTheDocument();
+    expect(transport.fetch.mock.calls[1][1].body.get('action')).toBe('commit');
+    expect(screen.getByText(/Зөвхөн «Нийт төлсөн дүн» шинэчлэгдлээ/)).toHaveTextContent('гараар оруулаагүй сарын орсон мөнгө');
+});

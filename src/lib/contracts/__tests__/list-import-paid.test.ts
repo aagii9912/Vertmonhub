@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { hasHubPaidTotals, hubPaidByContract, planContractListImport, storedHubPaidRows, type HubPaidContract } from '../list-import';
+import {
+    contractListHasWork, hasHubPaidTotals, hubPaidByContract, hubPaidDifference, planContractListImport, storedHubPaidRows,
+    type ContractListContract, type ContractListUnit, type HubPaidContract, type HubPaidRow, type HubRow,
+} from '../list-import';
 
 const FILE_DATE = '2026-10-20';
 
@@ -122,5 +125,99 @@ describe('HUB «Нийт төлсөн дүн» rows', () => {
         expect(plan.counts.insert).toBe(0);
         const paid = hubPaidByContract(storedHubPaidRows(plan.rows), contracts, FILE_DATE);
         expect(Object.fromEntries(paid)).toEqual({ drift: 7 });
+    });
+});
+
+describe('«Нийт төлсөн дүн»-гийн дахин импорт (ижил файлын огноо)', () => {
+    const units: ContractListUnit[] = ['7', '8'].map(n => ({
+        code: `Б2-${n}`, category: 'residential', block: 'Б2', floor: null, model: null, unit_number: n, legacy_unit_number: null, status: 'sold',
+    }));
+    const fileRow = (row: number, unitNumber: string, paidTotal: number | null): HubRow => ({
+        row, productType: 'residential', block: 'Б2', unitNumber, floor: null, model: null, area: null, prepaymentCondition: null, pricePerSqm: null,
+        total: 100, prepaymentDue: null, overdue: null, orderDate: '2026-09-20', status: 'active', firstName: null, lastName: null,
+        paymentCondition: null, contractNumber: null, salesManager: null, paidTotal,
+    });
+    // Өмнө нь энэ файлын огноогоор импортлогдсон гэрээ — файлтай яг ижил (хоцролтын огноо орно).
+    const db = (n: string): ContractListContract => ({
+        id: `c${n}`, product_type: 'residential', unit_label: `Б2-${n}`, block_name: 'Б2', unit_number: n, legacy_unit_number: null,
+        contract_status: 'active', order_date: '2026-09-20', contract_date: '2026-09-20', total_price: 100, price_per_sqm: null, contracted_area: null,
+        prepayment_condition: null, prepayment_due: null, payment_condition: null, overdue_amount: null, overdue_as_of: FILE_DATE, customer_name: null,
+        customer_first_name: null, customer_last_name: null, contract_number: null, sales_manager: null, paid_amount: null,
+    });
+    const plan = (rows: HubRow[], sameDateImportRows?: unknown) => planContractListImport({
+        rows, units, contracts: [db('7'), db('8')], transferredIds: new Set(), paymentContractIds: new Set(),
+        latestImportDate: FILE_DATE, sameDateImportRows, reportDate: FILE_DATE, today: FILE_DATE,
+    });
+    const stored = plan([fileRow(2, '7', 10), fileRow(3, '8', null)]).rows;
+
+    it('plans zero contract ops but a paid update when only «Нийт төлсөн дүн» changed', () => {
+        const next = plan([fileRow(2, '7', 25), fileRow(3, '8', 40)], stored);
+        expect(next.errors).toEqual([]);
+        expect(next.ops).toEqual([]);
+        expect(next.counts).toMatchObject({ update: 0, unchanged: 2 });
+        expect(next.paidUpdate).toEqual({ rows: 2, changed: 2, reimport: true });
+        expect(next.summary.paidUpdate).toEqual(next.paidUpdate);
+        expect(next.rows.map(row => row.paidTotal)).toEqual([25, 40]);
+        // Нэг мөрийн дүн л өөрчлөгдсөн.
+        expect(plan([fileRow(2, '7', 25), fileRow(3, '8', null)], stored).paidUpdate).toEqual({ rows: 1, changed: 1, reimport: true });
+    });
+
+    it('an identical file (any row order or numbering) is not a paid update', () => {
+        expect(plan([fileRow(2, '7', 10), fileRow(3, '8', null)], stored).paidUpdate).toBeNull();
+        expect(plan([fileRow(5, '8', null), fileRow(9, '7', 10)], stored).paidUpdate).toBeNull();
+    });
+
+    it('never replaces stored totals with a file that has none, and needs a clean file', () => {
+        expect(plan([fileRow(2, '7', null), fileRow(3, '8', null)], stored).paidUpdate).toBeNull();
+        expect(plan([fileRow(2, '7', 25), fileRow(3, '999', 1)], stored)).toMatchObject({ errors: ['Мөр 3: Орон сууц Б2-999 байр олдсонгүй'], paidUpdate: null });
+    });
+
+    it('a file date without an import makes every paid row new', () => {
+        expect(plan([fileRow(2, '7', 10), fileRow(3, '8', null)]).paidUpdate).toEqual({ rows: 1, changed: 1, reimport: false });
+        expect(plan([fileRow(2, '7', 10)], null).paidUpdate).toEqual({ rows: 1, changed: 1, reimport: false });
+    });
+
+    it('hashes the stored rows: files differing only in paid totals never share a plan hash', () => {
+        const a = plan([fileRow(2, '7', 10), fileRow(3, '8', null)], stored);
+        expect(a.ops).toEqual([]);
+        expect(plan([fileRow(3, '8', null), fileRow(2, '7', 10)], stored).canonical).toBe(a.canonical);
+        expect(plan([fileRow(2, '7', 11), fileRow(3, '8', null)], stored).canonical).not.toBe(a.canonical);
+        expect(a.canonical).toContain('"paidTotal":10');
+    });
+
+    it('hashes the same-date import it compared against, only when the file has paid totals', () => {
+        const file = [fileRow(2, '7', 25), fileRow(3, '8', 40)];
+        const base = plan(file, stored);
+        // Тэр огноонд өөр дүнтэй импорт хадгалагдсан: зөрүү ижил (2 мөр) ч hash өөр.
+        const otherBase = plan([fileRow(2, '7', 11), fileRow(3, '8', null)]).rows;
+        expect(plan(file, otherBase).paidUpdate).toEqual(base.paidUpdate);
+        expect(plan(file, otherBase).canonical).not.toBe(base.canonical);
+        // Тэр огноогоор импорт гарч ирсэн; суурийн мөрийн дараалал, дугаар хамаагүй.
+        expect(plan(file).canonical).not.toBe(base.canonical);
+        expect(plan(file, [...stored].reverse().map((row, index) => ({ ...row, row: index + 10 }))).canonical).toBe(base.canonical);
+        // Төлсөн дүнгүй файл суурьтай харьцуулахгүй — hash-д орохгүй.
+        const blank = [fileRow(2, '7', null), fileRow(3, '8', null)];
+        expect(plan(blank, stored).canonical).toBe(plan(blank).canonical);
+    });
+
+    it('commits only plans with contract ops or a paid update', () => {
+        expect(contractListHasWork(plan([fileRow(2, '7', 25), fileRow(3, '8', 40)], stored))).toBe(true);
+        expect(contractListHasWork(plan([fileRow(2, '7', 10), fileRow(3, '8', null)], stored))).toBe(false);
+        expect(contractListHasWork({ ops: [{ op: 'update' } as never], paidUpdate: null })).toBe(true);
+    });
+
+    it('counts changed, added and removed rows by unit, date and status', () => {
+        const row = (unitLabel: string, paidTotal: number | null, over: Partial<HubPaidRow> = {}): HubPaidRow => ({
+            row: 2, productType: 'residential', unitLabel, orderDate: '2026-09-20', status: 'active', paidTotal, ...over,
+        });
+        const before = [row('Б2-7', 10), row('Б2-8', null), row('Б2-9', 5)];
+        expect(hubPaidDifference(before, before)).toBe(0);
+        expect(hubPaidDifference([...before].reverse().map((r, i) => ({ ...r, row: i + 10 })), before)).toBe(0);
+        expect(hubPaidDifference([row('Б2-7', 11), row('Б2-8', null), row('Б2-9', 5)], before)).toBe(1);
+        // 0 ба хоосон ялгаатай; нэмэгдсэн ба хасагдсан мөр тус бүр.
+        expect(hubPaidDifference([row('Б2-7', 10), row('Б2-8', 0), row('Б2-9', 5)], before)).toBe(1);
+        expect(hubPaidDifference([row('Б2-7', 10), row('Б2-8', null), row('Б2-10', 5)], before)).toBe(2);
+        expect(hubPaidDifference([row('Б2-7', 10)], before)).toBe(2);
+        expect(hubPaidDifference([row('Б2-7', 10, { status: 'cancelled' }), row('Б2-8', null), row('Б2-9', 5)], before)).toBe(2);
     });
 });

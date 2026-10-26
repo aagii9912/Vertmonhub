@@ -128,7 +128,7 @@ export function WeeklySalesDetails({ query, canOpenErp }: { query: ReturnType<ty
                             className={cn('min-h-9 rounded-md px-3 text-xs focus-ring', map.block === activeMap.block ? 'bg-foreground text-background' : 'bg-surface-2 text-fg-2 hover:text-foreground')}>{map.block}</button>)}
                     </div>}
                 </div>
-                <FloorMapLegend />
+                <FloorMapLegend liveContracts={report.inventory!.source.kind === 'contracts'} />
                 <FloorMap map={activeMap} statusLabels={report.inventory!.statusLabels} />
             </section>}
 

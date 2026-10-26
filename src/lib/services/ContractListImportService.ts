@@ -2,11 +2,13 @@
  * Гэрээний жагсаалтын (ERP «HUB», 16 багана) импорт — сервер тал. Route-ийн хаалтын (contracts + erp-imports
  * бичих, хязгааргүй хэрэглэгч, shop-ийн ганц төсөл) дараа дуудагдана.
  *
- * Урьдчилан харах: файл задлах → төслийн байр, гэрээ, шилжүүлэг, төлбөртэй гэрээ, сүүлийн импортыг уншиж
- * (`fetchAllRows`) төлөвлөгөө гаргана (`planContractListImport`), hash = sha256(`{reportDate, ops}`).
+ * Урьдчилан харах: файл задлах → төслийн байр, гэрээ, шилжүүлэг, төлбөртэй гэрээ, сүүлийн импорт, ижил огноотой сүүлийн
+ * импортын мөрүүдийг уншиж (`fetchAllRows`) төлөвлөгөө гаргана (`planContractListImport`), hash = sha256(`{reportDate, ops, rows}`
+ * + файлд төлсөн дүн байвал харьцуулсан ижил огнооны импортын дүн).
  * Батлах: ижил хүсэлтийн ID хадгалагдсан бол түүнийг буцаана (хариу алдагдсан давталт); үгүй бол төлөвлөгөөг
  * дахин тооцоолж, hash зөрвөл 409 `stale_preview`; зөрчил, шалгаагүй өөрчлөлт, хуучин файл → 400; дараа нь
- * `import_contract_list` RPC нэг гүйлгээнд бичнэ (төлсөн дүн, үлдэгдэлд хүрэхгүй).
+ * `import_contract_list` RPC нэг гүйлгээнд бичнэ (төлсөн дүн, үлдэгдэлд хүрэхгүй). Гэрээнд өөрчлөлтгүй ч «Нийт төлсөн
+ * дүн» ижил огноотой импортынхоос зөрвөл (`paidUpdate`) ops = [] -ээр импортын бүртгэл (мөрүүд) л хадгалагдана.
  */
 import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -17,7 +19,7 @@ import { logger } from '@/lib/utils/logger';
 import { loadTransferredContractIds } from '@/lib/services/ContractService';
 import { isMissingContractListSchema, readLatestContractListImport, type LatestContractListImport } from '@/lib/contracts/live';
 import {
-    CONTRACT_LIST_CONTRACT_FIELDS, CONTRACT_LIST_UNIT_FIELDS, contractListConflictMessage, parseContractList, planContractListImport,
+    CONTRACT_LIST_CONTRACT_FIELDS, CONTRACT_LIST_UNIT_FIELDS, contractListConflictMessage, contractListHasWork, parseContractList, planContractListImport,
     type ContractListContract, type ContractListImportPlan, type ContractListParse, type ContractListUnit,
 } from '@/lib/contracts/list-import';
 
@@ -69,9 +71,23 @@ interface ImportState {
     transferredIds: Set<string>;
     paymentContractIds: Set<string>;
     latest: LatestContractListImport | null;
+    /** Файлын огноотой ижил, тэр огноонд сүүлд хийсэн импортын мөрүүд (null = тэр огноогоор импорт алга). */
+    sameDateRows: unknown;
 }
 
-async function loadState(db: SupabaseClient, shopId: string): Promise<ImportState> {
+/** Огноонд сүүлд хийсэн импортын мөрүүд — төлсөн дүнгийн уншигчийн эрэмбэ (`readLatestContractListImport`-тэй ижил). */
+async function readSameDateImportRows(db: SupabaseClient, shopId: string, reportDate: string): Promise<unknown> {
+    const { data, error } = await db.from('contract_list_imports').select('rows')
+        .eq('shop_id', shopId).eq('report_date', reportDate)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (error) {
+        if (isMissingSchema(error)) throw new ImportUnavailable(error.message);
+        throw new Error(`Гэрээний импортын түүх уншиж чадсангүй: ${error.message}`);
+    }
+    return data ? ((data as { rows?: unknown }).rows ?? []) : null;
+}
+
+async function loadState(db: SupabaseClient, shopId: string, reportDate: string): Promise<ImportState> {
     const guard = async <T>(read: () => Promise<T>): Promise<T> => {
         try { return await read(); } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -79,7 +95,7 @@ async function loadState(db: SupabaseClient, shopId: string): Promise<ImportStat
             throw error;
         }
     };
-    const [units, contracts, transferredIds, schedules, ledger, latest] = await Promise.all([
+    const [units, contracts, transferredIds, schedules, ledger, latest, sameDateRows] = await Promise.all([
         guard(() => fetchAllRows<ContractListUnit>((from, to) => db.from('property_units').select(CONTRACT_LIST_UNIT_FIELDS)
             .eq('shop_id', shopId).order('id').range(from, to))),
         guard(() => fetchAllRows<ContractListContract>((from, to) => db.from('property_contracts').select(CONTRACT_LIST_CONTRACT_FIELDS)
@@ -99,9 +115,10 @@ async function loadState(db: SupabaseClient, shopId: string): Promise<ImportStat
             if (!result.available) throw new ImportUnavailable('contract_list_imports');
             return result.latest;
         }),
+        readSameDateImportRows(db, shopId, reportDate),
     ]);
     const paymentContractIds = new Set([...schedules, ...ledger].map(row => row.contract_id).filter((id): id is string => !!id));
-    return { units, contracts, transferredIds, paymentContractIds, latest };
+    return { units, contracts, transferredIds, paymentContractIds, latest, sameDateRows };
 }
 
 interface BuiltPlan { parse: ContractListParse; plan: ContractListImportPlan; hash: string; latest: LatestContractListImport | null }
@@ -119,7 +136,7 @@ async function buildPlan(ctx: ContractListImportContext, file: ContractListImpor
     if (parse.rows.length > RPC_ROW_LIMIT) return fail(400, 'Нэг импорт 10,000 мөрөөс ихгүй байна');
     let state: ImportState;
     try {
-        state = await loadState(ctx.db, ctx.shopId);
+        state = await loadState(ctx.db, ctx.shopId, reportDate);
     } catch (error) {
         if (error instanceof ImportUnavailable) return fail(503, MIGRATION_MISSING);
         throw error;
@@ -127,7 +144,7 @@ async function buildPlan(ctx: ContractListImportContext, file: ContractListImpor
     const plan = planContractListImport({
         rows: parse.rows, units: state.units, contracts: state.contracts, transferredIds: state.transferredIds,
         paymentContractIds: state.paymentContractIds, latestImportDate: state.latest?.report_date ?? null,
-        reportDate, fileName: file.name,
+        sameDateImportRows: state.sameDateRows, reportDate, fileName: file.name,
     });
     if (plan.errors.length) return fail(400, `Файлд ${plan.errors.length} алдаа байна — засаад дахин оруулна уу`, { errors: plan.errors });
     if (plan.ops.length > RPC_ROW_LIMIT) return fail(400, 'Нэг импорт 10,000 өөрчлөлтөөс ихгүй байна');
@@ -154,7 +171,7 @@ export async function previewContractListImport(ctx: ContractListImportContext, 
             latestImport: latest,
             planHash: hash,
             opsCount: ops.length,
-            canCommit: ops.length > 0 && plan.blocking.length === 0,
+            canCommit: contractListHasWork(plan) && plan.blocking.length === 0,
         },
     };
 }
@@ -187,7 +204,7 @@ export async function commitContractListImport(ctx: ContractListImportContext, f
     const { parse, plan, hash } = built;
     if (hash !== options.planHash) return fail(409, STALE, { code: 'stale_preview' });
     if (plan.blocking.length) return fail(400, 'Зөрчилтэй мөр байгаа тул батлах боломжгүй', { code: 'blocking', blocking: plan.blocking });
-    if (!plan.ops.length) return fail(400, 'Бүгд хэвээр — өөрчлөх зүйлгүй', { code: 'no_changes' });
+    if (!contractListHasWork(plan)) return fail(400, 'Бүгд хэвээр — өөрчлөх зүйлгүй', { code: 'no_changes' });
     if (plan.review.length && !options.acceptReview) {
         return fail(400, 'Дүн, төлөв өөрчлөгдөх гэрээг шалгасан гэдгээ баталгаажуулна уу', { code: 'review_required' });
     }

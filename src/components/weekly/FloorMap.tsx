@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { floorTone, type FloorCell, type FloorTone, type WeeklySalesReport } from '@/lib/dashboard/weekly-sales';
+import { floorSoldLabel, floorTone, type FloorCell, type FloorTone, type WeeklySalesReport } from '@/lib/dashboard/weekly-sales';
 
 type FloorMapData = NonNullable<WeeklySalesReport['inventory']>['floorMaps'][number];
 
@@ -65,10 +65,11 @@ export function FloorMap({ map, statusLabels }: { map: FloorMapData; statusLabel
     );
 }
 
-export function FloorMapLegend() {
+/** `liveContracts` — HUB горим (`inventory.source.kind === 'contracts'`): ногоон = амьд гэрээ (илтгэлийнхтэй ижил тайлбар). */
+export function FloorMapLegend({ liveContracts = false }: { liveContracts?: boolean }) {
     return (
         <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground" aria-label="Тайлбар">
-            <li className="flex items-center gap-1.5"><span className="size-3 rounded-sm bg-status-success-soft ring-1 ring-border" />Гэрээтэй (зарагдсан, хүлээлгэсэн)</li>
+            <li className="flex items-center gap-1.5"><span className="size-3 rounded-sm bg-status-success-soft ring-1 ring-border" />{floorSoldLabel(liveContracts)}</li>
             <li className="flex items-center gap-1.5"><span className="size-3 rounded-sm bg-surface ring-1 ring-border" />Худалдаанд (захиалсан, хадгалсан орно)</li>
             <li className="flex items-center gap-1.5"><span className="size-3 rounded-sm bg-status-neutral-soft ring-1 ring-border" />Бартер</li>
         </ul>

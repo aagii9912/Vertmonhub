@@ -84,6 +84,36 @@ describe('buildMeetingDetails', () => {
         ]);
     });
 
+    it('names each model once for all four weeks: the most frequent area over the window, the register or first-written name', () => {
+        // Прод 10-28: тайлбар «Б1 E5 · 79.91 м²», 10/21–10/27-ны график «Б1 E5 · 78.87 м²» — нэг өнгө хоёр нэртэй байсан.
+        const report = buildMeetingDetails({
+            meetingDate: '2026-10-21', units: [...units, { block: 'Б1', model: 'E5', rooms: 3 }], referrals: none,
+            meetings: [
+                meeting('a', '2026-10-08', 'new_customer', interest('Б1', 'E5', 79.91)),
+                meeting('b', '2026-10-09', 'new_customer', interest('Б1', 'E5', 79.91)),
+                meeting('c', '2026-10-15', 'repeat_customer', interest('Б1', 'E5', 78.87)),
+                // Бүртгэлгүй загвар: долоо хоног бүр өөр бичсэн ч эхэлж бичигдсэн нэрээр.
+                meeting('d', '2026-10-01', 'new_customer', interest('Б3', 'Е2', 70)),
+                meeting('e', '2026-10-16', 'new_customer', interest('b3', 'e2', 72)),
+                // Тэнцвэл бага талбай.
+                meeting('f', '2026-09-24', 'new_customer', interest('Б2', 'A', 58.2)),
+                meeting('g', '2026-10-17', 'new_customer', interest('Б2', 'A', 57.87)),
+            ],
+        });
+        const labels = new Map<string, Set<string>>();
+        for (const week of report.weeks) for (const model of week.byModel) labels.set(model.key, (labels.get(model.key) ?? new Set()).add(model.label));
+        expect(Object.fromEntries([...labels].map(([key, set]) => [key, [...set]]))).toEqual({
+            'B1|E5': ['Б1 E5 · 79.91 м² · 3 өрөө'],
+            'B3|E2': ['Б3 Е2 · 70 м²'],
+            'B2|A': ['Б2 A · 57.87 м² · 2 өрөө'],
+        });
+        expect(report.weeks[3].byModel).toEqual([
+            { key: 'B1|E5', label: 'Б1 E5 · 79.91 м² · 3 өрөө', count: 1 },
+            { key: 'B2|A', label: 'Б2 A · 57.87 м² · 2 өрөө', count: 1 },
+            { key: 'B3|E2', label: 'Б3 Е2 · 70 м²', count: 1 },
+        ]);
+    });
+
     it('counts this week\'s new meetings by «Сэжим» and keeps unselected ones as unknown', () => {
         const meetings = [
             meeting('a', '2026-10-14', 'new_customer'), meeting('b', '2026-10-15', 'new_customer'), meeting('c', '2026-10-16', 'new_customer'),

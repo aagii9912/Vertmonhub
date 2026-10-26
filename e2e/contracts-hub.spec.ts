@@ -6,7 +6,7 @@ import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { CONTRACT_LIST_COLUMNS } from '../src/lib/contracts/list-format';
 import { summarizeContracts, type ContractSummaryRow } from '../src/lib/contracts/summary';
 import {
-    parseContractList, planContractListImport, type ContractListContract, type ContractListCounts, type ContractListImportPlan, type ContractListUnit,
+    contractListHasWork, parseContractList, planContractListImport, type ContractListContract, type ContractListCounts, type ContractListImportPlan, type ContractListUnit,
 } from '../src/lib/contracts/list-import';
 import { buildPlanPerformance, type PlanContract } from '../src/lib/sales/plan-performance';
 import { emptyMonthlySales, monthlySalesWithBlockTotals, type MonthlySalesMonth } from '../src/lib/sales/monthly';
@@ -137,7 +137,7 @@ async function previewBody(buffer: ArrayBuffer, fileName: string, reportDate: st
     return { status: 200, plan, planHash, body: {
         ...view, sheetName: parse.sheetName, rowCount: parse.rows.length, extraColumns: parse.extraColumns, ignoredColumns: parse.ignoredColumns,
         skipped: parse.skipped, latestImport: { report_date: LATEST }, planHash,
-        opsCount: ops.length, canCommit: ops.length > 0 && plan.blocking.length === 0,
+        opsCount: ops.length, canCommit: contractListHasWork(plan) && plan.blocking.length === 0,
     } };
 }
 
@@ -553,5 +553,89 @@ test('төлөвлөгөөний биелэлт: санхүүгийн эрхгү
     await expect(page.getByText('Орсон мөнгө (он эхнээс)', { exact: true })).toHaveCount(0);
     expect(await noPageOverflow(page)).toBe(true);
     await shot(page, info, 'plan-performance-no-finance-dark');
+    expectClean(state);
+});
+
+test('гэрээний хуудас: «Цуцлах» баталгаажуулалт → цуцалсан төлөв → «Сэргээх» (байрны зөрчил 409)', async ({ page }, info) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const state = await setup(page);
+    // Огноогүй хуучин гэрээ (Лхагвын тайлангийн «Огноогүй» жагсаалт — шалгаад огноо оруулах эсвэл цуцлах).
+    const id = cid(8);
+    let current: FixtureContract = { ...CONTRACTS.find(c => c.id === id)! };
+    const patches: Array<{ body: unknown; shop?: string }> = [];
+    let refuseRestore = true;
+    // setup-ийн дараа бүртгэсэн тул түрүүлж шалгагдана; бусад замыг setup-ийн handler руу дамжуулна.
+    await page.route(url => url.pathname.startsWith(`/api/dashboard/contracts/${id}`)
+        || url.pathname === '/api/dashboard/referral-sources' || url.pathname === '/api/dashboard/ai-attachments', async route => {
+        const request = route.request(); const url = new URL(request.url()); const path = url.pathname;
+        const reply = (json: unknown, status = 200) => route.fulfill({ json, status });
+        state.requests.push({ path, search: url.search, method: request.method(), shop: request.headers()['x-shop-id'] });
+        if (path === '/api/dashboard/referral-sources') return reply({ sources: [], available: true });
+        if (path === '/api/dashboard/ai-attachments') return reply({ attachments: [] });
+        if (path === `/api/dashboard/contracts/${id}/payments`) return reply({ payments: [] });
+        if (path === `/api/dashboard/contracts/${id}/transfer`) return reply({ transfers: [], available: true });
+        if (path === `/api/dashboard/contracts/${id}` && request.method() === 'GET') return reply({ contract: current });
+        if (path === `/api/dashboard/contracts/${id}` && request.method() === 'PATCH') {
+            const body = request.postDataJSON() as { contract_status: string };
+            patches.push({ body, shop: request.headers()['x-shop-id'] });
+            // Сервисийн дүрэм: байранд өөр идэвхтэй гэрээ байвал сэргээхгүй (эхний оролдлого).
+            if (body.contract_status === 'active' && refuseRestore) {
+                refuseRestore = false;
+                return reply({ error: '«Б1-31» байранд өөр идэвхтэй гэрээ байна — нэг байранд хоёр идэвхтэй гэрээ үүсгэхгүй. Тэр гэрээг шалгаад дахин оролдоно уу.' }, 409);
+            }
+            current = { ...current, contract_status: body.contract_status };
+            return reply({ contract: current });
+        }
+        return route.fallback();
+    });
+
+    await page.goto(`/dashboard/contracts/${id}`);
+    const workspace = page.locator('#workspace-content');
+    await expect(workspace.getByText('Б1-31', { exact: true })).toBeVisible();
+    await expect(workspace.getByText('Идэвхтэй', { exact: true })).toBeVisible();
+    const cancel = workspace.getByRole('button', { name: 'Цуцлах', exact: true });
+
+    // 1) Цонх юу болохыг хэлнэ; «Болих» бол юу ч илгээхгүй.
+    await cancel.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: '«Б1-31» гэрээг цуцлах уу?' })).toBeVisible();
+    await expect(dialog).toContainText('«Гэрээтэй»-гээс зөвхөн HUB гэрээний жагсаалтын сүүлийн импорт ERP бүтээгдэхүүний экспортоос шинэ');
+    await expect(dialog).toContainText('Бүртгэсэн төлбөр, төлбөрийн график устахгүй');
+    await expect(dialog).toContainText('«Сэргээх»-ээр «Идэвхтэй» төлөвт буцаана');
+    await expect(dialog).toContainText('Байрны төлөв, холбоотой лидийн төлөв энэ үйлдлээр өөрчлөгдөхгүй');
+    await expect(dialog.getByRole('button', { name: 'Гэрээг цуцлах', exact: true })).toHaveClass(/bg-destructive/);
+    await shot(page, info, 'contract-cancel-dialog-dark');
+    await dialog.getByRole('button', { name: 'Болих', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    expect(patches).toEqual([]);
+
+    // 2) Цуцлах: PATCH contract_status, toast, цуцалсан төлөв тод, «Сэргээх».
+    await cancel.click();
+    await dialog.getByRole('button', { name: 'Гэрээг цуцлах', exact: true }).click();
+    await expect(page.getByText('Гэрээ цуцлагдлаа', { exact: true })).toBeVisible();
+    await expect(dialog).toBeHidden();
+    expect(patches).toEqual([{ body: { contract_status: 'cancelled' }, shop: shopId }]);
+    const banner = workspace.getByRole('status').filter({ hasText: 'Энэ гэрээ цуцлагдсан' });
+    await expect(banner).toBeVisible();
+    await expect(workspace.getByText('Цуцалсан', { exact: true })).toBeVisible();
+    await expect(workspace.getByRole('button', { name: 'Цуцлах', exact: true })).toHaveCount(0);
+    const restore = workspace.getByRole('button', { name: 'Сэргээх', exact: true });
+    await expect(restore).toBeVisible();
+    expect(await noPageOverflow(page)).toBe(true);
+    await bothThemes(page, info, 'contract-cancelled');
+
+    // 3) Сэргээх: серверийн 409-ийг цонхонд харуулж нээлттэй үлдээнэ, дахин оролдоход сэргээнэ.
+    await restore.click();
+    await expect(dialog.getByRole('heading', { name: '«Б1-31» гэрээг сэргээх үү?' })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Сэргээх', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toContainText('байранд өөр идэвхтэй гэрээ байна');
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Сэргээх', exact: true }).click();
+    await expect(page.getByText('Гэрээ сэргээгдлээ', { exact: true })).toBeVisible();
+    await expect(dialog).toBeHidden();
+    await expect(banner).toHaveCount(0);
+    await expect(workspace.getByRole('button', { name: 'Цуцлах', exact: true })).toBeVisible();
+    expect(patches.map(p => p.body)).toEqual([{ contract_status: 'cancelled' }, { contract_status: 'active' }, { contract_status: 'active' }]);
+    expect(patches.every(p => p.shop === shopId)).toBe(true);
     expectClean(state);
 });
