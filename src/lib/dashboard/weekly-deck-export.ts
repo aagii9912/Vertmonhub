@@ -14,6 +14,7 @@ import type { SalesActivityReport } from './sales-activity';
 import type { MeetingDetailsReport } from './meeting-details';
 import type { NegotiationsReport } from './negotiations';
 import { brandingImageUrl, type ReportBranding, type ReportBrandingResponse } from './report-branding';
+import { finalizeDeck } from './deck-package';
 
 /**
  * Хөтөч дээр Лхагвагийн тайланг .pptx болгож татна — борлуулалт, маркетинг тусдаа файл.
@@ -127,9 +128,9 @@ export async function exportWeeklyDeck(input: WeeklyDeckExportInput): Promise<{ 
     return { fileName, failedImages: media.failed };
 }
 
-/** Үүсгэсэн илтгэлийг хөтөчөөр татуулна. */
+/** Үүсгэсэн илтгэлийг хөтөчөөр татуулна (графикийн Excel-ийг засаж, шахсан — `finalizeDeck`). */
 async function saveDeck(pres: PptxGenJS, fileName: string) {
-    const blob = await pres.write({ outputType: 'blob' }) as Blob;
+    const blob = await finalizeDeck(await pres.write({ outputType: 'arraybuffer' }) as ArrayBuffer);
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
