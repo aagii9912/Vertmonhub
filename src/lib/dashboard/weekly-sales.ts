@@ -132,6 +132,8 @@ export type FloorTone = 'sold' | 'available' | 'barter';
 /** Давхрын зураглалын нүд: бартер (худалдаанд биш) → саарал, зарагдсан/хүлээлгэсэн → гэрээтэй, бусад бүгд «Худалдаанд». */
 export const floorTone = (cell: Pick<FloorCell, 'barter' | 'status'>): FloorTone =>
     cell.barter && cell.status !== 'available' ? 'barter' : cell.status === 'sold' || cell.status === 'handed_over' ? 'sold' : 'available';
+/** Ногоон нүдний тайлбар (дэлгэц, илтгэл нэг): HUB горимд (`contracts`) амьд гэрээ, ERP/байрны бүртгэлд байрны төлөв. */
+export const floorSoldLabel = (liveContracts: boolean) => liveContracts ? 'Амьд гэрээтэй (цуцлаагүй)' : 'Гэрээтэй (зарагдсан, хүлээлгэсэн)';
 
 export function buildWeeklySales(input: WeeklySalesInput) {
     const { range } = input;

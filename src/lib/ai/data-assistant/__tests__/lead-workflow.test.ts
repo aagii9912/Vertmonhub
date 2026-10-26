@@ -126,7 +126,7 @@ describe('AI lead creation ownership', () => {
         expect(from).not.toHaveBeenCalled();
     });
     it('previews a contract with the real, trimmed buyer name (including «Нэргүй» as a given name)', async () => {
-        expect(await createContract('shop-1', { customer_name: '  Нэргүй  ', total_price: 100 })).toMatchObject({
+        expect(await createContract('shop-1', { customer_name: '  Нэргүй  ', total_price: 100, order_date: '2026-10-15' })).toMatchObject({
             requiresConfirmation: true, action: { args: { customer_name: 'Нэргүй' } }, preview: { Харилцагч: 'Нэргүй' },
         });
         expect(from).not.toHaveBeenCalled();

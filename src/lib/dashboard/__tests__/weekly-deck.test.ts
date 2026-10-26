@@ -392,6 +392,55 @@ describe('weekly meeting deck (.pptx)', () => {
         for (const needle of ['23 давхар', '2 давхар', '80.91 м² Ариунбилэг', '80.91 м² Бартер', 'НИЙТ', 'Худалдаанд (захиалсан, хадгалсан орно)']) expect(maps[0]).toContain(needle);
     });
 
+    it('floor map: in HUB mode green is every live Hub contract (legacy undated ones too), in ERP mode the export status', async () => {
+        const units: ErpProduct[] = [];
+        for (let floor = 2; floor <= 5; floor++) for (const model of ['E1', 'E2']) units.push({
+            key: `u${floor}${model}`, code: `Б1-${floor}${model}`, block: 'Б1', floor, model, kind: 'residential', rooms: 3, area: 80.91, price: null,
+            status: model === 'E1' ? 'sold' : 'available', statusLabel: '', barter: false, manager: model === 'E1' ? 'Ариунбилэг.Нямхүү' : null,
+        });
+        const inventory = (kind: 'contracts' | 'erp') => ({ info: { date: '2026-10-22', source: kind === 'contracts' ? 'HUB гэрээ + байрны бүртгэл' : 'Elysium ERP', kind }, rows: units });
+        const notesOf = async (zip: JSZip) => Promise.all(Object.keys(zip.files).filter(name => /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name))
+            .sort((a, b) => Number(a.match(/(\d+)\.xml/)![1]) - Number(b.match(/(\d+)\.xml/)![1]))
+            .map(async name => [...(await zip.file(name)!.async('string')).matchAll(/<a:t>([^<]*)<\/a:t>/g)].map(match => match[1]).join(' ')));
+        const floorMap = async (deck: WeeklyDeckInput) => {
+            const { zip, text } = await render(deck);
+            const index = text.findIndex(slideText => slideText.includes('Орон сууцны үлдэгдэл — Б1 блок'));
+            expect(index).toBeGreaterThanOrEqual(0);
+            return { text: text[index], note: (await notesOf(zip))[index] };
+        };
+
+        // CRM-ийн гэрээгээр тайлагнасан HUB горим: огноогүй амьд гэрээний тоо (давхарлалттай ижил гэрээ — устгаагүй, цуцлаагүй).
+        const crm = await floorMap(input({ weeklySales: buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [], crmUndated: 7, monthTarget: null, inventory: inventory('contracts') }) }));
+        expect(crm.text).toContain('Амьд гэрээтэй (цуцлаагүй)');
+        expect(crm.text).not.toContain('Гэрээтэй (зарагдсан, хүлээлгэсэн)');
+        expect(crm.note).toContain('Ногоон = Hub-ийн бүх амьд (цуцлаагүй) гэрээтэй байр — зөвхөн HUB гэрээний жагсаалтаас импортолсон гэрээ биш: ERP бүтээгдэхүүний экспортоос үүссэн огноогүй хуучин гэрээ байвал тэр ч орно (бартер гэрээтэй нь саарал).');
+        // Тоо нь бүх төрлийнх: зураглалд зөвхөн орон сууц, бартер нь саарал гэж хэлнэ («таарсан нь ногоон» гэж хэтрүүлэхгүй).
+        expect(crm.note).toContain('Hub-д огноогүй 7 амьд гэрээ бий (бүх төрлөөр; ихэвчлэн HUB жагсаалтад ороогүй хуучин гэрээ) — үүнээс орон сууцных нь байр бүртгэлтэй таарвал энд ногоон (бартер бол саарал).');
+        expect(crm.note).not.toContain('таарсан нь ногоон');
+        expect(crm.note).not.toContain('(HUB гэрээний жагсаалт)');
+        // Блокийн үлдэгдэл: огноо нь HUB импортынх, гэрээ ба байр одоогийн төлөвөөр.
+        const { zip: crmZip, text: crmText } = await render(input({ weeklySales: buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [], crmUndated: 7, monthTarget: null, inventory: inventory('contracts') }) }));
+        const blocksIndex = crmText.findIndex(slideText => slideText.includes('Үлдэгдэл блокоор'));
+        expect(blocksIndex).toBeGreaterThanOrEqual(0);
+        expect((await notesOf(crmZip))[blocksIndex]).toContain('Эх сурвалж: HUB гэрээ + байрны бүртгэл — гэрээ, байр экспортолсон үеийн төлөвөөр (хурлын дараах импорт, засвар ч орно); 2026-10-22 нь хурлын өдөр хүртэлх HUB гэрээний жагсаалтын сүүлийн импортын огноо.');
+
+        // ERP гэрээний экспорттой бол огноогүйн тоо нь экспортын мөрийнх — тэг биш байсан ч нэрлэхгүй, тайлбар хэвээр.
+        const erpSales = weeklySales();
+        expect(erpSales.sources.contracts).toBe('erp');
+        const withExport = await floorMap(input({ weeklySales: {
+            ...erpSales, sources: { ...erpSales.sources, undatedContracts: 7 },
+            inventory: buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [], monthTarget: null, inventory: inventory('contracts') }).inventory,
+        } }));
+        expect(withExport.note).toContain('Ногоон = Hub-ийн бүх амьд (цуцлаагүй) гэрээтэй байр');
+        expect(withExport.note).not.toContain('Hub-д огноогүй');
+
+        // ERP бүтээгдэхүүний экспорт: ногоон = экспортын төлөв (зарагдсан, хүлээлгэсэн).
+        const erp = await floorMap(input({ weeklySales: buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [], crmUndated: 7, monthTarget: null, inventory: inventory('erp') }) }));
+        expect(erp.text).toContain('Гэрээтэй (зарагдсан, хүлээлгэсэн)');
+        expect(erp.text).not.toContain('Амьд гэрээтэй');
+        expect(erp.note).not.toContain('Ногоон =');
+    });
+
     it('names each file after the project, part and meeting date without path characters', () => {
         expect(weeklyDeckFileName('Mandala 360/365: Tower', '2026-10-14', 'sales')).toBe('Mandala 360 365 Tower - Борлуулалт - Лхагва 2026-10-14.pptx');
         expect(weeklyDeckFileName('Elysium', '2026-10-14', 'marketing')).toBe('Elysium - Маркетинг - Лхагва 2026-10-14.pptx');

@@ -365,6 +365,18 @@ export interface ContractListFileTotal { status: ContractListStatus; label: stri
 export interface ContractListCounts { insert: number; insertCancelled: number; update: number; unchanged: number; review: number; blocking: number; missing: number }
 /** contract_list_imports.rows-д хадгалах нормчилсон мөр (нэмэлт багана орно). */
 export type ContractListStoredRow = HubRow & { unitLabel: string | null };
+/**
+ * «Нийт төлсөн дүн»-гийн шинэчлэл: гэрээнд бичигдэхгүй, батлахад импортын бүртгэл (`rows`) тэр огнооны төлсөн дүнгийн
+ * эх болно (`plan-performance-load` ижил огноонд сүүлд хийсэн импортыг уншина).
+ */
+export interface ContractListPaidUpdate {
+    /** Файлд төлсөн дүнтэй мөр. */
+    rows: number;
+    /** Ижил огноотой сүүлийн импортоос зөрсөн мөр (тэр огноогоор импорт алга бол төлсөн дүнтэй бүх мөр). */
+    changed: number;
+    /** Ижил файлын огноогоор өмнө импорт хийгдсэн (дахин импорт). */
+    reimport: boolean;
+}
 
 export interface ContractListImportPlan {
     reportDate: string;
@@ -372,7 +384,12 @@ export interface ContractListImportPlan {
     /** Файл/байр/огнооны алдаа — байвал батлахгүй. */
     errors: string[];
     ops: ContractListOp[];
-    /** sha256-ийн оролт: `{reportDate, ops}`-ийн түлхүүр эрэмбэлсэн JSON (hash-ийг сервер тооцно). */
+    /**
+     * sha256-ийн оролт: `{reportDate, ops, rows, paidBase?}`-ийн түлхүүр эрэмбэлсэн JSON (hash-ийг сервер тооцно). Хадгалагдах
+     * мөрүүд (мөрийн дугаараар) орно — зөвхөн «Нийт төлсөн дүн» өөр файл ижил ops-тэй ч өөр hash. Файлд төлсөн дүн байвал
+     * харьцуулсан ижил огнооны импортын дүн (`paidBase`) орно — урьдчилан харсны дараа тэр огноогоор импорт хийгдвэл
+     * `stale_preview`.
+     */
     canonical: string;
     counts: ContractListCounts;
     fileTotals: ContractListFileTotal[];
@@ -388,6 +405,11 @@ export interface ContractListImportPlan {
     blocking: ContractListBlockingItem[];
     /** Сүүлийн импортоос хуучин файл бол тэр импортын огноо (батлахад allowOlder шаардлагатай). */
     olderThanLatest: string | null;
+    /**
+     * Файлын «Нийт төлсөн дүн» ижил огноотой сүүлийн импортынхоос зөрвөл (эсвэл тэр огноогоор импорт алга) — гэрээнд
+     * өөрчлөлтгүй (ops = 0) ч батлах боломжтой. null = файлд төлсөн дүн алга эсвэл хадгалсантай ижил.
+     */
+    paidUpdate: ContractListPaidUpdate | null;
     rows: ContractListStoredRow[];
     /** RPC-ийн p_summary (нэргүй): тоо, файлын нийлбэр. */
     summary: Record<string, unknown>;
@@ -403,6 +425,11 @@ export interface ContractListPlanInput {
     /** Төлбөрийн хуваарь эсвэл кассын гүйлгээтэй гэрээ — цуцлахгүй. */
     paymentContractIds: ReadonlySet<string>;
     latestImportDate: string | null;
+    /**
+     * Ижил файлын огноотой сүүлийн импортын хадгалсан мөрүүд (`contract_list_imports.rows`, тэр огноонд сүүлд хийсэн нь —
+     * төлсөн дүнгийн уншигчийн эх). null/undefined = тэр огноогоор импорт алга.
+     */
+    sameDateImportRows?: unknown;
     reportDate: string;
     fileName?: string | null;
     /** Өнөөдөр (UB) — тестэд. */
@@ -712,12 +739,16 @@ export function planContractListImport(input: ContractListPlanInput): ContractLi
     const stillUndated = missing.filter(item => item.undated).length;
     const olderThanLatest = input.latestImportDate && DATE.test(reportDate) && reportDate < input.latestImportDate ? input.latestImportDate : null;
     const finalOps = errors.length ? [] : ops;
+    const storedRows: ContractListStoredRow[] = input.rows.map(row => ({ ...row, unitLabel: unitLabelOfRow.get(row.row) ?? null }));
+    const filePaid = storedHubPaidRows(storedRows);
+    const paidUpdate = errors.length ? null : paidUpdateOf(filePaid, input.sameDateImportRows);
     return {
         reportDate,
         fileName: input.fileName?.trim() || null,
         errors: capErrors(errors),
         ops: finalOps,
-        canonical: canonicalJson({ reportDate, ops: finalOps }),
+        canonical: canonicalJson({ reportDate, ops: finalOps, rows: [...storedRows].sort((a, b) => a.row - b.row),
+            paidBase: paidBaseOf(filePaid, input.sameDateImportRows) }),
         counts,
         fileTotals,
         units,
@@ -730,16 +761,43 @@ export function planContractListImport(input: ContractListPlanInput): ContractLi
         info,
         blocking,
         olderThanLatest,
-        rows: input.rows.map(row => ({ ...row, unitLabel: unitLabelOfRow.get(row.row) ?? null })),
+        paidUpdate,
+        rows: storedRows,
         summary: {
             counts, fileTotals, units, stillUndated,
             unitStatusMismatches: unitStatusMismatches.length,
             review: review.map(item => item.label),
             blocking: blocking.length,
             olderThanLatest,
+            paidUpdate,
         },
     };
 }
+
+/**
+ * Файлын «Нийт төлсөн дүн» шинэчлэл эсэх. Уншигч (`plan-performance-load`) тухайн огноонд сүүлд хийсэн импортыг авдаг
+ * тул ижил огноотой сүүлийн импорттой л харьцуулна: ижил бол давхар импорт хэрэггүй; өөр огноо (шинэ, эсвэл хуучин —
+ * батлахад `allowOlder` хэвээр) бол тэр огнооны шинэ эх. Файлд төлсөн дүн огт алга бол хадгалсан дүнг хоосноор солихгүй.
+ */
+function paidUpdateOf(fileRows: readonly HubPaidRow[], sameDateRows: unknown): ContractListPaidUpdate | null {
+    if (!hasHubPaidTotals(fileRows)) return null;
+    const rows = fileRows.filter(row => row.paidTotal !== null).length;
+    const reimport = sameDateRows !== null && sameDateRows !== undefined;
+    const changed = reimport ? hubPaidDifference(fileRows, storedHubPaidRows(sameDateRows)) : rows;
+    return changed > 0 ? { rows, changed, reimport } : null;
+}
+
+/**
+ * Hash-д орох харьцуулалтын суурь: файлд төлсөн дүн байвал ижил огноотой сүүлийн импортын дүн (байр, огноо, төлөв, дүн —
+ * мөрийн дугаар, дараалал хамаагүй). Тэр огноогоор импорт алга эсвэл файлд төлсөн дүн алга бол undefined (hash-д орохгүй).
+ */
+function paidBaseOf(fileRows: readonly HubPaidRow[], sameDateRows: unknown): string[] | undefined {
+    if (!hasHubPaidTotals(fileRows) || sameDateRows === null || sameDateRows === undefined) return undefined;
+    return storedHubPaidRows(sameDateRows).map(row => `${hubPaidKey(row)}|${row.paidTotal ?? ''}`).sort();
+}
+
+/** Хадгалах зүйл бий: гэрээний өөрчлөлт эсвэл зөвхөн «Нийт төлсөн дүн»-гийн шинэчлэл (ижил файл → «Бүгд хэвээр»). */
+export const contractListHasWork = (plan: Pick<ContractListImportPlan, 'ops' | 'paidUpdate'>) => plan.ops.length > 0 || plan.paidUpdate !== null;
 
 interface PairDiff {
     set: Partial<Record<ContractListField, Value>>;
@@ -912,6 +970,39 @@ export function storedHubPaidRows(rows: unknown): HubPaidRow[] {
 
 /** Файлд «Нийт төлсөн дүн» тоогоор бөглөгдсөн мөр байгаа эсэх (багана байхгүй бол бүгд null). */
 export const hasHubPaidTotals = (rows: readonly HubPaidRow[]) => rows.some(row => row.paidTotal !== null);
+
+/** Дахин импортын тулгалтын түлхүүр: төрөл, байр, захиалгын огноо, төлөв. */
+const hubPaidKey = (row: HubPaidRow) => `${row.productType}|${row.unitLabel}|${row.orderDate}|${row.status}`;
+
+/**
+ * Хоёр мөрийн багцын «Нийт төлсөн дүн» хэдэн мөрөөр зөрөх: байр, огноо, төлөв ижил мөрүүдийн дүнг харьцуулна (мөрийн
+ * дугаар, дараалал хамаагүй). Дүн нь өөрчлөгдсөн, нэмэгдсэн эсвэл хасагдсан мөр тус бүр 1; 0 = ижил.
+ */
+export function hubPaidDifference(next: readonly HubPaidRow[], previous: readonly HubPaidRow[]): number {
+    const group = (rows: readonly HubPaidRow[]) => {
+        const map = new Map<string, Array<number | null>>();
+        for (const row of rows) {
+            const key = hubPaidKey(row);
+            const list = map.get(key);
+            if (list) list.push(row.paidTotal); else map.set(key, [row.paidTotal]);
+        }
+        return map;
+    };
+    const after = group(next);
+    const before = group(previous);
+    let changed = 0;
+    for (const key of new Set([...after.keys(), ...before.keys()])) {
+        const left = [...(before.get(key) ?? [])];
+        const values = after.get(key) ?? [];
+        let same = 0;
+        for (const value of values) {
+            const index = left.indexOf(value);
+            if (index >= 0) { left.splice(index, 1); same++; }
+        }
+        changed += Math.max(values.length, before.get(key)?.length ?? 0) - same;
+    }
+    return changed;
+}
 
 /** Тулгалтад хэрэгтэй гэрээний баганууд (огноо = order_date ?? contract_date — импортынхтой ижил). */
 export interface HubPaidContract {

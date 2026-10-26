@@ -4,8 +4,9 @@
  *  • Сонирхсон загвар 7 хоногоор: сүүлийн 4 Лхагва→Мягмар 7 хоног (range.to-оор дуусна), `completed`
  *    (ирээгүй, цуцалсан биш), устгаагүй бүх төрлийн уулзалт, уулзалтын ЭХНИЙ сонирхлын блок + загвараар
  *    (`pricingKey`-ээр: «Б1»/«B1», «E7»/«e7» нэг загвар; нэр нь байрны бүртгэлийнх, эс бөгөөс эхэлж бичигдсэн нь).
- *    Өрөө = байрны бүртгэлийн блок + загвар (нэг утгатай бол), талбай = тухайн 7 хоногийн хамгийн олон
- *    давтагдсан `area_sqm`. Сонирхолгүй уулзалт тусдаа (`withoutInterest`) — хасахгүй.
+ *    Өрөө = байрны бүртгэлийн блок + загвар (нэг утгатай бол), талбай = 4 долоо хоногийн хамгийн олон
+ *    давтагдсан `area_sqm` — загварын нэр (`label`) долоо хоног бүрт ижил. Сонирхолгүй уулзалт тусдаа
+ *    (`withoutInterest`) — хасахгүй.
  *  • «Сэжим» (хаанаас ирсэн): тайлант 7 хоногийн ШИНЭ (`new_customer`) уулзалт сэжмийн нэрээр;
  *    сонгоогүй эсвэл талбар хараахан алга бол «Тодорхойгүй» (`unknown`), 0 гэж хасахгүй.
  */
@@ -104,24 +105,37 @@ export function buildMeetingDetails(input: MeetingDetailsInput): MeetingDetailsR
     const registerNames = registerModelNames(input.units);
     const notes: string[] = [];
 
-    const weeks = meetingDetailWeeks(input.meetingDate).map(week => {
-        const meetings = input.meetings.filter(meeting => meeting.day >= week.from && meeting.day <= week.to);
-        const groups = new Map<string, { block: string; model: string; count: number; areas: Map<number, number> }>();
+    const windowWeeks = meetingDetailWeeks(input.meetingDate);
+    const inWindow = input.meetings.filter(meeting => meeting.day >= windowWeeks[0].from && meeting.day <= windowWeeks[windowWeeks.length - 1].to);
+    // Загварын нэр 4 долоо хоногт нэг (слайдын тайлбар, график бүрт ижил): долоо хоног бүр өөрийн талбайгаар нэрлэвэл
+    // нэг загвар (нэг өнгө) хоёр нэртэй болно.
+    const models = new Map<string, { block: string; model: string; areas: Map<number, number> }>();
+    for (const meeting of inWindow) {
+        const interest = firstInterest(meeting.interests);
+        if (!interest) continue;
+        const key = modelKey(interest.block, interest.model);
+        const entry = models.get(key) ?? { ...(registerNames.get(key) ?? { block: interest.block, model: interest.model }), areas: new Map() };
+        if (interest.area !== null) entry.areas.set(interest.area, (entry.areas.get(interest.area) ?? 0) + 1);
+        models.set(key, entry);
+    }
+    const labels = new Map([...models].map(([key, entry]) => {
+        // Хамгийн олон давтагдсан талбай (тэнцвэл бага нь).
+        const area = [...entry.areas].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] ?? null;
+        return [key, modelLabel(entry.block, entry.model, area, roomsOf(rooms, entry.block, entry.model))];
+    }));
+
+    const weeks = windowWeeks.map(week => {
+        const meetings = inWindow.filter(meeting => meeting.day >= week.from && meeting.day <= week.to);
+        const counts = new Map<string, number>();
         let withoutInterest = 0;
         for (const meeting of meetings) {
             const interest = firstInterest(meeting.interests);
             if (!interest) { withoutInterest++; continue; }
             const key = modelKey(interest.block, interest.model);
-            const group = groups.get(key) ?? { ...(registerNames.get(key) ?? { block: interest.block, model: interest.model }), count: 0, areas: new Map() };
-            group.count++;
-            if (interest.area !== null) group.areas.set(interest.area, (group.areas.get(interest.area) ?? 0) + 1);
-            groups.set(key, group);
+            counts.set(key, (counts.get(key) ?? 0) + 1);
         }
-        const byModel = [...groups].map(([key, group]) => {
-            // Хамгийн олон давтагдсан талбай (тэнцвэл бага нь).
-            const area = [...group.areas].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] ?? null;
-            return { key, label: modelLabel(group.block, group.model, area, roomsOf(rooms, group.block, group.model)), count: group.count };
-        }).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key, 'mn', { numeric: true }));
+        const byModel = [...counts].map(([key, count]) => ({ key, label: labels.get(key)!, count }))
+            .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key, 'mn', { numeric: true }));
         const coverage: PeriodCoverage = input.meetingsSince === undefined ? 'full' : periodCoverage(input.meetingsSince, week.from, week.to);
         return { ...week, total: meetings.length, withoutInterest, byModel, coverage };
     });

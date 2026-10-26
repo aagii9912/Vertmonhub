@@ -1,5 +1,7 @@
+import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render as renderUi, screen, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ContractDetail } from './ContractDetail';
 import { DashboardApiError } from '@/lib/api/dashboardFetch';
 
@@ -10,15 +12,18 @@ const mocks = vi.hoisted(() => ({
     payments: {} as Record<string, unknown>,
     refetchContract: vi.fn(), refetchPayments: vi.fn(),
     update: vi.fn(), add: vi.fn(), confirm: vi.fn(), toastError: vi.fn(), toastSuccess: vi.fn(), setOrderDate: vi.fn(), setManager: vi.fn(),
-    mode: { isManager: false } as { isManager: boolean } | undefined,
+    mode: { isManager: false } as { isManager: boolean; managerName?: string | null } | undefined,
     managerOptions: [] as Array<{ name: string; roster: boolean; contracts: number }>,
     referrals: { sources: [] as Array<{ id: string; name: string; sort_order: number; archived_at: string | null }>, available: true } as
         { sources: Array<{ id: string; name: string; sort_order: number; archived_at: string | null }>; available: boolean } | undefined,
     setReferral: vi.fn(),
+    mutate: vi.fn(),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, shop: { id: 'shop-a' } }) }));
-vi.mock('@/hooks/useContracts', () => ({
+vi.mock('@/hooks/useContracts', async (importOriginal) => ({
+    // Цуцлах / сэргээх: жинхэнэ hook (PATCH-ийг dashboardFetch-ийн mock-оор шалгана).
+    useSetContractStatus: (await importOriginal<typeof import('@/hooks/useContracts')>()).useSetContractStatus,
     useContract: () => ({ ...mocks.contract, refetch: mocks.refetchContract }),
     usePayments: () => ({ ...mocks.payments, refetch: mocks.refetchPayments }),
     useContractTransfers: () => ({ data: { transfers: [] }, isError: false }),
@@ -40,6 +45,16 @@ vi.mock('@/components/dashboard/EntityAttachments', () => ({ EntityAttachments: 
 vi.mock('@/components/contracts/ContractTransferDialog', () => ({ ContractTransferDialog: () => null }));
 vi.mock('@/components/ui/Toast', () => ({ confirmToast: (...args: unknown[]) => mocks.confirm(...args) }));
 vi.mock('sonner', () => ({ toast: { success: (...args: unknown[]) => mocks.toastSuccess(...args), error: (...args: unknown[]) => mocks.toastError(...args) } }));
+// «Цуцлах» / «Сэргээх»: бодит react-query мутаци, зөвхөн API дуудлагыг барина (x-shop-id-г dashboardFetch өөрөө нэмдэг).
+vi.mock('@/lib/api/dashboardFetch', async (importOriginal) => ({
+    ...await importOriginal<typeof import('@/lib/api/dashboardFetch')>(),
+    dashboardMutate: (...args: unknown[]) => mocks.mutate(...args),
+}));
+
+let queryClient: QueryClient;
+const render = (ui: React.ReactElement) => renderUi(ui, {
+    wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>,
+});
 
 const writer: TestUser = { role: 'sales_manager', permissions: { modules: ['contracts'], canWrite: true } };
 const reader: TestUser = { role: 'viewer', permissions: { modules: ['contracts'], canWrite: false } };
@@ -50,6 +65,7 @@ const failed = (error: Error) => ({ data: undefined, isLoading: false, isPending
 
 beforeEach(() => {
     vi.clearAllMocks();
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     mocks.user = writer;
     mocks.contract = loaded({ contract });
     mocks.payments = loaded({ payments: [unpaid] });
@@ -347,5 +363,145 @@ describe('ContractDetail referral source', () => {
             expect(screen.queryByRole('combobox', { name: 'Сэжим (хаанаас ирсэн)' })).not.toBeInTheDocument();
             unmount();
         }
+    });
+});
+
+describe('ContractDetail cancel and restore', () => {
+    const cancelledContract = { ...contract, contract_status: 'cancelled' };
+    const dialog = () => screen.getByRole('dialog');
+
+    it('offers «Цуцлах» to writers only on an active contract (restore returns it to active) and «Сэргээх» only on a cancelled one', () => {
+        const cases = [
+            { user: writer, row: contract, cancel: true, restore: false },
+            // «Сэргээх» үргэлж «Идэвхтэй» болгодог: хаагдсан, «Тоот шилжсэн», төлөвгүй гэрээний төлөв алдагдах тул цуцлахыг санал болгохгүй.
+            { user: writer, row: { ...contract, contract_status: 'closed' }, cancel: false, restore: false },
+            { user: writer, row: { ...contract, contract_status: 'transferred' }, cancel: false, restore: false },
+            { user: writer, row: { ...contract, contract_status: null }, cancel: false, restore: false },
+            { user: writer, row: cancelledContract, cancel: false, restore: true },
+            { user: reader, row: contract, cancel: false, restore: false },
+            { user: reader, row: cancelledContract, cancel: false, restore: false },
+        ];
+        for (const item of cases) {
+            mocks.user = item.user;
+            mocks.contract = loaded({ contract: item.row });
+            const { unmount } = render(<ContractDetail id="contract-1" />);
+            expect(screen.queryByRole('button', { name: 'Цуцлах' }) !== null).toBe(item.cancel);
+            expect(screen.queryByRole('button', { name: 'Сэргээх' }) !== null).toBe(item.restore);
+            unmount();
+        }
+    });
+
+    it('shows the actions to a restricted manager only on an own contract, and to nobody while the mode is unknown', () => {
+        const cases = [
+            { mode: { isManager: true, managerName: 'Номин' }, row: { ...contract, sales_manager: 'Номин' }, cancel: true, restore: false },
+            { mode: { isManager: true, managerName: 'Номин' }, row: { ...cancelledContract, sales_manager: 'Номин' }, cancel: false, restore: true },
+            // Сервер бусдын гэрээнд 404 «Гэрээ олдсонгүй» буцаадаг — товч харуулахгүй.
+            { mode: { isManager: true, managerName: 'Номин' }, row: { ...contract, sales_manager: 'Сараа' }, cancel: false, restore: false },
+            { mode: { isManager: true, managerName: 'Номин' }, row: { ...cancelledContract, sales_manager: null }, cancel: false, restore: false },
+            { mode: { isManager: true, managerName: null }, row: { ...contract, sales_manager: null }, cancel: false, restore: false },
+            { mode: undefined, row: contract, cancel: false, restore: false },
+            { mode: { isManager: false, managerName: null }, row: { ...contract, sales_manager: 'Сараа' }, cancel: true, restore: false },
+        ];
+        for (const item of cases) {
+            mocks.mode = item.mode;
+            mocks.contract = loaded({ contract: item.row });
+            const { unmount } = render(<ContractDetail id="contract-1" />);
+            expect(screen.queryByRole('button', { name: 'Цуцлах' }) !== null).toBe(item.cancel);
+            expect(screen.queryByRole('button', { name: 'Сэргээх' }) !== null).toBe(item.restore);
+            if (item.row.contract_status === 'cancelled') {
+                if (item.restore) expect(screen.getByRole('status')).toHaveTextContent('«Сэргээх»');
+                else expect(screen.getByRole('status')).not.toHaveTextContent('Сэргээх');
+            }
+            unmount();
+        }
+    });
+
+    it('shows a cancelled contract clearly, without payment entry, to readers and writers', () => {
+        mocks.contract = loaded({ contract: cancelledContract });
+        for (const user of [writer, reader]) {
+            mocks.user = user;
+            for (const payments of [[unpaid], []]) {
+                mocks.payments = loaded({ payments });
+                const { unmount } = render(<ContractDetail id="contract-1" />);
+                expect(screen.getByText('Цуцалсан')).toBeInTheDocument();
+                const banner = screen.getByRole('status');
+                expect(banner).toHaveTextContent('Энэ гэрээ цуцлагдсан');
+                expect(banner).toHaveTextContent('шинэ төлбөр бүртгэхгүй');
+                if (user === writer) expect(banner).toHaveTextContent('«Сэргээх»');
+                else expect(banner).not.toHaveTextContent('Сэргээх');
+                expect(screen.queryByRole('button', { name: /Төлбөр бүртгэх/ })).not.toBeInTheDocument();
+                expect(screen.queryByRole('button', { name: /Төлсөн/ })).not.toBeInTheDocument();
+                expect(screen.queryByRole('button', { name: /Гэрээ шилжүүлэх/ })).not.toBeInTheDocument();
+                unmount();
+            }
+        }
+    });
+
+    it('states what cancelling does and sends nothing until confirmed', async () => {
+        render(<ContractDetail id="contract-1" />);
+        fireEvent.click(screen.getByRole('button', { name: 'Цуцлах' }));
+        expect(within(dialog()).getByRole('heading', { name: '«VM-2026-001» гэрээг цуцлах уу?' })).toBeInTheDocument();
+        expect(dialog()).toHaveTextContent('Гэрээ устахгүй');
+        expect(dialog()).toHaveTextContent('Гэрээний тоо, дүн төлөвлөгөөний биелэлт');
+        expect(dialog()).toHaveTextContent('Лхагвын тайлангийн CRM гэрээ ба «Огноогүй» тоо');
+        // Давхрын зураглал гэрээг зөвхөн HUB горимд давхарлана; захирлын «Хугацаа хэтэрсэн» графикийг төлөвгүй уншина.
+        expect(dialog()).toHaveTextContent('«Гэрээтэй»-гээс зөвхөн HUB гэрээний жагсаалтын сүүлийн импорт ERP бүтээгдэхүүний экспортоос шинэ');
+        expect(dialog()).toHaveTextContent('Бүртгэсэн төлбөр, төлбөрийн график устахгүй');
+        expect(dialog()).toHaveTextContent('хугацаа хэтэрсэн хуваарь захирлын самбарын «Хугацаа хэтэрсэн»-д хэвээр');
+        expect(dialog()).toHaveTextContent('Байрны төлөв, холбоотой лидийн төлөв энэ үйлдлээр өөрчлөгдөхгүй');
+        expect(dialog()).toHaveTextContent('«Сэргээх»-ээр «Идэвхтэй» төлөвт буцаана');
+        expect(dialog()).not.toHaveTextContent('захирлын самбар,');
+        // Устгах маягийн товч: design system v3 danger-solid (bg-destructive).
+        expect(within(dialog()).getByRole('button', { name: 'Гэрээг цуцлах' })).toHaveClass('bg-destructive');
+
+        fireEvent.click(within(dialog()).getByRole('button', { name: 'Болих' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(mocks.mutate).not.toHaveBeenCalled();
+    });
+
+    it('cancels through PATCH contract_status, toasts and refreshes the page, lists and reports', async () => {
+        const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+        mocks.mutate.mockResolvedValue({ contract: cancelledContract });
+        render(<ContractDetail id="contract-1" />);
+        fireEvent.click(screen.getByRole('button', { name: 'Цуцлах' }));
+        fireEvent.click(within(dialog()).getByRole('button', { name: 'Гэрээг цуцлах' }));
+
+        await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('Гэрээ цуцлагдлаа'));
+        expect(mocks.mutate).toHaveBeenCalledOnce();
+        expect(mocks.mutate).toHaveBeenCalledWith('/api/dashboard/contracts/contract-1', 'PATCH', { contract_status: 'cancelled' });
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(queryClient.getQueryData(['contracts', 'detail', 'shop-a', 'contract-1'])).toEqual({ contract: cancelledContract });
+        const keys = invalidate.mock.calls.map(([filters]) => (filters as { queryKey: unknown[] }).queryKey[0]);
+        expect(keys).toEqual(expect.arrayContaining(['contracts', 'director', 'plan-performance', 'weekly-sales', 'kpi-report', 'units']));
+    });
+
+    it('keeps the dialog open with the server error and lets the user back out', async () => {
+        mocks.mutate.mockRejectedValue(new DashboardApiError('Зөвхөн өөрийн борлуулсан гэрээг засах боломжтой', 403));
+        render(<ContractDetail id="contract-1" />);
+        fireEvent.click(screen.getByRole('button', { name: 'Цуцлах' }));
+        fireEvent.click(within(dialog()).getByRole('button', { name: 'Гэрээг цуцлах' }));
+        expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Зөвхөн өөрийн борлуулсан гэрээг засах боломжтой');
+        expect(mocks.toastSuccess).not.toHaveBeenCalled();
+        fireEvent.click(within(dialog()).getByRole('button', { name: 'Болих' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+        // Дахин нээхэд хуучин алдаа үлдэхгүй.
+        fireEvent.click(screen.getByRole('button', { name: 'Цуцлах' }));
+        expect(within(dialog()).queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('restores a cancelled contract to active after confirming', async () => {
+        mocks.contract = loaded({ contract: cancelledContract });
+        mocks.mutate.mockResolvedValue({ contract: { ...cancelledContract, contract_status: 'active' } });
+        render(<ContractDetail id="contract-1" />);
+        fireEvent.click(screen.getByRole('button', { name: 'Сэргээх' }));
+        expect(within(dialog()).getByRole('heading', { name: '«VM-2026-001» гэрээг сэргээх үү?' })).toBeInTheDocument();
+        expect(dialog()).toHaveTextContent('«Идэвхтэй»');
+        expect(dialog()).toHaveTextContent('Байранд өөр идэвхтэй гэрээ байвал сэргээхгүй');
+        const confirm = within(dialog()).getByRole('button', { name: 'Сэргээх' });
+        expect(confirm).not.toHaveClass('bg-destructive');
+        fireEvent.click(confirm);
+        await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('Гэрээ сэргээгдлээ'));
+        expect(mocks.mutate).toHaveBeenCalledWith('/api/dashboard/contracts/contract-1', 'PATCH', { contract_status: 'active' });
     });
 });

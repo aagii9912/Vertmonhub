@@ -53,7 +53,7 @@ export async function addPayment(db: SupabaseClient, shopId: string, contractId:
     if (!parsed.success) return { error: 'Төлбөрийн өгөгдөл буруу байна', status: 400 };
     const { client_request_id, ...payload } = parsed.data;
     if (!client_request_id) return { error: 'Давхар төлбөрөөс хамгаалах хүсэлтийн UUID шаардлагатай. Дахин нээгээд оролдоно уу.', status: 400 };
-    // ERP-ийн бүтээгдэхүүний экспортоос үүссэн гэрээнд өмнө төлсөн дүн тодорхойгүй (NULL): RPC үүнийг 0 гэж
+    // Төлсөн дүнг ERP хөтөлдөг гэрээнд (ERP-ийн экспорт, HUB импорт эсвэл AI-аар үүссэн) өмнө төлсөн дүн тодорхойгүй (NULL): RPC үүнийг 0 гэж
     // тооцож үлдэгдлийг буруу бодох тул төлсөн дүнтэй экспорт орох хүртэл шинэ төлбөр бүртгэхгүй.
     const { data: contract, error: contractError } = await db.from('property_contracts').select('paid_amount')
         .eq('id', contractId).eq('shop_id', shopId).is('deleted_at', null).maybeSingle();
@@ -62,7 +62,7 @@ export async function addPayment(db: SupabaseClient, shopId: string, contractId:
         return { error: 'Гэрээг шалгаж чадсангүй. Дахин оролдоно уу.', status: 500 };
     }
     if (contract && contract.paid_amount === null) {
-        return { error: 'Энэ гэрээний өмнө төлсөн дүн тодорхойгүй (ERP-ийн бүтээгдэхүүний экспортоос үүссэн). Төлсөн дүнтэй гэрээний экспорт орсны дараа төлбөр бүртгэнэ.', status: 409 };
+        return { error: 'Энэ гэрээний өмнө төлсөн дүн тодорхойгүй (төлсөн дүнг ERP хөтөлдөг). Төлсөн дүнтэй гэрээний экспорт орсны дараа төлбөр бүртгэнэ.', status: 409 };
     }
     return mutatePayment(db, {
         p_shop_id: shopId, p_contract_id: contractId, p_payment_id: null,

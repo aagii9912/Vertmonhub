@@ -21,6 +21,13 @@ export interface ReportBranding {
 
 export const EMPTY_REPORT_BRANDING: ReportBranding = { displayName: null, footerText: null, coverImagePath: null, logoPath: null, updatedAt: null };
 
+/**
+ * Брэнд тохируулсан эсэх: нэр, хөл бичвэр, нүүрний зураг, логоны аль нэг нь бий. Хадгалаагүй төсөлд GET бүх талбар null
+ * брэнд буцаадаг (`available: true`) — тэр нь тохируулаагүй.
+ */
+export const hasReportBranding = (branding: ReportBranding | null | undefined): boolean =>
+    !!branding && [branding.displayName, branding.footerText, branding.coverImagePath, branding.logoPath].some(value => !!value?.trim());
+
 /** GET хариу: `available: false` = хүснэгт (migration 20261023152000) хараахан алга — бүх талбар null. */
 export interface ReportBrandingResponse { branding: ReportBranding; available: boolean }
 

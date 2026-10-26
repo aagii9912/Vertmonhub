@@ -2,7 +2,7 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ArrowLeftRight, CalendarPlus, Download, Plus, Check, Loader2, X, FileText, Phone, Pencil } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, Ban, CalendarPlus, Download, Plus, Check, Loader2, X, FileText, Phone, Pencil, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
@@ -18,6 +18,7 @@ import { isTransferableContract, latestTransferDate, summarizeContractTransfers 
 import { contractUnitNumber } from '@/lib/contracts/list-format';
 import { useAuth } from '@/contexts/AuthContext';
 import { ContractTransferDialog } from '@/components/contracts/ContractTransferDialog';
+import { ContractStatusDialog, canCancelContract, type ContractStatusChange } from '@/components/contracts/ContractStatusDialog';
 import type { ContractTransfer } from '@/types/property';
 import { useLeadDetail } from '@/hooks/useLeads';
 import { DashboardApiError } from '@/lib/api/dashboardFetch';
@@ -32,12 +33,16 @@ import { useReferralSources, useSetContractReferral } from '@/hooks/useReferralS
 import { REFERRAL_FIELD_LABEL, isActiveReferral, referralOptionLabel } from '@/lib/sales/referral-sources';
 
 const RECEIPT_KIND_LABEL = { advance: 'Урьдчилгаа', installment: 'Хуваарьт төлөлт', other: 'Бусад төлбөр' };
+/** `mutate_contract_payment` зөвхөн идэвхтэй, хаагдсан гэрээнд төлбөр бүртгэнэ (цуцалсан, «Тоот шилжсэн»-д татгалзана). */
+const PAYABLE_CONTRACT_STATUSES = new Set(['active', 'closed']);
 
 /**
  * Гэрээний дэлгэрэнгүй — бүтэн хуудас (мокап 5).
  * Зүүн: ерөнхий мэдээлэл, төлбөрийн график (+ бүртгэх). Баруун: явц, эзэмшигчийн түүх, хавсралт, түүх.
  * Төлбөр бүртгэх үйлдлүүд зөвхөн `contracts` модульд бичих эрхтэй хэрэглэгчид харагдана
  * (сервер дахин шалгана); хуваарь ачаалж чадаагүй үед «оруулаагүй» гэж харуулахгүй.
+ * «Цуцлах» / «Сэргээх» (PATCH `contract_status`) мөн бичих эрхтэй хэрэглэгчид, баталгаажуулсны дараа; хязгаарлагдсан
+ * менежерт зөвхөн өөрийн гэрээнд (сервер бусдын гэрээнд 404 буцаадаг).
  */
 export function ContractDetail({ id }: { id: string }) {
     const { user } = useAuth();
@@ -53,16 +58,20 @@ export function ContractDetail({ id }: { id: string }) {
     const paymentsQuery = usePayments(id);
     const pay = paymentsQuery.data;
     const payments = useMemo(() => (pay?.payments ?? []).slice().sort((a, b) => a.installment_number - b.installment_number), [pay]);
-    // ERP-ийн бүтээгдэхүүний экспортоос үүссэн гэрээнд өмнө төлсөн дүн байхгүй: таахгүй, төлбөр бүртгэхгүй.
+    // Төлсөн дүнг ERP хөтөлдөг гэрээнд (ERP экспорт, HUB импорт, AI) өмнө төлсөн дүн байхгүй: таахгүй, төлбөр бүртгэхгүй.
     const paidKnown = c?.paid_amount !== null && c?.paid_amount !== undefined;
     // Хуваарь амжилттай уншигдсан үед л шинэ мөр нэмнэ — алдаатай үед байгаа төлбөрийг дахин оруулахгүй.
-    const canAddPayment = canWrite && paidKnown && !!pay && !paymentsQuery.isError;
+    // Зөвхөн идэвхтэй, хаагдсан гэрээнд төлбөр бүртгэнэ (цуцалсныг сервер татгалзана) — товч ч харуулахгүй.
+    const canRecordPayments = canWrite && PAYABLE_CONTRACT_STATUSES.has(c?.contract_status ?? '');
+    const canAddPayment = canRecordPayments && paidKnown && !!pay && !paymentsQuery.isError;
     const { data: leadDetail } = useLeadDetail(c?.lead_id ?? null);
     const { data: transferData, isError: transfersFailed } = useContractTransfers(id);
     const transfers = useMemo(() => transferData?.transfers ?? [], [transferData]);
     const [adding, setAdding] = useState(false);
     const showAddRow = adding && canAddPayment;
     const [transferring, setTransferring] = useState(false);
+    // Хаах үед цонхны бичвэр солигдохгүйн тулд үйлдлийг нээх үед тогтооно.
+    const [statusDialog, setStatusDialog] = useState<{ open: boolean; change: ContractStatusChange }>({ open: false, change: 'cancel' });
 
     if (!c) {
         if (isError) return <ContractLoadError error={error} retrying={isFetching} onRetry={() => void refetch()} />;
@@ -70,6 +79,9 @@ export function ContractDetail({ id }: { id: string }) {
     }
 
     const st = CONTRACT_STATUS_META[c.contract_status] ?? { label: c.contract_status, tone: 'neutral' as const };
+    const cancelled = c.contract_status === 'cancelled';
+    // PATCH-ийн хүрээтэй ижил: хязгааргүй хэрэглэгч бүх гэрээг, хязгаарлагдсан менежер зөвхөн өөрийн нэр дээрхийг (горим ачаалтал нуух).
+    const canChangeStatus = canWrite && !!mode && (mode.isManager === false || (!!mode.managerName && mode.managerName === c.sales_manager));
     const total = c.total_price || 0;
     const paid = c.paid_amount || 0;
     const balance = c.balance ?? Math.max(0, total - paid);
@@ -95,9 +107,21 @@ export function ContractDetail({ id }: { id: string }) {
                     {canWrite && isTransferableContract(c.contract_status) && (
                         <button type="button" onClick={() => setTransferring(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-[12.5px] font-medium text-foreground hover:bg-surface-2 focus-ring"><ArrowLeftRight className="h-4 w-4" /> Гэрээ шилжүүлэх</button>
                     )}
+                    {canChangeStatus && (cancelled ? (
+                        <button type="button" onClick={() => setStatusDialog({ open: true, change: 'restore' })} className="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-[12.5px] font-medium text-foreground hover:bg-surface-2 focus-ring"><RotateCcw className="h-4 w-4" /> Сэргээх</button>
+                    ) : canCancelContract(c.contract_status) && (
+                        <button type="button" onClick={() => setStatusDialog({ open: true, change: 'cancel' })} className="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-[12.5px] font-medium text-status-danger hover:bg-status-danger-soft focus-ring"><Ban className="h-4 w-4" /> Цуцлах</button>
+                    ))}
                     {canAddPayment && <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>}
                 </div>
             </div>
+
+            {cancelled && (
+                <Alert variant="danger" role="status" aria-live="polite">
+                    <p className="font-medium">Энэ гэрээ цуцлагдсан</p>
+                    <p>Гэрээний тоо, дүн төлөвлөгөөний биелэлт, тайлангуудад тооцогдохгүй, шинэ төлбөр бүртгэхгүй. Бүртгэсэн төлбөр, график (хугацаа хэтэрсэн хуваарь ч) хэвээр.{canChangeStatus ? ' Андуурч цуцалсан бол «Сэргээх» дарна уу.' : ''}</p>
+                </Alert>
+            )}
 
             <div className="grid gap-4 xl:grid-cols-3">
                 <div className="flex min-w-0 flex-col gap-4 xl:col-span-2">
@@ -144,7 +168,7 @@ export function ContractDetail({ id }: { id: string }) {
                                 {paidKnown ? canAddPayment && <>
                                     <p className="max-w-sm text-[12.5px] text-muted-foreground">Урьдчилгаа болон сар бүрийн төлөлтийг энд бүртгэвэл захирлын самбар авлага, хоцролтыг автоматаар харуулна.</p>
                                     <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>
-                                </> : <p className="max-w-sm text-[12.5px] text-muted-foreground">Энэ гэрээ ERP-ийн бүтээгдэхүүний экспортоос үүссэн тул өмнө төлсөн дүн тодорхойгүй. Төлсөн дүнтэй гэрээний экспорт орсны дараа төлбөр бүртгэнэ.</p>}
+                                </> : <p className="max-w-sm text-[12.5px] text-muted-foreground">Энэ гэрээний өмнө төлсөн дүн тодорхойгүй (төлсөн дүнг ERP хөтөлдөг). Төлсөн дүнтэй гэрээний экспорт орсны дараа төлбөр бүртгэнэ.</p>}
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
@@ -161,7 +185,7 @@ export function ContractDetail({ id }: { id: string }) {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {payments.map((p) => <PaymentTr key={p.id} p={p} contractId={id} now={now} canWrite={canWrite} />)}
+                                        {payments.map((p) => <PaymentTr key={p.id} p={p} contractId={id} now={now} canWrite={canRecordPayments} />)}
                                         {showAddRow && <AddPaymentRow contractId={id} next={(payments.at(-1)?.installment_number ?? 0) + 1} onDone={() => setAdding(false)} />}
                                     </tbody>
                                     {payments.length > 0 && (
@@ -225,6 +249,7 @@ export function ContractDetail({ id }: { id: string }) {
                 </div>
             </div>
             {canWrite && <ContractTransferDialog contract={c} open={transferring} onOpenChange={setTransferring} previousChangeDate={latestTransferDate(transfers)} />}
+            {canChangeStatus && <ContractStatusDialog contract={c} change={statusDialog.change} open={statusDialog.open} onOpenChange={(open) => setStatusDialog((prev) => ({ ...prev, open }))} />}
         </div>
     );
 }

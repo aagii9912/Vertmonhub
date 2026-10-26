@@ -155,6 +155,25 @@ export function useSetContractManager(contractId: string) {
     });
 }
 
+/** Гэрээний төлөв уншигчид: огноо/менежерийн уншигчид + байрны шатар (`units`: цуцалсан гэрээний худалдан авагчийг харуулдаггүй). */
+const CONTRACT_STATUS_READERS = [...CONTRACT_DATE_READERS, 'units'];
+
+/** «Цуцлах» / «Сэргээх» (PATCH `contract_status`). Хуудас шууд шинэ төлөвийг харуулж, тайлангууд дахин уншина. */
+export function useSetContractStatus(contractId: string) {
+    const qc = useQueryClient();
+    const { shop } = useAuth();
+    return useMutation({
+        mutationFn: (status: 'cancelled' | 'active') =>
+            dashboardMutate<{ contract: ContractRow }>(`/api/dashboard/contracts/${contractId}`, 'PATCH', { contract_status: status }),
+        onSuccess: (data) => {
+            if (data?.contract) qc.setQueryData(['contracts', 'detail', shop?.id, contractId], { contract: data.contract });
+        },
+        onSettled: () => {
+            for (const key of CONTRACT_STATUS_READERS) void qc.invalidateQueries({ queryKey: [key] });
+        },
+    });
+}
+
 /** «Огноо оруулах»: захиалга өгсөн огноо хоосон гэрээнд нэг удаа (PATCH `order_date`; гэрээний огноо хоосон бол мөн бөглөнө). */
 export function useSetContractOrderDate(contractId: string) {
     const qc = useQueryClient();

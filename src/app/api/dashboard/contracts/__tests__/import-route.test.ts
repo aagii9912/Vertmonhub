@@ -270,12 +270,103 @@ describe('POST /api/dashboard/contracts/import — preview and commit', () => {
         expect((await preview()).status).toBe(503);
     });
 
-    it('hashes exactly the canonical plan of the report date and ops', async () => {
+    it('hashes exactly the canonical plan of the report date, ops and stored rows', async () => {
         const body = await (await preview()).json();
         await post({ action: 'commit', reportDate: '2026-10-21', requestId: REQUEST, planHash: body.planHash, acceptReview: 'true' });
         const args = state.rpc.mock.calls[0][1];
         const { canonicalJson } = await import('@/lib/contracts/list-import');
-        expect(createHash('sha256').update(canonicalJson({ reportDate: '2026-10-21', ops: args.p_ops })).digest('hex')).toBe(body.planHash);
+        const rows = [...args.p_rows].sort((a: { row: number }, b: { row: number }) => a.row - b.row);
+        expect(createHash('sha256').update(canonicalJson({ reportDate: '2026-10-21', ops: args.p_ops, rows })).digest('hex')).toBe(body.planHash);
+    });
+});
+
+describe('POST /api/dashboard/contracts/import — «Нийт төлсөн дүн» only (same file date)', () => {
+    const PAID_COLUMNS = [...CONTRACT_LIST_COLUMNS, 'Нийт төлсөн дүн'];
+    // Б1-16 гэрээ 2026-10-21-ний файлаар аль хэдийн импортлогдсон — файлын бүх багана гэрээтэй ижил.
+    const imported = () => contract(1, { order_date: '2026-10-15', contract_date: '2026-10-15', payment_condition: 'Энгийн', overdue_amount: 0,
+        overdue_as_of: '2026-10-21', customer_first_name: 'Тэмүүлэн', customer_last_name: 'Болд' });
+    const paidFile = (paid: number | null) => fileOf([hubRow({ 'Нийт төлсөн дүн': paid })], 'HUB data.xlsx', PAID_COLUMNS);
+    const storedImport = (paid: number | null, extra: Row = {}) => ({
+        shop_id: 'shop-1', request_id: 'earlier', id: 'import-0', plan_hash: 'c'.repeat(64), report_date: '2026-10-21', file_name: 'HUB data.xlsx',
+        row_count: 1, created_at: '2026-10-21T02:00:00Z', created_by_name: 'Номин', summary: { inserted: 0, updated: 1 },
+        rows: [{ row: 2, productType: 'residential', block: 'Б1', unitNumber: '16', unitLabel: 'Б1-16', orderDate: '2026-10-15', status: 'active',
+            total: 452400000, paidTotal: paid }],
+        ...extra,
+    });
+    const paidPreview = async (paid: number | null) => (await preview(await paidFile(paid))).json();
+    const paidCommit = async (paid: number | null, planHash: string) =>
+        post({ action: 'commit', reportDate: '2026-10-21', requestId: REQUEST, planHash, acceptReview: 'false' }, await paidFile(paid));
+
+    beforeEach(() => {
+        state.tables.property_contracts = [imported()];
+        state.rpc.mockResolvedValue({ data: { ok: true, replayed: false, import_id: 'import-2', inserted: 0, updated: 0, summary: { inserted: 0, updated: 0 } }, error: null });
+    });
+
+    it('previews a re-export whose only new data is the paid totals as committable', async () => {
+        state.tables.contract_list_imports = [storedImport(150000000)];
+        const body = await paidPreview(200000000);
+        expect(body).toMatchObject({ opsCount: 0, canCommit: true, blocking: [], paidUpdate: { rows: 1, changed: 1, reimport: true },
+            counts: { insert: 0, update: 0, unchanged: 1 }, latestImport: { report_date: '2026-10-21' } });
+        expect(state.rpc).not.toHaveBeenCalled();
+    });
+
+    it('commits it as a zero-op import whose stored rows carry the new paid totals', async () => {
+        state.tables.contract_list_imports = [storedImport(150000000)];
+        const planned = await paidPreview(200000000);
+        const response = await paidCommit(200000000, planned.planHash);
+        expect(response.status).toBe(201);
+        expect(await response.json()).toMatchObject({ ok: true, import_id: 'import-2', inserted: 0, updated: 0, reportDate: '2026-10-21' });
+        expect(state.rpc).toHaveBeenCalledTimes(1);
+        const args = state.rpc.mock.calls[0][1];
+        expect(args).toMatchObject({ p_report_date: '2026-10-21', p_plan_hash: planned.planHash, p_ops: [], p_allow_older: false,
+            p_summary: { paidUpdate: { rows: 1, changed: 1, reimport: true }, counts: { update: 0, insert: 0 } } });
+        expect(args.p_rows).toEqual([expect.objectContaining({ unitLabel: 'Б1-16', paidTotal: 200000000 })]);
+        // Зөвхөн төлсөн дүнгээр ялгаатай файлууд нэг hash-тэй биш (хүсэлтийн ID-ийн давталт, хуучирсан шалгалт).
+        expect((await paidPreview(250000000)).planHash).not.toBe(planned.planHash);
+    });
+
+    it('still answers «Бүгд хэвээр» for an identical file, or one without paid totals', async () => {
+        state.tables.contract_list_imports = [storedImport(200000000)];
+        const same = await paidPreview(200000000);
+        expect(same).toMatchObject({ opsCount: 0, canCommit: false, paidUpdate: null });
+        const refused = await paidCommit(200000000, same.planHash);
+        expect(refused.status).toBe(400);
+        expect(await refused.json()).toEqual({ error: 'Бүгд хэвээр — өөрчлөх зүйлгүй', code: 'no_changes' });
+
+        const blank = await paidPreview(null);
+        expect(blank).toMatchObject({ opsCount: 0, canCommit: false, paidUpdate: null });
+        expect((await paidCommit(null, blank.planHash)).status).toBe(400);
+        expect(state.rpc).not.toHaveBeenCalled();
+    });
+
+    it('answers stale_preview when another import for the same date landed after the preview', async () => {
+        state.tables.contract_list_imports = [storedImport(150000000)];
+        const planned = await paidPreview(200000000);
+        const later = (paid: number) => storedImport(paid, { request_id: 'other', id: 'import-1', created_at: '2026-10-21T03:00:00Z' });
+        // Өөр хэрэглэгч ижил дүнг хадгалсан — «Бүгд хэвээр» биш, «Дахин шалгах» (409).
+        state.tables.contract_list_imports = [later(200000000), storedImport(150000000)];
+        const same = await paidCommit(200000000, planned.planHash);
+        expect(same.status).toBe(409);
+        expect(await same.json()).toMatchObject({ code: 'stale_preview' });
+        // Өөр дүн хадгалсан — зөрсөн мөрийн тоо ижил ч энэ файл түүнийг чимээгүй дарахгүй.
+        state.tables.contract_list_imports = [later(175000000), storedImport(150000000)];
+        expect((await paidPreview(200000000)).paidUpdate).toEqual({ rows: 1, changed: 1, reimport: true });
+        const other = await paidCommit(200000000, planned.planHash);
+        expect(other.status).toBe(409);
+        expect(await other.json()).toMatchObject({ code: 'stale_preview' });
+        expect(state.rpc).not.toHaveBeenCalled();
+    });
+
+    it('replays a stored paid-only import for the same request instead of answering «Бүгд хэвээр»', async () => {
+        state.tables.contract_list_imports = [storedImport(150000000)];
+        const planned = await paidPreview(200000000);
+        // Хариу алдагдсан: импорт хадгалагдсан (одоо ижил огноонд сүүлийнх нь энэ файл).
+        state.tables.contract_list_imports = [storedImport(200000000, { request_id: REQUEST, id: 'import-2', plan_hash: planned.planHash,
+            created_at: '2026-10-21T03:00:00Z', summary: { inserted: 0, updated: 0 } })];
+        const replay = await paidCommit(200000000, planned.planHash);
+        expect(replay.status).toBe(200);
+        expect(await replay.json()).toMatchObject({ ok: true, replayed: true, import_id: 'import-2', inserted: 0, updated: 0 });
+        expect(state.rpc).not.toHaveBeenCalled();
     });
 });
 
