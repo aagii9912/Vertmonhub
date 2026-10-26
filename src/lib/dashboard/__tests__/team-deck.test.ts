@@ -470,6 +470,16 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(year).toContain('Мөнгөн урсгалын «1–10 сар», «он»-ы «+»/«—» — 1–10-р сарын зарим блокийн гүйцэтгэл оруулаагүй');
     });
 
+    it('adds no cash «+» note where the cell shows «—» (no cash anywhere, prod 10-28 state)', async () => {
+        const report = plan();
+        const unknown = (cells: typeof report.months[number]['total']) => ({ ...cells, metrics: { ...cells.metrics, cashflow: { ...cells.metrics.cashflow!, actual: null, lowerBound: true, source: null } } });
+        const months = report.months.map(row => ({ ...row, total: unknown(row.total), blocks: { b1: unknown(row.blocks.b1), b2: unknown(row.blocks.b2), parking: unknown(row.blocks.parking) } }));
+        const { notes } = await render(teamInput({ plan: { ...report, months } }));
+        expect(notes.join(' ')).not.toContain('Мөнгөн урсгалын «+»');
+        // Жилийн хүснэгт «—»-ийн шалтгааныг сараар хэлнэ.
+        expect(notes.join(' ')).toContain('Мөнгөн урсгалын «1–10 сар», «он»-ы «+»/«—» — 1–10-р сарын');
+    });
+
     it('adds no cash «+» note once every block of every month has a cash actual', async () => {
         const report = plan();
         const filled = (cells: typeof report.months[number]['total']) => ({ ...cells, metrics: { ...cells.metrics, cashflow: { ...cells.metrics.cashflow!, actual: 1, lowerBound: false } } });

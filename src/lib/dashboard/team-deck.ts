@@ -396,7 +396,8 @@ function planNotes(ctx: Ctx, plan: TeamPlanReport, row: PlanMonthRow, cells: Pla
         ctx.cashVisible ? cashSource(plan, cells.metrics.cashflow) : 'Мөнгөн урсгалын төлөвлөгөө, гүйцэтгэлийг санхүүгийн эрхтэй хүн харна.',
         contract?.lowerBound
             ? `«+» — доод хязгаар: ${cells.undated ? `огноогүй ${cells.undated} гэрээ` : 'дүн нь тодорхойгүй гэрээ'} байна; тухайн сард мэдэгдэх дүнгүй бол «—».` : null,
-        ctx.cashVisible && cells.metrics.cashflow?.lowerBound ? cashLowerBoundNote(row, cells) : null,
+        // Дүнгүй («—») нүдэнд «+» харагдахгүй — шалтгааныг cashSource хэлнэ.
+        ctx.cashVisible && cells.metrics.cashflow?.lowerBound && cells.metrics.cashflow.actual !== null ? cashLowerBoundNote(row, cells) : null,
         'Хувь = гүйцэтгэл / төлөвлөгөө, бүхэл тоогоор.',
         '«Энэ сарын гэрээний урьдчилгаа» = тухайн сард захиалсан амьд гэрээний нөхцлөөр төлөх урьдчилгаа (орсон + хүлээгдэж буй) — мөнгөн урсгал биш, мөнгөн урсгалд нэмэхгүй (W6).',
         prepaymentNote(cells),
