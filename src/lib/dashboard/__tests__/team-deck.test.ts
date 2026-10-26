@@ -455,6 +455,30 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(slideTables(b2)[0].cells.some(cell => cell.lines.length === 2)).toBe(true);
     });
 
+    it('explains a cash «+» by the blocks and months without a cash actual, not by undated contracts', async () => {
+        // Fixture: 10-р сард Б2, зогсоолд гараар мөнгөн урсгал, Б1 хоосон; 1–9 сард мөнгөн урсгал огт алга.
+        const { notes, text } = await render(teamInput({ plan: plan({ undated: true }) }));
+        const total = notes[text.findIndex(slide => slide.includes('10-Р САРЫН ГЭРЭЭНИЙ НИЙТ ТӨЛӨВЛӨГӨӨ'))];
+        expect(total).toContain('Мөнгөн урсгалын «+» — доод хязгаар: гүйцэтгэл оруулаагүй, системд ч дүнгүй блок — Б1 блок.');
+        // Гэрээний гүйцэтгэл гараар (доод хязгааргүй) — мөнгөн урсгалын «+»-ийг огноогүй гэрээнд тохохгүй.
+        expect(total).not.toContain('огноогүй 2 гэрээ байна');
+        expect(total).not.toContain('дүн нь тодорхойгүй гэрээ');
+        const b2 = notes[text.findIndex(slide => slide.includes('Б2 БЛОК'))];
+        expect(b2).not.toContain('Мөнгөн урсгалын «+»');
+        const year = notes[text.findIndex(slide => slide.includes('ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ'))];
+        expect(year).toContain('Гэрээний тоо, дүнгийн «+» — огноогүй 2 гэрээтэй тул доод хязгаар.');
+        expect(year).toContain('Мөнгөн урсгалын «1–10 сар», «он»-ы «+»/«—» — 1–10-р сарын зарим блокийн гүйцэтгэл оруулаагүй');
+    });
+
+    it('adds no cash «+» note once every block of every month has a cash actual', async () => {
+        const report = plan();
+        const filled = (cells: typeof report.months[number]['total']) => ({ ...cells, metrics: { ...cells.metrics, cashflow: { ...cells.metrics.cashflow!, actual: 1, lowerBound: false } } });
+        const months = report.months.map(row => ({ ...row, total: filled(row.total), blocks: { b1: filled(row.blocks.b1), b2: filled(row.blocks.b2), parking: filled(row.blocks.parking) } }));
+        const { notes } = await render(teamInput({ plan: { ...report, months } }));
+        expect(notes.join(' ')).not.toContain('Мөнгөн урсгалын «+»');
+        expect(notes.join(' ')).not.toContain('Мөнгөн урсгалын «1–');
+    });
+
     it('names the file like the other decks', () => {
         expect(weeklyDeckFileName('Elysium Residence', '2026-10-21', 'sales-team')).toBe('Elysium Residence - Борлуулалт (албаны загвар) - Лхагва 2026-10-21.pptx');
     });
