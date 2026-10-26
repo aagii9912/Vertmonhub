@@ -480,6 +480,49 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(notes.join(' ')).toContain('Мөнгөн урсгалын «1–10 сар», «он»-ы «+»/«—» — 1–10-р сарын');
     });
 
+    it('in HUB paid mode names undated contracts as the cash «+» cause, never «unknown paid» while every paid amount is known', async () => {
+        // HUB файлд бүх гэрээний төлсөн дүн бий (availability 'full'); Б1 гараар оруулаагүй, огноогүй Б1 гэрээ 1.
+        const report = plan({ hubPaid: 'all', undated: true });
+        expect(report.cash).toMatchObject({ source: 'hub_paid', availability: 'full' });
+        const { notes, text } = await render(teamInput({ plan: report }));
+        const noteOf = (title: string) => notes[text.findIndex(slide => slide.includes(title))];
+        for (const title of ['10-Р САРЫН ГЭРЭЭНИЙ НИЙТ ТӨЛӨВЛӨГӨӨ', 'Б1 БЛОК']) {
+            expect(noteOf(title), title).toContain('Мөнгөн урсгалын «+» — доод хязгаар: огноогүй 1 гэрээний HUB-ийн төлсөн дүн аль сард орохыг мэдэхгүй.');
+            expect(noteOf(title), title).not.toContain('зарим гэрээний төлсөн дүн тодорхойгүй');
+        }
+        expect(noteOf('ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ')).toContain('Мөнгөн урсгалын «1–10 сар», «он»-ы «+» — огноогүй 2 гэрээний HUB-ийн төлсөн дүн аль сард орохыг мэдэхгүй.');
+    });
+
+    it('names both an empty block and a block that is itself a lower bound', async () => {
+        const report = plan();
+        const row = report.months[9];
+        const cash = (cells: typeof row.total, value: { actual: number | null; lowerBound: boolean; source: 'auto' | 'manual' | 'mixed' | null }) =>
+            ({ ...cells, metrics: { ...cells.metrics, cashflow: { ...cells.metrics.cashflow!, ...value } } });
+        const months = [...report.months];
+        months[9] = {
+            ...row,
+            total: cash(row.total, { actual: 50_000_000, lowerBound: true, source: 'mixed' }),
+            blocks: { b1: cash(row.blocks.b1, { actual: null, lowerBound: true, source: 'auto' }), b2: cash(row.blocks.b2, { actual: 50_000_000, lowerBound: true, source: 'auto' }), parking: cash(row.blocks.parking, { actual: 0, lowerBound: false, source: 'manual' }) },
+        };
+        const { notes, text } = await render(teamInput({ plan: { ...report, months, cash: { ...report.cash!, availability: 'partial' } } }));
+        expect(notes[text.findIndex(slide => slide.includes('10-Р САРЫН ГЭРЭЭНИЙ НИЙТ ТӨЛӨВЛӨГӨӨ'))])
+            .toContain('Мөнгөн урсгалын «+» — доод хязгаар: гүйцэтгэл оруулаагүй, системд ч дүнгүй блок — Б1 блок; зарим гэрээний төлсөн дүн тодорхойгүй. Мөнгө ороогүй блокт /admin/sales-targets-д 0 гэж оруулна.');
+    });
+
+    it('keeps the cash «+» note off the stretch slide when it draws no cash figure', async () => {
+        const report = plan();
+        const months = [...report.months];
+        months[9] = { ...months[9], stretch: { ...months[9].stretch, cashflow: null } };
+        const { notes, text } = await render(teamInput({ plan: { ...report, months } }));
+        expect(notes[text.findIndex(slide => slide.includes('НЭМЭЛТ ТӨЛӨВЛӨГӨӨ'))]).not.toContain('Мөнгөн урсгалын «+»');
+        expect(notes[text.findIndex(slide => slide.includes('10-Р САРЫН ГЭРЭЭНИЙ НИЙТ ТӨЛӨВЛӨГӨӨ'))]).toContain('Мөнгөн урсгалын «+»');
+    });
+
+    it('lists no missing cash months while the report covers none (plan year not started)', async () => {
+        const { notes } = await render(teamInput({ plan: { ...plan(), throughMonth: null } }));
+        expect(notes.join(' ')).not.toContain('зарим блокийн гүйцэтгэл оруулаагүй');
+    });
+
     it('adds no cash «+» note once every block of every month has a cash actual', async () => {
         const report = plan();
         const filled = (cells: typeof report.months[number]['total']) => ({ ...cells, metrics: { ...cells.metrics, cashflow: { ...cells.metrics.cashflow!, actual: 1, lowerBound: false } } });
