@@ -371,14 +371,47 @@ function prepaymentLine(slide: Slide, cells: PlanScopeCells, y: number) {
     slide.addText(`Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй): ${prepaymentText(cells)}`, { x: M, y, w: CW, h: 0.4, fontFace: FONT, fontSize: 14, color: C.ink2, margin: 0, isTextBox: true });
 }
 
-function planNotes(ctx: Ctx, plan: TeamPlanReport, cells: PlanScopeCells): string[] {
+/** Мөнгөн урсгалд гараар ч, системд ч дүнгүй блокууд (нийт хүрээ: эдгээрээс «+» үүснэ). */
+function missingCashBlocks(row: PlanMonthRow, scope: PlanScopeCells): string[] {
+    if (scope !== row.total) return [];
+    return MONTHLY_SALES_BLOCKS.filter(block => row.blocks[block].metrics.cashflow?.actual == null).map(block => MONTHLY_SALES_BLOCK_LABELS[block]);
+}
+
+/**
+ * Системийн мөнгөн урсгал бүрэн биш байх шалтгаан (plan-performance-ийн доод хязгаарын дүрэм): HUB «Нийт төлсөн дүн»
+ * горимд огноогүй гэрээний төлсөн дүн аль сард орохыг мэдэхгүй; төлсөн дүн нь тодорхойгүй гэрээ (`partial`).
+ */
+function systemCashCauses(plan: TeamPlanReport, undated: number): string[] {
+    return [
+        plan.cash?.source === 'hub_paid' && undated > 0 ? `огноогүй ${undated} гэрээний HUB-ийн төлсөн дүн аль сард орохыг мэдэхгүй` : null,
+        plan.cash?.availability === 'partial' ? 'зарим гэрээний төлсөн дүн тодорхойгүй' : null,
+    ].filter((cause): cause is string => !!cause);
+}
+
+/**
+ * Мөнгөн урсгалын «+» / «—»-ийн шалтгаан — гэрээний «+»-ээс тусдаа: нийт хүрээнд гүйцэтгэл оруулаагүй блок, системийн
+ * шалтгаан (гараар оруулаагүй блокуудын огноогүй гэрээ, тодорхойгүй төлсөн дүн). Гараар оруулсан блок системээс хамаарахгүй.
+ */
+function cashLowerBoundNote(plan: TeamPlanReport, row: PlanMonthRow, scope: PlanScopeCells, shown: boolean): string {
+    const missing = missingCashBlocks(row, scope);
+    const undated = scope === row.total
+        ? MONTHLY_SALES_BLOCKS.filter(block => row.blocks[block].metrics.cashflow?.source !== 'manual').reduce((sum, block) => sum + row.blocks[block].undated, 0)
+        : scope.undated;
+    const causes = [...(missing.length ? [`гүйцэтгэл оруулаагүй, системд ч дүнгүй блок — ${missing.join(', ')}`] : []), ...systemCashCauses(plan, undated)];
+    const head = shown ? 'Мөнгөн урсгалын «+» — доод хязгаар' : 'Мөнгөн урсгал «—» — тодорхойгүй';
+    return `${head}: ${causes.length ? causes.join('; ') : 'системийн дүн бүрэн биш'}.${missing.length ? ' Мөнгө ороогүй блокт /admin/sales-targets-д 0 гэж оруулна.' : ''}`;
+}
+
+/** `cashShown` — слайд мөнгөн урсгалын гүйцэтгэлийг зурдаг эсэх (нэмэлт төлөвлөгөөгүй бол нэмэлт слайдад зурахгүй). */
+function planNotes(ctx: Ctx, plan: TeamPlanReport, row: PlanMonthRow, cells: PlanScopeCells, cashShown = ctx.cashVisible): string[] {
     const contract = cells.metrics.contract;
     return [
         `Эх сурвалж: «Төлөвлөгөөний биелэлт» — ${ctx.year} оны ${ctx.month}-р сар, тайлант өдөр (${ctx.input.range.to}) хүртэл.`,
         contractSource(contract),
         ctx.cashVisible ? cashSource(plan, cells.metrics.cashflow) : 'Мөнгөн урсгалын төлөвлөгөө, гүйцэтгэлийг санхүүгийн эрхтэй хүн харна.',
-        contract?.lowerBound || (ctx.cashVisible && cells.metrics.cashflow?.lowerBound)
+        contract?.lowerBound
             ? `«+» — доод хязгаар: ${cells.undated ? `огноогүй ${cells.undated} гэрээ` : 'дүн нь тодорхойгүй гэрээ'} байна; тухайн сард мэдэгдэх дүнгүй бол «—».` : null,
+        cashShown && cells.metrics.cashflow?.lowerBound ? cashLowerBoundNote(plan, row, cells, cells.metrics.cashflow.actual !== null) : null,
         'Хувь = гүйцэтгэл / төлөвлөгөө, бүхэл тоогоор.',
         '«Энэ сарын гэрээний урьдчилгаа» = тухайн сард захиалсан амьд гэрээний нөхцлөөр төлөх урьдчилгаа (орсон + хүлээгдэж буй) — мөнгөн урсгал биш, мөнгөн урсгалд нэмэхгүй (W6).',
         prepaymentNote(cells),
@@ -411,7 +444,7 @@ function planCardSlide(pres: PptxGenJS, ctx: Ctx, title: string, pick: (row: Pla
         muted(slide, CASH_HIDDEN, TOP + 1.95, 0.4, 13);
     }
     prepaymentLine(slide, cells, ctx.cashVisible ? TOP + 3.9 : TOP + 2.55);
-    note(slide, [...planNotes(ctx, plan, cells), ...extraNotes(row)]);
+    note(slide, [...planNotes(ctx, plan, row, cells), ...extraNotes(row)]);
 }
 
 function stretchSlide(pres: PptxGenJS, ctx: Ctx) {
@@ -442,7 +475,7 @@ function stretchSlide(pres: PptxGenJS, ctx: Ctx) {
     prepaymentLine(slide, row.total, ctx.cashVisible ? TOP + 3.9 : TOP + 2.55);
     note(slide, [
         'Нэмэлт төлөвлөгөө — сарын нийт гэрээ (ба мөнгөн урсгал)-ний дүн, блокгүй (W8); /admin/sales-targets-д оруулна.',
-        ...planNotes(ctx, plan, row.total),
+        ...planNotes(ctx, plan, row, row.total, ctx.cashVisible && row.stretch.cashflow !== null),
     ]);
 }
 
@@ -675,8 +708,35 @@ function yearTableSlide(pres: PptxGenJS, ctx: Ctx) {
         `«${ctx.year} он»-ы гүйцэтгэл = 1–${ytdMonth} сарын гүйцэтгэл; хувь = бүтэн жилийн төлөвлөгөөнөөс. Аль нэг сард төлөвлөгөө оруулаагүй бол нийт төлөвлөгөө «—».`,
         ytdMonth !== ctx.month ? `Тайлант 7 хоног дуусаагүй тул он эхнээсх гүйцэтгэл ${ytdMonth}-р сар хүртэл (татсан өдрөөр); ${ctx.month}-р сарын гүйцэтгэл «—».` : null,
         ctx.cashVisible ? cashSource(plan, row.total.metrics.cashflow) : 'Мөнгөн урсгалын мөрийг санхүүгийн эрхтэй хүн харна.',
-        row.total.undated ? `«+» — огноогүй ${row.total.undated} гэрээтэй тул доод хязгаар. ${undatedContractsHint(row.total.undated)}` : null,
+        row.total.undated ? `Гэрээний тоо, дүнгийн «+» — огноогүй ${row.total.undated} гэрээтэй тул доод хязгаар. ${undatedContractsHint(row.total.undated)}` : null,
+        ctx.cashVisible && plan.throughMonth !== null ? yearCashGapNote(plan, plan.throughMonth) : null,
+        ctx.cashVisible && plan.ytd.total.metrics.cashflow?.lowerBound && systemCashCauses(plan, row.total.undated).length
+            ? `Мөнгөн урсгалын «1–${ytdMonth} сар», «он»-ы «+» — ${systemCashCauses(plan, row.total.undated).join('; ')}.` : null,
     ]);
+}
+
+/**
+ * Он эхнээсх мөнгөн урсгалын «+»/«—»: 1–N сарын аль нэг блокт гараар ч, системд ч дүнгүй сарууд (сар бүрийг блокоор
+ * оруулах ёстой; мөнгө ороогүй бол 0). Бүх сар мэдэгдэж байвал тэмдэглэлгүй.
+ */
+function yearCashGapNote(plan: TeamPlanReport, throughMonth: number): string | null {
+    const months = plan.months.slice(0, throughMonth)
+        .filter(row => MONTHLY_SALES_BLOCKS.some(block => row.blocks[block].metrics.cashflow?.actual == null))
+        .map(row => row.month);
+    if (!months.length) return null;
+    return `Мөнгөн урсгалын «1–${throughMonth} сар», «он»-ы «+»/«—» — ${monthSpans(months)}-р сарын зарим блокийн гүйцэтгэл оруулаагүй, системд ч дүнгүй. Сар бүрийг блокоор /admin/sales-targets-д оруулна (мөнгө ороогүй бол 0).`;
+}
+
+/** [1,2,3,5,7,8] → «1–3, 5, 7–8». */
+function monthSpans(months: readonly number[]): string {
+    const spans: string[] = [];
+    for (let i = 0; i < months.length; i++) {
+        let j = i;
+        while (j + 1 < months.length && months[j + 1] === months[j] + 1) j++;
+        spans.push(j > i ? `${months[i]}–${months[j]}` : String(months[i]));
+        i = j;
+    }
+    return spans.join(', ');
 }
 
 // 16. Сарын бусад ажлын төлөвлөгөө («Энэ сард хийгдэх ажил» — мөр бүр цэг).
