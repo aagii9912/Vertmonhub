@@ -259,6 +259,8 @@ for (const compact of [false, true]) {
         await panel.getByRole('button', { name: 'Хаах', exact: true }).click();
         await page.getByRole('link', { name: 'Хурлын бэлтгэл нээх', exact: true }).click();
         await expect(page.getByRole('heading', { name: 'Лхагва гарагийн хурал' })).toBeVisible();
+        // Бүтэн тайлан: бүх хэсэг нэг хуудсанд (алхамчилсан горимыг тусдаа тест шалгана).
+        await page.getByRole('button', { name: 'Бүтэн тайлан', exact: true }).click();
         await page.getByRole('button', { name: 'Дууссан ажлаас оруулах (1)' }).click();
         await page.getByLabel('Саад, шийдэх зүйл', { exact: true }).fill('Төлбөрийн нөхцөлийг батлуулах шаардлагатай.');
         await page.getByLabel('Дараагийн алхам', { exact: true }).fill('Пүрэв гарагт саналаа илгээх.');
@@ -384,7 +386,7 @@ test('ханшгүй зардалтай хурлын тайлан өртгийг
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     const state = await setup(page);
     state.missingFx = true;
-    await page.goto('/dashboard/weekly');
+    await page.goto('/dashboard/weekly?view=full');
     const cost = page.getByText('Нэг лидийн өртөг', { exact: true }).locator('..');
     await expect(cost.locator('dd').first()).toHaveText('—');
     await expect(cost).toContainText('Ханш дутуу · өртөг тооцоогүй');
@@ -398,6 +400,65 @@ test('ханшгүй зардалтай хурлын тайлан өртгийг
     expect(state.errors).toEqual([]);
 });
 
+test('хурлын тайланг алхам алхмаар бэлдэж, алхам бүрт зөвхөн өөрийн хэсгийг харуулна', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    const state = await setup(page);
+    await page.goto('/dashboard/weekly');
+    const salesSteps = page.getByRole('navigation', { name: 'Борлуулалтын тайлан: алхмууд' });
+    await expect(salesSteps.getByRole('button')).toHaveText([/Тоон тойм/, /Гэрээ, үлдэгдэл/, /Лидийн эх сурвалж/, /Нэмэлт слайд/, /Миний шинэчлэл/, /Шалгаад татах/]);
+    await expect(page.getByRole('heading', { name: 'Тоон тойм', exact: true })).toBeVisible();
+    await expect(page.getByText('Гэрээний бүртгэлтэй дүн', { exact: true })).toBeVisible();
+    // Нэг алхамд нэг хэсэг: гэрээний дэлгэрэнгүй, слайд татах товч дараагийн алхмуудад.
+    await expect(page.getByRole('region', { name: 'Энэ долоо хоногийн гэрээ' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Борлуулалтын слайд', exact: true })).toHaveCount(0);
+    mkdirSync('output/workday', { recursive: true });
+    await page.screenshot({ path: 'output/workday/desktop-weekly-steps.png', fullPage: true });
+    await page.getByRole('button', { name: 'Дараах: Гэрээ, үлдэгдэл', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Гэрээ, үлдэгдэл', exact: true })).toBeFocused();
+    await expect(page.getByRole('region', { name: 'Энэ долоо хоногийн гэрээ' })).toBeVisible();
+    await expect(page).toHaveURL(/\?track=sales&step=contracts$/);
+    await expect(salesSteps.getByRole('button', { name: /Тоон тойм/ })).toContainText('бөглөсөн');
+
+    await salesSteps.getByRole('button', { name: /Миний шинэчлэл/ }).click();
+    await page.getByLabel('Хийсэн ажил', { exact: true }).fill('Гурван гэрээ байгуулсан.');
+    // Хадгалаагүй шинэчлэлтэй бол өөр алхам руу шилжиж бичвэрээ алдахгүй.
+    await page.getByRole('button', { name: 'Дараах: Шалгаад татах', exact: true }).click();
+    await expect(page.getByText('Шинэчлэлээ эхлээд «Тайланд оруулах» эсвэл «Болих» дарна уу.')).toBeVisible();
+    await expect(page.getByLabel('Хийсэн ажил', { exact: true })).toHaveValue('Гурван гэрээ байгуулсан.');
+    await page.getByRole('button', { name: 'Тайланд оруулах', exact: true }).click();
+    await expect(page.getByText('Таны шинэчлэл хадгалагдсан.')).toBeVisible();
+    await page.getByRole('button', { name: 'Дараах: Шалгаад татах', exact: true }).click();
+
+    const finish = page.getByRole('region', { name: 'Шалгаад татах' });
+    await expect(finish).toContainText('Эзэнгүй 3 лид');
+    await expect(finish).toContainText('Гурван гэрээ байгуулсан.');
+    await page.screenshot({ path: 'output/workday/desktop-weekly-steps-finish.png', fullPage: true });
+    const salesDownload = page.waitForEvent('download');
+    await finish.getByRole('button', { name: 'Борлуулалтын слайд', exact: true }).click();
+    expect((await salesDownload).suggestedFilename()).toBe(`Vertmon · Туршилтын өгөгдөл - Борлуулалт - Лхагва ${meetingDate}.pptx`);
+
+    // Маркетингийн тайлан өөрийн алхмуудтай; борлуулалтын хэлэлцэх асуудал орохгүй.
+    await page.getByRole('button', { name: 'Маркетингийн тайлан', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Контент төлөвлөгөө', exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\?track=marketing&step=content$/);
+    const marketingSteps = page.getByRole('navigation', { name: 'Маркетингийн тайлан: алхмууд' });
+    await expect(marketingSteps.getByRole('button')).toHaveText([/Контент төлөвлөгөө/, /Суваг, төсөв/, /Нэмэлт слайд/, /Миний шинэчлэл/, /Шалгаад татах/]);
+    await marketingSteps.getByRole('button', { name: /Шалгаад татах/ }).click();
+    await expect(finish).not.toContainText('Эзэнгүй 3 лид');
+    await expect(finish.getByRole('button', { name: 'Маркетингийн слайд', exact: true })).toBeVisible();
+    await expect(finish.getByRole('button', { name: 'Борлуулалтын слайд', exact: true })).toHaveCount(0);
+
+    // Бүтэн тайлан (танилцуулах, хэвлэх) хэвээр; дахин ачаалахад харагдац хадгалагдана.
+    await finish.getByRole('button', { name: 'Бүтэн тайлан · хэвлэх', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'PDF / хэвлэх', exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\?view=full$/);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Энэ хурлаар шийдэх', exact: true })).toBeVisible();
+    await page.goto('/dashboard/weekly?track=marketing&step=channels');
+    await expect(page.getByRole('heading', { name: 'Суваг, төсөв', exact: true })).toBeVisible();
+    expect(state.errors).toEqual([]);
+});
+
 const pptxText = async (path: string) => {
     const zip = await JSZip.loadAsync(readFileSync(path));
     const slides = await Promise.all(Object.keys(zip.files).filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name)).map(name => zip.file(name)!.async('string')));
@@ -407,7 +468,7 @@ const pptxText = async (path: string) => {
 test('маркетинг өөрийн контент төлөвлөгөөгөөр, борлуулалтаас тусдаа слайд гаргана', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1050 });
     const state = await setup(page);
-    await page.goto('/dashboard/weekly');
+    await page.goto('/dashboard/weekly?view=full');
     // Маркетингийн контент: төлөвлөх → постер хавсаргах → нийтэлсэн.
     const plan = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Маркетинг — контент төлөвлөгөө ба гүйцэтгэл', exact: true }) });
     await expect(plan).toContainText('Энэ долоо хоногт контент төлөвлөөгүй.');
@@ -496,7 +557,7 @@ test('борлуулалтын албаны загварын слайд: алб�
     const consoleErrors: string[] = [];
     page.on('console', message => { if (message.type() === 'error' && !realtimeNoise.test(message.text())) consoleErrors.push(message.text()); });
     const state = await setup(page);
-    await page.goto('/dashboard/weekly');
+    await page.goto('/dashboard/weekly?view=full');
     const button = page.getByRole('button', { name: 'Борлуулалт (албаны загвар)', exact: true });
     await expect(button).toBeEnabled();
     const download = page.waitForEvent('download');
@@ -527,7 +588,7 @@ test('борлуулалтын албаны загварын слайд: алб�
 
 test('хувийн эрхтэй хэрэглэгч нэгдсэн тайлан дуудахгүй', async ({ page }) => {
     const state = await setup(page, true);
-    await page.goto('/dashboard/weekly');
+    await page.goto('/dashboard/weekly?view=full');
     await expect(page.getByRole('heading', { name: 'Миний явц, хэлэлцэх зүйл' })).toBeVisible();
     expect(state.requests).not.toContain('/api/dashboard/reports/operations');
     expect(state.requests).not.toContain('/api/marketing/performance');
@@ -542,7 +603,7 @@ test('хувийн эрхтэй хэрэглэгч нэгдсэн тайлан �
 test('хадгалалт бүтэлгүйтвэл бичвэр үлдэж, дахин хадгалж болно', async ({ page }) => {
     const state = await setup(page);
     state.failSave = true;
-    await page.goto('/dashboard/weekly');
+    await page.goto('/dashboard/weekly?view=full');
     await page.getByLabel('Хийсэн ажил', { exact: true }).fill('Харилцагчтай уулзсан.');
     await page.getByRole('button', { name: 'Тайланд оруулах', exact: true }).click();
     await expect(page.getByText('Хадгалалт түр боломжгүй. Дахин оролдоно уу.')).toBeVisible();

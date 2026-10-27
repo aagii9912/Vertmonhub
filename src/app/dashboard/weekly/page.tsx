@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRight, Check, ChevronLeft, ChevronRight, ClipboardCopy, FileText, Maximize2, Plus, Presentation, Printer, RefreshCw, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -15,7 +16,7 @@ import { formatTime, ubDateStr } from '@/lib/utils/date';
 import { cn } from '@/lib/utils';
 import { type OperationsReport } from '@/lib/dashboard/operations-report';
 import { type MarketingPerformance } from '@/lib/marketing/performance';
-import { formatReviewChange, formatWeeklyReview, meetingDateSchema, nextMeetingDate, shiftReviewDate, weeklyDiscussionItems, weeklyReviewRange, type WeeklyUpdate, type WeeklyUpdatesData } from '@/lib/dashboard/weekly-review';
+import { formatReviewChange, formatWeeklyReview, meetingDateSchema, nextMeetingDate, shiftReviewDate, updatePart, weeklyDiscussionItems, weeklyReviewRange, type WeeklyUpdate, type WeeklyUpdatesData } from '@/lib/dashboard/weekly-review';
 import { PerformanceKpis, PerformanceChannelTable } from '@/components/marketing/PerformanceKpis';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
@@ -33,17 +34,37 @@ import { summarizeContentPlan } from '@/lib/marketing/content-plan';
 import type { WeeklyDeckFileKind } from '@/lib/dashboard/weekly-deck';
 import { periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from '@/lib/dashboard/contract-dates';
 
+type View = 'steps' | 'full';
+type DiscussionItem = ReturnType<typeof weeklyDiscussionItems>[number];
+/** Тайлан бэлдэх нэг алхам: юу хийхийг `hint` хэлнэ, `body` нь тайлангийн тухайн хэсэг. */
+interface Step { id: string; title: string; hint: string; href?: string; warn?: boolean; done?: boolean; body: ReactNode }
+interface Track { id: 'sales' | 'marketing' | 'self'; label: string; steps: Step[] }
+
 export default function WeeklyReviewPage() {
-    const { shop, user } = useAuth();
-    // Байгууллага/хэрэглэгч солиход өмнөх бичвэр, тайланг авч үлдэхгүй.
-    return <WeeklyReview key={`${shop?.id}:${user?.id}`} />;
+    return <Suspense fallback={<Skeleton className="mx-auto h-[560px] max-w-[1240px]" />}><WeeklyReviewRoute /></Suspense>;
 }
 
-function WeeklyReview() {
+function WeeklyReviewRoute() {
+    const { shop, user } = useAuth();
+    const search = useSearchParams();
+    // `?track=marketing&step=channels` — тухайн алхмаас; `?view=full` — бүх хэсэг нэг хуудсанд (танилцуулах, хэвлэх).
+    const initial = { view: (search.get('view') === 'full' ? 'full' : 'steps') as View, track: search.get('track'), step: search.get('step') };
+    // Байгууллага/хэрэглэгч солиход өмнөх бичвэр, тайланг авч үлдэхгүй.
+    return <WeeklyReview key={`${shop?.id}:${user?.id}`} initial={initial} />;
+}
+
+function WeeklyReview({ initial }: { initial: { view: View; track: string | null; step: string | null } }) {
     const { shop, user } = useAuth();
     const [meetingDate, setMeetingDate] = useState(() => nextMeetingDate());
     const [dirty, setDirty] = useState(false);
+    const [view, setView] = useState<View>(initial.view);
+    const [trackId, setTrackId] = useState(initial.track);
+    const [stepId, setStepId] = useState(initial.step);
+    const [visited, setVisited] = useState<string[]>([]);
     const reportRef = useRef<HTMLElement>(null);
+    const stepperRef = useRef<HTMLElement>(null);
+    const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+    const navigated = useRef(false);
     const range = weeklyReviewRange(meetingDate);
     const previousRange = weeklyReviewRange(shiftReviewDate(meetingDate, -7));
     const can = (module: string) => !!user && (user.role === 'super_admin' || user.permissions.modules.includes(module));
@@ -146,15 +167,201 @@ function WeeklyReview() {
         catch { toast.error('Хуулж чадсангүй. PDF / хэвлэх үйлдлийг ашиглана уу.'); }
     }
 
+    // Тайлангийн хэсгүүд: «Алхмаар» горимд алхам тус бүрд, «Бүтэн тайлан»-д бүгд нэг хуудсанд.
+    const salesOverview = salesQuery.isPending && can('reports') ? <Skeleton className="h-32" /> : sales ? <>
+        <div className="grid grid-cols-2 gap-5 rounded-2xl border border-border p-5">
+            <Metric label="Шинэ лид" value={sales.leads.newCount} helper={formatReviewChange(sales.leads.newCount, previousSales?.leads.newCount)} />
+            <Metric label="Байгуулсан гэрээ" value={periodContractCount(sales.contracts.count, sales.contracts.undatedCount)}
+                helper={sales.contracts.undatedCount ? undatedContractsShort(sales.contracts.undatedCount) : formatReviewChange(sales.contracts.count, previousSales?.contracts.count)} />
+            <Metric label="Гэрээний бүртгэлтэй дүн" value={periodContractAmount(sales.contracts.value, sales.contracts.count, sales.contracts.undatedCount, formatMNTShort)}
+                helper={sales.contracts.undatedCount ? 'Огноогүй гэрээ дүнд ороогүй' : previousSales ? `Өмнөх ${formatMNTShort(previousSales.contracts.value)}${previousSales.contracts.missingAmounts ? ' · дүн дутуу' : ''}` : 'Өмнөх хугацааны мэдээлэл байхгүй'} />
+            <Metric label="Болсон уулзалт" value={sales.meetings?.completed ?? '—'} helper={sales.meetings ? formatReviewChange(sales.meetings.completed, previousSales?.meetings?.completed) : 'Уулзалтын мэдээлэл байхгүй'} />
+        </div>
+        {sales.meetings && <div className="space-y-3 rounded-2xl border border-border p-5">
+            <h3 className="text-sm font-medium">Болсон уулзалтын төрөл</h3>
+            <div className="grid grid-cols-3 gap-4 text-sm">
+                <Metric label="Шинэ харилцагч" value={sales.meetings.classificationAvailable ? sales.meetings.newCustomer : '—'} />
+                <Metric label="Давтан уулзалт" value={sales.meetings.classificationAvailable ? sales.meetings.repeatCustomer : '—'} />
+                <Metric label="Гэрээтэй захиалагч" value={sales.meetings.classificationAvailable ? sales.meetings.existingBuyer : '—'} />
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">{sales.meetings.basis}</p>
+            {!sales.meetings.classificationAvailable && <p className="text-xs text-muted-foreground">Уулзалтын төрлийн ангилал системд хараахан нэвтрээгүй.</p>}
+            {sales.meetings.unclassified > 0 && <p className="text-xs text-muted-foreground">Төрөл тодорхойгүй: {sales.meetings.unclassified}.</p>}
+            <p className="text-xs text-muted-foreground">Товлосон хэвээр {sales.meetings.scheduled} · Цуцалсан {sales.meetings.cancelled} · Ирээгүй {sales.meetings.noShow}</p>
+            {sales.meetings.unknownStatus > 0 && <p className="text-xs text-muted-foreground">Төлөв тодорхойгүй: {sales.meetings.unknownStatus}.</p>}
+        </div>}
+        {!!sales.contracts.byProduct?.length && <div className="max-w-full overflow-x-auto focus-ring print:overflow-visible" tabIndex={0} role="region" aria-label="Гэрээний бүтээгдэхүүний задаргаа">
+            <table className="w-full text-left text-sm">
+                <caption className="mb-2 text-left text-sm font-medium">Гэрээний бүтээгдэхүүний задаргаа</caption>
+                <thead className="border-b border-border text-xs text-muted-foreground"><tr><th scope="col" className="py-2 font-medium">Бүтээгдэхүүн</th><th scope="col" className="py-2 text-right font-medium">Гэрээ</th><th scope="col" className="py-2 text-right font-medium">Бүртгэлтэй дүн</th></tr></thead>
+                <tbody>{sales.contracts.byProduct.map(product => <tr key={product.productType} className="border-b border-border last:border-0"><th scope="row" className="break-words py-3 font-medium [overflow-wrap:anywhere]">{product.label}</th><td className="text-right tabular-nums">{product.count}</td><td className="text-right tabular-nums">{formatMNTShort(product.value)}{product.missingAmounts > 0 && <span className="block text-xs text-muted-foreground">Дүн дутуу {product.missingAmounts}</span>}</td></tr>)}</tbody>
+            </table>
+        </div>}
+        <p className="text-xs leading-relaxed text-muted-foreground">Гэрээний дүн нь мөнгөөр орсон орлогоос тусдаа.{sales.cash ? ` Мөнгөөр орсон бүртгэл: ${formatMNTShort(sales.cash.receipts)} (${sales.cash.receiptCount} гүйлгээ). Банкны хуулгатай тулгаагүй.` : ' Мөнгөн орлогыг санхүүгийн эрхтэй хүн харна.'}</p>
+        {sales.contracts.undatedCount > 0 && <Alert variant="warning">{undatedContractsHint(sales.contracts.undatedCount)}</Alert>}
+        {sales.contracts.missingAmounts > 0 && <Alert variant="warning">Нийт дүн хоосон {sales.contracts.missingAmounts} гэрээ дүнд ороогүй.</Alert>}
+        <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+            <span className="text-muted-foreground">Одоо анхаарах:</span>
+            {[['Эзэнгүй', sales.leads.health.ownerless, 'unassigned'], ['Дараагийн алхамгүй', sales.leads.health.noNextStep, 'no_followup'], ['Хугацаа хэтэрсэн', sales.leads.health.overdue, 'overdue']].map(([label, count, queue]) => can('leads') ? <Link key={queue} href={`/dashboard/leads?queue=${queue}`} className="focus-ring hover:underline">{label} <strong className="ml-1 tabular-nums">{count}</strong></Link> : <span key={queue}>{label} {count}</span>)}
+        </div>
+        <p className="text-xs text-muted-foreground">Одоогийн ажлын дараалал; дээрх ангиллууд давхцаж болно.</p>
+    </> : <Unavailable>{can('reports') ? 'Борлуулалтын мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.' : 'Нэгдсэн борлуулалтын тайлан харах эрх шаардлагатай.'}</Unavailable>;
+    const salesDetails = <WeeklySalesDetails query={weeklySalesQuery} canOpenErp={can('erp-imports')} />;
+    // Лидийн эх сурвалж, хөрвөлт нь борлуулалтын үзүүлэлт — маркетингийн албаны ажлыг үүгээр хэмжихгүй.
+    const leadSources = marketingQuery.isPending ? <Skeleton className="h-36" /> : marketing ? <>
+        <div className="grid grid-cols-3 gap-5 rounded-2xl border border-border p-5">
+            <Metric label="Шинэ лид" value={marketing.totals.leads} helper={formatReviewChange(marketing.totals.leads, marketing.previous.leads)} />
+            <Metric label="Менежерт шилжсэн лид" value={marketing.totals.sales} helper={formatReviewChange(marketing.totals.sales, marketing.previous.sales)} />
+            <Metric label="Гэрээтэй лид" value={marketing.totals.deals} helper={formatReviewChange(marketing.totals.deals, marketing.previous.deals)} />
+        </div>
+        <PerformanceKpis report={marketing} />
+        <PerformanceChannelTable report={marketing} />
+        <p className="text-xs leading-relaxed text-muted-foreground">Тухайн хугацаанд үүссэн лидээс хугацааны эцэс хүртэл шилжсэн, гэрээтэй болсон тоо. Борлуулалтын гэрээний тоотой ижил хэмжүүр биш.</p>
+        {marketing.quality.unknownHandoff > 0 && <Alert variant="warning">Шилжүүлсэн огноогүй {marketing.quality.unknownHandoff} лид тооцоонд ороогүй.</Alert>}
+    </> : <Unavailable>Лидийн эх сурвалжийн мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.</Unavailable>;
+    const salesSlides = <WeeklySlides part="sales" meetingDate={meetingDate} query={slidesQuery} canWrite={canEditSlides('sales')} canDelete={canDeleteSlides('sales')} />;
+    const contentPlanBody = can('marketing-roi')
+        ? <WeeklyContentPlan meetingDate={meetingDate} range={range} query={contentQuery} canWrite={canEditSlides('marketing')} canDelete={canDeleteSlides('marketing')} />
+        : <Unavailable>Маркетингийн хэсэг харах эрх шаардлагатай.</Unavailable>;
+    const channels = <>
+        <WeeklyMarketingConnections query={connectionsQuery} />
+        <WeeklySocialPage meetingDate={meetingDate} />
+        <WeeklyInstagram meetingDate={meetingDate} />
+        <WeeklyMarketingChannels from={range.from} to={range.to} pageConnected={!!connections?.page.connected} />
+        <WeeklyMarketingBudget to={range.to} />
+        {marketing && marketing.spendQuality.current.missingFx > 0 && <Alert variant="warning">Ханшгүй {marketing.spendQuality.current.missingFx} зардал нийтэд ороогүй.</Alert>}
+    </>;
+    const marketingSlides = <WeeklySlides part="marketing" meetingDate={meetingDate} query={slidesQuery} canWrite={canEditSlides('marketing')} canDelete={canDeleteSlides('marketing')} />;
+    const updateForm = <>
+        {updatesQuery.error && <Alert variant="warning">{updatesQuery.error.message}</Alert>}
+        {updatesQuery.isPending ? <Skeleton className="h-64" /> : updatesQuery.data ? <UpdateForm key={meetingDate} meetingDate={meetingDate} initial={updatesQuery.data.updates.find(update => update.user_id === user?.id)} completedTasks={completedTasks} canWrite={canWrite} onDirty={setDirty} tasksUnavailable={tasksQuery.isError || tasksQuery.data?.available === false} /> : null}
+    </>;
+    const teamUpdates = (list: WeeklyUpdate[]) => updatesQuery.isPending ? <Skeleton className="h-32" /> : !updates ? <Unavailable>Ажлын шинэчлэлийг ачаалж чадсангүй.</Unavailable> : list.length ? <div className="divide-y divide-border">{list.map(update => <section key={update.id} className="break-inside-avoid py-5 first:pt-0">
+        <header className="mb-4 flex items-center gap-3"><Avatar name={update.author_name} className="size-9 text-xs" /><div><h3 className="text-sm font-semibold">{update.author_name}</h3><p className="mt-0.5 text-xs text-muted-foreground">Шинэчилсэн {ubDateStr(new Date(update.updated_at))} · {formatTime(update.updated_at)}</p></div></header>
+        <dl className="space-y-3 text-sm">{[['Хийсэн ажил', update.achievements], ['Саад, шийдэх зүйл', update.blockers], ['Дараагийн алхам', update.next_steps]].map(([label, value]) => <div key={label} className="grid gap-1 sm:grid-cols-[145px_1fr]"><dt className="text-muted-foreground">{label}</dt><dd className="whitespace-pre-wrap break-words leading-relaxed">{value || 'Тэмдэглээгүй'}</dd></div>)}</dl>
+    </section>)}</div> : <Unavailable>Хурлын шинэчлэл хараахан ороогүй. Хийсэн ажил, шийдэх зүйлээ нэмээрэй.</Unavailable>;
+    const discussion = (items: DiscussionItem[]) => loading ? <p className="text-sm text-muted-foreground">Хэлэлцэх асуудлыг нэгтгэж байна…</p> : items.length ? <ul className="space-y-3">{items.map((item, index) => <li key={index} className="text-sm">
+        {item.href && can('leads') ? <Link href={item.href} className="font-medium hover:underline focus-ring">{item.title}<ArrowUpRight className="ml-1 inline size-3.5 print:hidden" /></Link> : <p className="font-medium">{item.title}</p>}
+        <p className="mt-1 whitespace-pre-wrap break-words text-fg-2">{item.detail}</p>
+    </li>)}</ul> : <p className="text-sm text-muted-foreground">Хадгалсан мэдээллээс хэлэлцэх асуудал илрээгүй.</p>;
+    const slideButton = (kind: WeeklyDeckFileKind, label: string) => <Button key={kind} disabled={!exportable || !!exporting} isLoading={exporting === kind} onClick={() => void downloadSlides(kind)}>{exporting !== kind && <Presentation />}{label}</Button>;
+    const assistantButton = can('ai-assistant') && <button type="button" disabled={!exportable} onClick={() => openAiPanel(`Доорх хурлын тайлангаас 3 гол дүгнэлт, хэлэлцэх асуудал, дараагийн 7 хоногийн алхмыг бэлд. Байхгүй тоог бүү таамагла. Хадгалах эсвэл илгээх үйлдэл бүү хий.\n\n${text}`)} className="flex w-full items-start gap-3 rounded-2xl bg-surface-2 p-5 text-left transition-colors hover:bg-surface-3 disabled:opacity-50 focus-ring"><Sparkles className="mt-0.5 size-5 shrink-0" /><span><span className="block text-sm font-medium">AI-аар дүгнэлт бэлдэх</span><span className="mt-1 block text-xs leading-relaxed text-muted-foreground">Энэ тайлан дээр үндэслэн хурлын ярих зүйлээ цэгцлээрэй.</span></span><ArrowUpRight className="ml-auto size-4 shrink-0" /></button>;
+    const addTaskButton = <button type="button" disabled={!canWrite} onClick={() => openQuickCreate('task')} className="flex min-h-11 w-full items-center gap-2 px-2 text-sm text-fg-2 hover:text-foreground disabled:opacity-50 focus-ring"><Plus className="size-4" />Хурлаас гарсан ажил нэмэх</button>;
+
+    // Алхмууд: борлуулалт, маркетинг тус тусдаа (эрхээр); аль ч эрхгүй бол зөвхөн өөрийн шинэчлэл.
+    const updateStep: Step = {
+        id: 'update', title: 'Миний шинэчлэл', body: updateForm,
+        hint: 'Энэ долоо хоногт хийсэн ажил, саад, дараагийн алхмаа бичээд «Тайланд оруулах» дарна. Хадгалаагүй бол дараагийн алхам руу шилжихгүй.',
+        done: !!updates?.updates.some(update => update.user_id === user?.id),
+    };
+    const finishStep = (part: 'sales' | 'marketing' | null): Step => {
+        const items = part ? discussionItems.filter(item => item.part === part) : discussionItems;
+        const list = (updates?.updates ?? []).filter(update => !part || updatePart(update) === part);
+        return {
+            id: 'finish', title: part ? 'Шалгаад татах' : 'Шалгаад хуулах',
+            hint: part ? 'Хурлаар шийдэх асуудал, багийн шинэчлэлийг нэг харж, слайдаа татна. Файлыг PowerPoint-д нээж засаж болно.' : 'Хурлаар шийдэх асуудал, шинэчлэлээ нэг харж, тайлангаа хуулна.',
+            body: <div className="space-y-6">
+                <div className="space-y-3 rounded-2xl bg-surface-2 p-5"><h3 className="text-sm font-semibold">Энэ хурлаар шийдэх</h3>{discussion(items)}</div>
+                <div className="space-y-4"><h3 className="text-sm font-semibold">{updates?.canViewTeam ? 'Багийн шинэчлэл' : 'Миний шинэчлэл'}</h3>{teamUpdates(list)}</div>
+                <div className="space-y-3 rounded-2xl border border-border p-5">
+                    <h3 className="text-sm font-semibold">{part ? 'Слайд татах' : 'Тайлан хуулах'}</h3>
+                    <p className="text-xs leading-relaxed text-muted-foreground">{loading ? 'Мэдээлэл ачаалж байна…' : dirty ? 'Хадгалаагүй шинэчлэл байна. «Миний шинэчлэл» алхамд хадгална уу.' : part ? 'Өмнөх алхмуудын мэдээллээр .pptx файл үүснэ. Засвар оруулсан бол эхлээд «Шинэчлэх» дарна.' : 'Хурлын тайланг текстээр хуулж мессеж, имэйлд буулгана.'}</p>
+                    <div className="flex flex-wrap gap-2">
+                        {part === 'sales' && [slideButton('sales', 'Борлуулалтын слайд'), slideButton('sales-team', 'Борлуулалт (албаны загвар)')]}
+                        {part === 'marketing' && slideButton('marketing', 'Маркетингийн слайд')}
+                        <Button variant="secondary" disabled={!exportable} onClick={copy}><ClipboardCopy />Хуулах</Button>
+                        <Button variant="ghost" onClick={() => changeView('full')}><FileText />Бүтэн тайлан · хэвлэх</Button>
+                    </div>
+                </div>
+                {assistantButton}
+                {addTaskButton}
+            </div>,
+        };
+    };
+    const tracks: Track[] = [
+        ...(can('reports') ? [{
+            id: 'sales' as const, label: 'Борлуулалтын тайлан', steps: [
+                { id: 'overview', title: 'Тоон тойм', body: salesOverview, href: `/dashboard/reports/operations?${params}`, warn: !!salesQuery.error,
+                    hint: 'Шинэ лид, гэрээ, уулзалтын тоо зөв эсэхийг шалгана. Буруу бол лид, уулзалт, гэрээний бүртгэлээ засаад «Шинэчлэх» дарна.' },
+                { id: 'contracts', title: 'Гэрээ, үлдэгдэл', body: salesDetails, href: can('erp-imports') ? '/dashboard/reports/erp' : undefined, warn: !!weeklySalesQuery.error,
+                    hint: 'Долоо хоногийн гэрээ, мөнгөн орлого, давхрын зураглал ERP-ийн сүүлийн экспортоос гарна. Экспортын огноо хуучин бол шинэ файл оруулна.' },
+                ...(can('marketing-roi') ? [{ id: 'leads', title: 'Лидийн эх сурвалж', body: leadSources, href: `/marketing?${params}`, warn: !!marketingQuery.error,
+                    hint: 'Аль сувгаас хэдэн лид ирж, менежерт шилжиж, гэрээ болсныг шалгана.' }] : []),
+                { id: 'slides', title: 'Нэмэлт слайд', body: salesSlides,
+                    hint: 'Слайдад орох зураг, дэлгэцийн зураг, тайлбараа нэмнэ. Заавал биш — нэмэх зүйлгүй бол алгасна.' },
+                updateStep,
+                finishStep('sales'),
+            ],
+        }] : []),
+        ...(can('marketing-roi') ? [{
+            id: 'marketing' as const, label: 'Маркетингийн тайлан', steps: [
+                { id: 'content', title: 'Контент төлөвлөгөө', body: contentPlanBody, href: '/marketing/calendar', warn: !!contentQuery.error,
+                    hint: 'Энэ долоо хоногийн контентын төлөвийг (нийтэлсэн, хоцорсон) шинэчилж, постероо хавсаргана.' },
+                { id: 'channels', title: 'Суваг, төсөв', body: channels, href: '/marketing/channel-reports', warn: !!connectionsQuery.error,
+                    hint: 'Facebook, Instagram, Meta зар, CallPro, SMS-ийн үзүүлэлт ба төсөв. Экспорт оруулаагүй суваг байвал «Сувгийн тайлан»-аас оруулна.' },
+                { id: 'slides', title: 'Нэмэлт слайд', body: marketingSlides,
+                    hint: 'Сувгийн дэлгэцийн зураг, нэмэлт слайдаа оруулна. Заавал биш — нэмэх зүйлгүй бол алгасна.' },
+                updateStep,
+                finishStep('marketing'),
+            ],
+        }] : []),
+    ];
+    if (!tracks.length) tracks.push({ id: 'self', label: 'Миний тайлан', steps: [updateStep, finishStep(null)] });
+    const track = tracks.find(item => item.id === trackId) ?? tracks[0];
+    const stepIndex = Math.max(0, track.steps.findIndex(item => item.id === stepId));
+    const step = track.steps[stepIndex];
+    const nextStep = track.steps[stepIndex + 1];
+
+    // Хаяг нь одоогийн алхмыг заана (дахин ачаалах, хуваалцах).
+    useEffect(() => {
+        const query = view === 'full' ? '?view=full' : `?track=${track.id}&step=${step.id}`;
+        if (window.location.search !== query) window.history.replaceState(window.history.state, '', `${window.location.pathname}${query}`);
+    }, [view, track.id, step.id]);
+    useEffect(() => {
+        if (!navigated.current) return;
+        navigated.current = false;
+        if ((stepperRef.current?.getBoundingClientRect().top ?? 0) < 0) stepperRef.current?.scrollIntoView({ block: 'start' });
+        stepHeadingRef.current?.focus({ preventScroll: true });
+    }, [view, track.id, step.id]);
+
+    /** Хадгалаагүй шинэчлэлийг алгасаж алдахгүй (маягт зөвхөн өөрийн алхамд байдаг). */
+    function canLeave() {
+        if (dirty) toast.error('Шинэчлэлээ эхлээд «Тайланд оруулах» эсвэл «Болих» дарна уу.');
+        return !dirty;
+    }
+    function goToStep(id: string) {
+        if (id === step.id || !canLeave()) return;
+        setVisited(list => [...new Set([...list, `${track.id}:${step.id}`])]);
+        navigated.current = true;
+        setStepId(id);
+    }
+    function changeTrack(id: Track['id']) {
+        if (id === track.id || !canLeave()) return;
+        navigated.current = true;
+        setTrackId(id);
+        setStepId(null);
+    }
+    function changeView(next: View) {
+        if (next === view || !canLeave()) return;
+        navigated.current = next === 'steps';
+        setView(next);
+    }
+
     return (
         <div className="mx-auto max-w-[1240px] space-y-7">
             <header className="flex flex-wrap items-start justify-between gap-4 print:hidden">
                 <div>
                     <p className="mb-2 text-xs text-muted-foreground">Долоо хоногийн ажлын хэмнэл</p>
                     <h1 className="text-[28px] font-semibold tracking-tight sm:text-[32px]">Лхагва гарагийн хурал</h1>
-                    <p className="mt-2 text-sm text-muted-foreground">Тоон үзүүлэлт, багийн явц, дараагийн алхам. Нэг дор.</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{view === 'steps' ? 'Алхам алхмаар шалгаж бөглөөд, төгсгөлд нь слайдаа татна.' : 'Тоон үзүүлэлт, багийн явц, дараагийн алхам. Нэг дор.'}</p>
                 </div>
-                <Button variant="secondary" onClick={refresh} disabled={loading || dirty}><RefreshCw className={cn('size-4', loading && 'animate-spin')} />Шинэчлэх</Button>
+                <div className="flex flex-wrap items-center gap-2">
+                    <div role="group" aria-label="Харагдац" className="flex rounded-lg border border-border p-0.5">
+                        {([['steps', 'Алхмаар'], ['full', 'Бүтэн тайлан']] as const).map(([key, label]) => <button key={key} type="button" aria-pressed={view === key} onClick={() => changeView(key)}
+                            className={cn('min-h-9 rounded-md px-3 text-[13px] font-medium transition-colors focus-ring', view === key ? 'bg-surface-2 text-foreground' : 'text-muted-foreground hover:text-foreground')}>{label}</button>)}
+                    </div>
+                    <Button variant="secondary" onClick={refresh} disabled={loading || dirty}><RefreshCw className={cn('size-4', loading && 'animate-spin')} />Шинэчлэх</Button>
+                </div>
             </header>
 
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5 print:hidden">
@@ -168,150 +375,132 @@ function WeeklyReview() {
                         }} className="mt-1 block rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground focus-ring" />
                     </label>
                     <Button variant="ghost" size="icon" aria-label="Дараагийн хурал" disabled={dirty} onClick={() => setMeetingDate(shiftReviewDate(meetingDate, 7))}><ChevronRight /></Button>
+                    {view === 'steps' && <p className="ml-2 text-xs text-muted-foreground tabular-nums">Тайлант хугацаа<span className="mt-1 block text-sm text-foreground">{range.from} — {range.to}</span></p>}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                {view === 'full' ? <div className="flex flex-wrap gap-2">
                     <Button variant="ghost" disabled={!exportable} onClick={copy}><ClipboardCopy />Хуулах</Button>
                     <Button variant="secondary" disabled={!exportable} onClick={() => void reportRef.current?.requestFullscreen?.().catch(() => toast.error('Бүтэн дэлгэц нээгдсэнгүй. PDF / хэвлэх үйлдлийг ашиглана уу.'))}><Maximize2 />Танилцуулах</Button>
                     <Button variant="secondary" disabled={!exportable} onClick={() => window.print()}><Printer />PDF / хэвлэх</Button>
-                    {can('reports') && <Button disabled={!exportable || !!exporting} isLoading={exporting === 'sales'} onClick={() => void downloadSlides('sales')}>{exporting !== 'sales' && <Presentation />}Борлуулалтын слайд</Button>}
-                    {can('reports') && <Button disabled={!exportable || !!exporting} isLoading={exporting === 'sales-team'} onClick={() => void downloadSlides('sales-team')}>{exporting !== 'sales-team' && <Presentation />}Борлуулалт (албаны загвар)</Button>}
-                    {can('marketing-roi') && <Button disabled={!exportable || !!exporting} isLoading={exporting === 'marketing'} onClick={() => void downloadSlides('marketing')}>{exporting !== 'marketing' && <Presentation />}Маркетингийн слайд</Button>}
-                </div>
+                    {can('reports') && slideButton('sales', 'Борлуулалтын слайд')}
+                    {can('reports') && slideButton('sales-team', 'Борлуулалт (албаны загвар)')}
+                    {can('marketing-roi') && slideButton('marketing', 'Маркетингийн слайд')}
+                </div> : tracks.length > 1 && <div role="group" aria-label="Тайлан" className="flex rounded-lg bg-surface-2 p-1">
+                    {tracks.map(item => <button key={item.id} type="button" aria-pressed={item.id === track.id} onClick={() => changeTrack(item.id)}
+                        className={cn('min-h-9 rounded-md px-4 text-sm font-medium transition-colors focus-ring', item.id === track.id ? 'bg-surface text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>{item.label}</button>)}
+                </div>}
             </div>
-            <a href="#weekly-update" className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-surface-2 text-sm font-medium focus-ring xl:hidden print:hidden"><FileText className="size-4" />Миний шинэчлэл оруулах<ArrowUpRight className="size-4" /></a>
 
-            <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_340px] print:block">
-                <article ref={reportRef} className="weekly-report min-w-0 space-y-8 bg-background">
-                    <header className="flex items-start justify-between gap-3">
-                        <div>
-                            <p className="text-xs font-medium text-muted-foreground">{shop?.name} · Хурлын тайлан</p>
-                            <h2 className="mt-1 text-xl font-semibold tracking-tight">{range.from} — {range.to}</h2>
-                            <p className="mt-1 text-xs text-muted-foreground">Улаанбаатарын цагаар · Хурал: {meetingDate}</p>
-                            <p className="mt-1 text-xs text-muted-foreground">Харьцуулалт: {previousRange.from} — {previousRange.to}</p>
+            {view === 'steps' ? <div className="space-y-6 print:hidden">
+                {notices.length > 0 && <div role="status" className="space-y-1 rounded-xl bg-surface-2 px-4 py-3 text-xs leading-relaxed text-fg-2">{notices.map(notice => <p key={notice}>{notice}</p>)}</div>}
+                <nav ref={stepperRef} aria-label={`${track.label}: алхмууд`} className="scroll-mt-20">
+                    <ol className="flex flex-wrap gap-2">
+                        {track.steps.map((item, index) => {
+                            const current = index === stepIndex;
+                            const checked = !current && (item.done || visited.includes(`${track.id}:${item.id}`));
+                            return <li key={item.id} className="min-w-[150px] flex-1">
+                                <button type="button" aria-current={current ? 'step' : undefined} onClick={() => goToStep(item.id)}
+                                    className={cn('flex min-h-11 w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors focus-ring', current ? 'border-brand bg-surface text-foreground' : 'border-border text-fg-2 hover:bg-surface-2')}>
+                                    <span className={cn('flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums', current ? 'bg-brand text-brand-fg' : checked ? 'bg-surface-3 text-foreground' : 'bg-surface-2 text-muted-foreground')}>
+                                        {checked ? <Check className="size-3.5" aria-hidden /> : index + 1}
+                                    </span>
+                                    <span className="min-w-0 truncate font-medium">{item.title}</span>
+                                    {item.warn && <span className="ml-auto size-2 shrink-0 rounded-full bg-status-pending" aria-hidden />}
+                                    {(checked || item.warn) && <span className="sr-only">{[checked && 'бөглөсөн', item.warn && 'мэдээлэл ачаалж чадсангүй'].filter(Boolean).join(', ')}</span>}
+                                </button>
+                            </li>;
+                        })}
+                    </ol>
+                </nav>
+
+                <section aria-labelledby="weekly-step-title" className="space-y-5 rounded-2xl border border-border bg-surface p-6">
+                    <header className="flex flex-wrap items-start gap-3">
+                        <div className="min-w-0 flex-1">
+                            <p className="text-xs tabular-nums text-muted-foreground">Алхам {stepIndex + 1}/{track.steps.length} · {track.label}</p>
+                            <h2 id="weekly-step-title" ref={stepHeadingRef} tabIndex={-1} className="mt-1 text-lg font-semibold tracking-tight">{step.title}</h2>
+                            <p className="mt-1.5 max-w-[72ch] text-sm leading-relaxed text-fg-2">{step.hint}</p>
                         </div>
-                        <Button variant="ghost" size="icon" className="fullscreen-exit" aria-label="Танилцуулгыг хаах" onClick={() => void document.exitFullscreen()}><X /></Button>
+                        {step.href && <Button href={step.href} variant="ghost" size="sm" aria-label={`${step.title} дэлгэрэнгүй`}>Дэлгэрэнгүй<ArrowUpRight /></Button>}
                     </header>
-                    {notices.length > 0 && <div role="status" className="space-y-1 rounded-xl bg-surface-2 px-4 py-3 text-xs leading-relaxed text-fg-2">{notices.map(notice => <p key={notice}>{notice}</p>)}</div>}
+                    <div className="space-y-4">{step.body}</div>
+                    <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
+                        <Button variant="secondary" disabled={stepIndex === 0} onClick={() => goToStep(track.steps[stepIndex - 1].id)}><ChevronLeft />Өмнөх</Button>
+                        {nextStep && <Button onClick={() => goToStep(nextStep.id)}>Дараах: {nextStep.title}<ChevronRight /></Button>}
+                    </footer>
+                </section>
+            </div> : <>
+                <a href="#weekly-update" className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-surface-2 text-sm font-medium focus-ring xl:hidden print:hidden"><FileText className="size-4" />Миний шинэчлэл оруулах<ArrowUpRight className="size-4" /></a>
 
-                    <section className="break-inside-avoid space-y-3 rounded-2xl bg-surface-2 p-5">
-                        <h2 className="text-base font-semibold">Энэ хурлаар шийдэх</h2>
-                        {loading ? <p className="text-sm text-muted-foreground">Хэлэлцэх асуудлыг нэгтгэж байна…</p> : discussionItems.length ? <ul className="space-y-3">{discussionItems.map((item, index) => <li key={index} className="text-sm">
-                            {item.href && can('leads') ? <Link href={item.href} className="font-medium hover:underline focus-ring">{item.title}<ArrowUpRight className="ml-1 inline size-3.5 print:hidden" /></Link> : <p className="font-medium">{item.title}</p>}
-                            <p className="mt-1 whitespace-pre-wrap break-words text-fg-2">{item.detail}</p>
-                        </li>)}</ul> : <p className="text-sm text-muted-foreground">Хадгалсан мэдээллээс хэлэлцэх асуудал илрээгүй.</p>}
-                        <p className="text-xs text-muted-foreground">Лидийн ажлын дараалал нь одоогийн төлөв. Ангиллууд давхцаж болно.</p>
-                    </section>
-
-                    <section className="break-inside-avoid space-y-4">
-                        <ReportHeading number="01" title="Борлуулалтын тойм" href={can('reports') ? `/dashboard/reports/operations?${params}` : undefined} />
-                        {salesQuery.isPending && can('reports') ? <Skeleton className="h-32" /> : sales ? <>
-                            <div className="grid grid-cols-2 gap-5 rounded-2xl border border-border p-5">
-                                <Metric label="Шинэ лид" value={sales.leads.newCount} helper={formatReviewChange(sales.leads.newCount, previousSales?.leads.newCount)} />
-                                <Metric label="Байгуулсан гэрээ" value={periodContractCount(sales.contracts.count, sales.contracts.undatedCount)}
-                                    helper={sales.contracts.undatedCount ? undatedContractsShort(sales.contracts.undatedCount) : formatReviewChange(sales.contracts.count, previousSales?.contracts.count)} />
-                                <Metric label="Гэрээний бүртгэлтэй дүн" value={periodContractAmount(sales.contracts.value, sales.contracts.count, sales.contracts.undatedCount, formatMNTShort)}
-                                    helper={sales.contracts.undatedCount ? 'Огноогүй гэрээ дүнд ороогүй' : previousSales ? `Өмнөх ${formatMNTShort(previousSales.contracts.value)}${previousSales.contracts.missingAmounts ? ' · дүн дутуу' : ''}` : 'Өмнөх хугацааны мэдээлэл байхгүй'} />
-                                <Metric label="Болсон уулзалт" value={sales.meetings?.completed ?? '—'} helper={sales.meetings ? formatReviewChange(sales.meetings.completed, previousSales?.meetings?.completed) : 'Уулзалтын мэдээлэл байхгүй'} />
+                <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_340px] print:block">
+                    <article ref={reportRef} className="weekly-report min-w-0 space-y-8 bg-background">
+                        <header className="flex items-start justify-between gap-3">
+                            <div>
+                                <p className="text-xs font-medium text-muted-foreground">{shop?.name} · Хурлын тайлан</p>
+                                <h2 className="mt-1 text-xl font-semibold tracking-tight">{range.from} — {range.to}</h2>
+                                <p className="mt-1 text-xs text-muted-foreground">Улаанбаатарын цагаар · Хурал: {meetingDate}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">Харьцуулалт: {previousRange.from} — {previousRange.to}</p>
                             </div>
-                            {sales.meetings && <div className="space-y-3 rounded-2xl border border-border p-5">
-                                <h3 className="text-sm font-medium">Болсон уулзалтын төрөл</h3>
-                                <div className="grid grid-cols-3 gap-4 text-sm">
-                                    <Metric label="Шинэ харилцагч" value={sales.meetings.classificationAvailable ? sales.meetings.newCustomer : '—'} />
-                                    <Metric label="Давтан уулзалт" value={sales.meetings.classificationAvailable ? sales.meetings.repeatCustomer : '—'} />
-                                    <Metric label="Гэрээтэй захиалагч" value={sales.meetings.classificationAvailable ? sales.meetings.existingBuyer : '—'} />
-                                </div>
-                                <p className="text-xs leading-relaxed text-muted-foreground">{sales.meetings.basis}</p>
-                                {!sales.meetings.classificationAvailable && <p className="text-xs text-muted-foreground">Уулзалтын төрлийн ангилал системд хараахан нэвтрээгүй.</p>}
-                                {sales.meetings.unclassified > 0 && <p className="text-xs text-muted-foreground">Төрөл тодорхойгүй: {sales.meetings.unclassified}.</p>}
-                                <p className="text-xs text-muted-foreground">Товлосон хэвээр {sales.meetings.scheduled} · Цуцалсан {sales.meetings.cancelled} · Ирээгүй {sales.meetings.noShow}</p>
-                                {sales.meetings.unknownStatus > 0 && <p className="text-xs text-muted-foreground">Төлөв тодорхойгүй: {sales.meetings.unknownStatus}.</p>}
-                            </div>}
-                            {!!sales.contracts.byProduct?.length && <div className="max-w-full overflow-x-auto focus-ring print:overflow-visible" tabIndex={0} role="region" aria-label="Гэрээний бүтээгдэхүүний задаргаа">
-                                <table className="w-full text-left text-sm">
-                                    <caption className="mb-2 text-left text-sm font-medium">Гэрээний бүтээгдэхүүний задаргаа</caption>
-                                    <thead className="border-b border-border text-xs text-muted-foreground"><tr><th scope="col" className="py-2 font-medium">Бүтээгдэхүүн</th><th scope="col" className="py-2 text-right font-medium">Гэрээ</th><th scope="col" className="py-2 text-right font-medium">Бүртгэлтэй дүн</th></tr></thead>
-                                    <tbody>{sales.contracts.byProduct.map(product => <tr key={product.productType} className="border-b border-border last:border-0"><th scope="row" className="break-words py-3 font-medium [overflow-wrap:anywhere]">{product.label}</th><td className="text-right tabular-nums">{product.count}</td><td className="text-right tabular-nums">{formatMNTShort(product.value)}{product.missingAmounts > 0 && <span className="block text-xs text-muted-foreground">Дүн дутуу {product.missingAmounts}</span>}</td></tr>)}</tbody>
-                                </table>
-                            </div>}
-                            <p className="text-xs leading-relaxed text-muted-foreground">Гэрээний дүн нь мөнгөөр орсон орлогоос тусдаа.{sales.cash ? ` Мөнгөөр орсон бүртгэл: ${formatMNTShort(sales.cash.receipts)} (${sales.cash.receiptCount} гүйлгээ). Банкны хуулгатай тулгаагүй.` : ' Мөнгөн орлогыг санхүүгийн эрхтэй хүн харна.'}</p>
-                            {sales.contracts.undatedCount > 0 && <Alert variant="warning">{undatedContractsHint(sales.contracts.undatedCount)}</Alert>}
-                            {sales.contracts.missingAmounts > 0 && <Alert variant="warning">Нийт дүн хоосон {sales.contracts.missingAmounts} гэрээ дүнд ороогүй.</Alert>}
-                            <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-                                <span className="text-muted-foreground">Одоо анхаарах:</span>
-                                {[['Эзэнгүй', sales.leads.health.ownerless, 'unassigned'], ['Дараагийн алхамгүй', sales.leads.health.noNextStep, 'no_followup'], ['Хугацаа хэтэрсэн', sales.leads.health.overdue, 'overdue']].map(([label, count, queue]) => can('leads') ? <Link key={queue} href={`/dashboard/leads?queue=${queue}`} className="focus-ring hover:underline">{label} <strong className="ml-1 tabular-nums">{count}</strong></Link> : <span key={queue}>{label} {count}</span>)}
-                            </div>
-                            <p className="text-xs text-muted-foreground">Одоогийн ажлын дараалал; дээрх ангиллууд давхцаж болно.</p>
-                        </> : <Unavailable>{can('reports') ? 'Борлуулалтын мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.' : 'Нэгдсэн борлуулалтын тайлан харах эрх шаардлагатай.'}</Unavailable>}
-                    </section>
+                            <Button variant="ghost" size="icon" className="fullscreen-exit" aria-label="Танилцуулгыг хаах" onClick={() => void document.exitFullscreen()}><X /></Button>
+                        </header>
+                        {notices.length > 0 && <div role="status" className="space-y-1 rounded-xl bg-surface-2 px-4 py-3 text-xs leading-relaxed text-fg-2">{notices.map(notice => <p key={notice}>{notice}</p>)}</div>}
 
-                    {can('reports') && <section className="space-y-4">
-                        <ReportHeading number="01·2" title="Гэрээ, үлдэгдэл, давхрын зураглал" href={can('erp-imports') ? '/dashboard/reports/erp' : undefined} />
-                        <WeeklySalesDetails query={weeklySalesQuery} canOpenErp={can('erp-imports')} />
-                    </section>}
+                        <section className="break-inside-avoid space-y-3 rounded-2xl bg-surface-2 p-5">
+                            <h2 className="text-base font-semibold">Энэ хурлаар шийдэх</h2>
+                            {discussion(discussionItems)}
+                            <p className="text-xs text-muted-foreground">Лидийн ажлын дараалал нь одоогийн төлөв. Ангиллууд давхцаж болно.</p>
+                        </section>
 
-                    {/* Лидийн эх сурвалж, хөрвөлт нь борлуулалтын үзүүлэлт — маркетингийн албаны ажлыг үүгээр хэмжихгүй. */}
-                    {can('marketing-roi') && <section className="break-inside-avoid space-y-4">
-                        <ReportHeading number="01·3" title="Лидийн эх сурвалж, хөрвөлт" href={`/marketing?${params}`} />
-                        {marketingQuery.isPending ? <Skeleton className="h-36" /> : marketing ? <>
-                            <div className="grid grid-cols-3 gap-5 rounded-2xl border border-border p-5">
-                                <Metric label="Шинэ лид" value={marketing.totals.leads} helper={formatReviewChange(marketing.totals.leads, marketing.previous.leads)} />
-                                <Metric label="Менежерт шилжсэн лид" value={marketing.totals.sales} helper={formatReviewChange(marketing.totals.sales, marketing.previous.sales)} />
-                                <Metric label="Гэрээтэй лид" value={marketing.totals.deals} helper={formatReviewChange(marketing.totals.deals, marketing.previous.deals)} />
-                            </div>
-                            <PerformanceKpis report={marketing} />
-                            <PerformanceChannelTable report={marketing} />
-                            <p className="text-xs leading-relaxed text-muted-foreground">Тухайн хугацаанд үүссэн лидээс хугацааны эцэс хүртэл шилжсэн, гэрээтэй болсон тоо. Борлуулалтын гэрээний тоотой ижил хэмжүүр биш.</p>
-                            {marketing.quality.unknownHandoff > 0 && <Alert variant="warning">Шилжүүлсэн огноогүй {marketing.quality.unknownHandoff} лид тооцоонд ороогүй.</Alert>}
-                        </> : <Unavailable>Лидийн эх сурвалжийн мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.</Unavailable>}
-                    </section>}
+                        <section className="break-inside-avoid space-y-4">
+                            <ReportHeading number="01" title="Борлуулалтын тойм" href={can('reports') ? `/dashboard/reports/operations?${params}` : undefined} />
+                            {salesOverview}
+                        </section>
 
-                    {can('reports') && <section className="space-y-4">
-                        <ReportHeading number="01·4" title="Борлуулалтын нэмэлт слайд" />
-                        <WeeklySlides part="sales" meetingDate={meetingDate} query={slidesQuery} canWrite={canEditSlides('sales')} canDelete={canDeleteSlides('sales')} />
-                    </section>}
+                        {can('reports') && <section className="space-y-4">
+                            <ReportHeading number="01·2" title="Гэрээ, үлдэгдэл, давхрын зураглал" href={can('erp-imports') ? '/dashboard/reports/erp' : undefined} />
+                            {salesDetails}
+                        </section>}
 
-                    <section className="break-inside-avoid space-y-4">
-                        <ReportHeading number="02" title="Маркетинг — контент төлөвлөгөө ба гүйцэтгэл" href={can('marketing-roi') ? '/marketing/calendar' : undefined} />
-                        {can('marketing-roi')
-                            ? <WeeklyContentPlan meetingDate={meetingDate} range={range} query={contentQuery} canWrite={canEditSlides('marketing')} canDelete={canDeleteSlides('marketing')} />
-                            : <Unavailable>Маркетингийн хэсэг харах эрх шаардлагатай.</Unavailable>}
-                    </section>
+                        {can('marketing-roi') && <section className="break-inside-avoid space-y-4">
+                            <ReportHeading number="01·3" title="Лидийн эх сурвалж, хөрвөлт" href={`/marketing?${params}`} />
+                            {leadSources}
+                        </section>}
 
-                    {can('marketing-roi') && <section className="break-inside-avoid space-y-4">
-                        <ReportHeading number="02·2" title="Суваг: Page, Instagram, Ads, CallPro, SMS · төсөв" href="/marketing/channel-reports" />
-                        <WeeklyMarketingConnections query={connectionsQuery} />
-                        <WeeklySocialPage meetingDate={meetingDate} />
-                        <WeeklyInstagram meetingDate={meetingDate} />
-                        <WeeklyMarketingChannels from={range.from} to={range.to} pageConnected={!!connections?.page.connected} />
-                        <WeeklyMarketingBudget to={range.to} />
-                        {marketing && marketing.spendQuality.current.missingFx > 0 && <Alert variant="warning">Ханшгүй {marketing.spendQuality.current.missingFx} зардал нийтэд ороогүй.</Alert>}
-                    </section>}
+                        {can('reports') && <section className="space-y-4">
+                            <ReportHeading number="01·4" title="Борлуулалтын нэмэлт слайд" />
+                            {salesSlides}
+                        </section>}
 
-                    {can('marketing-roi') && <section className="space-y-4">
-                        <ReportHeading number="02·3" title="Дэлгэцийн зураг, нэмэлт слайд" />
-                        <WeeklySlides part="marketing" meetingDate={meetingDate} query={slidesQuery} canWrite={canEditSlides('marketing')} canDelete={canDeleteSlides('marketing')} />
-                    </section>}
+                        <section className="break-inside-avoid space-y-4">
+                            <ReportHeading number="02" title="Маркетинг — контент төлөвлөгөө ба гүйцэтгэл" href={can('marketing-roi') ? '/marketing/calendar' : undefined} />
+                            {contentPlanBody}
+                        </section>
 
-                    <section className="space-y-4">
-                        <ReportHeading number="03" title={updates?.canViewTeam ? 'Багийн явц, хэлэлцэх зүйл' : 'Миний явц, хэлэлцэх зүйл'} />
-                        {updatesQuery.isPending ? <Skeleton className="h-32" /> : !updates ? <Unavailable>Ажлын шинэчлэлийг ачаалж чадсангүй.</Unavailable> : updates.updates.length ? <div className="divide-y divide-border">{updates.updates.map(update => <section key={update.id} className="break-inside-avoid py-5 first:pt-0">
-                            <header className="mb-4 flex items-center gap-3"><Avatar name={update.author_name} className="size-9 text-xs" /><div><h3 className="text-sm font-semibold">{update.author_name}</h3><p className="mt-0.5 text-xs text-muted-foreground">Шинэчилсэн {ubDateStr(new Date(update.updated_at))} · {formatTime(update.updated_at)}</p></div></header>
-                            <dl className="space-y-3 text-sm">{[['Хийсэн ажил', update.achievements], ['Саад, шийдэх зүйл', update.blockers], ['Дараагийн алхам', update.next_steps]].map(([label, value]) => <div key={label} className="grid gap-1 sm:grid-cols-[145px_1fr]"><dt className="text-muted-foreground">{label}</dt><dd className="whitespace-pre-wrap break-words leading-relaxed">{value || 'Тэмдэглээгүй'}</dd></div>)}</dl>
-                        </section>)}</div> : <Unavailable>Хурлын шинэчлэл хараахан ороогүй. Хийсэн ажил, шийдэх зүйлээ нэмээрэй.</Unavailable>}
-                    </section>
-                </article>
+                        {can('marketing-roi') && <section className="break-inside-avoid space-y-4">
+                            <ReportHeading number="02·2" title="Суваг: Page, Instagram, Ads, CallPro, SMS · төсөв" href="/marketing/channel-reports" />
+                            {channels}
+                        </section>}
 
-                <aside id="weekly-update" className="scroll-mt-20 space-y-5 print:hidden">
-                    <div className="rounded-2xl border border-border bg-surface p-5">
-                        <div className="mb-5 flex items-center gap-2"><FileText className="size-4 text-muted-foreground" /><h2 className="font-semibold">Миний хурлын бэлтгэл</h2></div>
-                        <p className="mb-5 text-sm leading-relaxed text-muted-foreground">Таны оруулсан шинэчлэлийг тайлангийн эрхтэй багийн гишүүд харна.</p>
-                        {updatesQuery.error && <Alert variant="warning">{updatesQuery.error.message}</Alert>}
-                        {updatesQuery.isPending ? <Skeleton className="h-64" /> : updatesQuery.data ? <UpdateForm key={meetingDate} meetingDate={meetingDate} initial={updatesQuery.data.updates.find(update => update.user_id === user?.id)} completedTasks={completedTasks} canWrite={canWrite} onDirty={setDirty} tasksUnavailable={tasksQuery.isError || tasksQuery.data?.available === false} /> : null}
-                    </div>
-                    {can('ai-assistant') && <button type="button" disabled={!exportable} onClick={() => openAiPanel(`Доорх хурлын тайлангаас 3 гол дүгнэлт, хэлэлцэх асуудал, дараагийн 7 хоногийн алхмыг бэлд. Байхгүй тоог бүү таамагла. Хадгалах эсвэл илгээх үйлдэл бүү хий.\n\n${text}`)} className="flex w-full items-start gap-3 rounded-2xl bg-surface-2 p-5 text-left transition-colors hover:bg-surface-3 disabled:opacity-50 focus-ring"><Sparkles className="mt-0.5 size-5 shrink-0" /><span><span className="block text-sm font-medium">AI-аар дүгнэлт бэлдэх</span><span className="mt-1 block text-xs leading-relaxed text-muted-foreground">Энэ тайлан дээр үндэслэн хурлын ярих зүйлээ цэгцлээрэй.</span></span><ArrowUpRight className="ml-auto size-4 shrink-0" /></button>}
-                    <button type="button" disabled={!canWrite} onClick={() => openQuickCreate('task')} className="flex min-h-11 w-full items-center gap-2 px-2 text-sm text-fg-2 hover:text-foreground disabled:opacity-50 focus-ring"><Plus className="size-4" />Хурлаас гарсан ажил нэмэх</button>
-                </aside>
-            </div>
+                        {can('marketing-roi') && <section className="space-y-4">
+                            <ReportHeading number="02·3" title="Дэлгэцийн зураг, нэмэлт слайд" />
+                            {marketingSlides}
+                        </section>}
+
+                        <section className="space-y-4">
+                            <ReportHeading number="03" title={updates?.canViewTeam ? 'Багийн явц, хэлэлцэх зүйл' : 'Миний явц, хэлэлцэх зүйл'} />
+                            {teamUpdates(updates?.updates ?? [])}
+                        </section>
+                    </article>
+
+                    <aside id="weekly-update" className="scroll-mt-20 space-y-5 print:hidden">
+                        <div className="rounded-2xl border border-border bg-surface p-5">
+                            <div className="mb-5 flex items-center gap-2"><FileText className="size-4 text-muted-foreground" /><h2 className="font-semibold">Миний хурлын бэлтгэл</h2></div>
+                            <p className="mb-5 text-sm leading-relaxed text-muted-foreground">Таны оруулсан шинэчлэлийг тайлангийн эрхтэй багийн гишүүд харна.</p>
+                            {updateForm}
+                        </div>
+                        {assistantButton}
+                        {addTaskButton}
+                    </aside>
+                </div>
+            </>}
         </div>
     );
 }
@@ -361,6 +550,6 @@ function Metric({ label, value, helper }: { label: string; value: string | numbe
 function ReportHeading({ number, title, href }: { number: string; title: string; href?: string }) {
     return <header className="flex items-center gap-3"><span className="text-xs tabular-nums text-muted-foreground">{number}</span><h2 className="text-base font-semibold tracking-tight">{title}</h2>{href && <Link href={href} aria-label={`${title} дэлгэрэнгүй`} className="ml-auto rounded-md p-2 text-muted-foreground hover:bg-surface-2 focus-ring print:hidden"><ArrowUpRight className="size-4" /></Link>}</header>;
 }
-function Unavailable({ children }: { children: React.ReactNode }) {
+function Unavailable({ children }: { children: ReactNode }) {
     return <p className="rounded-xl bg-surface-2 p-5 text-sm leading-relaxed text-muted-foreground">{children}</p>;
 }
