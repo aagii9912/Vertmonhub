@@ -28,7 +28,7 @@ export default function ChannelReportsPage() {
     return <div className="mx-auto flex min-w-0 max-w-[1200px] flex-col gap-5">
         <PageHeader title="Сувгийн экспорт импорт"
             subtitle="Meta Ads, Facebook хуудас, CallPro, масс SMS-ийн экспорт файлаас хурлын долоо хоногийн маркетингийн тайланг бэлдэнэ."
-            secondaryActions={<><Button href="/marketing" variant="secondary">Маркетинг</Button>{user?.permissions.modules.includes('dashboard') && <Button href="/dashboard/weekly" variant="secondary">Хурлын бэлтгэл</Button>}</>} />
+            secondaryActions={<><Button href="/marketing" variant="secondary">Маркетинг</Button>{user?.permissions.modules.includes('dashboard') && <Button href="/dashboard/weekly?track=marketing" variant="secondary">Хурлын бэлтгэл</Button>}</>} />
         {!loading && !canRead && <Alert variant="warning">Маркетингийн тайлан харах эрх шаардлагатай.</Alert>}
         {canWrite && shop && <SectionCard icon={FileSpreadsheet} title="Экспорт файл оруулах"
             description={`${shop.name ? `${shop.name} төслийн` : 'Идэвхтэй төслийн'} тайлан. Нэг эх үүсвэр, нэг хугацаанд нэг тайлан хадгалагдана — дахин оруулбал шинэчлэгдэнэ.`}>
