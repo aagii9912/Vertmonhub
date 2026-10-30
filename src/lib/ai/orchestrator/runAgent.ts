@@ -1,12 +1,12 @@
 /**
  * Дэд агент (specialist) — үндсэн туслах `delegate_to_specialists`-ээр дуудахад
- * тухайн агентын фокустай заавар + tool дэд олонлогоор GPT (FAST_MODEL) дээр
+ * тухайн агентын фокустай заавар + tool дэд олонлогоор Claude (FAST_MODEL) дээр
  * тусдаа loop ажиллуулна. Streaming текст байхгүй (эцсийн хариу үндсэн туслахад очно),
  * гэхдээ tool_start/tool_done/step_* event-үүд UI руу явна.
  */
 
 import { logger } from '@/lib/utils/logger';
-import { FAST_MODEL } from '@/lib/ai/openai/client';
+import { FAST_MODEL } from '@/lib/ai/claude/client';
 import { dataToolsForPerms, pickTools } from '@/lib/ai/claude/tools';
 import { buildSystemBlocks } from './prompt';
 import { runLoop, buildHistory, buildUserContent } from './loop';
@@ -25,7 +25,7 @@ export async function runAgent(agent: AgentDefinition, task: string, ctx: Orches
         const messages = [...buildHistory(ctx.history, 6), { role: 'user' as const, content: await buildUserContent(task, ctx.attachments, ctx) }];
         const r = await runLoop({
             model: FAST_MODEL, system, tools, messages, ctx, streamText: false, agentId: agent.id,
-            agentLabel: { id: agent.id, name: agent.name, emoji: agent.emoji }, maxRounds: 6, effort: 'medium', maxTokens: 4000,
+            agentLabel: { id: agent.id, name: agent.name, emoji: agent.emoji }, maxRounds: 6, effort: 'medium', maxTokens: 8000,
         });
         const latencyMs = Date.now() - started;
         ctx.onEvent?.({ type: 'step_done', agentId: agent.id, agentName: agent.name, ok: !r.interruption, latencyMs, toolsUsed: r.toolsUsed, error: r.interruption?.message });

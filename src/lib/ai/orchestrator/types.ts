@@ -1,7 +1,7 @@
 /**
  * AI Orchestrator v3 — type definitions
  *
- * v3 = ГИБРИД: нэг үндсэн GPT туслах (бүх tool-той agentic loop, streaming) +
+ * v3 = ГИБРИД: нэг үндсэн Claude туслах (бүх tool-той agentic loop, streaming) +
  * шаардлагатай үед мэргэшсэн дэд агентуудад зэрэг хуваарилах (`delegate_to_specialists`).
  * Planner/synthesizer дуудлагууд байхгүй — модель өөрөө шийднэ.
  */
@@ -89,7 +89,7 @@ export interface OrchestratorContext {
     attachments?: OrchestratorAttachment[];
     /** Дэд агентын ажиллагаанд: аль агент (trace/event-д). */
     agentId?: AgentId;
-    /** Client холболт таслахад (Зогсоох / таб хаах) GPT дуудлагыг зогсооно. */
+    /** Client холболт таслахад (Зогсоох / таб хаах) Claude дуудлагыг зогсооно. */
     signal?: AbortSignal;
     /** Энэ мөчөөс хойш шинэ раунд/агент эхлүүлэхгүй (Vercel maxDuration-аас өмнө partial хариу өгнө). */
     deadlineAt?: number;
@@ -155,7 +155,7 @@ export interface TraceStep {
 
 /** Бүх ажиллагааны ил тод мөшгилт. */
 export interface OrchestrationTrace {
-    provider?: 'openai';
+    provider?: 'anthropic';
     model: string;
     /** Үндсэн loop-ийн модель дуудлагын тоо */
     rounds: number;
