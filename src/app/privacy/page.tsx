@@ -103,7 +103,7 @@ export default function PrivacyPolicyPage() {
                         </p>
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
                             <li><strong>Facebook/Meta:</strong> Messenger, Instagram болон зарын тайлангийн API</li>
-                            <li><strong>OpenAI:</strong> Ажилтны AI туслахын боловсруулалт</li>
+                            <li><strong>Anthropic:</strong> Ажилтны AI туслахын боловсруулалт</li>
                             <li><strong>Google (Gemini):</strong> Вэб формоор ирсэн хүсэлтийн угтах хариу, өрсөлдөгчийн мэдээллийн шинжилгээ</li>
                             <li><strong>Supabase:</strong> Database хостинг</li>
                             <li><strong>Vercel:</strong> Веб хостинг</li>

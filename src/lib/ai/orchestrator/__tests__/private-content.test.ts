@@ -1,7 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRIVATE_ATTACHMENT_BUCKET, privateAttachmentUrl } from '@/lib/ai/private-attachments';
-import { toResponseInput } from '@/lib/ai/openai/responses';
 
 const state = vi.hoisted(() => ({
     rows: [] as Array<{ entity_type: string }>,
@@ -31,7 +30,8 @@ const path = `${shopId}/${userId}/${fileId}.pdf`;
 const url = privateAttachmentUrl(path);
 const attachment = { url, name: 'synthetic-contract.pdf', mimeType: 'application/pdf' };
 const access = { shopId, userId, perms: { role: 'sales_manager', modules: ['ai-assistant', 'contracts'] } };
-const modelInput = (content: Awaited<ReturnType<typeof buildUserContent>>) => toResponseInput([{ role: 'user', content }]);
+// Claude receives these blocks as-is, so the model input is the user message itself.
+const modelInput = (content: Awaited<ReturnType<typeof buildUserContent>>) => [{ role: 'user', content }];
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -47,8 +47,8 @@ describe('private attachments in model input', () => {
         expect(download).toHaveBeenCalledExactlyOnceWith(path);
         expect(fetch).not.toHaveBeenCalled();
         expect(modelInput(content)).toEqual([{ role: 'user', content: [
-            { type: 'input_file', filename: 'attachment.pdf', file_data: `data:application/pdf;base64,${Buffer.from('SYNTHETIC PDF BYTES').toString('base64')}` },
-            { type: 'input_text', text: expect.stringContaining(url) },
+            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: Buffer.from('SYNTHETIC PDF BYTES').toString('base64') } },
+            { type: 'text', text: expect.stringContaining(url) },
         ] }]);
     });
 

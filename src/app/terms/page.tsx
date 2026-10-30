@@ -136,7 +136,7 @@ export default function TermsOfServicePage() {
                         </p>
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
                             <li><strong>Facebook/Meta:</strong> Та Facebook-ийн Terms of Service-ийг мөрдөх ёстой</li>
-                            <li><strong>AI систем:</strong> AI загвар нийлүүлэгч (OpenAI, Google)-ийн үйлчилгээний нөхцөл</li>
+                            <li><strong>AI систем:</strong> AI загвар нийлүүлэгч (Anthropic, Google)-ийн үйлчилгээний нөхцөл</li>
                             <li><strong>Vercel, Supabase:</strong> Тэдний үйлчилгээний нөхцөл хамаарна</li>
                         </ul>
                     </section>

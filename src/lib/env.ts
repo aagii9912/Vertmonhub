@@ -11,7 +11,7 @@ export const REQUIRED_PROD_ENV = [
     'NEXT_PUBLIC_SUPABASE_ANON_KEY',
     'SUPABASE_SERVICE_ROLE_KEY',
     // Dashboard AI туслах — түлхүүргүй бол 503.
-    'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY',
     'FACEBOOK_APP_SECRET',
     'FACEBOOK_VERIFY_TOKEN',
     'CRON_SECRET',
