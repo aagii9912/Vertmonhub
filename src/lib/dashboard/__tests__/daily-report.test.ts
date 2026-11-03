@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildDailyReport, buildDailyReportChanges, configMetrics, dailyMetricLabel, dailyNoteLabel, dailyNotePatch, dailyNoteText, DailyReportConfigSchema,
-    DEFAULT_DAILY_REPORT_CONFIG, defaultShortName, flattenDailyNotes, formalManagerName, formatDailyReportText, joinDailyGeneralNotes, meetingItemText,
+    DEFAULT_DAILY_REPORT_CONFIG, defaultShortName, flattenDailyNotes, foldLegacyCounts, formalManagerName, formatDailyReportText, joinDailyGeneralNotes, meetingItemText,
     nextConfigKey, phoneLeadChecks, readDailyReportConfig, reportPeriodLabel, resolveReportManagers, SaveDailyReportSchema, sumDailyCounts,
     type BuildDailyReportInput, type DailyReportChangeRow, type DailyReportConfig,
 } from '../daily-report';
@@ -301,6 +301,56 @@ describe('date range report', () => {
         expect(report).toMatchObject({ to: '2026-09-30', days: 1, weekday: 'Лхагва', completedDays: null });
         expect(report.completed?.by).toBe('М. Хонгорзул');
         expect(report.meetings.groups[0].items.every(item => item.day === null)).toBe(true);
+    });
+});
+
+describe('template switch keeps earlier counts (2026-11-03)', () => {
+    const CHAN = 'Чанцалдулам.Раднаа', KHON = 'Хонгорзул.Мөнхгэрэл';
+    // Багийн Excel: 7786 нэг багана, 8888/9008 Шинэ + Захиалагч, давтан, нэг «Чат».
+    const team: DailyReportConfig = DailyReportConfigSchema.parse({
+        ...elysium,
+        lines: [{ key: 'l1', label: '7786-2222', categories: [] }, { key: 'l2', label: '8888/9008', categories: ['new', 'repeat'] }],
+        chats: [{ key: 'all', label: 'Чат' }],
+    });
+    const row = (report_date: string, manager_name: string, metric: string, value: number, updated_at = `${report_date}T02:00:00.000Z`) =>
+        ({ report_date, manager_name, metric, value, updated_by: 'acc', updated_by_name: 'М. Хонгорзул', updated_at });
+
+    it('sums a single-column line’s old categories and the removed chat channels per manager and day', () => {
+        const folded = foldLegacyCounts([
+            row('2026-10-28', CHAN, 'call.l1.new', 8), row('2026-10-28', CHAN, 'call.l1.repeat', 1, '2026-10-28T09:00:00.000Z'),
+            row('2026-10-28', KHON, 'call.l1.new', 4),
+            row('2026-10-28', CHAN, 'chat.page', 3), row('2026-10-28', CHAN, 'chat.personal', 2),
+            row('2026-10-28', CHAN, 'call.l2.new', 5), row('2026-10-28', CHAN, 'call.l2.other', 2),
+        ], team);
+        expect(folded.map(({ manager_name, metric, value, derived }) => [manager_name, metric, value, !!derived])).toEqual([
+            [CHAN, 'call.l1.total', 9, true], [KHON, 'call.l1.total', 4, true], [CHAN, 'chat.all', 5, true],
+            // Ангилалтай шугамын нүд хэвээр (хасагдсан «Бусад» хүснэгтэд гарахгүй, Лхагвын тайланд шугамын дуудлагад орно).
+            [CHAN, 'call.l2.new', 5, false], [CHAN, 'call.l2.other', 2, false],
+        ]);
+        // Сүүлд оруулсан хүний цаг.
+        expect(folded[0].updated_at).toBe('2026-10-28T09:00:00.000Z');
+    });
+
+    it('lets a cell entered under the new template win over the old ones that day, and folds nothing for a multi-channel chat', () => {
+        const rows = [
+            row('2026-11-03', CHAN, 'call.l1.total', 6), row('2026-11-03', CHAN, 'call.l1.new', 9),
+            row('2026-11-03', CHAN, 'chat.all', 2), row('2026-11-03', CHAN, 'chat.page', 7),
+        ];
+        expect(foldLegacyCounts(rows, team).map(item => [item.metric, item.value])).toEqual([['call.l1.total', 6], ['chat.all', 2]]);
+        expect(foldLegacyCounts(rows, elysium)).toEqual(rows);
+    });
+
+    it('shows folded cells in the report, marked so a save sends the stored (empty) value as expected', () => {
+        const counts = foldLegacyCounts([row('2026-10-28', CHAN, 'call.l1.new', 8), row('2026-10-28', KHON, 'call.l1.total', 3), row('2026-10-28', CHAN, 'chat.personal', 2)], team);
+        const report = buildDailyReport({ ...input({ counts, config: team }), date: '2026-10-28' });
+        expect(report.lines[0].rows[0]).toMatchObject({ key: 'call.l1.total', values: { [CHAN]: 8, [KHON]: 3 }, total: 11, derived: { [CHAN]: true } });
+        expect(report.chats.rows[0]).toMatchObject({ key: 'chat.all', values: { [CHAN]: 2 }, derived: { [CHAN]: true } });
+        expect(report.lines[1].rows[0].derived).toBeUndefined();
+    });
+
+    it('folds each day before summing a date range', () => {
+        const days = foldLegacyCounts([row('2026-10-31', CHAN, 'call.l1.new', 6), row('2026-11-03', CHAN, 'call.l1.total', 5), row('2026-11-03', CHAN, 'call.l1.new', 9)], team);
+        expect(sumDailyCounts(days)).toEqual([{ manager_name: CHAN, metric: 'call.l1.total', value: 11 }]);
     });
 });
 

@@ -103,6 +103,34 @@ describe('buildSalesActivity', () => {
         expect(report.notes).toEqual(expect.arrayContaining([expect.stringContaining('байхгүй 2 нүдийг')]));
     });
 
+    it('keeps the same figures after the template switches to one 7786 column, 8888/9008 without «Бусад» and one chat (2026-11-03)', () => {
+        const team: DailyReportConfig = {
+            ...elysium,
+            lines: [{ key: 'l1', label: '7786-2222', categories: [] }, { key: 'l2', label: '8888/9008', categories: ['new', 'repeat'] }],
+            chats: [{ key: 'all', label: 'Чат' }],
+        };
+        const counts = [
+            cell('2026-10-08', 'call.l1.new', 2), cell('2026-10-08', 'call.l1.total', 2),
+            cell('2026-10-08', 'call.l2.new', 2), cell('2026-10-08', 'call.l2.total', 3),
+            cell('2026-10-08', 'chat.page', 3),
+            cell('2026-10-15', 'call.l1.new', 5), cell('2026-10-15', 'call.l1.repeat', 1), cell('2026-10-15', 'call.l1.new', 3, 'Чанцалдулам.Раднаа'),
+            cell('2026-10-16', 'call.l2.other', 4), cell('2026-10-16', 'chat.personal', 6),
+        ];
+        const report = buildSalesActivity(input({ config: team, counts, confirmedDates: ['2026-10-08', '2026-10-16'] }));
+        expect(report.buckets.slice(3).map(bucket => [bucket.label, bucket.values.hotline, bucket.values.managerLine, bucket.values.chats])).toEqual([
+            ['10/07–10/13', 2, 2, 3],
+            ['10/14–10/20', 9, 4, 6],
+        ]);
+        expect(report.month.metrics.hotline.actual).toBe(11);
+        expect(report.month.metrics.chats.actual).toBe(9);
+        expect(report.lines.chats).toEqual(['Чат']);
+        // Зөвхөн 10/08-ны 8888/9008-ийн хуучин «нийт» нүд тооцогдохгүй.
+        expect(report.notes).toEqual(expect.arrayContaining([expect.stringContaining('байхгүй 1 нүдийг')]));
+        // Шинэ загвараар оруулсан чат тухайн өдөр хуучин сувгаас давамгайлна.
+        const later = buildSalesActivity(input({ config: team, counts: [...counts, cell('2026-10-17', 'chat.all', 2), cell('2026-10-17', 'chat.page', 5)] }));
+        expect(later.buckets[4].values.chats).toBe(8);
+    });
+
     it('keeps a metric with no entered cell unknown even on days other metrics were entered', () => {
         const report = buildSalesActivity(input({ counts: [cell('2026-10-15', 'call.l1.new', 5)] }));
         expect(report.buckets[4].values).toMatchObject({ hotline: 5, managerLine: null, chats: null });
