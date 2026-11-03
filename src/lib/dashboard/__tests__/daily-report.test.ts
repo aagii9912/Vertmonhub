@@ -3,7 +3,7 @@ import {
     buildDailyReport, buildDailyReportChanges, configMetrics, dailyMetricLabel, dailyNoteLabel, dailyNotePatch, dailyNoteText, DailyReportConfigSchema,
     DEFAULT_DAILY_REPORT_CONFIG, defaultShortName, flattenDailyNotes, foldLegacyCounts, formalManagerName, formatDailyReportText, joinDailyGeneralNotes, meetingItemText,
     nextConfigKey, phoneLeadChecks, readDailyReportConfig, reportPeriodLabel, resolveReportManagers, SaveDailyReportSchema, sumDailyCounts,
-    type BuildDailyReportInput, type DailyReportChangeRow, type DailyReportConfig,
+    type BuildDailyReportInput, type DailyCountRow, type DailyReportChangeRow, type DailyReportConfig,
 } from '../daily-report';
 
 const roster = [
@@ -312,7 +312,7 @@ describe('template switch keeps earlier counts (2026-11-03)', () => {
         lines: [{ key: 'l1', label: '7786-2222', categories: [] }, { key: 'l2', label: '8888/9008', categories: ['new', 'repeat'] }],
         chats: [{ key: 'all', label: 'Чат' }],
     });
-    const row = (report_date: string, manager_name: string, metric: string, value: number, updated_at = `${report_date}T02:00:00.000Z`) =>
+    const row = (report_date: string, manager_name: string, metric: string, value: number, updated_at = `${report_date}T02:00:00.000Z`): DailyCountRow =>
         ({ report_date, manager_name, metric, value, updated_by: 'acc', updated_by_name: 'М. Хонгорзул', updated_at });
 
     it('sums a single-column line’s old categories and the removed chat channels per manager and day', () => {
