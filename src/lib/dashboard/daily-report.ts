@@ -565,9 +565,10 @@ const detail = (values: Record<string, number | null>, managers: readonly DailyR
     const text = perManager(values, managers);
     return text ? ` (${text})` : '';
 };
-const sentence = (text: string) => (!text || /[.!?…]$/.test(text) ? text : `${text}.`);
-
-/** Мессенжерийн бүлэгт хуулах текст — цаасан тайлангийн дарааллаар; 0 тоотой задаргааны мөр орохгүй. */
+/**
+ * Мессенжерийн бүлэгт хуулах текст — цаасан тайлангийн дарааллаар; 0 тоотой задаргааны мөр орохгүй. Шугам, чатын
+ * тайлбар орохгүй: тайлан хүснэгт хэлбэртэй болж үгээр бичсэн хэсгийг хассан (эзэмшигч 2026-11-03).
+ */
 export function formatDailyReportText(report: DailyReport): string {
     const out: string[] = [];
     const { managers } = report;
@@ -576,11 +577,11 @@ export function formatDailyReportText(report: DailyReport): string {
     if (named.length) out.push(`Менежер: ${named.map(manager => `${manager.title}${manager.phone ? ` (${formatStaffPhone(manager.phone)})` : ''}`).join(', ')}`);
 
     for (const line of report.lines) {
-        out.push('', [`${line.label}: Нийт ${line.total} дуудлага ирсэн${detail(line.byManager, managers)}.`, sentence(line.note)].filter(Boolean).join(' '));
+        out.push('', `${line.label}: Нийт ${line.total} дуудлага ирсэн${detail(line.byManager, managers)}.`);
         if (line.categories.length) for (const row of line.rows) if (row.total > 0) out.push(`  ${row.label}: ${row.total}${detail(row.values, managers)}`);
     }
     if (report.chats.rows.length) {
-        out.push('', [`Менежерийн чат: Нийт ${report.chats.total} чат харилцаа үүсгэсэн.`, sentence(report.chats.note)].filter(Boolean).join(' '));
+        out.push('', `Менежерийн чат: Нийт ${report.chats.total} чат харилцаа үүсгэсэн.`);
         for (const row of report.chats.rows) if (row.total > 0) out.push(`  ${row.label}: ${row.total}${detail(row.values, managers)}`);
     }
     if (report.leads) {
