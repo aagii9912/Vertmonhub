@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
 import { AGENTS, isAdminOnlyAgent } from '@/lib/ai/orchestrator/agents';
 import { groupToolsByKind } from '@/lib/ai/tool-catalog';
-import { MAIN_MODEL, FAST_MODEL, hasOpenAIKey } from '@/lib/ai/openai/client';
+import { MAIN_MODEL, FAST_MODEL, hasClaudeKey } from '@/lib/ai/claude/client';
 
 /**
  * GET /api/ai-assistant/agents — orchestrator-ын БОДИТ агентууд (статик
@@ -29,5 +29,5 @@ export async function GET() {
             adminOnly: isAdminOnlyAgent(a),
         };
     });
-    return NextResponse.json({ agents, provider: 'openai', model: MAIN_MODEL, fastModel: FAST_MODEL, configured: hasOpenAIKey() });
+    return NextResponse.json({ agents, provider: 'anthropic', model: MAIN_MODEL, fastModel: FAST_MODEL, configured: hasClaudeKey() });
 }

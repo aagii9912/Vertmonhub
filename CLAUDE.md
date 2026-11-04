@@ -1,6 +1,6 @@
 # CLAUDE.md — Vertmon Hub
 
-Real-estate sales CRM for Vertmon LLC's projects (Mandala Garden, Elysium, …): leads → meetings → contracts → payments, unit inventory, a Facebook/Instagram DM Inbox, marketing performance and an OpenAI dashboard assistant. All UI copy is Mongolian; keep new copy Mongolian. Default branch `main`; Vercel deploys `main` to production (`sin1`, www.vertmon.mn).
+Real-estate sales CRM for Vertmon LLC's projects (Mandala Garden, Elysium, …): leads → meetings → contracts → payments, unit inventory, a Facebook/Instagram DM Inbox, marketing performance and a Claude (Anthropic) dashboard assistant. All UI copy is Mongolian; keep new copy Mongolian. Default branch `main`; Vercel deploys `main` to production (`sin1`, www.vertmon.mn).
 
 Feature specifics live in `docs/features/` (verify status lines against the code); `docs/archive/` is history only.
 
@@ -11,7 +11,7 @@ Feature specifics live in `docs/features/` (verify status lines against the code
 | Framework | Next.js 16 App Router (Turbopack), React 19, TypeScript, Node ≥ 20.9 |
 | Styling | Tailwind v4, CSS-first tokens in `src/app/globals.css` (no `tailwind.config.ts`) |
 | Data / auth | Supabase Postgres + RLS + Auth (email/password, invites, Google/Facebook OAuth) |
-| AI | OpenAI Responses (`openai`) for the dashboard assistant; Google Gemini only for the public lead-form welcome reply and competitor analysis |
+| AI | Anthropic Messages (`@anthropic-ai/sdk`, Claude Haiku 5.5) for the dashboard assistant; Google Gemini only for the public lead-form welcome reply and competitor analysis |
 | Other | Zod 4, react-query, Resend, web-push (VAPID), exceljs, Sentry, Vitest 4, Playwright |
 
 ## Commands
@@ -95,7 +95,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 - Attribution: lead creation stamps `sales_manager_name` server-side (`resolveManagerIdentity`); AI writes stamp the roster name of the shop they run in (`resolveSalesManagerName(userId, fallback, shopId)`, also for `in_project` cards); viewings stamp the canonical manager; `manager_performance`/`manager_monthly_sales` exclude soft-deleted contracts and keep `security_invoker = on`. `/dashboard` mode (personal Today vs org Director) is decided by `GET /api/dashboard/mode`; its `marketingHome` (non-admin `marketing` role) opens the marketing dashboard instead (content plan, Page week, budget — never leads/contracts; docs/features/MARKETING-DASHBOARD-2026-10-14.md) and `canViewMarketing` lets other `marketing-roi` users switch with `?view=marketing`; `?manager=` on my-stats/KPI reports is honoured only for admin/reports users who are not personal-mode.
 
 ### Dashboard AI assistant
-- OpenAI Responses (`OPENAI_API_KEY`; `OPENAI_MODEL`/`OPENAI_FAST_MODEL`, default `gpt-5.6-luna`). No key → 503; there is no fallback provider. `runLoop`: ≤ 8 rounds, parallel reads, sequential writes, `ask_user` clarifications, `delegate_to_specialists`.
+- Anthropic Messages (`lib/ai/claude/client.ts` + `messages.ts`; `ANTHROPIC_API_KEY`; `ANTHROPIC_MODEL`/`ANTHROPIC_FAST_MODEL`, default `claude-haiku-5-5`; owner decision 2026-10-30 replaced OpenAI). No key → 503; there is no fallback provider. Adaptive thinking with `output_config.effort` (no `temperature`/prefill); the loop is append-only (assistant `content` incl. thinking blocks goes back unchanged, one user message carries all of a round's `tool_result`s); `refusal` and a tool call cut by `max_tokens` throw `ClaudeStopError` and are never executed; the closing round keeps `tools` with `tool_choice: none`. `runLoop`: ≤ 8 rounds, parallel reads, sequential writes, `ask_user` clarifications, `delegate_to_specialists`.
 - Each tool's kind (read/write/delete/admin), module, `auto`, `alwaysConfirm` and project `scoped` flag live only in `lib/ai/tool-catalog.ts` (client-safe); `tools.ts` holds schemas and `data-assistant/index.ts` a typed handler per catalog name (tests and the compiler keep the three aligned). Write tools return a preview; execution goes through `POST /api/ai-assistant/action`, which re-checks RBAC and audits. `auto` tools (reversible, low-risk) run directly with an audit entry; deletes, contracts, payments and outbound messages are never `auto`, and money tools are `alwaysConfirm` (never remembered). The module check hides tools from the model and blocks execution.
 - Other projects: `in_project` (`orchestrator/projects.ts`) runs one data tool in another shop the user can access (owner ∪ `shop_members`, resolved in `http.ts`), with that shop's RBAC/scope; writes, AUTO ones included, become cards carrying `shopId`, and `/api/ai-assistant/action` re-checks access to it.
 - Wednesday meeting: `get_weekly_sales_report` reads `loadWeeklySales` like the route (customer names only with `contracts`; floor-map cells summarised), `get_weekly_updates`/`save_weekly_update` use `lib/dashboard/weekly-updates.ts` with the route (own update; team view needs `reports`).
@@ -158,7 +158,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 
 ## Environment
 
-`.env.example` lists every variable the app reads. Production requires the Supabase keys, `OPENAI_API_KEY`, `FACEBOOK_APP_SECRET`, `FACEBOOK_VERIFY_TOKEN`, `CRON_SECRET` and `TOKEN_ENCRYPTION_KEY` (`src/lib/env.ts` reports missing ones at startup); the rest enable optional features (e.g. `ELYSIUM_SUPABASE_URL` / `ELYSIUM_SUPABASE_SERVICE_KEY` for the Elysium pull, server-only).
+`.env.example` lists every variable the app reads. Production requires the Supabase keys, `ANTHROPIC_API_KEY`, `FACEBOOK_APP_SECRET`, `FACEBOOK_VERIFY_TOKEN`, `CRON_SECRET` and `TOKEN_ENCRYPTION_KEY` (`src/lib/env.ts` reports missing ones at startup); the rest enable optional features (e.g. `ELYSIUM_SUPABASE_URL` / `ELYSIUM_SUPABASE_SERVICE_KEY` for the Elysium pull, server-only).
 
 ## Notes for agents
 

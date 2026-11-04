@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ResponseCreateParamsStreaming } from 'openai/resources/responses/responses';
+import type Anthropic from '@anthropic-ai/sdk';
 import { runOrchestrator } from '../index';
 import type { OrchestratorContext, OrchestratorEvent } from '../types';
 
@@ -8,15 +8,15 @@ import type { OrchestratorContext, OrchestratorEvent } from '../types';
 // cannot hide a broken handoff from the actual unit inventory to the model.
 const mocks = vi.hoisted(() => ({ create: vi.fn(), from: vi.fn() }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ from: mocks.from }) }));
-vi.mock('@/lib/ai/openai/client', async importOriginal => ({
+vi.mock('@/lib/ai/claude/client', async importOriginal => ({
     ...await importOriginal<object>(),
-    openai: () => ({ responses: { create: mocks.create } }),
+    claude: () => ({ messages: { stream: mocks.create } }),
 }));
 
 type Row = Record<string, unknown>;
 let tables: Record<string, Row[]>;
 let failedTable: string | undefined;
-const requests: ResponseCreateParamsStreaming[] = [];
+const requests: Anthropic.MessageStreamParams[] = [];
 
 function unit(id: string, values: Row = {}): Row {
     return {
@@ -26,44 +26,41 @@ function unit(id: string, values: Row = {}): Row {
     };
 }
 
-function toolPayload(request: ResponseCreateParamsStreaming): unknown {
-    if (!Array.isArray(request.input)) throw new Error('Expected Responses input items');
-    const output = request.input.find(item => item.type === 'function_call_output');
-    if (!output || output.type !== 'function_call_output' || typeof output.output !== 'string') {
+function toolPayload(request: Anthropic.MessageStreamParams): unknown {
+    const blocks = request.messages.flatMap(m => Array.isArray(m.content) ? m.content : []);
+    const output = blocks.find(block => block.type === 'tool_result');
+    if (!output || output.type !== 'tool_result' || typeof output.content !== 'string') {
         throw new Error('Expected a serialized inventory tool result');
     }
-    return JSON.parse(output.output);
+    return JSON.parse(output.content);
 }
 
 function answer(text: string) {
-    return {
-        type: 'message', role: 'assistant', id: 'message-1', status: 'completed',
-        content: [{ type: 'output_text', text, annotations: [] }],
-    };
+    return { type: 'text', text };
 }
 
-function responseStream(output: unknown[], text?: string) {
-    return (async function* () {
-        if (text) yield { type: 'response.output_text.delta', delta: text };
-        yield {
-            type: 'response.completed',
-            response: {
-                model: 'test-model', status: 'completed', output,
-                usage: { input_tokens: 20, output_tokens: 5, input_tokens_details: { cached_tokens: 0 } },
-            },
-        };
-    })();
+/** Fake MessageStream: replays the text delta, then resolves the final message. */
+function responseStream(content: unknown[], text?: string) {
+    let onText: ((delta: string) => void) | undefined;
+    const s = {
+        on(event: string, cb: (delta: string) => void) { if (event === 'text') onText = cb; return s; },
+        async finalMessage() {
+            if (text) onText?.(text);
+            const stop_reason = content.some(b => (b as { type: string }).type === 'tool_use') ? 'tool_use' : 'end_turn';
+            return { model: 'test-model', role: 'assistant', content, stop_reason, usage: { input_tokens: 20, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } };
+        },
+    };
+    return s;
 }
 
 function propertyRounds(synthesize: (payload: unknown) => string) {
-    mocks.create.mockImplementationOnce(async (request: ResponseCreateParamsStreaming) => {
+    mocks.create.mockImplementationOnce((request: Anthropic.MessageStreamParams) => {
         requests.push(structuredClone(request));
         return responseStream([{
-            type: 'function_call', id: 'function-1', call_id: 'inventory-call',
-            name: 'list_properties', arguments: '{"rooms":2,"status":"available"}', status: 'completed',
+            type: 'tool_use', id: 'inventory-call', name: 'list_properties', input: { rooms: 2, status: 'available' },
         }]);
     });
-    mocks.create.mockImplementationOnce(async (request: ResponseCreateParamsStreaming) => {
+    mocks.create.mockImplementationOnce((request: Anthropic.MessageStreamParams) => {
         requests.push(structuredClone(request));
         const text = synthesize(toolPayload(request));
         return responseStream([answer(text)], text);
@@ -107,7 +104,7 @@ beforeEach(() => {
     });
 });
 
-describe('simple property questions through the Responses orchestrator', () => {
+describe('simple property questions through the Claude orchestrator', () => {
     it.each(['2 өрөө байр байна уу?', '2uruu bair bnu'])('answers %s from available units when listings are empty', async message => {
         tables.property_units = [
             unit('available-two'),
@@ -126,7 +123,7 @@ describe('simple property questions through the Responses orchestrator', () => {
         const events: OrchestratorEvent[] = [];
         const result = await runOrchestrator(message, context(events));
 
-        expect(JSON.stringify(requests[0].input)).toContain(message);
+        expect(JSON.stringify(requests[0].messages)).toContain(message);
         expect(result.text).toContain('Тийм, 2 өрөө байр байна.');
         expect(result.text).toContain('58.6 м²');
         expect(toolPayload(requests[1])).toEqual([expect.objectContaining({
