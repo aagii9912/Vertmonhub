@@ -48,6 +48,28 @@ describe('DailyReportDocument', () => {
         expect(screen.queryByRole('group', { name: 'Товлосон, үр дүн бүртгээгүй' })).toBeNull();
     });
 
+    it('always shows «Нэмэлт тэмдэглэл», with «—» on a day without a note (screen and image)', () => {
+        for (const forImage of [false, true]) {
+            render(<DailyReportDocument report={buildDailyReport(input())} forImage={forImage} />);
+            const notes = screen.getByRole('region', { name: 'Нэмэлт тэмдэглэл' });
+            expect(within(notes).getByRole('heading', { name: 'Нэмэлт тэмдэглэл' })).toBeTruthy();
+            expect(within(notes).getByText('—')).toBeTruthy();
+            cleanup();
+        }
+        render(<DailyReportDocument report={buildDailyReport(input({ notes: { general: 'B2 блокын загварыг тохиролцлоо.' } }))} forImage />);
+        const notes = screen.getByRole('region', { name: 'Нэмэлт тэмдэглэл' });
+        expect(within(notes).getByText('B2 блокын загварыг тохиролцлоо.')).toBeTruthy();
+        expect(within(notes).queryByText('—')).toBeNull();
+    });
+
+    it('keeps the image header on one line per item so wrapped text cannot overlap', () => {
+        const { container, unmount } = render(<DailyReportDocument report={buildDailyReport(input())} forImage />);
+        expect(container.querySelector('header')!.className).toContain('whitespace-nowrap');
+        unmount();
+        const screenVersion = render(<DailyReportDocument report={buildDailyReport(input())} />);
+        expect(screenVersion.container.querySelector('header')!.className).not.toContain('whitespace-nowrap');
+    });
+
     it('shows no legend when every count was entered by the manager’s own account', () => {
         const report = buildDailyReport(input({ counts: [{ manager_name: KHON, metric: 'call.l1.total', value: 2, updated_by: 'khon-account', updated_by_name: 'М. Хонгорзул' }] }));
         render(<DailyReportDocument report={report} />);

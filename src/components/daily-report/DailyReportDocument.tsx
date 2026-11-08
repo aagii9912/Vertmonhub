@@ -82,7 +82,8 @@ function AuthorDot({ className }: { className?: string }) {
 
 /**
  * «Өдрийн тайлан»-гийн баримт (дэлгэц, хэвлэх/PDF ба зураг): толгой, менежерийн нэг хүснэгт (мөр = менежер, багана =
- * шугам/ангилал, чат, уулзалтын төрөл, доор нь «Нийт»), уулзалтын жагсаалт, «Тайлан хийж гүйцэтгэсэн». `editing` өгвөл
+ * шугам/ангилал, чат, уулзалтын төрөл, доор нь «Нийт»), уулзалтын жагсаалт, «Нэмэлт тэмдэглэл» (хоосон ч үргэлж),
+ * «Тайлан хийж гүйцэтгэсэн». `editing` өгвөл
  * дуудлага, чатын нүд, нэмэлт тэмдэглэл засагдана; `forImage` — PNG/JPEG: дэлгэцийн өргөн загвартай адил, холбоосгүй.
  * Хэн оруулсны тэмдэг, уулзалтын үйлдлүүд (`meetings`) зөвхөн дэлгэцэд — хэвлэх, зураг, хуулсан текстэд орохгүй.
  * Мужийн тайланд (`report.to > report.date`) огноо нь хугацаа, уулзалтын мөр өдөртэйгээ гарна.
@@ -107,7 +108,9 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
     const phoneChecks = forImage ? [] : draftPhoneLeadChecks(report, editing?.draft, phoneCheck);
     return (
         <div className="space-y-6">
-            <header className="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-border bg-surface-2 px-5 py-4">
+            {/* Зурагт (modern-screenshot) хэмжсэн өргөн/өндөр нь px-ээр тогтдог тул хамгийн урт мөр нь пикселийн зөрүүгээр
+                доош шилжиж дараагийн мөртэй давхцдаг («БАГ» огноон дээр, утасны дугаар) — зурагт толгойн текст тасрахгүй. */}
+            <header className={cn('flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-border bg-surface-2 px-5 py-4', forImage && 'whitespace-nowrap')}>
                 <div>
                     <p className="text-xs text-muted-foreground">Өдрийн тайлан</p>
                     <h2 className="mt-1 text-xl font-semibold uppercase tracking-[0.06em]">{report.title}</h2>
@@ -115,7 +118,7 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
                 </div>
                 {people.length > 0 && (
                     <ul className="space-y-0.5 text-right text-[13px] text-fg-2">
-                        {people.map(manager => <li key={manager.name}>Менежер — {manager.title}{manager.phone && <span className="num ml-2">{formatStaffPhone(manager.phone)}</span>}</li>)}
+                        {people.map(manager => <li key={manager.name}>Менежер — {manager.title}{manager.phone && <span className="num ml-2 whitespace-nowrap">{formatStaffPhone(manager.phone)}</span>}</li>)}
                     </ul>
                 )}
             </header>
@@ -174,15 +177,16 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
                 )}
             </section>
 
-            {(editing?.notes || report.generalNote) && (
-                <section className="space-y-2" aria-label="Нэмэлт тэмдэглэл">
-                    <h3 className="text-[15px] font-semibold">Нэмэлт тэмдэглэл</h3>
-                    {editing?.notes ? (
-                        <Textarea aria-label="Нэмэлт тэмдэглэл" maxLength={DAILY_LIMITS.generalNote} value={editing.notes.general ?? ''}
-                            placeholder="Өдрийн онцлох мэдээ, анхаарах асуудал…" onChange={event => editing.onNotes({ ...editing.notes, general: event.target.value })} />
-                    ) : <p className="whitespace-pre-line text-sm leading-relaxed">{report.generalNote}</p>}
-                </section>
-            )}
+            {/* Тэмдэглэлгүй өдөр ч хэсэг үргэлж гарна (дэлгэц, хэвлэх, зураг) — хоосон бол «—». */}
+            <section className="space-y-2" aria-label="Нэмэлт тэмдэглэл">
+                <h3 className="text-[15px] font-semibold">Нэмэлт тэмдэглэл</h3>
+                {editing?.notes ? (
+                    <Textarea aria-label="Нэмэлт тэмдэглэл" maxLength={DAILY_LIMITS.generalNote} value={editing.notes.general ?? ''}
+                        placeholder="Өдрийн онцлох мэдээ, анхаарах асуудал…" onChange={event => editing.onNotes({ ...editing.notes, general: event.target.value })} />
+                ) : report.generalNote
+                    ? <p className="whitespace-pre-line text-sm leading-relaxed">{report.generalNote}</p>
+                    : <p className="pl-1 text-sm text-muted-foreground">—</p>}
+            </section>
 
             {report.completedDays !== null && (
                 <footer className="border-t border-border pt-4 text-right text-sm">
