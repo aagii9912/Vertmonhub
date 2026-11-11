@@ -258,7 +258,8 @@ function ImportWorkspace({ shopId }: { shopId: string }) {
                     {paidOnlyOf(preview) && <p className="mt-1 text-xs text-muted-foreground">Зөвхөн «Нийт төлсөн дүн» шинэчлэгдлээ — «Төлөвлөгөөний биелэлт»-д гараар оруулаагүй сарын орсон мөнгө <span className="num">{preview.reportDate}</span>-ны энэ файлаар тооцогдоно.</p>}
                     {preview.stillUndated > 0 && <p className="mt-1 text-xs text-muted-foreground">Огноогүй <span className="num">{preview.stillUndated}</span> гэрээ файлд байхгүй тул огноогүй хэвээр — гэрээ бүрийн дэлгэрэнгүйгээс огноо оруулна.</p>}
                     <div className="mt-4 flex flex-wrap gap-2">
-                        <Button href="/dashboard/contracts">Гэрээ харах</Button>
+                        {can('reports') && <Button href="/dashboard/weekly?track=sales&step=files">Лхагвын тайлан руу буцах</Button>}
+                        <Button variant={can('reports') ? 'secondary' : 'primary'} href="/dashboard/contracts">Гэрээ харах</Button>
                         {preview.stillUndated > 0 && <Button variant="secondary" href="/dashboard/contracts?filter=undated">Огноогүй {preview.stillUndated} гэрээ</Button>}
                         {can('reports') && <Button variant="secondary" href="/dashboard/reports/plan">Төлөвлөгөөний биелэлт</Button>}
                         {isSuperAdmin && <Button variant="secondary" href="/admin/history">Өөрчлөлтийн түүх</Button>}

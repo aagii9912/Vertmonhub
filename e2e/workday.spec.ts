@@ -6,6 +6,7 @@ import { buildOperationsReport } from '../src/lib/dashboard/operations-report';
 import { buildMarketingPerformance, previousRange, type MarketingActivity, type MarketingSpend } from '../src/lib/marketing/performance';
 import { nextMeetingDate, shiftReviewDate, weeklyReviewRange } from '../src/lib/dashboard/weekly-review';
 import { buildWeeklySales } from '../src/lib/dashboard/weekly-sales';
+import { buildWeeklyFiles } from '../src/lib/dashboard/weekly-files';
 import type { ErpProduct, ErpSale } from '../src/lib/erp/records';
 import { scoreKpi } from '../src/lib/sales/kpi';
 import { buildBudgetOverview } from '../src/lib/marketing/budget';
@@ -161,7 +162,9 @@ async function setup(page: Page, restricted = false) {
             overview: buildBudgetOverview(Array(12).fill(10000000), Array.from({ length: 12 }, (_, index) => index < 9 ? 8000000 : 0), Array(12).fill(0)),
             spendStatus: Array.from({ length: 12 }, (_, index) => ({ month: index + 1, recorded: index < 9, pending: {} })) });
         if (path === '/api/dashboard/kpi-report') return reply({ manager: { name: 'Номин', isSelf: true }, shopName: 'Vertmon · Туршилтын өгөгдөл', year: 2026, month: 10, onboarding: true });
-        if (path === '/api/dashboard/reports/weekly-sales') return reply({ meetingDate, projectName: 'Vertmon · Туршилтын өгөгдөл', ...weeklySalesFixture() });
+        if (path === '/api/dashboard/reports/weekly-sales') return reply({ meetingDate, projectName: 'Vertmon · Туршилтын өгөгдөл', ...weeklySalesFixture(),
+            // Эхний алхам: гэрээний экспорт энэ долоо хоногийнх, бүтээгдэхүүний экспорт өмнөх долоо хоногийнх.
+            files: buildWeeklyFiles({ range, hub: null, products: { date: shiftReviewDate(range.to, -7), name: 'Elysium ERP' }, sales: { date: range.to, name: 'Elysium гэрээ' } }) });
         // «Борлуулалт (албаны загвар)» илтгэлийн эх сурвалж.
         if (path === '/api/dashboard/reports/plan-performance') return reply(teamDeck.plan);
         if (path === '/api/dashboard/reports/sales-activity') return reply(teamDeck.activity);
@@ -374,7 +377,7 @@ for (const compact of [false, true]) {
 test('алдаатай эх үүсвэрийг тэг гэж үзүүлэхгүй, шинэчлээд сэргээнэ', async ({ page }) => {
     const state = await setup(page);
     state.failure = true;
-    await page.goto('/dashboard/weekly');
+    await page.goto('/dashboard/weekly?track=sales&step=overview');
     await expect(page.getByText('Борлуулалтын мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.')).toBeVisible();
     state.failure = false;
     await page.getByRole('button', { name: 'Шинэчлэх', exact: true }).click();
@@ -405,8 +408,23 @@ test('хурлын тайланг алхам алхмаар бэлдэж, алх
     const state = await setup(page);
     await page.goto('/dashboard/weekly');
     const salesSteps = page.getByRole('navigation', { name: 'Борлуулалтын тайлан: алхмууд' });
-    await expect(salesSteps.getByRole('button')).toHaveText([/Тоон тойм/, /Гэрээ, үлдэгдэл/, /Лидийн эх сурвалж/, /Нэмэлт слайд/, /Миний шинэчлэл/, /Шалгаад татах/]);
-    await expect(page.getByRole('heading', { name: 'Тоон тойм', exact: true })).toBeVisible();
+    await expect(salesSteps.getByRole('button')).toHaveText([/ERP мэдээлэл оруулах/, /Тоон тойм/, /Гэрээ, үлдэгдэл/, /Лидийн эх сурвалж/, /Нэмэлт слайд/, /Миний шинэчлэл/, /Шалгаад татах/]);
+    // Эхний алхам: ERP-ийн файл. Хуучин файлыг нэрлэж, оруулах хуудас руу нь холбоно; тайлангийн тоо дараагийн алхмаас.
+    await expect(page.getByRole('heading', { name: 'ERP мэдээлэл оруулах', exact: true })).toBeVisible();
+    const files = page.getByRole('region', { name: 'ERP мэдээлэл оруулах' });
+    await expect(files.getByRole('status')).toContainText('Шинэ файл хэрэгтэй: ERP бүтээгдэхүүний экспорт.');
+    await expect(files.getByRole('link', { name: /Файл оруулах.*ERP бүтээгдэхүүний экспорт/ })).toHaveAttribute('href', '/dashboard/reports/erp');
+    // Гэрээний HUB импортыг сервер менежерт зөвшөөрдөггүй тул холбоос биш, хэн оруулахыг хэлнэ.
+    await expect(files.getByRole('link', { name: /Гэрээний жагсаалт/ })).toHaveCount(0);
+    await expect(files.getByText('Файлыг удирдлага (импортын эрхтэй хүн) оруулна.')).toBeVisible();
+    await expect(page.getByText('Гэрээний бүртгэлтэй дүн', { exact: true })).toHaveCount(0);
+    await expect(salesSteps.getByRole('button', { name: /ERP мэдээлэл оруулах/ })).toContainText('шинэ файл хэрэгтэй');
+    mkdirSync('output/workday', { recursive: true });
+    await page.screenshot({ path: 'output/workday/desktop-weekly-steps-files.png', fullPage: true });
+    await page.getByRole('button', { name: 'Дараах: Тоон тойм', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Тоон тойм', exact: true })).toBeFocused();
+    // Хуучин файлтай алхмыг үзсэн төдийгөөр «бөглөсөн» гэж тэмдэглэхгүй.
+    await expect(salesSteps.getByRole('button', { name: /ERP мэдээлэл оруулах/ })).not.toContainText('бөглөсөн');
     await expect(page.getByText('Гэрээний бүртгэлтэй дүн', { exact: true })).toBeVisible();
     // Нэг алхамд нэг хэсэг: гэрээний дэлгэрэнгүй, слайд татах товч дараагийн алхмуудад.
     await expect(page.getByRole('region', { name: 'Энэ долоо хоногийн гэрээ' })).toHaveCount(0);

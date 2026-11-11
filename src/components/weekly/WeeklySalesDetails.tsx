@@ -9,11 +9,13 @@ import { dashboardJson } from '@/lib/api/dashboardFetch';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
 import { cn } from '@/lib/utils';
 import type { WeeklySalesReport } from '@/lib/dashboard/weekly-sales';
+import type { WeeklyFile } from '@/lib/dashboard/weekly-files';
 import { periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from '@/lib/dashboard/contract-dates';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
 import { FloorMap, FloorMapLegend } from './FloorMap';
 
-export type WeeklySalesResponse = WeeklySalesReport & { meetingDate: string; projectName: string };
+/** `files` — долоо хоног бүр оруулдаг эх файлуудын төлөв (`lib/dashboard/weekly-files.ts`). */
+export type WeeklySalesResponse = WeeklySalesReport & { meetingDate: string; projectName: string; files?: WeeklyFile[] };
 
 const area = (value: number | null) => value === null ? '—' : `${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 const money = (value: number | null) => value === null ? '—' : formatMNT(value);

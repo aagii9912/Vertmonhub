@@ -2,12 +2,14 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { erpNumber, parseErpSale, PRODUCT_KIND_LABEL, productKind, type ProductKind } from '@/lib/erp/records';
 import { listErpSnapshots, loadErpDatasets, snapshotRecords } from '@/lib/erp/snapshots';
 import { loadReportInventory } from '@/lib/inventory/report-inventory';
+import { readLatestContractListImport } from '@/lib/contracts/live';
 import { customerShortName } from '@/lib/contracts/list-format';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { isMissingReferralSchema, loadReferralNames } from '@/lib/sales/referral-sources-store';
 import { hasBlockPlan } from '@/lib/sales/plan-performance';
 import { buildWeeklySales, type ContractLine } from './weekly-sales';
 import { shiftReviewDate, weeklyReviewRange } from './weekly-review';
+import { buildWeeklyFiles } from './weekly-files';
 
 type CrmContract = {
     id: string; contract_number: string | null; contract_date: string | null; product_type: string | null; block_name: string | null;
@@ -41,10 +43,12 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
     const previousMeta = salesMeta
         ? metas.find(meta => meta.kind === 'sales' && meta.report_date < salesMeta.report_date && meta.report_date <= shiftReviewDate(meetingDate, -7)) ?? null
         : null;
-    const [datasets, inventory] = await Promise.all([
+    const [datasets, inventory, hub] = await Promise.all([
         loadErpDatasets(db, shopId, [salesMeta, previousMeta].flatMap(meta => meta ? [meta.id] : [])),
         // Үлдэгдэл: HUB гэрээ + байрны бүртгэл, ERP бүтээгдэхүүн эсвэл байрны бүртгэл (`lib/inventory/report-inventory.ts`).
         loadReportInventory(db, shopId, meetingDate, { metas }),
+        // Тайлан бэлдэх эхний алхам: гэрээний HUB жагсаалтын сүүлийн импорт (хурлын өдөр хүртэл).
+        readLatestContractListImport(db, shopId, { upTo: meetingDate }),
     ]);
     const sales = snapshotRecords(salesMeta, datasets, parseErpSale);
     const previousSales = snapshotRecords(previousMeta, datasets, parseErpSale);
@@ -104,5 +108,13 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
         report.week.lines = report.week.lines.map(line => ({ ...line, customer: null }));
         report.month.lines = report.month.lines.map(line => ({ ...line, customer: null }));
     }
-    return { meetingDate, ...report };
+    // Долоо хоног бүр оруулдаг эх файлууд: аль нь хэзээ орсон, тайланд хэрэгтэй эсэх (`weekly-files.ts`).
+    const productsMeta = metas.find(meta => meta.kind === 'products') ?? null;
+    const files = buildWeeklyFiles({
+        range,
+        hub: hub.latest ? { date: hub.latest.report_date, name: hub.latest.file_name, by: hub.latest.created_by_name } : null,
+        products: productsMeta ? { date: productsMeta.report_date, name: productsMeta.source } : null,
+        sales: salesMeta ? { date: salesMeta.report_date, name: salesMeta.source } : null,
+    });
+    return { meetingDate, ...report, files };
 }

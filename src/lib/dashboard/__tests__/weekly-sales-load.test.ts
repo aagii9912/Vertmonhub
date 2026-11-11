@@ -58,6 +58,13 @@ describe('loadWeeklySales', () => {
         expect(report.week.lines).toEqual([expect.objectContaining({ contractNumber: 'EL-1', customer: null })]);
         expect(report.month).toMatchObject({ total: 100, target: 200, attainmentPct: 50 });
         expect(report.inventory!.source).toEqual({ date: '2026-09-20', source: 'Elysium ERP', kind: 'erp' });
+        // Эхний алхам («ERP мэдээлэл оруулах»): хурал 09-23 → долоо хоног 09-16..09-22. Гэрээний экспорт Мягмарынх тул бүтэн,
+        // бүтээгдэхүүний экспорт 09-20-ных тул дутуу; HUB жагсаалт ороогүй, ERP-ээр ажилладаг төсөлд заавал биш.
+        expect(report.files).toEqual([
+            { kind: 'hub', state: 'missing', needed: false, date: null, name: null, by: null },
+            { kind: 'products', state: 'partial', needed: true, date: '2026-09-20', name: 'Elysium ERP', by: null },
+            { kind: 'sales', state: 'fresh', needed: true, date: '2026-09-22', name: 'ERP гэрээ', by: null },
+        ]);
 
         const visible = await loadWeeklySales(db, { shopId: 's', meetingDate: '2026-09-23', canSeeCustomers: true });
         expect(visible.week.lines[0].customer).toBe('Тест.Хүн');

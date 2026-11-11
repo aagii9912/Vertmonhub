@@ -42,10 +42,11 @@ export default function ErpPage() {
     const allowed = user?.role === 'super_admin' || user?.permissions?.modules.includes('erp-imports');
     if (!shop) return <Spinner label="Уншиж байна…" />;
     if (!allowed) return <Alert>ERP импорт, тайлангийн эрх шаардлагатай.</Alert>;
-    return <ErpWorkspace key={`${user?.id}:${shop.id}`} userId={user?.id ?? ''} shopId={shop.id} canWrite={user?.role === 'super_admin' || !!user?.permissions?.canWrite} />;
+    return <ErpWorkspace key={`${user?.id}:${shop.id}`} userId={user?.id ?? ''} shopId={shop.id} canWrite={user?.role === 'super_admin' || !!user?.permissions?.canWrite}
+        canOpenWeekly={user?.role === 'super_admin' || !!user?.permissions?.modules.includes('reports')} />;
 }
 
-function ErpWorkspace({ userId, shopId, canWrite }: { userId: string; shopId: string; canWrite: boolean }) {
+function ErpWorkspace({ userId, shopId, canWrite, canOpenWeekly }: { userId: string; shopId: string; canWrite: boolean; canOpenWeekly: boolean }) {
     const cache = useQueryClient();
     // Гэрээний HUB импорт хязгааргүй удирдлагад л (сервер дахин шалгана).
     const { data: mode } = useDashboardMode();
@@ -64,6 +65,8 @@ function ErpWorkspace({ userId, shopId, canWrite }: { userId: string; shopId: st
     const [dataset, setDataset] = useState('');
     const [page, setPage] = useState(0);
     const [historyPage, setHistoryPage] = useState(0);
+    // Сая хадгалсан импортын огноо — Лхагвын тайлан бэлдэж яваа хүнд буцах замыг харуулна.
+    const [savedDate, setSavedDate] = useState('');
     const sources = useQuery({ queryKey: ['erp-sources', userId, shopId], queryFn: () => dashboardJson<{ sources: string[] }>('/api/dashboard/erp-imports?sources=1', { shopId }), retry: false });
     const source = selectedSource ?? sources.data?.sources[0] ?? 'ERP';
     const history = useQuery({ queryKey: ['erp-imports', shopId, userId, source, historyPage], enabled: sources.isSuccess && !!source.trim(), queryFn: () => dashboardJson<{ imports: ErpImport[]; total: number }>(`/api/dashboard/erp-imports?${new URLSearchParams({ source, page: String(historyPage) })}`, { shopId }), retry: false });
@@ -87,9 +90,11 @@ function ErpWorkspace({ userId, shopId, canWrite }: { userId: string; shopId: st
                 setPreview(await dashboardJson<ErpReport>('/api/dashboard/erp-imports', { method: 'POST', body: form, shopId }));
             } else {
                 const result = await dashboardJson<{ id: string }>('/api/dashboard/erp-imports', { method: 'POST', body: form, shopId });
-                setSelected(result.id); setPage(0); setHistoryPage(0); setDataset(''); reset();
+                setSelected(result.id); setPage(0); setHistoryPage(0); setDataset(''); reset(); setSavedDate(reportDate);
                 await cache.invalidateQueries({ queryKey: ['erp-imports', shopId] });
                 await cache.invalidateQueries({ queryKey: ['erp-sources', userId, shopId] });
+                // Лхагвын тайлан, KPI нь snapshot-оос уншдаг — шинэ файлаар дахин уншина.
+                for (const key of ['weekly-sales', 'kpi-report', 'sales-kpi']) void cache.invalidateQueries({ queryKey: [key] });
                 toast.success('Импорт хадгалагдаж, тайлан гарлаа');
             }
         } catch (e) { setError(e instanceof Error ? e.message : 'Импорт амжилтгүй'); }
@@ -112,6 +117,7 @@ function ErpWorkspace({ userId, shopId, canWrite }: { userId: string; shopId: st
         {sources.isError && <Alert variant="danger">{sources.error.message} <Button size="sm" onClick={() => void sources.refetch()}>Дахин оролдох</Button></Alert>}
         {sources.isPending && <Spinner label="Хадгалсан тайланг уншиж байна…" />}
         {history.isError ? <Alert variant="danger">{history.error.message} <Button size="sm" onClick={() => void history.refetch()}>Дахин оролдох</Button></Alert> : history.isLoading ? <Spinner /> : history.isSuccess && historyPage === 0 && <Alert variant={due ? 'warning' : 'info'}>Энэ долоо хоног: {week.from} – {week.to}. Импортын өдөр: {week.due} (Мягмар). {due ? 'Энэ долоо хоногийн импорт хүлээгдэж байна.' : latest && latest.report_date >= week.due ? 'Энэ долоо хоногийн мэдээлэл орсон.' : 'Импортын өдөр хараахан болоогүй.'}</Alert>}
+        {savedDate && <Alert variant="success">{savedDate}-ны импорт хадгалагдлаа. {canOpenWeekly && <Button size="sm" variant="secondary" href="/dashboard/weekly?track=sales&step=files">Лхагвын тайлан руу буцах</Button>}</Alert>}
         {canWrite && sources.isSuccess && <SectionCard title="ERP файл импортлох" description="Бүх мэдээллийн sheet-ийг хамтад нь оруулна. CSV бол нэг sheet. 4 MB, 30 sheet, 20,000 мөр хүртэл.">
             <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_180px_auto]"><label className="grid min-w-0 gap-1 text-sm">Файл<input className="w-full min-w-0 text-sm" type="file" accept=".xlsx,.csv,.tsv" disabled={busy} onChange={e => { setFile(e.target.files?.[0] ?? null); reset(); }} /></label><label className="grid gap-1 text-sm">Мэдээллийн огноо<input className={fieldClass} type="date" max={ubDateStr()} value={reportDate} disabled={busy} onChange={e => { setReportDate(e.target.value); setPreview(null); setRequestId(crypto.randomUUID()); }} /></label><Button disabled={!file || !source.trim() || busy} onClick={() => void upload('inspect')}>Файл шалгах</Button></div>
             {inspection && inspection.sheets.some(s => isContractListSheet(s.columns)) && <Alert className="mt-4" variant="warning">Энэ бол гэрээний HUB жагсаалт — «Гэрээ» → «Excel импорт»-оор оруулна уу{canImportContracts ? '' : ' — удирдлага импортлоно'}. ERP snapshot болгон хадгалахгүй. {canImportContracts && <Button size="sm" variant="secondary" href="/dashboard/contracts/import">Гэрээний Excel импорт руу</Button>}</Alert>}

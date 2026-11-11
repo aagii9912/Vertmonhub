@@ -65,6 +65,7 @@ it('tells a restricted sales manager the import is for management instead of off
 });
 
 it('previews the file, gates «Батлах» on the review checkbox and saves through the API', async () => {
+    auth.modules = ['reports'];
     transport.fetch.mockResolvedValueOnce(reply(200, preview()))
         .mockResolvedValueOnce(reply(201, { ok: true, import_id: 'i-1', inserted: 16, updated: 67, replayed: false }));
     const cache = renderPage();
@@ -95,6 +96,9 @@ it('previews the file, gates «Батлах» on the review checkbox and saves t
     expect(form.get('planHash')).toBe('f'.repeat(64));
     expect(form.get('acceptReview')).toBe('true');
     expect(form.get('requestId')).toMatch(/^[0-9a-f-]{36}$/);
+    // Лхагвын тайлан бэлдэж яваа хүн эхний алхам («ERP мэдээлэл оруулах») руугаа буцна; тайлан шинэ файлаар дахин уншина.
+    expect(screen.getByRole('link', { name: 'Лхагвын тайлан руу буцах' })).toHaveAttribute('href', '/dashboard/weekly?track=sales&step=files');
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['weekly-sales'] });
     expect(screen.getByRole('link', { name: 'Гэрээ харах' })).toHaveAttribute('href', '/dashboard/contracts');
     expect(screen.getByRole('link', { name: 'Огноогүй 10 гэрээ' })).toHaveAttribute('href', '/dashboard/contracts?filter=undated');
     expect(screen.getByRole('link', { name: 'Өөрчлөлтийн түүх' })).toHaveAttribute('href', '/admin/history');

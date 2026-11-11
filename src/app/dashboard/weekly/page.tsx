@@ -8,6 +8,7 @@ import { ArrowUpRight, Check, ChevronLeft, ChevronRight, ClipboardCopy, FileText
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMyTasks, type UserTask } from '@/hooks/useMyTasks';
+import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { openAiPanel } from '@/lib/ai/context';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
@@ -22,6 +23,7 @@ import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
 import { Avatar, Skeleton } from '@/components/dashboard/v2/primitives';
 import { useWeeklySales, WeeklySalesDetails } from '@/components/weekly/WeeklySalesDetails';
+import { WeeklyDataFiles } from '@/components/weekly/WeeklyDataFiles';
 import { WeeklyMarketingBudget } from '@/components/weekly/WeeklyMarketingBudget';
 import { WeeklyMarketingChannels } from '@/components/weekly/WeeklyMarketingChannels';
 import { useMarketingConnections, WeeklyMarketingConnections } from '@/components/weekly/WeeklyMarketingConnections';
@@ -33,11 +35,12 @@ import { WEEKLY_SLIDE_PART_MODULE, type WeeklySlidePart } from '@/lib/dashboard/
 import { summarizeContentPlan } from '@/lib/marketing/content-plan';
 import type { WeeklyDeckFileKind } from '@/lib/dashboard/weekly-deck';
 import { periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from '@/lib/dashboard/contract-dates';
+import { weeklyFilesStatus } from '@/lib/dashboard/weekly-files';
 
 type View = 'steps' | 'full';
 type DiscussionItem = ReturnType<typeof weeklyDiscussionItems>[number];
-/** Тайлан бэлдэх нэг алхам: юу хийхийг `hint` хэлнэ, `body` нь тайлангийн тухайн хэсэг. */
-interface Step { id: string; title: string; hint: string; href?: string; warn?: boolean; done?: boolean; body: ReactNode }
+/** Тайлан бэлдэх нэг алхам: юу хийхийг `hint` хэлнэ, `body` нь тайлангийн тухайн хэсэг. `warn` — анхаарах цэг (`warnText` нь шалтгаан). */
+interface Step { id: string; title: string; hint: string; href?: string; warn?: boolean; warnText?: string; done?: boolean; body: ReactNode }
 interface Track { id: 'sales' | 'marketing' | 'self'; label: string; steps: Step[] }
 
 export default function WeeklyReviewPage() {
@@ -71,6 +74,11 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
     const canWrite = user?.role === 'super_admin' || !!user?.permissions.canWrite;
     const canEditSlides = (part: WeeklySlidePart) => user?.role === 'super_admin' || (!!user?.permissions.canWrite && can(WEEKLY_SLIDE_PART_MODULE[part]));
     const canDeleteSlides = (part: WeeklySlidePart) => user?.role === 'super_admin' || (!!user?.permissions.canDelete && can(WEEKLY_SLIDE_PART_MODULE[part]));
+    // Файл оруулах эрх нь импортын хуудсуудынхтай ижил (сервер дахин шалгана): ERP snapshot — ERP импортын бичих эрх;
+    // гэрээний HUB жагсаалт — дээр нь гэрээний бичих эрх, хязгааргүй (удирдлагын) хэрэглэгч.
+    const { data: mode } = useDashboardMode();
+    const canImportErp = canWrite && can('erp-imports');
+    const canImportHub = canImportErp && can('contracts') && mode?.isManager === false;
     const [exporting, setExporting] = useState<WeeklyDeckFileKind | null>(null);
     const params = new URLSearchParams(range);
     const salesQuery = useQuery<OperationsReport>({
@@ -207,6 +215,9 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
         <p className="text-xs text-muted-foreground">Одоогийн ажлын дараалал; дээрх ангиллууд давхцаж болно.</p>
     </> : <Unavailable>{can('reports') ? 'Борлуулалтын мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.' : 'Нэгдсэн борлуулалтын тайлан харах эрх шаардлагатай.'}</Unavailable>;
     const salesDetails = <WeeklySalesDetails query={weeklySalesQuery} canOpenErp={can('erp-imports')} />;
+    // Эхний алхам: тайлангийн тоо ERP-ээс оруулсан файлаас гардаг тул файлаа эхэлж оруулна.
+    const dataFiles = <WeeklyDataFiles query={weeklySalesQuery} range={range} canImportHub={canImportHub} canImportErp={canImportErp} />;
+    const filesStatus = weeklySales?.files ? weeklyFilesStatus(weeklySales.files) : undefined;
     // Лидийн эх сурвалж, хөрвөлт нь борлуулалтын үзүүлэлт — маркетингийн албаны ажлыг үүгээр хэмжихгүй.
     const leadSources = marketingQuery.isPending ? <Skeleton className="h-36" /> : marketing ? <>
         <div className="grid grid-cols-3 gap-5 rounded-2xl border border-border p-5">
@@ -281,10 +292,13 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
     const tracks: Track[] = [
         ...(can('reports') ? [{
             id: 'sales' as const, label: 'Борлуулалтын тайлан', steps: [
+                { id: 'files', title: 'ERP мэдээлэл оруулах', body: dataFiles, done: filesStatus?.ready,
+                    warn: !!weeklySalesQuery.error || !!filesStatus?.pending.length, warnText: weeklySalesQuery.error ? undefined : 'шинэ файл хэрэгтэй',
+                    hint: 'Тайлангийн гэрээ, үлдэгдэл, давхрын зураглал ERP-ээс оруулсан файлаас гардаг. Эхлээд энэ долоо хоногийн файлаа оруулна — оруулаагүй бол дараагийн алхмуудын тоо өмнөх файлынх байна.' },
                 { id: 'overview', title: 'Тоон тойм', body: salesOverview, href: `/dashboard/reports/operations?${params}`, warn: !!salesQuery.error,
                     hint: 'Шинэ лид, гэрээ, уулзалтын тоо зөв эсэхийг шалгана. Буруу бол лид, уулзалт, гэрээний бүртгэлээ засаад «Шинэчлэх» дарна.' },
                 { id: 'contracts', title: 'Гэрээ, үлдэгдэл', body: salesDetails, href: can('erp-imports') ? '/dashboard/reports/erp' : undefined, warn: !!weeklySalesQuery.error,
-                    hint: 'Долоо хоногийн гэрээ, мөнгөн орлого, давхрын зураглал ERP-ийн сүүлийн экспортоос гарна. Экспортын огноо хуучин бол шинэ файл оруулна.' },
+                    hint: 'Долоо хоногийн гэрээ, мөнгөн орлого, давхрын зураглал эхний алхамд оруулсан файлаас гарна. Эх сурвалжийн огноо хуучин бол «ERP мэдээлэл оруулах» алхам руу буцаж шинэ файл оруулна.' },
                 ...(can('marketing-roi') ? [{ id: 'leads', title: 'Лидийн эх сурвалж', body: leadSources, href: `/marketing?${params}`, warn: !!marketingQuery.error,
                     hint: 'Аль сувгаас хэдэн лид ирж, менежерт шилжиж, гэрээ болсныг шалгана.' }] : []),
                 { id: 'slides', title: 'Нэмэлт слайд', body: salesSlides,
@@ -396,16 +410,17 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
                     <ol className="flex flex-wrap gap-2">
                         {track.steps.map((item, index) => {
                             const current = index === stepIndex;
-                            const checked = !current && (item.done || visited.includes(`${track.id}:${item.id}`));
+                            // Анхаарах зүйлтэй (файл хуучин, ачаалж чадаагүй) алхмыг зөвхөн үзсэнээр нь «бөглөсөн» гэж тэмдэглэхгүй.
+                            const checked = !current && (item.done || (!item.warn && visited.includes(`${track.id}:${item.id}`)));
                             return <li key={item.id} className="min-w-[150px] flex-1">
                                 <button type="button" aria-current={current ? 'step' : undefined} onClick={() => goToStep(item.id)}
-                                    className={cn('flex min-h-11 w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors focus-ring', current ? 'border-brand bg-surface text-foreground' : 'border-border text-fg-2 hover:bg-surface-2')}>
+                                    className={cn('flex h-full min-h-11 w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors focus-ring', current ? 'border-brand bg-surface text-foreground' : 'border-border text-fg-2 hover:bg-surface-2')}>
                                     <span className={cn('flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums', current ? 'bg-brand text-brand-fg' : checked ? 'bg-surface-3 text-foreground' : 'bg-surface-2 text-muted-foreground')}>
                                         {checked ? <Check className="size-3.5" aria-hidden /> : index + 1}
                                     </span>
-                                    <span className="min-w-0 truncate font-medium">{item.title}</span>
+                                    <span className="min-w-0 text-[13px] font-medium leading-snug">{item.title}</span>
                                     {item.warn && <span className="ml-auto size-2 shrink-0 rounded-full bg-status-pending" aria-hidden />}
-                                    {(checked || item.warn) && <span className="sr-only">{[checked && 'бөглөсөн', item.warn && 'мэдээлэл ачаалж чадсангүй'].filter(Boolean).join(', ')}</span>}
+                                    {(checked || item.warn) && <span className="sr-only">{[checked && 'бөглөсөн', item.warn && (item.warnText ?? 'мэдээлэл ачаалж чадсангүй')].filter(Boolean).join(', ')}</span>}
                                 </button>
                             </li>;
                         })}
