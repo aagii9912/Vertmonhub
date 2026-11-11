@@ -48,13 +48,35 @@ describe('DailyReportDocument', () => {
         expect(screen.queryByRole('group', { name: 'Товлосон, үр дүн бүртгээгүй' })).toBeNull();
     });
 
+    it('always shows «Нэмэлт тэмдэглэл», with «—» on a day without a note (screen and image)', () => {
+        for (const forImage of [false, true]) {
+            render(<DailyReportDocument report={buildDailyReport(input())} forImage={forImage} />);
+            const notes = screen.getByRole('region', { name: 'Нэмэлт тэмдэглэл' });
+            expect(within(notes).getByRole('heading', { name: 'Нэмэлт тэмдэглэл' })).toBeTruthy();
+            expect(within(notes).getByText('—')).toBeTruthy();
+            cleanup();
+        }
+        render(<DailyReportDocument report={buildDailyReport(input({ notes: { general: 'B2 блокын загварыг тохиролцлоо.' } }))} forImage />);
+        const notes = screen.getByRole('region', { name: 'Нэмэлт тэмдэглэл' });
+        expect(within(notes).getByText('B2 блокын загварыг тохиролцлоо.')).toBeTruthy();
+        expect(within(notes).queryByText('—')).toBeNull();
+    });
+
+    it('keeps the image header on one line per item so wrapped text cannot overlap', () => {
+        const { container, unmount } = render(<DailyReportDocument report={buildDailyReport(input())} forImage />);
+        expect(container.querySelector('header')!.className).toContain('whitespace-nowrap');
+        unmount();
+        const screenVersion = render(<DailyReportDocument report={buildDailyReport(input())} />);
+        expect(screenVersion.container.querySelector('header')!.className).not.toContain('whitespace-nowrap');
+    });
+
     it('shows no legend when every count was entered by the manager’s own account', () => {
         const report = buildDailyReport(input({ counts: [{ manager_name: KHON, metric: 'call.l1.total', value: 2, updated_by: 'khon-account', updated_by_name: 'М. Хонгорзул' }] }));
         render(<DailyReportDocument report={report} />);
         expect(screen.queryByText(/өөр хүн оруулсан тоо/)).toBeNull();
     });
 
-    it('labels inputs with the manager’s formal name and highlights the own column while editing', () => {
+    it('labels inputs with the manager’s formal name and highlights the own row while editing', () => {
         const onCell = vi.fn();
         render(<DailyReportDocument report={buildDailyReport(input())} editing={{
             editable: new Set([CHAN, KHON]), own: KHON, draft: {}, onCell, notes: null, onNotes: vi.fn(),
@@ -63,9 +85,68 @@ describe('DailyReportDocument', () => {
         expect(chan.value).toBe('4');
         fireEvent.change(chan, { target: { value: '6' } });
         expect(onCell).toHaveBeenCalledWith(CHAN, 'call.l1.total', '6');
-        const region = screen.getByRole('region', { name: 'Төслийн утас' });
-        expect(within(region).getByRole('columnheader', { name: 'Хон' }).getAttribute('title')).toBe('М. Хонгорзул — таны багана');
-        expect(within(region).getByRole('columnheader', { name: 'Чан' }).getAttribute('title')).toBe('Р. Чанцалдулам');
+        expect(screen.getByRole('spinbutton', { name: 'Чат · Хувь чат · М. Хонгорзул' })).toBeTruthy();
+        const table = screen.getByRole('region', { name: 'Менежерийн үзүүлэлт' });
+        expect(within(table).getByRole('rowheader', { name: 'М. Хонгорзул' }).getAttribute('title')).toBe('М. Хонгорзул — таны мөр');
+        expect(within(table).getByRole('rowheader', { name: 'Р. Чанцалдулам' }).getAttribute('title')).toBeNull();
+        // Уулзалт системээс — засагдахгүй.
+        expect(within(table).getAllByRole('spinbutton')).toHaveLength(8);
+    });
+
+    it('lays the report out as one table: managers in rows, lines/chat/meetings in columns, a total row below and no written summary', () => {
+        const team = {
+            ...config,
+            lines: [{ key: 'l1', label: '7786', categories: [] }, { key: 'l2', label: '8888/9008', categories: ['new' as const, 'repeat' as const] }],
+            chats: [{ key: 'chat', label: 'Менежерийн чат' }],
+        };
+        const report = buildDailyReport(input({
+            config: team,
+            counts: [
+                { manager_name: CHAN, metric: 'call.l1.total', value: 4 },
+                { manager_name: KHON, metric: 'call.l1.total', value: 0 },
+                { manager_name: CHAN, metric: 'call.l2.new', value: 3 },
+                { manager_name: KHON, metric: 'chat.chat', value: 5 },
+            ],
+            meetings: [
+                { id: 'm1', manager: CHAN, type: 'new_customer', customer: 'Бат', property: null, notes: null, feedback: null, scheduled_at: '2026-10-19T02:00:00.000Z' },
+                { id: 'm2', manager: CHAN, type: 'existing_buyer', customer: 'Сараа', property: null, notes: null, feedback: null, scheduled_at: '2026-10-19T04:00:00.000Z' },
+                { id: 'm3', manager: KHON, type: 'new_customer', customer: 'Дулмаа', property: null, notes: null, feedback: null, scheduled_at: '2026-10-19T05:00:00.000Z' },
+            ],
+        }));
+        const { container } = render(<DailyReportDocument report={report} />);
+        const table = within(screen.getByRole('region', { name: 'Менежерийн үзүүлэлт' }));
+        const [top, sub] = container.querySelectorAll('thead tr');
+        expect([...top.children].map(cell => cell.textContent)).toEqual(['Дугаар', 'Менежер', '7786', '8888/9008', 'Чат', 'Шинэ уулзалт', 'Давтан', 'Захиалагч', 'Нийт уулзалт']);
+        expect(top.children[3].getAttribute('colspan')).toBe('2');
+        expect(top.children[4].getAttribute('title')).toBe('Менежерийн чат');
+        expect([...sub.children].map(cell => cell.textContent)).toEqual(['Шинэ', 'Захиалагч, давтан']);
+        const cells = (name: string) => [...table.getByRole('rowheader', { name }).closest('tr')!.children].map(cell => cell.textContent);
+        expect(cells('Р. Чанцалдулам')).toEqual(['1', 'Р. Чанцалдулам', '4', '3', '', '', '1', '', '1', '2']);
+        expect(cells('М. Хонгорзул')).toEqual(['2', 'М. Хонгорзул', '0', '', '', '5', '1', '', '', '1']);
+        // Нийт: оруулсан тооны нийлбэр; хэн ч оруулаагүй багана хоосон (0 биш), уулзалт системээс тул тоо.
+        expect(cells('Нийт')).toEqual(['Нийт', '4', '3', '', '5', '2', '0', '1', '3']);
+        expect(screen.queryByRole('region', { name: 'Товч дүгнэлт' })).toBeNull();
+        expect(screen.queryByText(/дуудлага ирсэн/)).toBeNull();
+        expect(screen.queryByRole('textbox', { name: /тайлбар/ })).toBeNull();
+    });
+
+    it('keeps the total row in step with the numbers being entered', () => {
+        render(<DailyReportDocument report={buildDailyReport(input())} editing={{
+            editable: new Set([CHAN, KHON]), own: null, draft: { [`${CHAN}\u0000call.l1.total`]: '7', [`${KHON}\u0000chat.page`]: '2' }, onCell: vi.fn(), notes: null, onNotes: vi.fn(),
+        }} />);
+        const total = [...within(screen.getByRole('region', { name: 'Менежерийн үзүүлэлт' })).getByRole('rowheader', { name: 'Нийт' }).closest('tr')!.children].map(cell => cell.textContent);
+        // Төслийн утас 7 + 2, Менежерийн дуудлага хоосон, Пэйж FB 2, Хувь чат хоосон, уулзалт 1 шинэ.
+        expect(total).toEqual(['Нийт', '9', '', '2', '', '1', '0', '0', '1']);
+    });
+
+    it('adds an unassigned row only when a held meeting has no manager', () => {
+        const meetings = [{ id: 'm9', manager: null, type: 'repeat_customer', customer: 'Нэргүй', property: null, notes: null, feedback: null, scheduled_at: '2026-10-19T02:00:00.000Z' }];
+        render(<DailyReportDocument report={buildDailyReport(input({ meetings }))} />);
+        const row = within(screen.getByRole('region', { name: 'Менежерийн үзүүлэлт' })).getByRole('rowheader', { name: 'Оноогдоогүй' }).closest('tr')!;
+        expect([...row.children].map(cell => cell.textContent)).toEqual(['', 'Оноогдоогүй', '', '', '', '', '', '1', '', '1']);
+        cleanup();
+        render(<DailyReportDocument report={buildDailyReport(input({ leads: [{ manager: null, source: 'website' }] }))} />);
+        expect(within(screen.getByRole('region', { name: 'Менежерийн үзүүлэлт' })).queryByRole('rowheader', { name: 'Оноогдоогүй' })).toBeNull();
     });
 
     it('lists scheduled meetings with «Болсон» / «Ирээгүй» and keeps upcoming ones locked', () => {
@@ -108,7 +189,7 @@ describe('DailyReportDocument', () => {
         expect(button().disabled).toBe(false);
     });
 
-    it('shows the day’s new leads by source and manager, read-only, in the summary as well', () => {
+    it('shows the day’s new leads by source and manager, read-only', () => {
         const report = buildDailyReport(input({ leads: [
             { manager: CHAN, source: 'facebook_ads' }, { manager: KHON, source: 'facebook_ads' }, { manager: null, source: 'website' },
         ] }));
@@ -119,16 +200,14 @@ describe('DailyReportDocument', () => {
         const facebook = within(region).getByRole('rowheader', { name: 'Facebook Ads' }).closest('tr')!;
         expect([...facebook.querySelectorAll('td')].map(cell => cell.textContent)).toEqual(['1', '1', '', '2']);
         expect(within(region).getByRole('rowheader', { name: 'Вэбсайт' })).toBeTruthy();
-        // Хариуцагчгүй багана зөвхөн тоотой хүснэгтэд — дуудлагын хүснэгтэд хоосон «—» гаргахгүй.
-        expect(within(screen.getByRole('region', { name: 'Төслийн утас' })).queryByRole('columnheader', { name: '—' })).toBeNull();
-        const summary = screen.getByRole('region', { name: 'Товч дүгнэлт' });
-        expect(within(summary).getByText('Шинэ лид').nextElementSibling?.textContent).toBe('Нийт 3 лид бүртгэгдсэн.');
+        // Хариуцагчгүй лид менежерийн хүснэгтэд «Оноогдоогүй» мөр нэмэхгүй (дуудлага, чат түүнд оногдохгүй).
+        expect(within(screen.getByRole('region', { name: 'Менежерийн үзүүлэлт' })).queryByRole('rowheader', { name: 'Оноогдоогүй' })).toBeNull();
     });
 
-    it('shows no new-lead table or summary row while the section is switched off', () => {
+    it('shows no new-lead table while the section is switched off', () => {
         render(<DailyReportDocument report={buildDailyReport(input({ leads: null }))} />);
         expect(screen.queryByRole('region', { name: 'Шинэ лид' })).toBeNull();
-        expect(within(screen.getByRole('region', { name: 'Товч дүгнэлт' })).queryByText('Шинэ лид')).toBeNull();
+        expect(screen.queryByRole('region', { name: 'Нэмэлт үзүүлэлт' })).toBeNull();
     });
 
     it('compares phone leads with the calls entered on screen only, and updates while counts are being entered', () => {

@@ -224,8 +224,9 @@ function DailyReportView({ initial }: { initial: { date: string; to: string | nu
                 toast.error(`Тоо буруу байна: ${formalManagerName(manager)} — ${text === '?' ? 'зөвхөн тоо оруулна' : text}`);
                 return;
             }
-            // Засаж эхлэхдээ харсан утга — энэ хооронд өөр хүн өөрчилсөн бол сервер 409 буцаана.
-            const seen = key in cellBase ? cellBase[key] : row.values[manager] ?? null;
+            // Засаж эхлэхдээ харсан утга — энэ хооронд өөр хүн өөрчилсөн бол сервер 409 буцаана. Хуучин загвараас
+            // нийлүүлсэн нүд DB-д хоосон.
+            const seen = key in cellBase ? cellBase[key] : row.derived?.[manager] ? null : row.values[manager] ?? null;
             if (seen !== value) cells.push({ manager, metric, value, expected: seen });
         }
         if (dropped.length) {
@@ -471,7 +472,8 @@ function DailyReportView({ initial }: { initial: { date: string; to: string | nu
                             // Засаж эхэлмэгц горимыг тогтооно; харсан утгыг `expected`-д хадгална.
                             setEditOverride(current => current ?? true);
                             if (!(key in cellBase)) {
-                                const seen = [...report.lines.flatMap(line => line.rows), ...report.chats.rows].find(row => row.key === metric)?.values[manager] ?? null;
+                                const row = [...report.lines.flatMap(line => line.rows), ...report.chats.rows].find(item => item.key === metric);
+                                const seen = row?.derived?.[manager] ? null : row?.values[manager] ?? null;
                                 setCellBase(base => (key in base ? base : { ...base, [key]: seen }));
                             }
                             setDraft(current => ({ ...current, [key]: value }));

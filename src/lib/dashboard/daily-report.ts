@@ -215,6 +215,8 @@ export function readDailyReportNotes(raw: unknown): DailyReportNotes {
 }
 
 export interface DailyCountRow {
+    /** Тухайн нүдний өдөр (`foldLegacyCounts` өдөр бүрээр нэгтгэнэ; нэг өдрийн уншлагад заавал биш). */
+    report_date?: string;
     manager_name: string;
     metric: string;
     value: number;
@@ -223,6 +225,8 @@ export interface DailyCountRow {
     /** Оруулсан хүний нэр (бүртгэлийн албан нэр, эсвэл хуучин мөрөнд профайлын нэр). */
     updated_by_name?: string | null;
     updated_at?: string | null;
+    /** Хуучин загварын нүднүүдээс нийлүүлсэн (`foldLegacyCounts`): DB-д энэ үзүүлэлт хоосон. */
+    derived?: boolean;
 }
 /** Нүдийг хэн, хэзээ оруулсан; `other` = тухайн баганын менежерийн өөрийн акаунт биш. */
 export interface DailyCellAuthor { by: string | null; at: string | null; other: boolean }
@@ -252,6 +256,8 @@ export interface DailyGridRow {
     values: Record<string, number | null>;
     /** Дуудлага, чатын мөрөнд: менежер → оруулсан хүн (оруулсан нүдэнд л). Уулзалтад байхгүй. */
     authors?: Record<string, DailyCellAuthor>;
+    /** Хуучин загварын нүднүүдээс нийлүүлсэн нүд (менежер → true): DB-д хоосон тул засахад `expected` нь null. */
+    derived?: Record<string, true>;
     total: number;
 }
 export interface DailyGridSection { rows: DailyGridRow[]; total: number; byManager: Record<string, number> }
@@ -328,6 +334,45 @@ export interface BuildDailyReportInput {
     only: string | null;
 }
 
+/**
+ * Загвар өөрчлөгдөхөөс өмнө оруулсан тоог одоогийн загварын нүдэнд өдөр × менежер бүрээр нэгтгэнэ (эзэмшигч 2026-11-03:
+ * хуучин тоо алга болохгүй): ангилалгүй болсон шугам — тухайн өдөр `call.<шугам>.total` оруулаагүй бол хуучин
+ * ангиллуудын нийлбэр; ганц сувагтай чат — тухайн өдөр сувгаа оруулаагүй бол загвараас хасагдсан сувгуудын нийлбэр.
+ * Нийлүүлсэн мөр `derived` (сүүлд оруулсан хүнийх); өдөр бүр өөрийн нүд нь давамгайлна. DB-ийн мөрийг өөрчлөхгүй.
+ */
+export function foldLegacyCounts<T extends DailyCountRow>(rows: readonly T[], config: DailyReportConfig): T[] {
+    const totalLines = new Set(config.lines.filter(line => !line.categories.length).map(line => line.key));
+    const chats = new Set(config.chats.map(chat => chatMetric(chat.key)));
+    const onlyChat = config.chats.length === 1 ? chatMetric(config.chats[0].key) : null;
+    const targetOf = (metric: string): string | null => {
+        const call = /^call\.([a-z0-9]{1,16})\.(new|repeat|other)$/.exec(metric);
+        if (call) return totalLines.has(call[1]) ? callMetric(call[1], 'total') : null;
+        return onlyChat && /^chat\.[a-z0-9]{1,16}$/.test(metric) && !chats.has(metric) ? onlyChat : null;
+    };
+    const cell = (row: DailyCountRow, metric: string) => `${row.report_date ?? ''}\u0000${row.manager_name}\u0000${metric}`;
+    const entered = new Set(rows.map(row => cell(row, row.metric)));
+    const folded = new Map<string, T>();
+    const out: T[] = [];
+    for (const row of rows) {
+        const target = targetOf(row.metric);
+        if (!target) { out.push(row); continue; }
+        const key = cell(row, target);
+        if (entered.has(key)) continue;
+        const current = folded.get(key);
+        if (!current) {
+            const next = { ...row, metric: target, derived: true };
+            folded.set(key, next);
+            out.push(next);
+            continue;
+        }
+        current.value += row.value;
+        if ((row.updated_at ?? '') > (current.updated_at ?? '')) {
+            Object.assign(current, { updated_by: row.updated_by, updated_by_name: row.updated_by_name, updated_at: row.updated_at });
+        }
+    }
+    return out;
+}
+
 /** Мужийн өдөр бүрийн тоог менежер × үзүүлэлтээр нэгтгэнэ. */
 export function sumDailyCounts(rows: readonly DailyCountRow[]): DailyCountRow[] {
     const sums = new Map<string, DailyCountRow>();
@@ -368,7 +413,7 @@ export function meetingItemText(meeting: Pick<DailyMeetingRow, 'customer' | 'pro
     return unique.length ? `${clean(meeting.customer, 120)} — ${unique.join('; ')}` : clean(meeting.customer, 120);
 }
 
-type GridInput = { key: string; label: string; values: Record<string, number | null>; authors?: Record<string, DailyCellAuthor> };
+type GridInput = { key: string; label: string; values: Record<string, number | null>; authors?: Record<string, DailyCellAuthor>; derived?: Record<string, true> };
 function gridSection(rows: GridInput[], managers: readonly DailyReportManager[]): DailyGridSection {
     const byManager: Record<string, number> = Object.fromEntries(managers.map(manager => [manager.name, 0]));
     const full = rows.map(row => {
@@ -416,8 +461,12 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
         }
         return authors;
     };
+    const derivedFor = (metric: string) => {
+        const derived = Object.fromEntries(managers.filter(manager => cell.get(`${manager.name}\u0000${metric}`)?.derived).map(manager => [manager.name, true as const]));
+        return Object.keys(derived).length ? { derived } : {};
+    };
     // Мужид нүд олон өдрийн нийлбэр тул нэг оруулсан хүнгүй.
-    const countRow = (key: string, label: string): GridInput => ({ key, label, values: valuesFor(key), ...(ranged ? {} : { authors: authorsFor(key) }) });
+    const countRow = (key: string, label: string): GridInput => ({ key, label, values: valuesFor(key), ...(ranged ? {} : { authors: authorsFor(key), ...derivedFor(key) }) });
 
     const lines: DailyLineSection[] = config.lines.map(line => {
         const rows = line.categories.length
@@ -565,9 +614,10 @@ const detail = (values: Record<string, number | null>, managers: readonly DailyR
     const text = perManager(values, managers);
     return text ? ` (${text})` : '';
 };
-const sentence = (text: string) => (!text || /[.!?…]$/.test(text) ? text : `${text}.`);
-
-/** Мессенжерийн бүлэгт хуулах текст — цаасан тайлангийн дарааллаар; 0 тоотой задаргааны мөр орохгүй. */
+/**
+ * Мессенжерийн бүлэгт хуулах текст — цаасан тайлангийн дарааллаар; 0 тоотой задаргааны мөр орохгүй. Шугам, чатын
+ * тайлбар орохгүй: тайлан хүснэгт хэлбэртэй болж үгээр бичсэн хэсгийг хассан (эзэмшигч 2026-11-03).
+ */
 export function formatDailyReportText(report: DailyReport): string {
     const out: string[] = [];
     const { managers } = report;
@@ -576,11 +626,11 @@ export function formatDailyReportText(report: DailyReport): string {
     if (named.length) out.push(`Менежер: ${named.map(manager => `${manager.title}${manager.phone ? ` (${formatStaffPhone(manager.phone)})` : ''}`).join(', ')}`);
 
     for (const line of report.lines) {
-        out.push('', [`${line.label}: Нийт ${line.total} дуудлага ирсэн${detail(line.byManager, managers)}.`, sentence(line.note)].filter(Boolean).join(' '));
+        out.push('', `${line.label}: Нийт ${line.total} дуудлага ирсэн${detail(line.byManager, managers)}.`);
         if (line.categories.length) for (const row of line.rows) if (row.total > 0) out.push(`  ${row.label}: ${row.total}${detail(row.values, managers)}`);
     }
     if (report.chats.rows.length) {
-        out.push('', [`Менежерийн чат: Нийт ${report.chats.total} чат харилцаа үүсгэсэн.`, sentence(report.chats.note)].filter(Boolean).join(' '));
+        out.push('', `Менежерийн чат: Нийт ${report.chats.total} чат харилцаа үүсгэсэн.`);
         for (const row of report.chats.rows) if (row.total > 0) out.push(`  ${row.label}: ${row.total}${detail(row.values, managers)}`);
     }
     if (report.leads) {

@@ -81,10 +81,11 @@ function AuthorDot({ className }: { className?: string }) {
 }
 
 /**
- * «Өдрийн тайлан»-гийн баримт (дэлгэц, хэвлэх/PDF ба зураг): толгой, шугам/уулзалт/чат/шинэ лидийн менежерийн хүснэгт,
- * товч дүгнэлт, уулзалтын жагсаалт, «Тайлан хийж гүйцэтгэсэн». `editing` өгвөл тооны нүд, тэмдэглэл засагдана;
- * `forImage` — PNG/JPEG: дэлгэцийн өргөн загвартай адил хүснэгтүүд 2 баганаар, холбоосгүй. Хэн оруулсны
- * тэмдэг, уулзалтын үйлдлүүд (`meetings`) зөвхөн дэлгэцэд — хэвлэх, зураг, хуулсан текстэд орохгүй.
+ * «Өдрийн тайлан»-гийн баримт (дэлгэц, хэвлэх/PDF ба зураг): толгой, менежерийн нэг хүснэгт (мөр = менежер, багана =
+ * шугам/ангилал, чат, уулзалтын төрөл, доор нь «Нийт»), уулзалтын жагсаалт, «Нэмэлт тэмдэглэл» (хоосон ч үргэлж),
+ * «Тайлан хийж гүйцэтгэсэн». `editing` өгвөл
+ * дуудлага, чатын нүд, нэмэлт тэмдэглэл засагдана; `forImage` — PNG/JPEG: дэлгэцийн өргөн загвартай адил, холбоосгүй.
+ * Хэн оруулсны тэмдэг, уулзалтын үйлдлүүд (`meetings`) зөвхөн дэлгэцэд — хэвлэх, зураг, хуулсан текстэд орохгүй.
  * Мужийн тайланд (`report.to > report.date`) огноо нь хугацаа, уулзалтын мөр өдөртэйгээ гарна.
  */
 export function DailyReportDocument({ report, editing, forImage = false, meetings, phoneCheck = PHONE_LEAD_CHECK_ENABLED }: {
@@ -107,7 +108,9 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
     const phoneChecks = forImage ? [] : draftPhoneLeadChecks(report, editing?.draft, phoneCheck);
     return (
         <div className="space-y-6">
-            <header className="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-border bg-surface-2 px-5 py-4">
+            {/* Зурагт (modern-screenshot) хэмжсэн өргөн/өндөр нь px-ээр тогтдог тул хамгийн урт мөр нь пикселийн зөрүүгээр
+                доош шилжиж дараагийн мөртэй давхцдаг («БАГ» огноон дээр, утасны дугаар) — зурагт толгойн текст тасрахгүй. */}
+            <header className={cn('flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-border bg-surface-2 px-5 py-4', forImage && 'whitespace-nowrap')}>
                 <div>
                     <p className="text-xs text-muted-foreground">Өдрийн тайлан</p>
                     <h2 className="mt-1 text-xl font-semibold uppercase tracking-[0.06em]">{report.title}</h2>
@@ -115,45 +118,33 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
                 </div>
                 {people.length > 0 && (
                     <ul className="space-y-0.5 text-right text-[13px] text-fg-2">
-                        {people.map(manager => <li key={manager.name}>Менежер — {manager.title}{manager.phone && <span className="num ml-2">{formatStaffPhone(manager.phone)}</span>}</li>)}
+                        {people.map(manager => <li key={manager.name}>Менежер — {manager.title}{manager.phone && <span className="num ml-2 whitespace-nowrap">{formatStaffPhone(manager.phone)}</span>}</li>)}
                     </ul>
                 )}
             </header>
 
             <div className="space-y-2">
-                <section className={cn('grid items-start gap-4', forImage ? 'grid-cols-2' : 'lg:grid-cols-2 print:grid-cols-2 print:gap-3')} aria-label="Менежерийн тоон үзүүлэлт">
-                    {report.lines.map(line => (
-                        <CountTable key={line.key} title={line.label} caption="Дуудлага" section={line} managers={managers} editing={editing} showPhones={line.key === 'personal'} showAuthors={showAuthors} reportDate={report.date} />
-                    ))}
-                    {phoneChecks.length > 0 && <PhoneLeadCheckTable checks={phoneChecks} managers={managers} reportDate={report.date} />}
-                    <CountTable title="Уулзалт" caption="Системээс" section={report.meetings} managers={managers} showAuthors={false} reportDate={report.date}
-                        footer={forImage ? null : <Link href="/dashboard/viewings" className="inline-flex items-center gap-1 text-brand-strong hover:underline print:hidden">Уулзалт товлох<ArrowUpRight className="size-3.5" /></Link>} />
-                    {report.chats.rows.length > 0 && <CountTable title="Чат" caption="Менежерийн чат" section={report.chats} managers={managers} editing={editing} showAuthors={showAuthors} reportDate={report.date} />}
-                    {report.leads && <CountTable title="Шинэ лид" caption="Системээс · эх үүсвэрээр" section={report.leads} managers={managers} showAuthors={false} reportDate={report.date} />}
+                <section aria-label="Менежерийн тоон үзүүлэлт">
+                    <TeamTable report={report} editing={editing} showAuthors={showAuthors}
+                        footer={forImage ? null : (
+                            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border px-4 py-2 text-xs text-muted-foreground print:hidden">
+                                <span>Дуудлага, чат — менежерийн оруулсан тоо · уулзалт — «Уулзалт» хуудаснаас автоматаар</span>
+                                <Link href="/dashboard/viewings" className="inline-flex items-center gap-1 text-brand-strong hover:underline">Уулзалт товлох<ArrowUpRight className="size-3.5" /></Link>
+                            </div>
+                        )} />
                 </section>
+                {(phoneChecks.length > 0 || report.leads) && (
+                    <section className={cn('grid items-start gap-4', forImage ? 'grid-cols-2' : 'lg:grid-cols-2 print:grid-cols-2 print:gap-3')} aria-label="Нэмэлт үзүүлэлт">
+                        {phoneChecks.length > 0 && <PhoneLeadCheckTable checks={phoneChecks} managers={managers} />}
+                        {report.leads && <CountTable title="Шинэ лид" caption="Системээс · эх үүсвэрээр" section={report.leads} managers={managers} />}
+                    </section>
+                )}
                 {marked && (
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground print:hidden">
                         <AuthorDot />— өөр хүн оруулсан тоо (дээр нь очиж хэн оруулсныг харна)
                     </p>
                 )}
             </div>
-
-            <section className="space-y-3 rounded-2xl border border-border p-5" aria-label="Товч дүгнэлт">
-                <dl className="divide-y divide-border">
-                    {report.lines.map(line => (
-                        <SummaryRow key={line.key} label={line.label} text={<>Нийт <SummaryTotal value={line.total} /> дуудлага ирсэн.</>} note={line.note}
-                            edit={editing?.notes ? {
-                                value: editing.notes.lines?.[line.key] ?? '',
-                                onChange: value => editing.onNotes({ ...editing.notes, lines: { ...editing.notes!.lines, [line.key]: value } }),
-                            } : null} />
-                    ))}
-                    {report.chats.rows.length > 0 && (
-                        <SummaryRow label="Менежерийн чат" text={<>Нийт <SummaryTotal value={report.chats.total} /> чат харилцаа үүсгэсэн.</>} note={report.chats.note}
-                            edit={editing?.notes ? { value: editing.notes.chats ?? '', onChange: value => editing.onNotes({ ...editing.notes, chats: value }) } : null} />
-                    )}
-                    {report.leads && <SummaryRow label="Шинэ лид" text={<>Нийт <SummaryTotal value={report.leads.total} /> лид бүртгэгдсэн.</>} note="" edit={null} />}
-                </dl>
-            </section>
 
             <section className="space-y-4" aria-label="Уулзалт">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -186,15 +177,16 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
                 )}
             </section>
 
-            {(editing?.notes || report.generalNote) && (
-                <section className="space-y-2" aria-label="Нэмэлт тэмдэглэл">
-                    <h3 className="text-[15px] font-semibold">Нэмэлт тэмдэглэл</h3>
-                    {editing?.notes ? (
-                        <Textarea aria-label="Нэмэлт тэмдэглэл" maxLength={DAILY_LIMITS.generalNote} value={editing.notes.general ?? ''}
-                            placeholder="Өдрийн онцлох мэдээ, анхаарах асуудал…" onChange={event => editing.onNotes({ ...editing.notes, general: event.target.value })} />
-                    ) : <p className="whitespace-pre-line text-sm leading-relaxed">{report.generalNote}</p>}
-                </section>
-            )}
+            {/* Тэмдэглэлгүй өдөр ч хэсэг үргэлж гарна (дэлгэц, хэвлэх, зураг) — хоосон бол «—». */}
+            <section className="space-y-2" aria-label="Нэмэлт тэмдэглэл">
+                <h3 className="text-[15px] font-semibold">Нэмэлт тэмдэглэл</h3>
+                {editing?.notes ? (
+                    <Textarea aria-label="Нэмэлт тэмдэглэл" maxLength={DAILY_LIMITS.generalNote} value={editing.notes.general ?? ''}
+                        placeholder="Өдрийн онцлох мэдээ, анхаарах асуудал…" onChange={event => editing.onNotes({ ...editing.notes, general: event.target.value })} />
+                ) : report.generalNote
+                    ? <p className="whitespace-pre-line text-sm leading-relaxed">{report.generalNote}</p>
+                    : <p className="pl-1 text-sm text-muted-foreground">—</p>}
+            </section>
 
             {report.completedDays !== null && (
                 <footer className="border-t border-border pt-4 text-right text-sm">
@@ -269,32 +261,138 @@ function PendingMeetings({ items, actions, titleOf }: {
     );
 }
 
-/** Товч дүгнэлтийн нийт тоо — өгүүлбэр дундаас шууд харагдахаар тод. */
-function SummaryTotal({ value }: { value: number }) {
-    return <strong className="num text-[15px] font-bold">{value}</strong>;
+/** Хүснэгтийн баганын гарчиг: «Шинэ уулзалт»; бусад төрөл товч нэрээрээ (Давтан, Захиалагч, Ангилаагүй). */
+const MEETING_COLUMN_LABEL: Partial<Record<string, string>> = { new_customer: 'Шинэ уулзалт' };
+
+interface TeamColumn {
+    /** Үзүүлэлт (`call.l1.new`, `chat.page`) эсвэл уулзалтын төрөл. */
+    key: string;
+    /** Нүдний бүтэн нэр (оролтын шошго): «Төслийн утас · Нийт», «Чат · Хувь чат». */
+    name: string;
+    row: DailyGridRow;
+    /** Дуудлага, чат — менежерийн оруулсан тоо; уулзалт — системээс. */
+    entered: boolean;
+}
+/** Толгойн нүд: ангилалтай шугам, олон сувагтай чат нь доороо дэд баганатай (`split`). */
+interface TeamGroup { key: string; label: string; hint?: string; split: boolean; columns: TeamColumn[] }
+
+function teamGroups(report: DailyReport): TeamGroup[] {
+    const entered = (group: string, row: DailyGridRow): TeamColumn => ({ key: row.key, name: `${group} · ${row.label}`, row, entered: true });
+    const [onlyChat] = report.chats.rows;
+    return [
+        ...report.lines.map(line => ({ key: `line.${line.key}`, label: line.label, split: line.categories.length > 0, columns: line.rows.map(row => entered(line.label, row)) })),
+        ...(report.chats.rows.length ? [{
+            key: 'chats', label: 'Чат', hint: report.chats.rows.length === 1 ? onlyChat.label : undefined,
+            split: report.chats.rows.length > 1, columns: report.chats.rows.map(row => entered('Чат', row)),
+        }] : []),
+        ...report.meetings.rows.map(row => {
+            const label = MEETING_COLUMN_LABEL[row.key] ?? row.label;
+            return { key: `meeting.${row.key}`, label, split: false, columns: [{ key: row.key, name: label, row, entered: false }] };
+        }),
+    ];
 }
 
-function SummaryRow({ label, text, note, edit }: {
-    label: string; text: ReactNode; note: string;
-    edit: { value: string; onChange: (value: string) => void } | null;
+/**
+ * Менежерийн хүснэгт (багийн Excel-ийн загвар): мөр = менежер, багана = шугам (ангилалтай бол дэд баганатай), чат,
+ * уулзалтын төрөл ба «Нийт уулзалт»; доод «Нийт» мөр баганын нийлбэр. Засах үед нийлбэр ноорогтой хамт шинэчлэгдэнэ.
+ */
+function TeamTable({ report, editing, showAuthors, footer }: {
+    report: DailyReport;
+    editing?: DailyReportEditing | null;
+    /** Өөр хүн оруулсан нүдний тэмдэг (зураг дээр false; хэвлэхэд CSS-ээр нуугдана). */
+    showAuthors: boolean;
+    footer: ReactNode;
 }) {
+    const groups = teamGroups(report);
+    const columns = groups.flatMap(group => group.columns);
+    const twoRows = groups.some(group => group.split);
+    const headerSpan = twoRows ? 2 : undefined;
+    // «Оноогдоогүй» мөр зөвхөн хариуцагчгүй уулзалттай үед; дуудлага, чат түүнд хэзээ ч оногдохгүй.
+    const managers = report.managers.filter(manager => manager.name !== UNASSIGNED || (report.meetings.byManager[UNASSIGNED] ?? 0) > 0);
+    const valueOf = (manager: string, column: TeamColumn): number | null => {
+        const draft = column.entered ? draftCount(editing?.draft[cellKey(manager, column.key)]) : undefined;
+        return draft !== undefined ? draft : column.row.values[manager] ?? null;
+    };
+    // Оруулсан тооны нийт: нэг ч менежер оруулаагүй бол хоосон (тодорхойгүй, 0 биш); уулзалт системээс тул үргэлж тоо.
+    const columnTotal = (column: TeamColumn): number | null => {
+        if (!column.entered) return column.row.total;
+        const values = managers.map(manager => valueOf(manager.name, column)).filter((value): value is number => value !== null);
+        return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+    };
+    const head = 'border border-border px-2 py-2 text-center font-medium';
     return (
-        <div className="grid gap-1 py-2.5 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-4">
-            <dt className="text-sm font-semibold">{label}</dt>
-            <dd className="text-sm leading-relaxed">
-                {text}{!edit && note ? ` ${note}` : ''}
-                {edit && (
-                    <input aria-label={`${label} — тайлбар`} maxLength={DAILY_LIMITS.note} value={edit.value} onChange={event => edit.onChange(event.target.value)}
-                        placeholder="Тайлбар (жишээ: Төслийн ерөнхий мэдээлэл авсан)"
-                        className="mt-1.5 h-9 w-full rounded-lg border border-control bg-surface px-3 text-sm text-foreground placeholder:text-muted-foreground" />
-                )}
-            </dd>
+        <div className="min-w-0 rounded-2xl border border-border">
+            {/* Толгой, доод мөрийн өнгө картын бөөрөнхий булангаас гарахгүй. */}
+            <div className={cn('overflow-x-auto rounded-t-[15px]', !footer && 'rounded-b-[15px]')} role="region" aria-label="Менежерийн үзүүлэлт" tabIndex={0}>
+                <table className="w-full border-collapse border-hidden text-[13px]">
+                    <thead className="bg-surface-2 text-xs text-muted-foreground">
+                        <tr>
+                            <th scope="col" rowSpan={headerSpan} className={cn(head, 'w-10')}><span className="sr-only">Дугаар</span></th>
+                            <th scope="col" rowSpan={headerSpan} className={cn(head, 'px-3 text-left')}>Менежер</th>
+                            {groups.map(group => (group.split
+                                ? <th key={group.key} scope="colgroup" colSpan={group.columns.length} className={head}>{group.label}</th>
+                                : <th key={group.key} scope="col" rowSpan={headerSpan} title={group.hint} className={head}>{group.label}</th>))}
+                            <th scope="col" rowSpan={headerSpan} className={cn(head, 'bg-surface-3 font-bold text-foreground')}>Нийт уулзалт</th>
+                        </tr>
+                        {twoRows && (
+                            <tr>
+                                {groups.filter(group => group.split).flatMap(group => group.columns.map(column => (
+                                    <th key={column.key} scope="col" className={cn(head, 'py-1.5 font-normal')}>{column.row.label}</th>
+                                )))}
+                            </tr>
+                        )}
+                    </thead>
+                    <tbody>
+                        {managers.map((manager, index) => {
+                            const own = !!editing?.own && editing.own === manager.name;
+                            return (
+                                <tr key={manager.name || 'unassigned'}>
+                                    <td className="num border border-border px-2 py-1.5 text-center text-muted-foreground">{manager.name === UNASSIGNED ? '' : index + 1}</td>
+                                    <th scope="row" title={own ? `${manager.title} — таны мөр` : undefined}
+                                        className={cn('whitespace-nowrap border border-border px-3 py-1.5 text-left font-medium text-foreground', own && 'bg-brand-soft text-brand-strong')}>
+                                        {manager.title}
+                                    </th>
+                                    {columns.map(column => {
+                                        const editable = column.entered && !!editing?.editable.has(manager.name);
+                                        const key = cellKey(manager.name, column.key);
+                                        const saved = column.row.values[manager.name] ?? null;
+                                        const author = showAuthors && column.entered ? column.row.authors?.[manager.name] : undefined;
+                                        const other = !!author?.other;
+                                        const authorText = other ? cellAuthorTitle(author!, report.date) : undefined;
+                                        return (
+                                            <td key={column.key} title={authorText} data-author={other ? 'other' : undefined}
+                                                className={cn('num relative border border-border px-1.5 py-1 text-center', own && 'bg-brand-soft/40')}>
+                                                {editable ? (
+                                                    <input type="number" inputMode="numeric" min={0} max={DAILY_COUNT_MAX} step={1}
+                                                        aria-label={`${column.name} · ${manager.title}`}
+                                                        value={editing!.draft[key] ?? (saved === null ? '' : String(saved))}
+                                                        // Танигдахгүй текст («4e») хоосон биш — хадгалахад «Тоо буруу» гэж зогсооно.
+                                                        onChange={event => editing!.onCell(manager.name, column.key, event.currentTarget.validity.badInput ? '?' : event.target.value)}
+                                                        className="num h-8 w-14 rounded-md border border-control bg-surface px-1.5 text-center text-[13px] text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" />
+                                                ) : saved ?? ''}
+                                                {other && <><AuthorDot className="absolute top-1 right-1" /><span className="sr-only print:hidden">{authorText}</span></>}
+                                            </td>
+                                        );
+                                    })}
+                                    <td className="num border border-border bg-surface-2 px-3 py-1.5 text-center text-[15px] font-semibold text-foreground">{report.meetings.byManager[manager.name] ?? 0}</td>
+                                </tr>
+                            );
+                        })}
+                        <tr className="border-t-2 border-border-strong bg-surface-2 text-[15px] font-bold text-foreground">
+                            <th scope="row" colSpan={2} className="border border-border px-3 py-2 text-left">Нийт</th>
+                            {columns.map(column => <td key={column.key} className="num border border-border px-1.5 py-2 text-center">{columnTotal(column) ?? ''}</td>)}
+                            <td className="num border border-border bg-surface-3 px-3 py-2 text-center text-lg">{report.meetings.total}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            {footer}
         </div>
     );
 }
 
 /** «Дуудлага ба утасны лид»: менежер бүрийн бүх шугамд оруулсан дуудлага ↔ утсаар бүртгэсэн лид (зөвхөн дэлгэцэд). */
-function PhoneLeadCheckTable({ checks, managers, reportDate }: { checks: readonly DailyPhoneLeadCheck[]; managers: readonly DailyReportManager[]; reportDate: string }) {
+function PhoneLeadCheckTable({ checks, managers }: { checks: readonly DailyPhoneLeadCheck[]; managers: readonly DailyReportManager[] }) {
     const sum = (values: Array<number | null>) => values.reduce<number>((total, value) => total + (value ?? 0), 0);
     const section: DailyGridSection = {
         rows: [
@@ -308,23 +406,19 @@ function PhoneLeadCheckTable({ checks, managers, reportDate }: { checks: readonl
         ? `Утсаар ${check.leads} лид бүртгэсэн ч дуудлагын тоо оруулаагүй`
         : `Утсаар ${check.leads} лид бүртгэсэн ч бүх шугамд ${check.calls} дуудлага оруулсан`]));
     return (
-        <CountTable title="Дуудлага ба утасны лид" caption="Шалгалт · бүх шугам" section={section} managers={managers} showAuthors={false} reportDate={reportDate}
+        <CountTable title="Дуудлага ба утасны лид" caption="Шалгалт · бүх шугам" section={section} managers={managers}
             totalRow={false} flags={flags} screenOnly
             footer={<span className="text-muted-foreground">Утсаар бүртгэсэн лид бүр дуудлагын тоонд багтсан байх ёстой — автоматаар нэмэхгүй.</span>} />
     );
 }
 
-function CountTable({ title, caption, section, managers, editing, footer, showPhones = false, showAuthors, reportDate, totalRow = true, flags, screenOnly = false }: {
+/** Уншихад зориулсан менежерийн хүснэгт (мөр = үзүүлэлт, багана = менежер): шинэ лид, утасны лидийн шалгалт. */
+function CountTable({ title, caption, section, managers, footer, totalRow = true, flags, screenOnly = false }: {
     title: string;
     caption: string;
     section: DailyGridSection;
     managers: readonly DailyReportManager[];
-    editing?: DailyReportEditing | null;
     footer?: ReactNode;
-    showPhones?: boolean;
-    /** Өөр хүн оруулсан нүдний тэмдэг (зураг дээр false; хэвлэхэд CSS-ээр нуугдана). */
-    showAuthors: boolean;
-    reportDate: string;
     /** false = багануудын «Нийт» мөргүй (мөрүүд нь нийлэхгүй утгатай үед). */
     totalRow?: boolean;
     /** cellKey → анхааруулгын тайлбар (нүд тодорч, хоосон бол «—»). */
@@ -333,18 +427,9 @@ function CountTable({ title, caption, section, managers, editing, footer, showPh
     screenOnly?: boolean;
 }) {
     const showTotalRow = totalRow && section.rows.length > 1;
-    // «Оноогдоогүй» багана зөвхөн тоотой хүснэгтэд (хариуцагчгүй лид/уулзалт); дуудлага, чатад хэзээ ч хоосон.
+    // «Оноогдоогүй» багана зөвхөн тоотой хүснэгтэд (хариуцагчгүй лид).
     const columns = managers.filter(manager => manager.name !== UNASSIGNED || (section.byManager[UNASSIGNED] ?? 0) > 0);
-    // Засах үед нийлбэр ноорогтой хамт шинэчлэгдэнэ (хадгалаагүй ч харагдана).
-    const valueOf = (manager: string, row: DailyGridSection['rows'][number]): number | null => {
-        const draft = draftCount(editing?.draft[cellKey(manager, row.key)]);
-        return draft !== undefined ? draft : row.values[manager] ?? null;
-    };
-    const rowTotal = (row: DailyGridSection['rows'][number]) => editing ? columns.reduce((sum, manager) => sum + (valueOf(manager.name, row) ?? 0), 0) : row.total;
-    const managerTotal = (manager: string) => editing ? section.rows.reduce((sum, row) => sum + (valueOf(manager, row) ?? 0), 0) : section.byManager[manager];
-    const total = editing ? section.rows.reduce((sum, row) => sum + rowTotal(row), 0) : section.total;
-    const isOwn = (manager: DailyReportManager) => !!editing?.own && editing.own === manager.name;
-    // Нэг мөртэй хүснэгтийн мөр нь өөрөө нийт дүн (Mandala-гийн ангилалгүй шугам).
+    // Нэг мөртэй хүснэгтийн мөр нь өөрөө нийт дүн.
     const single = section.rows.length === 1;
     return (
         <div className={cn('min-w-0 rounded-2xl border border-border', screenOnly && 'print:hidden')}>
@@ -359,10 +444,8 @@ function CountTable({ title, caption, section, managers, editing, footer, showPh
                         <tr>
                             <th scope="col" className="px-3 py-2 text-left font-medium"><span className="sr-only">Мөр</span></th>
                             {columns.map(manager => (
-                                <th key={manager.name} scope="col" title={isOwn(manager) ? `${manager.title} — таны багана` : manager.title}
-                                    className={cn('px-2 py-2 text-center font-medium', isOwn(manager) && 'bg-brand-soft text-brand-strong')}>
+                                <th key={manager.name} scope="col" title={manager.title} className="px-2 py-2 text-center font-medium">
                                     <abbr className="no-underline" title={manager.title}>{manager.short}</abbr>
-                                    {showPhones && <span className="num mt-0.5 block whitespace-nowrap font-normal">{formatStaffPhone(manager.phone) || '—'}</span>}
                                 </th>
                             ))}
                             <th scope="col" className="bg-surface-3 px-3 py-2 text-right text-[13px] font-bold text-foreground">Нийт</th>
@@ -373,39 +456,23 @@ function CountTable({ title, caption, section, managers, editing, footer, showPh
                             <tr key={row.key} className="border-t border-border">
                                 <th scope="row" className={cn('whitespace-nowrap px-3 py-1.5 text-left', single ? 'text-[15px] font-bold text-foreground' : 'font-normal text-fg-2')}>{row.label}</th>
                                 {columns.map(manager => {
-                                    const editable = !!editing?.editable.has(manager.name);
-                                    const key = cellKey(manager.name, row.key);
-                                    const saved = row.values[manager.name];
-                                    const author = showAuthors ? row.authors?.[manager.name] : undefined;
-                                    const other = !!author?.other;
-                                    const authorText = other ? cellAuthorTitle(author!, reportDate) : undefined;
-                                    const flag = flags?.[key];
+                                    const flag = flags?.[cellKey(manager.name, row.key)];
                                     return (
-                                        <td key={manager.name} title={flag ?? authorText}
-                                            data-author={other ? 'other' : undefined} data-flag={flag ? 'short' : undefined}
-                                            className={cn('num relative px-1.5 py-1 text-center', isOwn(manager) && 'bg-brand-soft/40', single && 'text-[15px] font-semibold',
-                                                flag && 'bg-status-pending-soft font-semibold text-status-pending')}>
-                                            {editable ? (
-                                                <input type="number" inputMode="numeric" min={0} max={DAILY_COUNT_MAX} step={1}
-                                                    aria-label={`${title} · ${row.label} · ${manager.title}`}
-                                                    value={editing!.draft[key] ?? (saved === null ? '' : String(saved))}
-                                                    // Танигдахгүй текст («4e») хоосон биш — хадгалахад «Тоо буруу» гэж зогсооно.
-                                                    onChange={event => editing!.onCell(manager.name, row.key, event.currentTarget.validity.badInput ? '?' : event.target.value)}
-                                                    className="num h-8 w-14 rounded-md border border-control bg-surface px-1.5 text-center text-[13px] text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" />
-                                            ) : saved ?? (flag ? '—' : '')}
+                                        <td key={manager.name} title={flag} data-flag={flag ? 'short' : undefined}
+                                            className={cn('num px-1.5 py-1 text-center', single && 'text-[15px] font-semibold', flag && 'bg-status-pending-soft font-semibold text-status-pending')}>
+                                            {row.values[manager.name] ?? (flag ? '—' : '')}
                                             {flag && <span className="sr-only">{flag}</span>}
-                                            {other && <><AuthorDot className="absolute top-1 right-1" /><span className="sr-only print:hidden">{authorText}</span></>}
                                         </td>
                                     );
                                 })}
-                                <td className={cn('num px-3 py-1.5 text-right text-foreground', single ? 'bg-surface-3 text-lg font-bold' : 'bg-surface-2 text-[15px] font-semibold')}>{rowTotal(row)}</td>
+                                <td className={cn('num px-3 py-1.5 text-right text-foreground', single ? 'bg-surface-3 text-lg font-bold' : 'bg-surface-2 text-[15px] font-semibold')}>{row.total}</td>
                             </tr>
                         ))}
                         {showTotalRow && (
                             <tr className="border-t-2 border-border-strong bg-surface-2 text-[15px] font-bold text-foreground">
                                 <th scope="row" className="px-3 py-2 text-left">Нийт</th>
-                                {columns.map(manager => <td key={manager.name} className="num px-1.5 py-2 text-center">{managerTotal(manager.name) || ''}</td>)}
-                                <td className="num bg-surface-3 px-3 py-2 text-right text-lg">{total}</td>
+                                {columns.map(manager => <td key={manager.name} className="num px-1.5 py-2 text-center">{section.byManager[manager.name] || ''}</td>)}
+                                <td className="num bg-surface-3 px-3 py-2 text-right text-lg">{section.total}</td>
                             </tr>
                         )}
                     </tbody>

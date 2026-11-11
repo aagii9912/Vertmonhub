@@ -6,7 +6,7 @@ import { resolveReportViewer } from '@/lib/sales/manager-identity';
 import { ProjectScopeError } from '@/lib/sales/project-scope';
 import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 import {
-    buildDailyReport, buildDailyReportChanges, flattenDailyNotes, joinDailyGeneralNotes, NEW_LEADS_SECTION_ENABLED, readDailyReportConfig, readDailyReportNotes, sumDailyCounts,
+    buildDailyReport, buildDailyReportChanges, flattenDailyNotes, foldLegacyCounts, joinDailyGeneralNotes, NEW_LEADS_SECTION_ENABLED, readDailyReportConfig, readDailyReportNotes, sumDailyCounts,
     type DailyCountRow, type DailyMeetingRow, type DailyReport, type DailyReportChange, type DailyReportChangeRow, type DailyReportConfig,
     type DailyReportConflict, type DailyRosterEntry, type SaveDailyReportInput,
 } from './daily-report';
@@ -133,7 +133,7 @@ export async function loadDailyReport(db: SupabaseClient, options: {
     const [roster, counts, meetings, pending, leads, reportRows] = await Promise.all([
         loadRosterAccounts(db, shopId),
         allRows<DailyCountRow>((from, until) => {
-            let query = db.from('daily_report_counts').select('manager_name, metric, value, updated_by, updated_by_name, updated_at')
+            let query = db.from('daily_report_counts').select('report_date, manager_name, metric, value, updated_by, updated_by_name, updated_at')
                 .eq('shop_id', shopId).gte('report_date', date).lte('report_date', to);
             if (only) query = query.eq('manager_name', only);
             return query.order('report_date').order('manager_name').order('metric').range(from, until);
@@ -194,7 +194,8 @@ export async function loadDailyReport(db: SupabaseClient, options: {
         title: settings.config.title || `${options.shopName} баг`,
         config: settings.config,
         roster,
-        counts: ranged ? sumDailyCounts(counts) : counts,
+        // Хуучин загварын нүд өдөр бүрээр одоогийн загварт нэгтгэгдэнэ (мужид нийлбэрээс өмнө).
+        counts: ranged ? sumDailyCounts(foldLegacyCounts(counts, settings.config)) : foldLegacyCounts(counts, settings.config),
         meetings: meetingRows,
         pendingMeetings: pending.map(row => {
             const lead = one(row.leads);

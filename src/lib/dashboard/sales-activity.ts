@@ -19,7 +19,7 @@
  */
 import { readActivityTargets as readMonthActivityTargets, type ActivityTargetKey } from '@/lib/sales/monthly';
 import { daySpan, shiftDate } from '@/lib/sales/activity';
-import { chatMetric, configMetrics, lineMetrics, type DailyReportConfig, type DailyReportLine } from './daily-report';
+import { CALL_CATEGORIES, callMetric, chatMetric, configMetrics, foldLegacyCounts, type DailyReportConfig, type DailyReportLine } from './daily-report';
 import { monthWeeks } from './weekly-sales';
 import { boundedCount, periodCoverage } from './data-since';
 import { weeklyReviewRange } from './weekly-review';
@@ -154,9 +154,12 @@ export function buildSalesActivity(input: SalesActivityInput): SalesActivityRepo
     const window = salesActivityWindow(input.meetingDate);
     const notes: string[] = [];
 
-    // Шугам: эхний = төслийн утас, хоёр дахь = менежерийн дугаар (W10); чат = бүх суваг.
+    // Шугам: эхний = төслийн утас, хоёр дахь = менежерийн дугаар (W10); чат = бүх суваг. Загвар өөрчлөгдөхөөс өмнөх
+    // нүд нэгтгэгдэнэ (`foldLegacyCounts`); ангилалтай шугамын загвараас хасагдсан ангиллын дуудлага ч тухайн шугамынх.
+    const counts = foldLegacyCounts(input.counts, config);
     const [hotlineLine, managerLine] = config.lines as Array<DailyReportLine | undefined>;
-    const keysOf = (line: DailyReportLine | undefined) => new Set(line ? lineMetrics(line) : []);
+    const keysOf = (line: DailyReportLine | undefined) => new Set(!line ? []
+        : line.categories.length ? CALL_CATEGORIES.map(category => callMetric(line.key, category)) : [callMetric(line.key, 'total')]);
     const metricKeys: Record<'hotline' | 'managerLine' | 'chats', Set<string>> = {
         hotline: keysOf(hotlineLine),
         managerLine: keysOf(managerLine),
@@ -167,14 +170,14 @@ export function buildSalesActivity(input: SalesActivityInput): SalesActivityRepo
     if (!hotlineLine) notes.push('Загварт утасны шугам алга — төслийн утасны дуудлага тодорхойгүй.');
     if (!managerLine) notes.push('Загварт хоёр дахь утасны шугам алга — менежерийн дугаарын дуудлага тодорхойгүй.');
     if (!config.chats.length) notes.push('Загварт чатын суваг алга — чатын тоо тодорхойгүй.');
-    const allowed = configMetrics(config);
-    const ignored = input.counts.filter(row => !allowed.has(row.metric)).length;
+    const allowed = new Set([...configMetrics(config), ...metricKeys.hotline, ...metricKeys.managerLine]);
+    const ignored = counts.filter(row => !allowed.has(row.metric)).length;
     if (ignored) notes.push(`Одоогийн загварт байхгүй ${ignored} нүдийг (хуучин «нийт» г.м.) тооцоогүй.`);
 
     const sumCounts = (keys: Set<string>, from: string, to: string): number | null => {
         let found = false;
         let total = 0;
-        for (const row of input.counts) {
+        for (const row of counts) {
             if (row.report_date < from || row.report_date > to || !keys.has(row.metric)) continue;
             found = true;
             total += row.value;
