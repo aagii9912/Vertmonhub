@@ -1,5 +1,5 @@
 /**
- * GPT Responses agentic loop — үндсэн туслах ба дэд агент хоёулаа үүнийг ашиглана.
+ * Claude Messages agentic loop — үндсэн туслах ба дэд агент хоёулаа үүнийг ашиглана.
  *
  * Нэг дуудлага = model.stream → (tool_use блокууд байвал) tool гүйцэтгэ → tool_result-уудыг
  * НЭГ user мессежээр буцаа → давт. `end_turn` (эсвэл ask_user) дээр зогсоно.
@@ -12,8 +12,8 @@ import { randomUUID } from 'crypto';
 import { logger } from '@/lib/utils/logger';
 import { executeDataTool } from '@/lib/ai/data-assistant';
 import { generateChartConfig } from '@/lib/ai/data-assistant/functions';
-import { streamResponse, responseText, toResponseInput, toResponseTools } from '@/lib/ai/openai/responses';
-import { describeOpenAIError } from '@/lib/ai/openai/client';
+import { streamMessage, messageText } from '@/lib/ai/claude/messages';
+import { describeClaudeError } from '@/lib/ai/claude/client';
 import { ASK_USER_TOOL } from '@/lib/ai/claude/tools';
 import { AUTO_TOOL_NAMES, isMutatingTool } from '@/lib/ai/tool-catalog';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -177,9 +177,7 @@ export interface LoopResult {
 }
 
 export async function runLoop(o: LoopOptions): Promise<LoopResult> {
-    const input = toResponseInput(o.messages);
-    const instructions = o.system.map((block) => block.text).join('\n\n');
-    const responseTools = toResponseTools(o.tools);
+    const messages: Anthropic.MessageParam[] = [...o.messages];
     const allowedNames = new Set(o.tools.map((t) => t.name));
     const mutationResults = new Map<string, Anthropic.ToolResultBlockParam>();
     const toolsUsed: string[] = [];
@@ -202,14 +200,14 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
 
     for (rounds = 1; rounds <= maxRounds; rounds++) {
         try {
-            // Client цуцалсан → цааш GPT/DB дуудахгүй; хугацаа хэтэрсэн → байгаа хариугаар дуусгана.
+            // Client цуцалсан → цааш Claude/DB дуудахгүй; хугацаа хэтэрсэн → байгаа хариугаар дуусгана.
             o.ctx.signal?.throwIfAborted();
             if (rounds > 1 && o.ctx.deadlineAt && Date.now() > o.ctx.deadlineAt) {
                 throw new DOMException('AI deadline reached', 'TimeoutError');
             }
             let first = true;
-            const msg = await streamResponse({
-                model: o.model, instructions, input, tools: responseTools,
+            const msg = await streamMessage({
+                model: o.model, system: o.system, messages, tools: o.tools,
                 signal: o.ctx.signal, deadlineAt: o.ctx.deadlineAt,
                 effort: o.effort, maxTokens: o.maxTokens,
                 onText: streaming ? (delta) => {
@@ -219,32 +217,27 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
                     emit!({ type: 'token', text: delta });
                 } : undefined,
             });
-            usage.input += msg.usage?.input_tokens ?? 0;
+            usage.input += (msg.usage?.input_tokens ?? 0) + (msg.usage?.cache_read_input_tokens ?? 0) + (msg.usage?.cache_creation_input_tokens ?? 0);
             usedModel = msg.model || o.model;
             usage.output += msg.usage?.output_tokens ?? 0;
-            usage.cacheRead += msg.usage?.input_tokens_details.cached_tokens ?? 0;
-            stopReason = msg.status ?? null;
-            const roundText = responseText(msg);
+            usage.cacheRead += msg.usage?.cache_read_input_tokens ?? 0;
+            stopReason = msg.stop_reason ?? null;
+            const roundText = messageText(msg);
             if (roundText) { textChunks.push(roundText); needSeparator = true; }
-            const toolUses = msg.output.filter((item) => item.type === 'function_call').map((item) => ({
-                id: item.call_id, name: item.name, arguments: item.arguments,
-            }));
-            // Preserve encrypted reasoning and exact call IDs across every tool round.
-            input.push(...msg.output.filter((item) => item.type === 'message' || item.type === 'reasoning' || item.type === 'function_call'));
+            const toolUses = msg.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
+            // Thinking blocks and tool_use IDs go back unchanged (append-only history).
+            messages.push({ role: 'assistant', content: msg.content });
             if (toolUses.length === 0) break;
 
             // Бичих үйлдлүүдийг дарааллаар гүйцэтгэнэ; тодруулга шаардвал бусад үйлдлийг хүлээлгэнэ.
             const execute = async (tu: typeof toolUses[number]): Promise<Anthropic.ToolResultBlockParam> => {
                 o.ctx.signal?.throwIfAborted();
                 if (o.ctx.deadlineAt && Date.now() >= o.ctx.deadlineAt) throw new DOMException('AI deadline reached', 'TimeoutError');
-                let args: Record<string, unknown>;
-                try {
-                    const parsed: unknown = JSON.parse(tu.arguments);
-                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid arguments');
-                    args = parsed as Record<string, unknown>;
-                } catch {
+                const parsed: unknown = tu.input;
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
                     return { type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify({ error: 'Tool аргумент буруу JSON object байна. Үйлдэл хийгдээгүй.' }), is_error: true };
                 }
+                const args = parsed as Record<string, unknown>;
                 if (!allowedNames.has(tu.name)) return { type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify({ error: 'Энэ агентад зөвшөөрөөгүй үйлдэл.' }), is_error: true };
                 const mutationKey = `${tu.name}:${JSON.stringify(args, (_key, value) => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value)}`;
                 const previous = mutationResults.get(mutationKey);
@@ -315,14 +308,14 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
             if (question) results.push(await execute(question));
             else if (readsOnly) results.push(...await Promise.all(toolUses.map(execute)));
             else for (const tu of toolUses) results.push(await execute(tu));
-            input.push(...results.map((r) => ({ type: 'function_call_output' as const, call_id: r.tool_use_id, output: String(r.content ?? '') })));
-
+            // Every tool_result of a round goes back in ONE user message.
+            messages.push({ role: 'user', content: results });
 
             if (clarification) break;
         } catch (error) {
             // A later provider/deadline failure does not undo earlier DB work or pending previews.
             if (!traceTools.length && !pendingActions.length) throw error;
-            const { code, message } = describeOpenAIError(error);
+            const { code, message } = describeClaudeError(error);
             interruption = { code, message };
             stopReason = 'interrupted';
             logger.warn('[Orchestrator] returning partial results', { code, tools: traceTools.length });
@@ -332,26 +325,26 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
 
     let finalText = textChunks.join('\n\n').trim();
     if (!interruption && rounds > maxRounds && (o.ctx.signal?.aborted || (o.ctx.deadlineAt && Date.now() >= o.ctx.deadlineAt - 2000))) {
-        const { code, message } = describeOpenAIError(new DOMException('AI deadline reached', 'TimeoutError'));
+        const { code, message } = describeClaudeError(new DOMException('AI deadline reached', 'TimeoutError'));
         interruption = { code, message };
         stopReason = 'interrupted';
     }
     if (!interruption && rounds > maxRounds && !o.ctx.signal?.aborted && (!o.ctx.deadlineAt || Date.now() < o.ctx.deadlineAt - 2000)) {
         // Раундын хязгаар — цуглуулсан мэдээллээр эцсийн хариу бичүүлнэ (tool-гүй).
         try {
-            const closing = await streamResponse({
-                model: o.model, maxTokens: 2000, instructions, tools: [],
-                input: [...input, { role: 'user', content: 'Tool дуудлагын хязгаарт хүрлээ. Цуглуулсан мэдээлэлдээ үндэслэн хийгдсэн болон хүлээгдэж буй ажлыг ялгаж монголоор товч бич.' }],
+            const closing = await streamMessage({
+                model: o.model, maxTokens: 4000, system: o.system, tools: o.tools, toolChoice: 'none',
+                messages: [...messages, { role: 'user', content: 'Tool дуудлагын хязгаарт хүрлээ. Цуглуулсан мэдээлэлдээ үндэслэн хийгдсэн болон хүлээгдэж буй ажлыг ялгаж монголоор товч бич.' }],
                 signal: o.ctx.signal, deadlineAt: o.ctx.deadlineAt, effort: 'low',
             });
-            const conclusion = responseText(closing);
+            const conclusion = messageText(closing);
             finalText = [finalText, conclusion].filter(Boolean).join('\n\n');
             if (streaming && conclusion) emit!({ type: 'token', text: (needSeparator ? '\n\n' : '') + conclusion });
-            usage.input += closing.usage?.input_tokens ?? 0;
+            usage.input += (closing.usage?.input_tokens ?? 0) + (closing.usage?.cache_read_input_tokens ?? 0) + (closing.usage?.cache_creation_input_tokens ?? 0);
             usage.output += closing.usage?.output_tokens ?? 0;
-            usage.cacheRead += closing.usage?.input_tokens_details.cached_tokens ?? 0;
+            usage.cacheRead += closing.usage?.cache_read_input_tokens ?? 0;
         } catch (error) {
-            const { code, message } = describeOpenAIError(error);
+            const { code, message } = describeClaudeError(error);
             interruption = { code, message };
             stopReason = 'interrupted';
         }

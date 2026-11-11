@@ -1,14 +1,14 @@
 /**
- * AI Orchestrator v3 — ГИБРИД (GPT Responses)
+ * AI Orchestrator v3 — ГИБРИД (Claude Messages)
  *
- * Нэг үндсэн туслах (GPT-5.6 Luna) хэрэглэгчийн эрхэд тохирсон БҮХ data tool-той
+ * Нэг үндсэн туслах (Claude Haiku 5.5) хэрэглэгчийн эрхэд тохирсон БҮХ data tool-той
  * agentic loop ажиллуулж, хариугаа шууд stream-лэнэ. Нарийн олон домэйны шинжилгээнд
- * модель өөрөө `delegate_to_specialists`-ээр мэргэшсэн дэд агентуудыг (GPT-5.6 Luna) ЗЭРЭГ
+ * модель өөрөө `delegate_to_specialists`-ээр мэргэшсэн дэд агентуудыг (Claude Haiku 5.5) ЗЭРЭГ
  * ажиллуулж, үр дүнг нь өөрөө нэгтгэнэ. Planner/synthesizer дуудлага байхгүй.
  */
 
 import { logger } from '@/lib/utils/logger';
-import { MAIN_MODEL } from '@/lib/ai/openai/client';
+import { MAIN_MODEL } from '@/lib/ai/claude/client';
 import { dataToolsForPerms, ASK_USER_TOOL, buildDelegateTool, DELEGATE_TOOL_NAME } from '@/lib/ai/claude/tools';
 import { getShopMemory, formatShopMemory } from '@/lib/ai/data-assistant/functions';
 import { AGENTS, AGENT_LIST, isAdminOnlyAgent } from './agents';
@@ -82,7 +82,7 @@ export async function runOrchestrator(message: string, ctx: OrchestratorContext)
         clarification: r.clarification,
         interruption: r.interruption || subResults.find(s => s.interruption)?.interruption,
         trace: {
-            provider: 'openai',
+            provider: 'anthropic',
             model: r.model,
             rounds: r.rounds,
             tools: [...r.traceTools, ...subResults.flatMap(s => s.traceTools)],

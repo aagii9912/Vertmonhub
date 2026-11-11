@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ResponseCreateParamsStreaming } from 'openai/resources/responses/responses';
+import type Anthropic from '@anthropic-ai/sdk';
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), execute: vi.fn(), managerName: vi.fn() }));
 vi.mock('@supabase/supabase-js', () => ({
@@ -12,9 +12,9 @@ vi.mock('@supabase/supabase-js', () => ({
 }));
 vi.mock('@/lib/ai/data-assistant', () => ({ executeDataTool: mocks.execute }));
 vi.mock('@/lib/ai/data-assistant/functions', () => ({ resolveSalesManagerName: mocks.managerName }));
-vi.mock('@/lib/ai/openai/client', async importOriginal => ({
+vi.mock('@/lib/ai/claude/client', async importOriginal => ({
     ...await importOriginal<object>(),
-    openai: () => ({ responses: { create: mocks.create } }),
+    claude: () => ({ messages: { stream: mocks.create } }),
 }));
 
 import { buildInProjectTool } from '../projects';
@@ -78,23 +78,30 @@ describe('in_project', () => {
     });
 });
 
-function stream(output: unknown[], text?: string) {
-    return (async function* () {
-        if (text) yield { type: 'response.output_text.delta', delta: text };
-        yield { type: 'response.completed', response: { model: 'test-model', status: 'completed', output, usage: { input_tokens: 1, output_tokens: 1, input_tokens_details: { cached_tokens: 0 } } } };
-    })();
+/** Fake MessageStream: replays the text delta, then resolves the final message. */
+function stream(content: unknown[], text?: string) {
+    let onText: ((delta: string) => void) | undefined;
+    const s = {
+        on(event: string, cb: (delta: string) => void) { if (event === 'text') onText = cb; return s; },
+        async finalMessage() {
+            if (text) onText?.(text);
+            const stop_reason = content.some((b) => (b as { type: string }).type === 'tool_use') ? 'tool_use' : 'end_turn';
+            return { model: 'test-model', role: 'assistant', content, stop_reason, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } };
+        },
+    };
+    return s;
 }
 
 describe('cross-project confirmation cards', () => {
     it('keep the target shop so approval runs in that project', async () => {
-        const requests: ResponseCreateParamsStreaming[] = [];
+        const requests: Anthropic.MessageStreamParams[] = [];
         mocks.execute.mockResolvedValue({ requiresConfirmation: true, action: { tool: 'update_lead', args: { lead_id: 'l1', budget_max: 1 } }, label: 'Лид засах: Болд', preview: {} });
-        mocks.create.mockImplementationOnce(async (request: ResponseCreateParamsStreaming) => {
+        mocks.create.mockImplementationOnce((request: Anthropic.MessageStreamParams) => {
             requests.push(request);
-            return stream([{ type: 'function_call', id: 'f1', call_id: 'c1', name: 'in_project', status: 'completed',
-                arguments: JSON.stringify({ project: 'Elysium Residence', tool: 'update_lead', args: { customer_name: 'Болд', budget_max: 1 } }) }]);
+            return stream([{ type: 'tool_use', id: 'c1', name: 'in_project',
+                input: { project: 'Elysium Residence', tool: 'update_lead', args: { customer_name: 'Болд', budget_max: 1 } } }]);
         });
-        mocks.create.mockImplementationOnce(async () => stream([{ type: 'message', role: 'assistant', id: 'm1', status: 'completed', content: [{ type: 'output_text', text: 'Карт бэлэн.', annotations: [] }] }], 'Карт бэлэн.'));
+        mocks.create.mockImplementationOnce(() => stream([{ type: 'text', text: 'Карт бэлэн.' }], 'Карт бэлэн.'));
 
         const result = await runOrchestrator('Elysium-ийн Болдын төсвийг засаарай', ctx as OrchestratorContext);
         expect(requests[0].tools?.map(tool => 'name' in tool ? tool.name : '')).toContain('in_project');

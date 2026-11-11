@@ -1,7 +1,7 @@
 import { runOrchestrator } from '@/lib/ai/orchestrator';
 import { prepareAssistantRequest, persistAssistantExchange } from '@/lib/ai/orchestrator/http';
 import type { OrchestratorEvent } from '@/lib/ai/orchestrator/types';
-import { describeOpenAIError } from '@/lib/ai/openai/client';
+import { describeClaudeError } from '@/lib/ai/claude/client';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
                     conversationId,
                 });
             } catch (error) {
-                const info = describeOpenAIError(error);
+                const info = describeClaudeError(error);
                 console.error('[ai-assistant/stream]', info.code, error instanceof Error ? error.message : error);
                 push({ type: 'error', message: info.message, retryable: info.retryable, code: info.code });
             } finally {

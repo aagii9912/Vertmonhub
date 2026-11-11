@@ -5,7 +5,7 @@ import { resolveApiUser } from '@/lib/auth/resolve-user';
 import { fetchRolePermissions } from '@/lib/rbac';
 import { loadShopKnowledge } from './shop-knowledge';
 import { AI_PREFETCH_MAX_CHARS, resolveSalesManagerName } from '@/lib/ai/data-assistant/functions';
-import { hasOpenAIKey } from '@/lib/ai/openai/client';
+import { hasClaudeKey } from '@/lib/ai/claude/client';
 import { executeDataTool } from '@/lib/ai/data-assistant';
 import { loadConversationSummary, maybeUpdateSummary } from './memory';
 import type { OrchestratorContext, OrchestratorResult } from './types';
@@ -100,7 +100,7 @@ export async function prepareAssistantRequest(req: Request): Promise<{ error: Ne
     };
     if (!message || typeof message !== 'string') return { error: NextResponse.json({ error: 'Message is required' }, { status: 400 }) };
     const mockDev = process.env.NODE_ENV !== 'production' && !!req.headers.get('x-ai-mock');
-    if (!hasOpenAIKey() && !mockDev) return { error: NextResponse.json({ error: 'AI туслах тохируулагдаагүй байна (OPENAI_API_KEY алга). Админд хандана уу.' }, { status: 503 }) };
+    if (!hasClaudeKey() && !mockDev) return { error: NextResponse.json({ error: 'AI туслах тохируулагдаагүй байна (ANTHROPIC_API_KEY алга). Админд хандана уу.' }, { status: 503 }) };
 
     const [{ data: ownedRows }, { data: memberRows }] = await Promise.all([
         adminDb.from('shops').select('id').eq('user_id', resolvedUser.id),

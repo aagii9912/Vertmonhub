@@ -73,6 +73,7 @@ const ENTRIES = {
     reply_to_customer: { kind: 'write', module: 'inbox', alwaysConfirm: true },
     // Уулзалт
     list_viewings: { kind: 'read', module: 'viewings', scoped: true },
+    get_meeting_interests: { kind: 'read', module: 'viewings', scoped: true },
     get_viewing_options: { kind: 'read', module: 'viewings', scoped: true },
     calculate_viewing_quote: { kind: 'read', module: 'viewings', scoped: true },
     update_viewing: { kind: 'write', module: 'viewings', scoped: true, alwaysConfirm: true },

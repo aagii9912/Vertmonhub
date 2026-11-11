@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { runOrchestrator } from '@/lib/ai/orchestrator';
 import { prepareAssistantRequest, persistAssistantExchange } from '@/lib/ai/orchestrator/http';
-import { describeOpenAIError } from '@/lib/ai/openai/client';
+import { describeClaudeError } from '@/lib/ai/claude/client';
 
 export const maxDuration = 60;
 
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
             conversationId,
         });
     } catch (error) {
-        const info = describeOpenAIError(error);
+        const info = describeClaudeError(error);
         return NextResponse.json({ error: info.message, code: info.code }, { status: 502 });
     }
 }
