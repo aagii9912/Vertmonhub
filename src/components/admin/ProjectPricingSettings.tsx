@@ -12,6 +12,7 @@ import { PricingImportPanel } from './PricingImportPanel';
 
 type Overview = { latest: PricingConfig | null; active: PricingConfig | null };
 type RuleForm = { [K in keyof PricingRule]: string };
+const advanceValid = (value: number) => Number.isFinite(value) && value >= 0 && value <= 100 && Math.abs(value * 100 - Math.round(value * 100)) < 1e-6;
 const emptyRule = (): RuleForm => ({ block: '', model: '', floor_min: '', floor_max: '', payment_condition: '', price_per_sqm: '', advance_percent: '' });
 const ruleForm = (rule: PricingRule): RuleForm => Object.fromEntries(Object.entries(rule).map(([key, value]) => [key, value === null ? '' : String(value)])) as RuleForm;
 const fields: Array<{ key: keyof RuleForm; label: string; numeric?: boolean }> = [
@@ -55,6 +56,20 @@ function PricingEditor({ shopId, overview, onSaved }: { shopId: string; overview
         for (const row of rows) if (row.block.trim()) counts.set(pricingKey(row.block), (counts.get(pricingKey(row.block)) ?? 0) + 1);
         return counts;
     }, [rows]);
+    // Rows of one payment condition share an advance, so it is entered once per condition (238 imported rows otherwise).
+    const conditionGroups = useMemo(() => {
+        const groups = new Map<string, { label: string; rows: number; missing: number; values: Set<string> }>();
+        for (const row of rows) {
+            const label = row.payment_condition.trim();
+            if (!label) continue;
+            const group = groups.get(pricingKey(label)) ?? { label, rows: 0, missing: 0, values: new Set<string>() };
+            group.rows++;
+            if (row.advance_percent.trim() === '') group.missing++; else group.values.add(row.advance_percent.trim());
+            groups.set(pricingKey(label), group);
+        }
+        return [...groups].map(([key, group]) => ({ key, ...group }));
+    }, [rows]);
+    const [bulkAdvance, setBulkAdvance] = useState<Record<string, string>>({});
     const [reviewed, setReviewed] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -63,6 +78,12 @@ function PricingEditor({ shopId, overview, onSaved }: { shopId: string; overview
     function changeRow(index: number, key: keyof RuleForm, value: string) {
         setReviewed(false);
         setRows(previous => previous.map((row, position) => position === index ? { ...row, [key]: value } : row));
+    }
+
+    function applyAdvance(key: string, value: string) {
+        setReviewed(false); setError(null);
+        setRows(previous => previous.map(row => pricingKey(row.payment_condition) === key ? { ...row, advance_percent: value } : row));
+        setBulkAdvance(previous => ({ ...previous, [key]: '' }));
     }
 
     function payload(status: 'draft' | 'active') {
@@ -128,6 +149,33 @@ function PricingEditor({ shopId, overview, onSaved }: { shopId: string; overview
             setReviewed(false); setError(null); setImporting(false);
             toast.success(`${rules.length} үнийн мөр засварт орлоо. Хугацаа, урьдчилгааг шалгаад хадгална уу.`);
         }} />}
+        {conditionGroups.length > 0 && <div className="space-y-2">
+            <h3 className="text-sm font-medium">Эхний урьдчилгаа — нөхцөлөөр</h3>
+            <p className="text-xs text-muted-foreground">Баталсан хувийг нөхцөл бүрд нэг удаа оруулахад тухайн нөхцөлийн бүх мөрд бичигдэнэ. Мөр тус бүрийг дээрх хүснэгтээс засаж болно.</p>
+            <table className="w-full max-w-2xl border-collapse text-sm">
+                <thead><tr className="text-left text-xs text-muted-foreground">
+                    <th scope="col" className="border-b border-border py-1.5 pr-3 font-medium">Нөхцөл</th>
+                    <th scope="col" className="border-b border-border py-1.5 pr-3 font-medium">Одоо</th>
+                    <th scope="col" className="border-b border-border py-1.5 font-medium">Эхний урьдчилгаа (%)</th>
+                </tr></thead>
+                <tbody>{conditionGroups.map(group => {
+                    const typed = (bulkAdvance[group.key] ?? '').trim().replace(',', '.');
+                    const valid = typed !== '' && advanceValid(Number(typed));
+                    return <tr key={group.key}>
+                        <td className="py-1.5 pr-3">{group.label}<span className="block text-xs text-muted-foreground">{group.rows} мөр</span></td>
+                        <td className={`py-1.5 pr-3 ${group.missing ? 'text-status-pending' : ''}`}>{group.missing === group.rows ? 'Оруулаагүй'
+                            : group.missing ? `${group.missing} мөр хоосон`
+                                : group.values.size === 1 ? `${[...group.values][0]}%` : 'Мөр бүрд өөр'}</td>
+                        <td className="py-1.5"><div className="flex flex-wrap items-center gap-2">
+                            <Input aria-label={`«${group.label}» нөхцөлийн бүх мөрийн урьдчилгаа (%)`} inputMode="decimal" className="num w-28" value={bulkAdvance[group.key] ?? ''}
+                                aria-invalid={typed !== '' && !valid} onChange={event => setBulkAdvance(previous => ({ ...previous, [group.key]: event.target.value }))} />
+                            <Button type="button" variant="secondary" disabled={saving || !valid} aria-label={`«${group.label}» нөхцөлийн ${group.rows} мөрд урьдчилгаа оруулах`} onClick={() => applyAdvance(group.key, typed)}>{group.rows} мөрд оруулах</Button>
+                            {typed !== '' && !valid && <span className="text-xs text-status-danger">0–100, 2 хүртэл орны бутархай</span>}
+                        </div></td>
+                    </tr>;
+                })}</tbody>
+            </table>
+        </div>}
         {error && <div role="alert" className="text-sm text-status-danger"><p>{error}</p>
             {conflict && <button type="button" disabled={saving} className="mt-2 font-medium text-brand-strong underline" onClick={async () => {
                 setSaving(true);
@@ -142,5 +190,6 @@ function PricingEditor({ shopId, overview, onSaved }: { shopId: string; overview
             <Button type="button" variant="secondary" disabled={saving || conflict} onClick={review}>Идэвхжүүлэхийн өмнө хянах</Button>
             <Button type="button" disabled={saving || conflict || !reviewed} onClick={() => void save('active')}>{saving ? 'Хадгалж байна…' : 'Баталсан үнийг идэвхжүүлэх'}</Button>
         </div>
+        {!reviewed && !conflict && <p className="text-xs text-muted-foreground">«Баталсан үнийг идэвхжүүлэх» товч «Идэвхжүүлэхийн өмнө хянах» шалгалт алдаагүй гарсны дараа идэвхжинэ.</p>}
     </div>;
 }

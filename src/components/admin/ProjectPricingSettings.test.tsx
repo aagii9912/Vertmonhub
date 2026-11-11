@@ -65,3 +65,37 @@ it('an Excel import replaces only the imported block rows and keeps the draft un
     expect(fetchMock.mock.calls.filter(([url, init]) => url === '/api/admin/pricing' && init?.method === 'PUT')).toHaveLength(0);
     expect(screen.getByRole('button', { name: 'Баталсан үнийг идэвхжүүлэх' })).toBeDisabled();
 });
+it('fills the first advance once per payment condition so an imported draft can be activated', async () => {
+    const rule = (model: string, payment_condition: string) => ({ block: 'Б1', model, floor_min: 2, floor_max: 9, payment_condition, price_per_sqm: 4_000_000, advance_percent: null });
+    const latest = { id: 'c1', shop_id: 'shop', version: 2, status: 'draft', source: 'Файл: Б1.xlsx', valid_from: '2026-10-22', valid_until: '2026-11-30', inventory_area_confirmed: true,
+        rules: [rule('E3', '30%'), rule('E6', '30%'), rule('E3', '10-30%')] };
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ latest, active: null }) }));
+    mount();
+    await screen.findByLabelText('1-р мөр Загвар');
+    fireEvent.click(screen.getByRole('button', { name: 'Идэвхжүүлэхийн өмнө хянах' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('3 мөр хоосон (30%, 10-30%)');
+    expect(screen.getByRole('button', { name: 'Баталсан үнийг идэвхжүүлэх' })).toBeDisabled();
+
+    expect(screen.getByRole('button', { name: '«30%» нөхцөлийн 2 мөрд урьдчилгаа оруулах' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('«30%» нөхцөлийн бүх мөрийн урьдчилгаа (%)'), { target: { value: '130' } });
+    expect(screen.getByRole('button', { name: '«30%» нөхцөлийн 2 мөрд урьдчилгаа оруулах' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('«30%» нөхцөлийн бүх мөрийн урьдчилгаа (%)'), { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: '«30%» нөхцөлийн 2 мөрд урьдчилгаа оруулах' }));
+    expect(screen.getByLabelText('1-р мөр Эхний урьдчилгаа (%)')).toHaveValue('30');
+    expect(screen.getByLabelText('2-р мөр Эхний урьдчилгаа (%)')).toHaveValue('30');
+    expect(screen.getByLabelText('3-р мөр Эхний урьдчилгаа (%)')).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Идэвхжүүлэхийн өмнө хянах' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('1 мөр хоосон (10-30%)');
+
+    fireEvent.change(screen.getByLabelText('«10-30%» нөхцөлийн бүх мөрийн урьдчилгаа (%)'), { target: { value: '10,5' } });
+    fireEvent.click(screen.getByRole('button', { name: '«10-30%» нөхцөлийн 1 мөрд урьдчилгаа оруулах' }));
+    expect(screen.getByLabelText('3-р мөр Эхний урьдчилгаа (%)')).toHaveValue('10.5');
+    fireEvent.click(screen.getByRole('button', { name: 'Идэвхжүүлэхийн өмнө хянах' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Баталсан үнийг идэвхжүүлэх' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/admin/pricing' && init?.method === 'PUT')).toBe(true));
+    const [, init] = fetchMock.mock.calls.find(([url, init]) => url === '/api/admin/pricing' && init?.method === 'PUT')!;
+    const body = JSON.parse(init.body);
+    expect(body.status).toBe('active');
+    expect(body.config.rules.map((item: { advance_percent: number }) => item.advance_percent)).toEqual([30, 30, 10.5]);
+});

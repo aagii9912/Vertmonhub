@@ -61,7 +61,11 @@ export function pricingActivationError(draft: PricingDraft): string | null {
     if (!draft.source || !draft.valid_from || !draft.valid_until) return 'Үнийн эх сурвалж, хүчинтэй хугацааг оруулна уу';
     if (!draft.inventory_area_confirmed) return 'Одоогийн нөөцийн талбайгаар тооцохыг батална уу';
     if (!draft.rules.length) return 'Баталсан үнийн мөр нэмнэ үү';
-    if (draft.rules.some(rule => rule.advance_percent === null)) return 'Нөхцөл бүрийн эхний урьдчилгааны хувийг батална уу';
+    const missing = draft.rules.filter(rule => rule.advance_percent === null);
+    if (missing.length) {
+        const conditions = [...new Set(missing.map(rule => rule.payment_condition))];
+        return `Нөхцөл бүрийн эхний урьдчилгааны хувийг батална уу: ${missing.length} мөр хоосон (${conditions.slice(0, 6).join(', ')}${conditions.length > 6 ? ' …' : ''})`;
+    }
     for (let a = 0; a < draft.rules.length; a++) for (let b = a + 1; b < draft.rules.length; b++) {
         const left = draft.rules[a], right = draft.rules[b];
         if (pricingKey(left.block) === pricingKey(right.block) && pricingKey(left.model) === pricingKey(right.model)
