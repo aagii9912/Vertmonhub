@@ -56,7 +56,13 @@ const weeklySalesFixture = () => {
 
 async function setup(page: Page, restricted = false) {
     const state = { updates: [] as Record<string, unknown>[], failure: false, failSave: false, missingFx: false, requests: [] as string[], errors: [] as string[], writes: 0,
-        kpiWrites: [] as Record<string, unknown>[], slides: [] as Record<string, unknown>[], media: new Map<string, Buffer>(), content: [] as Record<string, unknown>[] };
+        kpiWrites: [] as Record<string, unknown>[], slides: [] as Record<string, unknown>[], media: new Map<string, Buffer>(), content: [] as Record<string, unknown>[],
+        // «Гараар нөхөх» алхам: `office` — хязгааргүй (удирдлагын) хэрэглэгч; `hubContracts` — гэрээг CRM-ээс (HUB жагсаалт) уншдаг төсөл.
+        office: false, hubContracts: false, managerWrites: [] as Record<string, unknown>[],
+        managerless: [
+            { id: 'c-53', number: null, date: range.to, block: 'Б1', unit: 'Б1-53, E2', kindLabel: 'Орон сууц', customer: 'Б.Энхжин', total: 450000000, inWeek: true },
+            { id: 'c-54', number: 'EL-54', date: null, block: 'Б1', unit: 'Б1-76 (01)', kindLabel: 'Зогсоол', customer: null, total: 72600000, inWeek: false },
+        ] };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/api/**', async route => {
         const request = route.request();
@@ -66,7 +72,19 @@ async function setup(page: Page, restricted = false) {
         state.requests.push(path);
         const reply = (json: unknown, status = 200) => route.fulfill({ status, json });
         if (path === '/api/me') return reply({ user: { fullName: 'Номин' }, role: 'sales_manager', permissions: { ...ROLE_PERMISSIONS.sales_manager, modules: restricted ? ['dashboard'] : [...ROLE_PERMISSIONS.sales_manager.modules, 'reports', 'marketing-roi', 'ai-assistant'] }, shops: [{ id: shopId, name: 'Vertmon · Туршилтын өгөгдөл', is_active: true, setup_completed: true }] });
-        if (path === '/api/dashboard/mode') return reply({ mode: 'personal', managerName: 'Номин', isManager: true, canViewTeam: !restricted });
+        if (path === '/api/dashboard/mode') return reply(state.office ? { mode: 'org', managerName: null, isManager: false, canViewTeam: true }
+            : { mode: 'personal', managerName: 'Номин', isManager: true, canViewTeam: !restricted });
+        if (path === '/api/dashboard/reports/weekly-manual') return reply({ month: range.to.slice(0, 7), undated: 1,
+            managerless: { count: state.managerless.length, contracts: state.managerless },
+            plan: { contractAmount: true, contractCount: false, cashflow: null }, manualActuals: { contractAmount: false, contractCount: false, cashflow: null } });
+        if (path === '/api/dashboard/contracts/managers') return reply({ managers: [{ name: 'Номин.Менежер', roster: true, contracts: 4 }, { name: 'Сараа.Менежер', roster: false, contracts: 1 }] });
+        const managerless = state.managerless.find(contract => path === `/api/dashboard/contracts/${contract.id}`);
+        if (managerless && request.method() === 'PATCH') {
+            const body = request.postDataJSON() as Record<string, unknown>;
+            state.managerWrites.push({ id: managerless.id, ...body });
+            state.managerless = state.managerless.filter(contract => contract !== managerless);
+            return reply({ contract: { id: managerless.id, sales_manager: body.sales_manager } });
+        }
         if (path === '/api/dashboard/nav-counts') return reply({ leads: 8, inbox: 3, meetings: 2 });
         if (path === '/api/dashboard/my-stats') return reply({ manager: { name: 'Номин', isSelf: true, inRoster: true, hasAccount: true }, onboarding: false, period: 'today', missing: [],
             kpis: { activeLeads: 24, newLeads: 8, leadsByStatus: {}, viewingsToday: 2, viewingsThisWeek: 6, activeContracts: 4, overdueContracts: 0, salesThisMonth: 680000000, salesThisYear: 2300000000, contractCountThisYear: 12 },
@@ -162,6 +180,11 @@ async function setup(page: Page, restricted = false) {
             overview: buildBudgetOverview(Array(12).fill(10000000), Array.from({ length: 12 }, (_, index) => index < 9 ? 8000000 : 0), Array(12).fill(0)),
             spendStatus: Array.from({ length: 12 }, (_, index) => ({ month: index + 1, recorded: index < 9, pending: {} })) });
         if (path === '/api/dashboard/kpi-report') return reply({ manager: { name: 'Номин', isSelf: true }, shopName: 'Vertmon · Туршилтын өгөгдөл', year: 2026, month: 10, onboarding: true });
+        if (path === '/api/dashboard/reports/weekly-sales' && state.hubContracts) {
+            const fixture = weeklySalesFixture();
+            return reply({ meetingDate, projectName: 'Vertmon · Туршилтын өгөгдөл', ...fixture, sources: { ...fixture.sources, contracts: 'crm' },
+                files: buildWeeklyFiles({ range, hub: { date: range.to, name: 'HUB data.xlsx', by: 'Номин' }, products: null, sales: null }) });
+        }
         if (path === '/api/dashboard/reports/weekly-sales') return reply({ meetingDate, projectName: 'Vertmon · Туршилтын өгөгдөл', ...weeklySalesFixture(),
             // Эхний алхам: гэрээний экспорт энэ долоо хоногийнх, бүтээгдэхүүний экспорт өмнөх долоо хоногийнх.
             files: buildWeeklyFiles({ range, hub: null, products: { date: shiftReviewDate(range.to, -7), name: 'Elysium ERP' }, sales: { date: range.to, name: 'Elysium гэрээ' } }) });
@@ -385,6 +408,32 @@ test('алдаатай эх үүсвэрийг тэг гэж үзүүлэхгү�
     expect(state.errors).toEqual([]);
 });
 
+test('удирдлага менежергүй гэрээний менежерийг «Гараар нөхөх» алхам дотроос сонгоно', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    const state = await setup(page);
+    Object.assign(state, { office: true, hubContracts: true });
+    await page.goto('/dashboard/weekly?track=sales&step=manual');
+    const steps = page.getByRole('navigation', { name: 'Борлуулалтын тайлан: алхмууд' });
+    await expect(steps.getByRole('button', { name: /Гараар нөхөх/ })).toContainText('гараар нөхөх зүйл байна');
+    const manual = page.getByRole('region', { name: 'Гараар нөхөх' });
+    await expect(manual.getByRole('status')).toContainText('Нөхөх зүйл: менежергүй 2 гэрээ, огноогүй 1 гэрээ.');
+    const rows = manual.getByRole('list', { name: 'Менежергүй гэрээ' }).getByRole('listitem');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.first()).toContainText('Энэ долоо хоног');
+    await expect(manual.getByRole('link', { name: 'Огноогүй гэрээ' })).toHaveAttribute('href', '/dashboard/contracts?filter=undated');
+    mkdirSync('output/workday', { recursive: true });
+    await page.screenshot({ path: 'output/workday/desktop-weekly-steps-manual.png', fullPage: true });
+
+    await expect(manual.getByRole('button', { name: 'Б1-53, E2: менежер хадгалах' })).toBeDisabled();
+    await manual.getByRole('combobox', { name: 'Б1-53, E2: менежер' }).selectOption('Номин.Менежер');
+    await manual.getByRole('button', { name: 'Б1-53, E2: менежер хадгалах' }).click();
+    // Хадгалсан гэрээ жагсаалтаас гарч, үлдсэн тоо шинэчлэгдэнэ.
+    await expect(manual.getByRole('status')).toContainText('Нөхөх зүйл: менежергүй 1 гэрээ, огноогүй 1 гэрээ.');
+    await expect(rows).toHaveCount(1);
+    expect(state.managerWrites).toEqual([{ id: 'c-53', sales_manager: 'Номин.Менежер' }]);
+    expect(state.errors).toEqual([]);
+});
+
 test('ханшгүй зардалтай хурлын тайлан өртгийг таамаглахгүй', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     const state = await setup(page);
@@ -408,7 +457,7 @@ test('хурлын тайланг алхам алхмаар бэлдэж, алх
     const state = await setup(page);
     await page.goto('/dashboard/weekly');
     const salesSteps = page.getByRole('navigation', { name: 'Борлуулалтын тайлан: алхмууд' });
-    await expect(salesSteps.getByRole('button')).toHaveText([/ERP мэдээлэл оруулах/, /Тоон тойм/, /Гэрээ, үлдэгдэл/, /Лидийн эх сурвалж/, /Нэмэлт слайд/, /Миний шинэчлэл/, /Шалгаад татах/]);
+    await expect(salesSteps.getByRole('button')).toHaveText([/ERP мэдээлэл оруулах/, /Гараар нөхөх/, /Тоон тойм/, /Гэрээ, үлдэгдэл/, /Лидийн эх сурвалж/, /Нэмэлт слайд/, /Миний шинэчлэл/, /Шалгаад татах/]);
     // Эхний алхам: ERP-ийн файл. Хуучин файлыг нэрлэж, оруулах хуудас руу нь холбоно; тайлангийн тоо дараагийн алхмаас.
     await expect(page.getByRole('heading', { name: 'ERP мэдээлэл оруулах', exact: true })).toBeVisible();
     const files = page.getByRole('region', { name: 'ERP мэдээлэл оруулах' });
@@ -421,6 +470,15 @@ test('хурлын тайланг алхам алхмаар бэлдэж, алх
     await expect(salesSteps.getByRole('button', { name: /ERP мэдээлэл оруулах/ })).toContainText('шинэ файл хэрэгтэй');
     mkdirSync('output/workday', { recursive: true });
     await page.screenshot({ path: 'output/workday/desktop-weekly-steps-files.png', fullPage: true });
+    // Хоёр дахь алхам: файлд байдаггүй зүйлс. Энэ төсөл гэрээг ERP-ийн экспортоос уншдаг тул менежер, огноог гараар нөхөхгүй.
+    await page.getByRole('button', { name: 'Дараах: Гараар нөхөх', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Гараар нөхөх', exact: true })).toBeFocused();
+    await expect(page).toHaveURL(/\?track=sales&step=manual$/);
+    const manual = page.getByRole('region', { name: 'Гараар нөхөх' });
+    await expect(manual.getByRole('status')).toContainText('Гараар нөхөх зүйл алга.');
+    await expect(manual.getByText('Энэ төсөлд гэрээний менежер ERP-ийн гэрээний экспортоос ирдэг.')).toBeVisible();
+    await expect(manual.getByRole('list', { name: 'Менежергүй гэрээ' })).toHaveCount(0);
+    await expect(manual.getByText('Төлөвлөгөө, гүйцэтгэлийг удирдлага (супер админ) оруулна.')).toBeVisible();
     await page.getByRole('button', { name: 'Дараах: Тоон тойм', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Тоон тойм', exact: true })).toBeFocused();
     // Хуучин файлтай алхмыг үзсэн төдийгөөр «бөглөсөн» гэж тэмдэглэхгүй.

@@ -173,7 +173,7 @@ function ImportWorkspace({ shopId }: { shopId: string }) {
             setSaved({ inserted: Number(body.inserted ?? 0), updated: Number(body.updated ?? 0), replayed: body.replayed === true });
             setStep('done');
             toast.success('Гэрээний жагсаалт импортлогдлоо');
-            for (const key of ['contracts', 'operations-report', 'weekly-sales', 'director', 'kpi-report', 'my-stats', 'sales-kpi', 'admin-sales-targets', 'plan-performance', 'units']) {
+            for (const key of ['contracts', 'operations-report', 'weekly-sales', 'weekly-manual', 'director', 'kpi-report', 'my-stats', 'sales-kpi', 'admin-sales-targets', 'plan-performance', 'units']) {
                 void cache.invalidateQueries({ queryKey: [key] });
             }
         } catch {

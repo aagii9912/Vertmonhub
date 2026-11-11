@@ -22,7 +22,7 @@ type CrmContract = {
 
 const money = (value: number | string | null) => value === null || value === '' ? null : erpNumber(String(value));
 /** CRM-ийн `product_type` → ERP-ийн бүтээгдэхүүний төрөл (огноотой, огноогүй гэрээнд нэг дүрэм). */
-const crmKind = (productType: string | null): ProductKind => productKind(productType === 'industry' ? 'Агуулах' : productType === 'parking' ? 'Зогсоол'
+export const crmKind = (productType: string | null): ProductKind => productKind(productType === 'industry' ? 'Агуулах' : productType === 'parking' ? 'Зогсоол'
     : productType === 'commercial' ? 'Үйлчилгээ' : productType === 'residential' ? 'Орон сууц' : productType);
 
 /**

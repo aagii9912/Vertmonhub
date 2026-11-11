@@ -264,7 +264,7 @@ export default function SalesTargetsAdminPage() {
                 ...current, months: current.months.map(row => saved.get(row.month) ?? row),
             } : current);
             setTargetDraft(null);
-            await Promise.all(['admin-sales-targets', 'director', 'kpi-report', 'my-stats', 'operations-report', 'weekly-sales', 'plan-performance'].map(key =>
+            await Promise.all(['admin-sales-targets', 'director', 'kpi-report', 'my-stats', 'operations-report', 'weekly-sales', 'weekly-manual', 'plan-performance'].map(key =>
                 queryClient.invalidateQueries({ queryKey: [key, shopId] })));
             toast.success('Төлөвлөгөө, гүйцэтгэл хадгалагдлаа');
         } catch (cause) {

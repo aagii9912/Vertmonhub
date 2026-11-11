@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -24,6 +24,7 @@ import { Alert } from '@/components/ui/Alert';
 import { Avatar, Skeleton } from '@/components/dashboard/v2/primitives';
 import { useWeeklySales, WeeklySalesDetails } from '@/components/weekly/WeeklySalesDetails';
 import { WeeklyDataFiles } from '@/components/weekly/WeeklyDataFiles';
+import { useWeeklyManual, WeeklyManualFixes } from '@/components/weekly/WeeklyManualFixes';
 import { WeeklyMarketingBudget } from '@/components/weekly/WeeklyMarketingBudget';
 import { WeeklyMarketingChannels } from '@/components/weekly/WeeklyMarketingChannels';
 import { useMarketingConnections, WeeklyMarketingConnections } from '@/components/weekly/WeeklyMarketingConnections';
@@ -36,6 +37,7 @@ import { summarizeContentPlan } from '@/lib/marketing/content-plan';
 import type { WeeklyDeckFileKind } from '@/lib/dashboard/weekly-deck';
 import { periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from '@/lib/dashboard/contract-dates';
 import { weeklyFilesStatus } from '@/lib/dashboard/weekly-files';
+import { weeklyManualStatus } from '@/lib/dashboard/weekly-manual';
 
 type View = 'steps' | 'full';
 type DiscussionItem = ReturnType<typeof weeklyDiscussionItems>[number];
@@ -102,6 +104,7 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
         enabled: !!shop?.id, staleTime: 30_000, retry: 1,
     });
     const weeklySalesQuery = useWeeklySales(meetingDate, can('reports'));
+    const manualQuery = useWeeklyManual(meetingDate, can('reports'));
     const slidesQuery = useWeeklySlides(meetingDate, can('reports') || can('marketing-roi'));
     const contentQuery = useContentPlan(meetingDate, range, can('marketing-roi'));
     const connectionsQuery = useMarketingConnections(can('marketing-roi'));
@@ -134,7 +137,7 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
     const text = formatWeeklyReview({ shopName: shop?.name || 'Vertmon Hub', meetingDate, sales, previousSales, weeklySales, marketing, contentPlan, updates: updates?.updates, connections, notices });
     const exportable = !loading && !dirty && !!(sales || marketing || updates);
     const refresh = () => {
-        if (can('reports')) { void salesQuery.refetch(); void previousSalesQuery.refetch(); void weeklySalesQuery.refetch(); }
+        if (can('reports')) { void salesQuery.refetch(); void previousSalesQuery.refetch(); void weeklySalesQuery.refetch(); void manualQuery.refetch(); }
         if (can('marketing-roi')) void marketingQuery.refetch();
         if (can('reports') || can('marketing-roi')) void slidesQuery.refetch();
         if (can('marketing-roi')) { void contentQuery.refetch(); void connectionsQuery.refetch(); }
@@ -218,6 +221,12 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
     // Эхний алхам: тайлангийн тоо ERP-ээс оруулсан файлаас гардаг тул файлаа эхэлж оруулна.
     const dataFiles = <WeeklyDataFiles query={weeklySalesQuery} range={range} canImportHub={canImportHub} canImportErp={canImportErp} />;
     const filesStatus = weeklySales?.files ? weeklyFilesStatus(weeklySales.files) : undefined;
+    // Хоёр дахь алхам: файлд байдаггүй зүйлсийг (гэрээний менежер, огноо, сарын төлөвлөгөө) гараар нөхнө.
+    const contractsFromErp = weeklySales?.sources.contracts === 'erp';
+    const manualFixes = <WeeklyManualFixes query={manualQuery} contractsFromErp={contractsFromErp}
+        canSetManager={canWrite && can('contracts') && mode?.isManager === false} canOpenContracts={can('contracts')}
+        canEditPlan={user?.role === 'super_admin'} canOpenDaily={can('dashboard')} />;
+    const manualStatus = manualQuery.data && weeklySales ? weeklyManualStatus(manualQuery.data, { contractsFromErp }) : undefined;
     // Лидийн эх сурвалж, хөрвөлт нь борлуулалтын үзүүлэлт — маркетингийн албаны ажлыг үүгээр хэмжихгүй.
     const leadSources = marketingQuery.isPending ? <Skeleton className="h-36" /> : marketing ? <>
         <div className="grid grid-cols-3 gap-5 rounded-2xl border border-border p-5">
@@ -295,6 +304,9 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
                 { id: 'files', title: 'ERP мэдээлэл оруулах', body: dataFiles, done: filesStatus?.ready,
                     warn: !!weeklySalesQuery.error || !!filesStatus?.pending.length, warnText: weeklySalesQuery.error ? undefined : 'шинэ файл хэрэгтэй',
                     hint: 'Тайлангийн гэрээ, үлдэгдэл, давхрын зураглал ERP-ээс оруулсан файлаас гардаг. Эхлээд энэ долоо хоногийн файлаа оруулна — оруулаагүй бол дараагийн алхмуудын тоо өмнөх файлынх байна.' },
+                { id: 'manual', title: 'Гараар нөхөх', body: manualFixes, done: manualStatus?.ready,
+                    warn: !!manualQuery.error || !!manualStatus?.pending.length, warnText: manualQuery.error ? undefined : 'гараар нөхөх зүйл байна',
+                    hint: 'ERP-ийн файлд байдаггүй зүйлсийг энд гараар нөхнө: гэрээний менежер, огноо, сарын төлөвлөгөө. Мөр бүр юу дутууг, хаана засахыг заана — нөхөх зүйлгүй мөр «Бүрэн» гэж гарна.' },
                 { id: 'overview', title: 'Тоон тойм', body: salesOverview, href: `/dashboard/reports/operations?${params}`, warn: !!salesQuery.error,
                     hint: 'Шинэ лид, гэрээ, уулзалтын тоо зөв эсэхийг шалгана. Буруу бол лид, уулзалт, гэрээний бүртгэлээ засаад «Шинэчлэх» дарна.' },
                 { id: 'contracts', title: 'Гэрээ, үлдэгдэл', body: salesDetails, href: can('erp-imports') ? '/dashboard/reports/erp' : undefined, warn: !!weeklySalesQuery.error,
@@ -407,12 +419,14 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
             {view === 'steps' ? <div className="space-y-6 print:hidden">
                 {notices.length > 0 && <div role="status" className="space-y-1 rounded-xl bg-surface-2 px-4 py-3 text-xs leading-relaxed text-fg-2">{notices.map(notice => <p key={notice}>{notice}</p>)}</div>}
                 <nav ref={stepperRef} aria-label={`${track.label}: алхмууд`} className="scroll-mt-20">
-                    <ol className="flex flex-wrap gap-2">
+                    {/* 6 хүртэл алхам нэг мөрөнд; түүнээс олон бол хоёр тэнцүү мөр (ганц алхам доор үлдэхгүй). */}
+                    <ol className="grid grid-cols-2 gap-2 lg:[grid-template-columns:repeat(var(--step-columns),minmax(0,1fr))]"
+                        style={{ '--step-columns': track.steps.length <= 6 ? track.steps.length : Math.ceil(track.steps.length / 2) } as CSSProperties}>
                         {track.steps.map((item, index) => {
                             const current = index === stepIndex;
                             // Анхаарах зүйлтэй (файл хуучин, ачаалж чадаагүй) алхмыг зөвхөн үзсэнээр нь «бөглөсөн» гэж тэмдэглэхгүй.
                             const checked = !current && (item.done || (!item.warn && visited.includes(`${track.id}:${item.id}`)));
-                            return <li key={item.id} className="min-w-[150px] flex-1">
+                            return <li key={item.id}>
                                 <button type="button" aria-current={current ? 'step' : undefined} onClick={() => goToStep(item.id)}
                                     className={cn('flex h-full min-h-11 w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors focus-ring', current ? 'border-brand bg-surface text-foreground' : 'border-border text-fg-2 hover:bg-surface-2')}>
                                     <span className={cn('flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums', current ? 'bg-brand text-brand-fg' : checked ? 'bg-surface-3 text-foreground' : 'bg-surface-2 text-muted-foreground')}>

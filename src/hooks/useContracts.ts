@@ -129,7 +129,7 @@ export function useContract(id: string | null) {
 }
 
 /** Гэрээний огноо, менежер өөрчлөгдвөл сар, долоо хоногийн тайлан, төлөвлөгөөний биелэлт ч шинэчлэгдэнэ. */
-const CONTRACT_DATE_READERS = ['contracts', 'director', 'operations-report', 'weekly-sales', 'kpi-report', 'my-stats', 'plan-performance', 'admin-sales-targets'];
+const CONTRACT_DATE_READERS = ['contracts', 'director', 'operations-report', 'weekly-sales', 'weekly-manual', 'kpi-report', 'my-stats', 'plan-performance', 'admin-sales-targets'];
 
 export interface ContractManagerOption { name: string; roster: boolean; contracts: number }
 
