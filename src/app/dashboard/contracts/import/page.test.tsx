@@ -106,6 +106,40 @@ it('previews the file, gates «Батлах» on the review checkbox and saves t
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['plan-performance'] });
 });
 
+it('shows units recognised from a «Тоот» 0 row and gates «Батлах» on confirming them', async () => {
+    const inferredUnits = [{ row: 2, label: 'Б2-149', block: 'Б2', floor: '8', model: 'C' }, { row: 3, label: 'Б1-70', block: 'Б1', floor: '15', model: 'E7' }];
+    transport.fetch.mockResolvedValueOnce(reply(200, preview({ review: [], inferredUnits, counts: { insert: 5, insertCancelled: 0, update: 0, unchanged: 0, review: 0, blocking: 0, missing: 88 } })))
+        .mockResolvedValueOnce(reply(201, { ok: true, import_id: 'i-2', inserted: 5, updated: 0, replayed: false }));
+    renderPage();
+    await upload();
+
+    const card = screen.getByText('Тоотыг давхар, загвараар таньсан').closest('section, div') as HTMLElement;
+    expect(card).toBeInTheDocument();
+    const row = screen.getByRole('cell', { name: 'Б2 блок · 8 давхар · C загвар' }).closest('tr') as HTMLElement;
+    expect(within(row).getByRole('cell', { name: 'Б2-149' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'Б1 блок · 15 давхар · E7 загвар' })).toBeInTheDocument();
+    expect(screen.queryByText('Шалгах шаардлагатай')).not.toBeInTheDocument();
+
+    const confirm = screen.getByRole('button', { name: 'Батлах' });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Таньсан тоотыг шалгасан' }));
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    expect(await screen.findByText('Хадгалсан')).toBeInTheDocument();
+    expect((transport.fetch.mock.calls[1][1].body as FormData).get('acceptReview')).toBe('true');
+});
+
+it('asks for one confirmation covering both changed contracts and recognised units', async () => {
+    transport.fetch.mockResolvedValueOnce(reply(200, preview({ inferredUnits: [{ row: 2, label: 'Б2-149', block: 'Б2', floor: '8', model: 'C' }] })));
+    renderPage();
+    await upload();
+    expect(screen.getByText('Тоотыг давхар, загвараар таньсан')).toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Батлах' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Дүн, төлөв өөрчлөгдөх гэрээ болон таньсан тоотыг шалгасан' }));
+    expect(screen.getByRole('button', { name: 'Батлах' })).toBeEnabled();
+});
+
 it('disables «Батлах» for blocking conflicts and for files with nothing to change', async () => {
     transport.fetch.mockResolvedValueOnce(reply(200, preview({ review: [], counts: { insert: 0, insertCancelled: 0, update: 0, unchanged: 83, review: 0, blocking: 1, missing: 10 },
         blocking: [{ code: 'unit_taken', label: 'Б1-16', row: 3, message: 'Мөр 3: байранд өөр идэвхтэй гэрээ байна' }], canCommit: false, opsCount: 0 })));

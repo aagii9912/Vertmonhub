@@ -208,6 +208,10 @@ export async function commitContractListImport(ctx: ContractListImportContext, f
     if (plan.review.length && !options.acceptReview) {
         return fail(400, 'Дүн, төлөв өөрчлөгдөх гэрээг шалгасан гэдгээ баталгаажуулна уу', { code: 'review_required' });
     }
+    // «Тоот» 0 ирж давхар, загвараар таньсан байр: хүн шалгаагүй бол бичихгүй.
+    if (plan.inferredUnits.length && !options.acceptReview) {
+        return fail(400, 'Давхар, загвараар таньсан тоотыг шалгасан гэдгээ баталгаажуулна уу', { code: 'review_required' });
+    }
     if (plan.olderThanLatest && !options.allowOlder) {
         return fail(400, `Сүүлийн импорт ${plan.olderThanLatest}-ны файлаар хийгдсэн. Хуучин файл оруулахаа баталгаажуулна уу`, { code: 'older_file', latest: plan.olderThanLatest });
     }

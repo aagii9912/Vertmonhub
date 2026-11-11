@@ -269,14 +269,23 @@ export function indexContractListUnits(units: readonly ContractListUnit[]): Cont
     return index;
 }
 
+/** ERP заримдаа «Тоот»-ыг 0 гэж экспортолдог (тоот оноогоогүй мөр) — 0 нь тоот биш. */
+const isZeroUnitNumber = (value: string) => /^0+$/.test(value.trim());
+/** «08» → «8» (алдааны бичвэрт). */
+const floorText = (floor: string | null) => floor === null ? null : floor.replace(/^0+(?=\d)/, '');
+
 /**
  * Мөрийн байр: ангилал = «Төрөл», код = `${Блок}-${Тоот}` эсвэл `${Блок}-${Тоот} (…)`. Олон таарвал давхраар,
  * дараа нь загвараар шүүнэ. Яг нэг → байр; үгүй бол мөрийн алдаа.
+ *
+ * «Тоот» 0 бөгөөд тийм кодтой байр алга бол (эзэмшигчийн шийдвэр 2026-11-11) тухайн ангилал, блокийн байрнаас давхар ба
+ * загвар хоёулаа таарах ЯГ НЭГ байрыг авна (`inferred: true` — шалгах дэлгэцэнд харуулж, баталгаажуулсны дараа л хадгална).
+ * Давхар эсвэл загвар хоосон, нэг ч таарахгүй, эсвэл хэд хэд таарвал мөрийн алдаа — таамаглахгүй.
  */
 export function resolveContractUnit(
     row: Pick<HubRow, 'row' | 'productType' | 'block' | 'unitNumber' | 'floor' | 'model'>,
     units: readonly ContractListUnit[] | ContractListUnitIndex,
-): { unit: ContractListUnit } | { error: string } {
+): { unit: ContractListUnit; inferred?: true } | { error: string } {
     const index = units instanceof Map ? units : indexContractListUnits(units);
     const code = `${row.block}-${row.unitNumber}`;
     const name = `${typeLabel(row.productType)} ${code}`;
@@ -286,8 +295,25 @@ export function resolveContractUnit(
     if (candidates.length === 1) return { unit: candidates[0] };
     const all = index.get(`${row.productType}|${code}`) ?? [];
     if (all.length > 1) return { error: `Мөр ${row.row}: ${name} — давхар/загвараар нэг байр тодорхойгүй (${all.map(unit => unit.code).join(', ')})` };
+    if (isZeroUnitNumber(row.unitNumber)) {
+        const where = `${typeLabel(row.productType)} ${row.block}`;
+        if (!row.floor || !row.model) return { error: `Мөр ${row.row}: ${where} — «Тоот» 0, давхар эсвэл загвар хоосон тул байрыг таних боломжгүй. Файлд тоотыг бичнэ үү` };
+        const described = `${floorText(row.floor)} давхрын ${row.model} загварын байр`;
+        const matches = [...index.entries()].filter(([key]) => key.startsWith(`${row.productType}|${row.block}-`)).flatMap(([, list]) => list)
+            .filter(unit => dbFloor(unit.floor) === row.floor && sameText(unit.model, row.model));
+        if (matches.length === 1) return { unit: matches[0], inferred: true };
+        return { error: matches.length
+            ? `Мөр ${row.row}: ${where} — «Тоот» 0; ${described} хэд хэд байна (${matches.map(unit => unit.code).join(', ')}). Файлд тоотыг бичнэ үү`
+            : `Мөр ${row.row}: ${where} — «Тоот» 0; ${described} олдсонгүй. Файлд тоотыг бичнэ үү` };
+    }
     return { error: `Мөр ${row.row}: ${name} байр олдсонгүй` };
 }
+
+/** «Б1-70 (01)» кодын тоот: «70». */
+const unitNumberOfCode = (code: string, block: string) => {
+    const base = baseCode(code);
+    return base.startsWith(`${block}-`) ? base.slice(block.length + 1) : base;
+};
 
 // ---------------------------------------------------------------- Төлөвлөгөө
 
@@ -356,6 +382,8 @@ export interface ContractListReviewItem { contractId: string; label: string; row
 export interface ContractListUpdateGroup { field: ContractListField; label: string; count: number; items: Array<{ contractId: string; label: string; from: Value; to: Value }> }
 export interface ContractListInsertItem { label: string; row: number; status: ContractListStatus; orderDate: string; total: number; name: string | null }
 export interface ContractListMissingItem { contractId: string; label: string; status: string | null; orderDate: string | null; total: number | null; undated: boolean }
+/** «Тоот» 0 ирсэн мөрийн давхар, загвараар таньсан байр — батлахын өмнө хүн шалгана. */
+export interface ContractListInferredUnit { row: number; label: string; block: string; floor: string | null; model: string | null }
 export interface ContractListUnitMismatch { label: string; unitStatus: string | null; unitStatusLabel: string; kind: 'live_on_free' | 'cancelled_on_sold' }
 export type ContractListInfoCode = 'holder_differs' | 'holder_transferred' | 'erp_transferred';
 export interface ContractListInfoItem { code: ContractListInfoCode; label: string; row: number; message: string; fileName?: string | null; currentName?: string | null; contractId?: string }
@@ -402,6 +430,8 @@ export interface ContractListImportPlan {
     stillUndated: number;
     unitStatusMismatches: ContractListUnitMismatch[];
     info: ContractListInfoItem[];
+    /** «Тоот» 0 ирж, давхар + загвараар таньсан мөрүүд — байвал батлахад `acceptReview` шаардлагатай. */
+    inferredUnits: ContractListInferredUnit[];
     blocking: ContractListBlockingItem[];
     /** Сүүлийн импортоос хуучин файл бол тэр импортын огноо (батлахад allowOlder шаардлагатай). */
     olderThanLatest: string | null;
@@ -567,9 +597,15 @@ export function planContractListImport(input: ContractListPlanInput): ContractLi
     const unitOf = new Map<string, ContractListUnit>();
     const fileByUnit = new Map<string, HubRow[]>();
     const unitLabelOfRow = new Map<number, string>();
-    for (const row of input.rows) {
-        const resolved = resolveContractUnit(row, unitIndex);
-        if ('error' in resolved) { errors.push(resolved.error); continue; }
+    const inferredUnits: ContractListInferredUnit[] = [];
+    // Таньсан тоотыг мөрд нь бичнэ: доорх тулгалт, хадгалах мөр (`contract_list_imports.rows`) файлын 0-ээр биш жинхэнэ тоотоор.
+    const fileRows: HubRow[] = [];
+    for (const source of input.rows) {
+        const resolved = resolveContractUnit(source, unitIndex);
+        if ('error' in resolved) { errors.push(resolved.error); fileRows.push(source); continue; }
+        const row = resolved.inferred ? { ...source, unitNumber: unitNumberOfCode(resolved.unit.code, source.block) } : source;
+        fileRows.push(row);
+        if (resolved.inferred) inferredUnits.push({ row: row.row, label: displayLabel(resolved.unit.category, resolved.unit.code), block: row.block, floor: floorText(row.floor), model: row.model });
         const key = `${resolved.unit.category}|${resolved.unit.code}`;
         unitOf.set(key, resolved.unit);
         unitLabelOfRow.set(row.row, resolved.unit.code);
@@ -739,7 +775,7 @@ export function planContractListImport(input: ContractListPlanInput): ContractLi
     const stillUndated = missing.filter(item => item.undated).length;
     const olderThanLatest = input.latestImportDate && DATE.test(reportDate) && reportDate < input.latestImportDate ? input.latestImportDate : null;
     const finalOps = errors.length ? [] : ops;
-    const storedRows: ContractListStoredRow[] = input.rows.map(row => ({ ...row, unitLabel: unitLabelOfRow.get(row.row) ?? null }));
+    const storedRows: ContractListStoredRow[] = fileRows.map(row => ({ ...row, unitLabel: unitLabelOfRow.get(row.row) ?? null }));
     const filePaid = storedHubPaidRows(storedRows);
     const paidUpdate = errors.length ? null : paidUpdateOf(filePaid, input.sameDateImportRows);
     return {
@@ -759,6 +795,7 @@ export function planContractListImport(input: ContractListPlanInput): ContractLi
         stillUndated,
         unitStatusMismatches,
         info,
+        inferredUnits,
         blocking,
         olderThanLatest,
         paidUpdate,
@@ -767,6 +804,7 @@ export function planContractListImport(input: ContractListPlanInput): ContractLi
             counts, fileTotals, units, stillUndated,
             unitStatusMismatches: unitStatusMismatches.length,
             review: review.map(item => item.label),
+            ...(inferredUnits.length ? { inferredUnits: inferredUnits.map(item => `Мөр ${item.row} → ${item.label}`) } : {}),
             blocking: blocking.length,
             olderThanLatest,
             paidUpdate,

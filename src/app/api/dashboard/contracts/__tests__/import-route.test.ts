@@ -202,6 +202,31 @@ describe('POST /api/dashboard/contracts/import — preview and commit', () => {
         expect(state.rpc).not.toHaveBeenCalled();
     });
 
+    it('recognises a «Тоот» 0 row by floor and model, shows it in the preview and commits only after it is confirmed', async () => {
+        // ERP-ийн экспортод Б2-ийн орон сууцны «Тоот» 0 гэж ирсэн: Б2 блокийн 22 давхрын A загвар яг нэг байр (Б2-231).
+        const file = await fileOf([hubRow({ 'Блок': 'Б2', 'Тоот': 0, 'Давхар': '22', 'Захиалга өгсөн огноо': '2026-10-15', 'Нэр': 'Нараа', 'Овог': 'Бат' })]);
+        const planned = await (await preview(file)).json();
+        expect(planned.inferredUnits).toEqual([{ row: 2, label: 'Б2-231', block: 'Б2', floor: '22', model: 'A' }]);
+        expect(planned).toMatchObject({ canCommit: true, counts: { insert: 1, review: 0 } });
+        const fields = { action: 'commit', reportDate: '2026-10-21', requestId: REQUEST, planHash: planned.planHash };
+        const unconfirmed = await post({ ...fields, acceptReview: 'false' }, file);
+        expect(unconfirmed.status).toBe(400);
+        expect(await unconfirmed.json()).toEqual({ error: 'Давхар, загвараар таньсан тоотыг шалгасан гэдгээ баталгаажуулна уу', code: 'review_required' });
+        expect(state.rpc).not.toHaveBeenCalled();
+        const confirmed = await post({ ...fields, acceptReview: 'true' }, file);
+        expect(confirmed.status).toBe(201);
+        const args = state.rpc.mock.calls[0][1];
+        expect(args.p_ops).toEqual([expect.objectContaining({ op: 'insert', label: 'Б2-231', fields: expect.objectContaining({ unit_label: 'Б2-231' }) })]);
+        expect(args.p_rows).toEqual([expect.objectContaining({ unitNumber: '231', unitLabel: 'Б2-231' })]);
+        expect(args.p_summary).toMatchObject({ inferredUnits: ['Мөр 2 → Б2-231'] });
+    });
+
+    it('rejects a «Тоот» 0 row that no single unit matches, naming the row', async () => {
+        const response = await preview(await fileOf([hubRow({ 'Тоот': 0, 'Давхар': '9', 'Загвар': 'Q' })]));
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ errors: ['Мөр 2: Орон сууц Б1 — «Тоот» 0; 9 давхрын Q загварын байр олдсонгүй. Файлд тоотыг бичнэ үү'] });
+    });
+
     it('refuses to commit while blocking conflicts exist', async () => {
         state.tables.property_contracts[1] = { ...state.tables.property_contracts[1], paid_amount: 1000 };
         const planned = await (await preview()).json();

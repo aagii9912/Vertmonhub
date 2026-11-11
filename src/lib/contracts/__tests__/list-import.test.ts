@@ -173,6 +173,63 @@ describe('resolveContractUnit', () => {
     });
 });
 
+describe('«Тоот» 0 (ERP тоот оноогоогүй экспортолсон мөр)', () => {
+    it('takes the one unit of that type and block whose floor and model both match, and marks it as inferred', () => {
+        expect(resolveContractUnit(hub({ block: 'Б2', unitNumber: '0', floor: '22', model: 'A' }), SHOP_UNITS)).toEqual({ unit: SHOP_UNITS[0], inferred: true });
+        // Загварын том жижиг үсэг, «00» хамаагүй; өөр блокийн ижил давхар, загвар таарахгүй.
+        expect(resolveContractUnit(hub({ block: 'Б1', unitNumber: '00', floor: '12', model: 'c' }), SHOP_UNITS)).toMatchObject({ unit: { code: 'Б1-110', category: 'residential' }, inferred: true });
+        // Ангилал тусдаа: зогсоолын мөр орон сууцтай таарахгүй.
+        expect(resolveContractUnit(hub({ productType: 'parking', block: 'Б1', unitNumber: '0', floor: '12', model: 'C' }), SHOP_UNITS))
+            .toEqual({ error: 'Мөр 2: Зогсоол Б1 — «Тоот» 0; 12 давхрын C загварын байр олдсонгүй. Файлд тоотыг бичнэ үү' });
+    });
+
+    it('never guesses: several matches, no match, or a missing floor or model stay row errors', () => {
+        expect(resolveContractUnit(hub({ row: 4, productType: 'parking', unitNumber: '0', floor: '01', model: 'P' }), SHOP_UNITS))
+            .toEqual({ error: 'Мөр 4: Зогсоол Б1 — «Тоот» 0; 1 давхрын P загварын байр хэд хэд байна (Б1-10 (01), Б1-17 (01)). Файлд тоотыг бичнэ үү' });
+        expect(resolveContractUnit(hub({ row: 5, unitNumber: '0', floor: '05', model: 'Z' }), SHOP_UNITS))
+            .toEqual({ error: 'Мөр 5: Орон сууц Б1 — «Тоот» 0; 5 давхрын Z загварын байр олдсонгүй. Файлд тоотыг бичнэ үү' });
+        expect(resolveContractUnit(hub({ row: 6, unitNumber: '0', floor: null }), SHOP_UNITS))
+            .toEqual({ error: 'Мөр 6: Орон сууц Б1 — «Тоот» 0, давхар эсвэл загвар хоосон тул байрыг таних боломжгүй. Файлд тоотыг бичнэ үү' });
+        expect(resolveContractUnit(hub({ row: 7, unitNumber: '0', model: null }), SHOP_UNITS)).toMatchObject({ error: expect.stringContaining('давхар эсвэл загвар хоосон') });
+    });
+
+    it('keeps a real unit numbered 0 an exact match', () => {
+        const units: ContractListUnit[] = [...SHOP_UNITS, { code: 'Б1-0', category: 'residential', block: 'Б1', floor: '01', model: 'X', unit_number: '0', legacy_unit_number: '0', status: 'available' }];
+        expect(resolveContractUnit(hub({ unitNumber: '0', floor: '05', model: 'B' }), units)).toEqual({ unit: units[units.length - 1] });
+    });
+
+    it('plans the row on the recognised unit, lists it for confirmation and stores the real number', () => {
+        const result = plan({ rows: [hub({ row: 2, block: 'Б2', unitNumber: '0', floor: '22', model: 'A' }), hub({ row: 3, unitNumber: '31', floor: '03', model: 'A' })] });
+        expect(result.errors).toEqual([]);
+        expect(result.inferredUnits).toEqual([{ row: 2, label: 'Б2-231', block: 'Б2', floor: '22', model: 'A' }]);
+        expect(result.inserts.map(item => item.label).sort()).toEqual(['Б1-31', 'Б2-231']);
+        const created = inserts(result.ops).find(op => op.label === 'Б2-231')!;
+        expect(created.fields).toMatchObject({ product_type: 'residential', unit_label: 'Б2-231', order_date: '2026-10-15' });
+        // Хадгалах мөр (төлсөн дүнгийн уншигчийн түлхүүр) файлын 0-ээр биш жинхэнэ тоотоор.
+        expect(result.rows.find(row => row.row === 2)).toMatchObject({ unitNumber: '231', unitLabel: 'Б2-231' });
+        expect(result.summary).toMatchObject({ inferredUnits: ['Мөр 2 → Б2-231'] });
+        // Дахин оруулахад (гэрээ үүссэний дараа) давхар гэрээ үүсэхгүй.
+        const after = plan({ rows: [hub({ row: 2, block: 'Б2', unitNumber: '0', floor: '22', model: 'A' })],
+            contracts: [contract(7, { unit_label: 'Б2-231', block_name: 'Б2', legacy_unit_number: '231', order_date: '2026-10-15', contract_date: '2026-10-15',
+                prepayment_condition: '30%', payment_condition: 'Энгийн', overdue_amount: 0, overdue_as_of: '2026-10-22', customer_first_name: 'Тэмүүлэн', customer_last_name: 'Болд' })] });
+        expect(inserts(after.ops)).toEqual([]);
+        expect(after.inferredUnits).toHaveLength(1);
+    });
+
+    it('leaves a file with real numbers untouched: nothing inferred, no summary entry', () => {
+        const result = plan({ rows: [hub()] });
+        expect(result.inferredUnits).toEqual([]);
+        expect(result.summary).not.toHaveProperty('inferredUnits');
+        expect(result.rows[0].unitNumber).toBe('16');
+    });
+
+    it('fails the whole file when one zero row cannot be recognised', () => {
+        const result = plan({ rows: [hub({ row: 2, block: 'Б2', unitNumber: '0', floor: '22', model: 'A' }), hub({ row: 3, unitNumber: '0', floor: '09', model: 'Q' })] });
+        expect(result.errors).toEqual(['Мөр 3: Орон сууц Б1 — «Тоот» 0; 9 давхрын Q загварын байр олдсонгүй. Файлд тоотыг бичнэ үү']);
+        expect(result.ops).toEqual([]);
+    });
+});
+
 describe('planContractListImport', () => {
     it('fills dates, names, overdue and conditions on a matched undated contract (auto) and is idempotent after commit', () => {
         const contracts = [contract(1)];

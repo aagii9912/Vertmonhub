@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { ubDateStr } from '@/lib/utils/date';
 import { HUB_STATUS_LABEL } from '@/lib/contracts/labels';
 import type {
-    ContractListBlockingItem, ContractListCounts, ContractListFileTotal, ContractListInfoItem, ContractListInsertItem,
+    ContractListBlockingItem, ContractListCounts, ContractListFileTotal, ContractListInferredUnit, ContractListInfoItem, ContractListInsertItem,
     ContractListMissingItem, ContractListPaidUpdate, ContractListReviewItem, ContractListUnitMismatch, ContractListUpdateGroup,
 } from '@/lib/contracts/list-import';
 
@@ -46,6 +46,8 @@ interface Preview {
     stillUndated: number;
     unitStatusMismatches: ContractListUnitMismatch[];
     info: ContractListInfoItem[];
+    /** «Тоот» 0 ирж, давхар + загвараар таньсан мөрүүд (хуучин хариунд байхгүй). */
+    inferredUnits?: ContractListInferredUnit[];
     blocking: ContractListBlockingItem[];
     olderThanLatest: string | null;
     /** Гэрээнд бичигдэхгүй «Нийт төлсөн дүн»-гийн шинэчлэл (null = алга эсвэл хадгалсантай ижил). */
@@ -291,7 +293,10 @@ function ReviewStep({ preview, busy, acceptReview, onAcceptReview, allowOlder, o
     const paidOnly = paidOnlyOf(preview);
     const nothing = preview.opsCount === 0 && !paidOnly;
     const blocked = preview.blocking.length > 0;
-    const disabled = busy || !preview.canCommit || (preview.review.length > 0 && !acceptReview) || (!!preview.olderThanLatest && !allowOlder);
+    const inferred = preview.inferredUnits ?? [];
+    // Шалгах зүйл: дүн/төлөв өөрчлөгдөх гэрээ эсвэл давхар, загвараар таньсан тоот — аль нэг нь байвал баталгаажуулалт шаардана.
+    const needsAccept = preview.review.length > 0 || inferred.length > 0;
+    const disabled = busy || !preview.canCommit || (needsAccept && !acceptReview) || (!!preview.olderThanLatest && !allowOlder);
     const undated = preview.missing.filter(item => item.undated).length;
     return (
         <>
@@ -337,6 +342,19 @@ function ReviewStep({ preview, busy, acceptReview, onAcceptReview, allowOlder, o
                     rows={preview.fileTotals.map(total => [total.label, number(total.rows), money(total.total), money(total.prepaymentDue), money(total.overdue)])} />
             </SectionCard>
 
+            {inferred.length > 0 && (
+                <SectionCard title="Тоотыг давхар, загвараар таньсан" description="Файлд эдгээр мөрийн «Тоот» 0 гэж ирсэн. Блок, давхар, загвар нь яг нэг байртай таарсан тул тэр байраар бүртгэнэ. Тоот зөв эсэхийг шалгаарай — буруу бол файлдаа тоотыг бичээд дахин оруулна.">
+                    <Table head={['Мөр', 'Файлд', 'Таньсан байр']}
+                        rows={inferred.map(item => [number(item.row), `${item.block} блок · ${item.floor ?? '—'} давхар · ${item.model ?? '—'} загвар`, item.label])} />
+                    {preview.review.length === 0 && (
+                        <label className="mt-3 flex items-center gap-2 text-sm">
+                            <Checkbox checked={acceptReview} disabled={busy} onCheckedChange={value => onAcceptReview(value === true)} />
+                            Таньсан тоотыг шалгасан
+                        </label>
+                    )}
+                </SectionCard>
+            )}
+
             {preview.review.length > 0 && (
                 <SectionCard title="Шалгах шаардлагатай" description="Гэрээнд бүртгэлтэй дүн, огноо, төлвийг файлын утгаар солино. Шалгаж баталгаажуулсны дараа л хадгалагдана.">
                     <ul className="mt-3 divide-y divide-border rounded-xl border border-border">
@@ -351,7 +369,7 @@ function ReviewStep({ preview, busy, acceptReview, onAcceptReview, allowOlder, o
                     </ul>
                     <label className="mt-3 flex items-center gap-2 text-sm">
                         <Checkbox checked={acceptReview} disabled={busy} onCheckedChange={value => onAcceptReview(value === true)} />
-                        Дүн, төлөв өөрчлөгдөх гэрээг шалгасан
+                        {inferred.length > 0 ? 'Дүн, төлөв өөрчлөгдөх гэрээ болон таньсан тоотыг шалгасан' : 'Дүн, төлөв өөрчлөгдөх гэрээг шалгасан'}
                     </label>
                 </SectionCard>
             )}
