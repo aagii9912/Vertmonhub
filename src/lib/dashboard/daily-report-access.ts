@@ -25,6 +25,17 @@ export async function resolveDailyReportRequest(shopId: string) {
     return { permissions, userId, viewer, writable: canWriteDailyReport(permissions) };
 }
 
+/**
+ * «Өдрийн тайлан»-г харах эрх (GET-ийн дүрэм): `dashboard`/`reports` модуль + багийн харагдац эсвэл төсөлдөө
+ * бүртгэлтэй менежер. Тайлангийн толгойн брэнд зургийг татахад мөн шалгана.
+ */
+export async function canViewDailyReport(shopId: string, permissions: Permissions, userId: string | null): Promise<boolean> {
+    const modules = permissions.permissions.modules;
+    if (permissions.role !== 'super_admin' && !modules.includes('dashboard') && !modules.includes('reports')) return false;
+    const viewer = await resolveDailyReportViewer(supabaseAdmin(), shopId, { userId, role: permissions.role, modules });
+    return viewer.canViewTeam;
+}
+
 /** Тоо, түүх, «Тайлан хийж гүйцэтгэсэн»-д бичих нэр: бүртгэлийн албан нэр → профайлын нэр. */
 export function dailyReportActorName(viewer: DailyReportViewer): string {
     return viewer.identity?.rosterEntry ? formalManagerName(viewer.identity.rosterEntry.name) : viewer.identity?.fullName || 'Хэрэглэгч';

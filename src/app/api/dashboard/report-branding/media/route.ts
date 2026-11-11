@@ -7,12 +7,14 @@ import { logger } from '@/lib/utils/logger';
 import {
     brandingMediaUrl, parseBrandingMediaPath, REPORT_MEDIA_BUCKET, REPORT_MEDIA_TYPES, sniffReportImage,
 } from '@/lib/dashboard/report-media';
+import { canViewDailyReport } from '@/lib/dashboard/daily-report-access';
 import { WEEKLY_SLIDE_LIMITS } from '@/lib/dashboard/weekly-slides';
 
 /**
  * Илтгэлийн брэнд зураг (нүүрний зураг, лого) — хувийн `report-media` bucket, `branding/<shop_id>/<uuid>.<jpg|png>`.
  * POST: settings write — JPEG/PNG (≤ 4 MB), төрлийг файлын эхний байтаас тогтооно; брэндэд PUT-аар хадгална.
- * GET: нэвтрэлт, замын shop-ийн гишүүнчлэл, reports (эсвэл settings) модулийг татах бүрд шалгана.
+ * GET: нэвтрэлт, замын shop-ийн гишүүнчлэл, reports (эсвэл settings) модулийг татах бүрд шалгана; «Өдрийн тайлан»-гийн
+ * толгойд гардаг тул тэр тайланг харах эрхтэй хэрэглэгч (төсөлдөө бүртгэлтэй менежер) мөн татна.
  */
 export const POST = withRoute({ module: 'settings', access: 'write', error: 'Зургийг хадгалж чадсангүй. Дахин оролдоно уу.' }, async ({ request, shop }) => {
     const form = await request.formData().catch(() => null);
@@ -39,7 +41,8 @@ export async function GET(request: NextRequest) {
         const parsed = params.length === 1 ? parseBrandingMediaPath(params[0]) : null;
         if (!parsed) return NextResponse.json({ error: 'Зургийн хаяг буруу байна' }, { status: 400 });
         if (!await assertShopAccess(parsed.shopId)) return NextResponse.json({ error: 'Зураг олдсонгүй' }, { status: 404 });
-        const allowed = access.role === 'super_admin' || ['reports', 'settings'].some(module => access.permissions.modules.includes(module));
+        const allowed = access.role === 'super_admin' || ['reports', 'settings'].some(module => access.permissions.modules.includes(module))
+            || await canViewDailyReport(parsed.shopId, access, userId);
         if (!allowed) return NextResponse.json({ error: 'Зураг харах эрх танд алга' }, { status: 403 });
         const { data, error } = await supabaseAdmin().storage.from(REPORT_MEDIA_BUCKET).download(parsed.path);
         if (error || !data) return NextResponse.json({ error: 'Зураг олдсонгүй' }, { status: 404 });

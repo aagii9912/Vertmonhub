@@ -93,6 +93,27 @@ describe('DailyReportDocument', () => {
         expect(within(table).getAllByRole('spinbutton')).toHaveLength(8);
     });
 
+    it('puts the project cover image and logo in the header, and falls back to the plain header when the image fails', () => {
+        const branding = { coverUrl: '/api/dashboard/report-branding/media?path=cover', logoUrl: '/api/dashboard/report-branding/media?path=logo' };
+        const { container, unmount } = render(<DailyReportDocument report={buildDailyReport(input())} branding={branding} />);
+        const header = container.querySelector('header')!;
+        expect(header.getAttribute('data-cover')).toBe('true');
+        expect([...header.querySelectorAll('img')].map(image => image.getAttribute('src'))).toEqual([branding.coverUrl, branding.logoUrl]);
+        // Чимэглэлийн зураг: дэлгэц уншигчид гарчиг, огноо л уншигдана.
+        expect([...header.querySelectorAll('img')].every(image => image.getAttribute('alt') === '')).toBe(true);
+        expect(within(header).getByRole('heading', { name: 'Элизиум баг' })).toBeTruthy();
+        fireEvent.error(header.querySelector('img')!);
+        expect(header.getAttribute('data-cover')).toBeNull();
+        expect([...header.querySelectorAll('img')].map(image => image.getAttribute('src'))).toEqual([branding.logoUrl]);
+        unmount();
+        // Брэнд тохируулаагүй төсөл: зураггүй толгой; зурагт (PNG) мөн адил зураг орно.
+        expect(render(<DailyReportDocument report={buildDailyReport(input())} />).container.querySelector('header img')).toBeNull();
+        cleanup();
+        const image = render(<DailyReportDocument report={buildDailyReport(input())} branding={branding} forImage />).container.querySelector('header')!;
+        expect(image.getAttribute('data-cover')).toBe('true');
+        expect(image.className).toContain('whitespace-nowrap');
+    });
+
     it('lays the report out as one table: managers in rows, lines/chat/meetings in columns, a total row below and no written summary', () => {
         const team = {
             ...config,

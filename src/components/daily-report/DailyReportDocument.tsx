@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, Check, Plus, UserRoundPen, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -9,6 +9,7 @@ import { formatStaffPhone } from '@/lib/admin/staff-profile';
 import { Button } from '@/components/ui/Button';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
+import type { DailyReportBranding } from '@/lib/dashboard/daily-report-branding';
 import {
     DAILY_COUNT_MAX, DAILY_LIMITS, formalManagerName, PHONE_LEAD_CHECK_ENABLED, phoneLeadChecks, reportDateLabel, reportPeriodLabel, UNASSIGNED,
     type DailyCellAuthor, type DailyGridRow, type DailyGridSection, type DailyMeetingItem, type DailyPendingMeeting, type DailyPhoneLeadCheck,
@@ -87,9 +88,11 @@ function AuthorDot({ className }: { className?: string }) {
  * дуудлага, чатын нүд, нэмэлт тэмдэглэл засагдана; `forImage` — PNG/JPEG: дэлгэцийн өргөн загвартай адил, холбоосгүй.
  * Хэн оруулсны тэмдэг, уулзалтын үйлдлүүд (`meetings`) зөвхөн дэлгэцэд — хэвлэх, зураг, хуулсан текстэд орохгүй.
  * Мужийн тайланд (`report.to > report.date`) огноо нь хугацаа, уулзалтын мөр өдөртэйгээ гарна.
+ * `branding` — төслийн нүүрний зураг (толгойн дэвсгэр) ба лого; зураггүй эсвэл ачаалагдаагүй бол энгийн толгой.
  */
-export function DailyReportDocument({ report, editing, forImage = false, meetings, phoneCheck = PHONE_LEAD_CHECK_ENABLED }: {
+export function DailyReportDocument({ report, editing, forImage = false, meetings, phoneCheck = PHONE_LEAD_CHECK_ENABLED, branding }: {
     report: DailyReport;
+    branding?: DailyReportBranding | null;
     editing?: DailyReportEditing | null;
     forImage?: boolean;
     meetings?: DailyMeetingActions | null;
@@ -108,20 +111,7 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
     const phoneChecks = forImage ? [] : draftPhoneLeadChecks(report, editing?.draft, phoneCheck);
     return (
         <div className="space-y-6">
-            {/* Зурагт (modern-screenshot) хэмжсэн өргөн/өндөр нь px-ээр тогтдог тул хамгийн урт мөр нь пикселийн зөрүүгээр
-                доош шилжиж дараагийн мөртэй давхцдаг («БАГ» огноон дээр, утасны дугаар) — зурагт толгойн текст тасрахгүй. */}
-            <header className={cn('flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-border bg-surface-2 px-5 py-4', forImage && 'whitespace-nowrap')}>
-                <div>
-                    <p className="text-xs text-muted-foreground">Өдрийн тайлан</p>
-                    <h2 className="mt-1 text-xl font-semibold uppercase tracking-[0.06em]">{report.title}</h2>
-                    <p className="num mt-1 text-2xl font-semibold tracking-tight">{reportPeriodLabel(report)} <span className="text-sm font-normal text-muted-foreground">· {report.weekday}</span></p>
-                </div>
-                {people.length > 0 && (
-                    <ul className="space-y-0.5 text-right text-[13px] text-fg-2">
-                        {people.map(manager => <li key={manager.name}>Менежер — {manager.title}{manager.phone && <span className="num ml-2 whitespace-nowrap">{formatStaffPhone(manager.phone)}</span>}</li>)}
-                    </ul>
-                )}
-            </header>
+            <ReportHeader report={report} people={people} branding={branding ?? null} forImage={forImage} />
 
             <div className="space-y-2">
                 <section aria-label="Менежерийн тоон үзүүлэлт">
@@ -154,10 +144,14 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
                     )}
                 </div>
                 {report.meetings.groups.map(group => (
-                    <div key={group.type} className="space-y-1.5">
-                        <h4 className="num whitespace-nowrap text-[15px] font-semibold">{group.heading} — {group.count}</h4>
+                    <div key={group.type} className="overflow-hidden rounded-2xl border border-border">
+                        {/* Уулзалтгүй бүлэг нэг мөр: гарчиг дээрээ «— 0»-тэй тул хоосон жагсаалт зай эзлэхгүй. */}
+                        <h4 className={cn('num flex items-center gap-2.5 whitespace-nowrap bg-surface-2 px-4 py-2 text-[15px] font-semibold', group.items.length > 0 ? 'border-b border-border' : 'text-fg-2')}>
+                            <span aria-hidden className={cn('size-2 shrink-0 rounded-full [print-color-adjust:exact]', MEETING_DOT[group.type] ?? 'bg-border-strong')} />
+                            {group.heading} — {group.count}
+                        </h4>
                         {group.items.length > 0 ? (
-                            <ol className="list-decimal space-y-1 pl-6 text-sm leading-relaxed">
+                            <ol className="list-decimal space-y-1.5 py-3 pr-4 pl-10 text-sm leading-relaxed marker:text-muted-foreground">
                                 {group.items.map(item => (
                                     <li key={item.id}>
                                         {item.day && <span className="num mr-1.5 text-muted-foreground">{reportDateLabel(item.day).slice(5)}</span>}
@@ -169,7 +163,7 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
                                     </li>
                                 ))}
                             </ol>
-                        ) : <p className="pl-1 text-sm text-muted-foreground">—</p>}
+                        ) : null}
                     </div>
                 ))}
                 {actions && report.meetings.pendingItems.length > 0 && (
@@ -200,6 +194,61 @@ export function DailyReportDocument({ report, editing, forImage = false, meeting
                 </footer>
             )}
         </div>
+    );
+}
+
+/** Уулзалтын бүлгийн гарчгийн өнгөн тэмдэг (төлөвийн өнгөнөөс). */
+const MEETING_DOT: Partial<Record<string, string>> = {
+    new_customer: 'bg-brand', repeat_customer: 'bg-status-info', existing_buyer: 'bg-status-success',
+};
+
+/**
+ * Тайлангийн толгой. Төслийн нүүрний зурагтай бол зураг дэвсгэр болж (доороос харанхуйлсан), бичвэр цагаанаар гарна —
+ * дэлгэц, хэвлэх, зурагт ижил. Зураг ачаалагдаагүй бол энгийн толгой руу шилжинэ. Лого цагаан суурьтай (тунгалаг PNG
+ * харанхуй, цайвар аль ч дэвсгэрт уншигдана).
+ * Зурагт (modern-screenshot) хэмжсэн өргөн/өндөр нь px-ээр тогтдог тул хамгийн урт мөр нь пикселийн зөрүүгээр доош шилжиж
+ * дараагийн мөртэй давхцдаг («БАГ» огноон дээр, утасны дугаар) — зурагт толгойн текст тасрахгүй.
+ */
+function ReportHeader({ report, people, branding, forImage }: {
+    report: DailyReport;
+    people: readonly DailyReportManager[];
+    branding: DailyReportBranding | null;
+    forImage: boolean;
+}) {
+    // Ачаалагдаагүй зургийн хаяг (хаяг солигдвол дахин оролдоно).
+    const [failed, setFailed] = useState<readonly string[]>([]);
+    const usable = (url: string | null | undefined) => (url && !failed.includes(url) ? url : null);
+    const fail = (url: string) => setFailed(current => (current.includes(url) ? current : [...current, url]));
+    const cover = usable(branding?.coverUrl), logo = usable(branding?.logoUrl);
+    return (
+        <header data-cover={cover ? 'true' : undefined}
+            className={cn('relative isolate overflow-hidden rounded-2xl border border-border', forImage && 'whitespace-nowrap',
+                cover ? 'flex min-h-[220px] items-end bg-[#12151C] text-white [print-color-adjust:exact] print:min-h-[150px]' : 'bg-surface-2')}>
+            {cover && <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={cover} alt="" onError={() => fail(cover)} className="absolute inset-0 -z-10 size-full object-cover" />
+                <div aria-hidden className="absolute inset-0 -z-10 bg-linear-to-t from-black/85 via-black/50 to-black/15" />
+            </>}
+            <div className={cn('flex w-full flex-wrap items-end justify-between gap-4 px-5 py-4', cover && 'px-6 pt-10 pb-5')}>
+                <div className="flex items-end gap-4">
+                    {logo && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={logo} alt="" onError={() => fail(logo)}
+                            className={cn('h-16 w-auto max-w-[160px] shrink-0 rounded-xl bg-white object-contain p-2', !cover && 'border border-border')} />
+                    )}
+                    <div>
+                        <p className={cn('text-xs', cover ? 'text-white/80' : 'text-muted-foreground')}>Өдрийн тайлан</p>
+                        <h2 className="mt-1 text-xl font-semibold uppercase tracking-[0.06em]">{report.title}</h2>
+                        <p className="num mt-1 text-2xl font-semibold tracking-tight">{reportPeriodLabel(report)} <span className={cn('text-sm font-normal', cover ? 'text-white/80' : 'text-muted-foreground')}>· {report.weekday}</span></p>
+                    </div>
+                </div>
+                {people.length > 0 && (
+                    <ul className={cn('space-y-0.5 text-right text-[13px]', cover ? 'text-white/90' : 'text-fg-2')}>
+                        {people.map(manager => <li key={manager.name}>Менежер — {manager.title}{manager.phone && <span className="num ml-2 whitespace-nowrap">{formatStaffPhone(manager.phone)}</span>}</li>)}
+                    </ul>
+                )}
+            </div>
+        </header>
     );
 }
 

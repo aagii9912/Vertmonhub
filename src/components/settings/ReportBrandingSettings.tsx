@@ -64,7 +64,7 @@ export function ReportBrandingSettings() {
 
     return (
         <SectionCard title="Тайлангийн брэнд" icon={Palette}
-            description="Лхагвын хурлын илтгэлийн (албаны загвар) нүүр, хөлд гарах төслийн нэр, бичвэр, зураг. Хоосон бол Hub-ийн анхдагч загвар.">
+            description="Лхагвын хурлын илтгэлийн (албаны загвар) нүүр, хөлд гарах төслийн нэр, бичвэр, зураг. Нүүрний зураг, лого «Өдрийн тайлан»-гийн толгойд мөн гарна. Хоосон бол Hub-ийн анхдагч загвар.">
             {query.isPending ? <Skeleton className="h-40" />
                 : query.isError ? <Alert variant="danger">Брэндийг ачаалж чадсангүй. {query.error.message}</Alert>
                 : unavailable ? <Alert variant="info">Тайлангийн брэнд хадгалах хэсэг хараахан идэвхжээгүй байна. Админд хандаж шинэчлэлийг суулгана уу.</Alert>

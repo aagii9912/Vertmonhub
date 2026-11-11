@@ -128,6 +128,15 @@ describe('GET /api/dashboard/daily-report', () => {
         expect(report.missing).toEqual([]);
     });
 
+    it('sends the project cover image and logo addresses for the report header, or null when none is saved', async () => {
+        expect((await (await get('2026-09-30')).json()).branding).toBeNull();
+        const path = (n: number) => `branding/00000000-0000-4000-8000-000000000001/30000000-0000-4000-8000-00000000000${n}.png`;
+        state.db.tables.report_branding = [{ shop_id: 'shop-1', display_name: 'ЭЛИЗИУМ', footer_text: null, cover_image_path: path(1), logo_path: null, updated_at: '2026-09-29T00:00:00Z' }];
+        // Менежер ч мөн адил (тайланг харах эрхтэй хүн бүр) — зөвхөн зургийн хаяг, брэндийн бусад талбар биш.
+        asKhon();
+        expect((await (await get('2026-09-30')).json()).branding).toEqual({ coverUrl: `/api/dashboard/report-branding/media?path=${encodeURIComponent(path(1))}`, logoUrl: null });
+    });
+
     it('shows who entered each cell (legacy rows by profile name) without leaking account ids', async () => {
         const body = await (await get('2026-09-30')).json();
         expect(body.report.lines[0].rows[0].authors).toEqual({ [CHAN]: { by: 'Захирал Бат', at: '2026-09-30T05:00:00.000Z', other: true } });

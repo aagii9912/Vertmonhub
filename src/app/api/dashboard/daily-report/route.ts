@@ -7,6 +7,7 @@ import { configMetrics, DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, SaveDailyRe
 import {
     checkDailyCellAccess, dailyReportActorName, loadDailyEditableManagers, resolveDailyReportRequest,
 } from '@/lib/dashboard/daily-report-access';
+import { loadDailyReportBranding } from '@/lib/dashboard/daily-report-branding';
 import { DailyReportUnavailableError, loadDailyColleagues, loadDailyReport, loadDailyReportConfig, saveDailyReport } from '@/lib/dashboard/daily-report-load';
 
 const NO_STORE = { 'Cache-Control': 'private, no-store' };
@@ -26,6 +27,7 @@ const unavailable = (error: unknown) => error instanceof DailyReportUnavailableE
  * • `viewer.meetingManagers` — уулзалт бүртгэж/шилжүүлж болох менежерүүд (төслийн идэвхтэй, бүртгэлтэй).
  * • `viewer.canReassign` — уулзалтын менежерийг солих эрх (meetings route-ийн `reassign`-тэй ижил дүрэм:
  *   admin/super_admin, уулзалтын бичих эрх, хувийн горимгүй, багийн тайлан харах эрхтэй).
+ * • `branding` — төслийн нүүрний зураг, логоны хаяг (Тохиргоо → «Тайлангийн брэнд»); тохируулаагүй бол null.
  * • Зөвхөн `dashboard` модультай байгууллагын хэрэглэгчид 403.
  */
 export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдрийн тайланг гаргаж чадсангүй. Дахин оролдоно уу.' }, async ({ request, shop }) => {
@@ -62,7 +64,10 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
 
     try {
         const db = supabaseAdmin();
-        const result = await loadDailyReport(db, { shopId: shop.id, shopName: shop.name || 'Төсөл', date, to, only: null });
+        const [result, branding] = await Promise.all([
+            loadDailyReport(db, { shopId: shop.id, shopName: shop.name || 'Төсөл', date, to, only: null }),
+            loadDailyReportBranding(db, shop.id),
+        ]);
         // Мужийн нэгтгэл зөвхөн унших: тоо, тэмдэглэл, уулзалтыг өдөр бүрээр нь засна.
         const allowed = writable && !ranged ? await loadDailyEditableManagers(db, shop.id, viewer, result.roster) : new Set<string>();
         const editable = result.report.managers.map(manager => manager.name).filter(name => name !== UNASSIGNED && allowed.has(name));
@@ -71,6 +76,7 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Өдр�
         return NextResponse.json({
             date, to, today,
             report: result.report,
+            branding,
             config: result.config,
             configSaved: result.configSaved,
             configInvalid: result.configInvalid,

@@ -316,6 +316,9 @@ function DailyReportView({ initial }: { initial: { date: string; to: string | nu
         flushSync(() => setImageFormat(format));
         try {
             if (!imageRef.current) throw new Error('Тайлангийн зураг зурагдсангүй');
+            // Толгойн зураг, лого ачаалагдаж дуустал хүлээнэ (ачаалагдаагүй нь энгийн толгой руу шилжинэ).
+            await Promise.all([...imageRef.current.querySelectorAll('img')].map(image => image.decode().catch(() => undefined)));
+            await new Promise(resolve => requestAnimationFrame(resolve));
             await downloadElementImage(imageRef.current, ranged ? `өдрийн_тайлан_${date}_${to}` : `өдрийн_тайлан_${date}`, format);
             toast.success('Тайлангийн зураг татагдлаа');
         } catch {
@@ -463,7 +466,7 @@ function DailyReportView({ initial }: { initial: { date: string; to: string | nu
                 </p>
             ) : (
                 <article className="daily-report min-w-0 bg-background">
-                    <DailyReportDocument report={report} meetings={meetingActions} editing={editMode ? {
+                    <DailyReportDocument report={report} branding={data.branding} meetings={meetingActions} editing={editMode ? {
                         editable,
                         own,
                         draft,
@@ -495,7 +498,7 @@ function DailyReportView({ initial }: { initial: { date: string; to: string | nu
             {imageFormat && report && (
                 <div inert className="pointer-events-none fixed top-0 left-[-10000px]">
                     <div ref={imageRef} className="paper-theme w-[1180px] p-8">
-                        <DailyReportDocument report={report} forImage />
+                        <DailyReportDocument report={report} branding={data?.branding} forImage />
                     </div>
                 </div>
             )}

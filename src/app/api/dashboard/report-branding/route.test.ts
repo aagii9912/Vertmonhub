@@ -10,7 +10,7 @@ const image = (n: number, shop = shopId) => `branding/${shop}/30000000-0000-4000
 
 const state = vi.hoisted(() => ({
     role: 'admin', modules: ['dashboard', 'settings'] as string[], canWrite: true, member: true,
-    row: null as Row | null, missing: false, uploads: [] as Array<{ path: string; type?: string }>, removed: [] as string[], stored: new Map<string, Blob>(),
+    dailyViewer: false, row: null as Row | null, missing: false, uploads: [] as Array<{ path: string; type?: string }>, removed: [] as string[], stored: new Map<string, Blob>(),
 }));
 
 vi.mock('@/lib/utils/logger', () => ({ logger: { error: vi.fn() } }));
@@ -30,6 +30,8 @@ vi.mock('@/lib/auth/require-permission', () => {
         requireModuleDelete: async () => NextResponse.json({ error: 'delete' }, { status: 403 }),
     };
 });
+// «Өдрийн тайлан»-г харах эрх (төсөлдөө бүртгэлтэй менежер) — дүрмийг daily-report route-ийн тест шалгана.
+vi.mock('@/lib/dashboard/daily-report-access', () => ({ canViewDailyReport: async (shop: string) => state.dailyViewer && shop === shopId }));
 function table() {
     const filters: Array<[string, unknown]> = [];
     let write: { kind: 'insert' | 'update'; values: Row } | null = null;
@@ -83,7 +85,7 @@ const media = (path: string) => MEDIA_GET(new NextRequest(`http://localhost/api/
 afterEach(() => { vi.useRealTimers(); });
 beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    Object.assign(state, { role: 'admin', modules: ['dashboard', 'settings'], canWrite: true, member: true, row: null, missing: false, uploads: [], removed: [], stored: new Map() });
+    Object.assign(state, { role: 'admin', modules: ['dashboard', 'settings'], canWrite: true, member: true, dailyViewer: false, row: null, missing: false, uploads: [], removed: [], stored: new Map() });
 });
 
 describe('report branding API', () => {
@@ -162,6 +164,12 @@ describe('report branding media', () => {
         expect(ok.status).toBe(200);
         expect(ok.headers.get('Cache-Control')).toBe('private, no-store');
         state.modules = ['leads'];
+        expect((await media(image(4))).status).toBe(403);
+        // Өдрийн тайлангийн толгойн зураг: тайланг харах эрхтэй менежер татна (reports/settings-гүй ч).
+        Object.assign(state, { modules: ['dashboard', 'leads'], dailyViewer: true });
+        expect((await media(image(4))).status).toBe(200);
+        expect((await media(image(4, otherShop))).status).toBe(404);
+        state.dailyViewer = false;
         expect((await media(image(4))).status).toBe(403);
         state.modules = ['reports'];
         expect((await media(image(4, otherShop))).status).toBe(404);

@@ -29,6 +29,16 @@ const accounts = [
     { name: KHON, is_active: true, phone: '90085678', user_id: 'khon-account' },
 ];
 const roster = accounts.map(({ name, is_active, phone }) => ({ name, is_active, phone }));
+// Төслийн брэнд зураг (нүүр, лого): тайлангийн толгойд гарна. Mock-д SVG (бодит серверт JPEG/PNG).
+const brandingUrl = (n: number) => `/api/dashboard/report-branding/media?path=${encodeURIComponent(`branding/${shopId}/00000000-0000-4000-8000-00000000040${n}.png`)}`;
+const branding = { coverUrl: brandingUrl(1), logoUrl: brandingUrl(2) };
+const towers = Array.from({ length: 9 }, (_, i) => {
+    const x = 60 + i * 130, height = 150 + ((i * 67) % 170);
+    const windows = Array.from({ length: Math.floor(height / 26) }, (_, row) => `<rect x="${x + 14}" y="${452 - height + row * 26}" width="62" height="8" fill="#F3D9A4" opacity="${0.25 + ((row + i) % 3) * 0.2}"/>`).join('');
+    return `<rect x="${x}" y="${440 - height}" width="90" height="${height}" fill="#22324F"/>${windows}`;
+}).join('');
+const COVER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3E6FD8"/><stop offset="0.65" stop-color="#E9A66B"/><stop offset="1" stop-color="#F6D7A8"/></linearGradient></defs><rect width="1200" height="440" fill="url(#sky)"/><circle cx="930" cy="250" r="54" fill="#FFE9C2"/>${towers}</svg>`;
+const LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80"><path d="M20 62 44 18h10L34 62zM50 62 74 18h10L64 62z" fill="#2D5FDD"/><rect x="84" y="18" width="16" height="44" fill="#C9A45C"/></svg>';
 const changeRowBase = { manager_name: null, metric: null, note_key: null, old_value: null, new_value: null, old_text: null, new_text: null, restored_from: null, meta: {} };
 // Ээлжийн менежерт ч, багийн харагдацад ч төслийн бүх идэвхтэй менежерийн тоо засагдана.
 const editable = [ARI, CHAN, KHON];
@@ -41,7 +51,7 @@ async function setup(page: Page, mode: 'team' | 'personal') {
         ({ manager_name: manager, metric, value, updated_by: by.user_id, updated_by_name: by.name === KHON ? 'М. Хонгорзул' : by.name, updated_at: enteredAt });
     const state = {
         puts: [] as SaveDailyReportInput[], settings: [] as unknown[], meetingPosts: [] as DailyMeetingRequestBody[], restores: [] as unknown[], errors: [] as string[],
-        gets: [] as string[],
+        gets: [] as string[], media: [] as number[],
         counts: [
             // Чанцалдуламын төслийн утсыг Хонгорзул оруулсан (өөр хүн).
             count(ARI, 'call.l1.total', 1), count(CHAN, 'call.l1.total', 2, accounts[2]),
@@ -95,6 +105,11 @@ async function setup(page: Page, mode: 'team' | 'personal') {
             shops: [{ id: shopId, name: 'Elysium Residence', is_active: true, setup_completed: true }] });
         if (path === '/api/dashboard/mode') return reply({ mode: mode === 'team' ? 'org' : 'personal', managerName: mode === 'team' ? null : KHON, isManager: mode === 'personal', canViewTeam: mode === 'team' });
         if (path === '/api/dashboard/nav-counts') return reply({ leads: 0, inbox: 0, meetings: 0 });
+        if (path === '/api/dashboard/report-branding/media') {
+            const index = [branding.coverUrl, branding.logoUrl].indexOf(`${path}${url.search}`);
+            state.media.push(index);
+            return index < 0 ? reply({ error: 'Зураг олдсонгүй' }, 404) : route.fulfill({ status: 200, contentType: 'image/svg+xml', body: index === 0 ? COVER_SVG : LOGO_SVG });
+        }
         if (path === '/api/dashboard/daily-report' && request.method() === 'GET') {
             const date = url.searchParams.get('date') ?? today;
             const to = url.searchParams.get('to') ?? date;
@@ -102,6 +117,8 @@ async function setup(page: Page, mode: 'team' | 'personal') {
             // Хугацааны нэгтгэл серверт зөвхөн унших (route-ийн дүрэм).
             const ranged = to !== date;
             return reply({
+                // Багийн харагдацад төслийн брэнд зурагтай, менежерийнхэд тохируулаагүй (энгийн толгой).
+                branding: mode === 'team' ? branding : null,
                 date, to, today, report: buildDailyReport({ ...input(date), to, completedDays: ranged ? 2 : undefined }), config, configSaved: true, configInvalid: false,
                 roster: mode === 'team' ? roster : [],
                 viewer: ranged ? { personal: mode === 'personal', onboarding: false, canEditTeam: false, editable: [], own: mode === 'personal' ? KHON : null, canReassign: false, meetingManagers: [] }
@@ -190,6 +207,13 @@ test('багийн өдрийн тайлан: хүснэгт, хэн оруул�
     const report = page.locator('article.daily-report');
     await expect(report.getByText('"Элизиум Ресиденс" баг', { exact: true })).toBeVisible();
     await expect(report.getByText('Менежер — Р. Чанцалдулам')).toBeVisible();
+    // Толгой: төслийн нүүрний зураг дэвсгэрт, лого гарчгийн өмнө (чимэглэл — alt хоосон).
+    const header = report.locator('header[data-cover="true"]');
+    await expect(header.locator('img')).toHaveCount(2);
+    for (const image of await header.locator('img').all()) {
+        await expect(image).toHaveJSProperty('complete', true);
+        expect(await image.evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    }
     // Нэг хүснэгт: мөр = менежер, багана = шугам, чат, уулзалт; доор «Нийт»; үгээр бичсэн дүгнэлтгүй.
     const table = report.getByRole('region', { name: 'Менежерийн үзүүлэлт', exact: true });
     await expect(table.getByRole('columnheader', { name: 'Төслийн утас · 77862222', exact: true })).toBeVisible();

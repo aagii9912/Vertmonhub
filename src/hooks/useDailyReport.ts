@@ -2,6 +2,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
+import type { DailyReportBranding } from '@/lib/dashboard/daily-report-branding';
 import type { DailyReport, DailyReportChange, DailyReportConfig, DailyReportConflict, DailyRosterEntry } from '@/lib/dashboard/daily-report';
 
 export interface DailyReportViewerInfo {
@@ -26,6 +27,8 @@ export interface DailyReportResponse {
     today: string;
     /** Хувийн горимтой боловч бүртгэлд холбогдоогүй (onboarding) бол null. */
     report: DailyReport | null;
+    /** Төслийн нүүрний зураг, лого (тохируулаагүй эсвэл хуучин хариунд байхгүй). */
+    branding?: DailyReportBranding | null;
     config: DailyReportConfig | null;
     configSaved?: boolean;
     configInvalid?: boolean;
