@@ -20,6 +20,8 @@ import { formatWeeklySalesText, meetingDateSchema, nextMeetingDate } from '@/lib
 import { listWeeklyUpdates, saveWeeklyUpdate } from '@/lib/dashboard/weekly-updates';
 import { DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, formatDailyReportText, NEW_LEADS_SECTION_ENABLED, PHONE_LEAD_CHECK_ENABLED, phoneLeadChecks } from '@/lib/dashboard/daily-report';
 import { DailyReportUnavailableError, loadDailyReport, resolveDailyReportViewer } from '@/lib/dashboard/daily-report-load';
+import { MEETING_INTEREST_MAX_DAYS, MEETING_INTEREST_STATUSES, type MeetingInterestStatus } from '@/lib/viewings/interest-summary';
+import { loadMeetingInterestSummary } from '@/lib/viewings/interest-summary-load';
 import { logger } from '@/lib/utils/logger';
 import { addCustomerTag, removeCustomerTag, replyToCustomer, mergeCustomers, updateCustomerInfo } from '@/lib/services/CustomerOps';
 import { UpdateCustomerSchema } from '@/lib/validations/schemas';
@@ -163,6 +165,23 @@ export async function getDailyReportTool(shopId: string, args: Args, userId: str
         guidance: DAILY_GUIDANCE,
         url: to !== date ? `/dashboard/daily-report?from=${date}&to=${to}` : '/dashboard/daily-report',
     };
+}
+
+/**
+ * Огнооны мужийн уулзалтын сонирхол: хамгийн их сонирхсон загвар, төлбөрийн нөхцөл (`lib/viewings/interest-summary`).
+ * Анхдагч: энэ сарын 1-нээс өнөөдөр хүртэл, болсон уулзалт. Менежерт төслийн хүрээ (`applyLeadScope`).
+ */
+export async function getMeetingInterestsTool(shopId: string, args: Args, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+    const today = ubDateStr();
+    const from = args.from ? String(args.from) : `${today.slice(0, 8)}01`;
+    const to = args.to ? String(args.to) : (from > today ? from : today);
+    if (!DailyReportDateSchema.safeParse(from).success || !DailyReportDateSchema.safeParse(to).success) return { error: 'Огноог YYYY-MM-DD хэлбэрээр өгнө үү' };
+    if (to < from) return { error: 'Дуусах өдөр эхлэх өдрөөс хойш байна' };
+    if (daySpan(from, to) > MEETING_INTEREST_MAX_DAYS) return { error: `Хугацаа ${MEETING_INTEREST_MAX_DAYS} өдрөөс ихгүй байна` };
+    const status = (MEETING_INTEREST_STATUSES as readonly string[]).includes(String(args.status)) ? args.status as MeetingInterestStatus : 'completed';
+    if (scope.projectIds?.length === 0) return { error: 'Та ямар нэг төсөлд бүртгэлгүй тул уулзалт харагдахгүй.' };
+    const summary = await loadMeetingInterestSummary(db(), { shopId, from, to, status, manager: typeof args.manager === 'string' ? args.manager : null, scope });
+    return { ...summary, personal: scope.projectIds !== null, url: '/dashboard/viewings' };
 }
 
 export async function getManagerPerformanceTool(shopId: string) {

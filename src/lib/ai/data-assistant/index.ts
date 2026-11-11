@@ -32,7 +32,7 @@ import {
 } from './functions';
 import { inviteUser, assignRole, createRole, setUserProjects, setSalesTarget } from './admin-functions';
 import { importErpFileTool } from './erp-import';
-import { getKpiReport, getManagerActivityTool, getDailyReportTool, getManagerPerformanceTool, getWeeklySalesReportTool, getWeeklyUpdatesTool, saveWeeklyUpdateTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, updateCustomerTool, listConversationsTool, getConversationTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
+import { getKpiReport, getManagerActivityTool, getDailyReportTool, getMeetingInterestsTool, getManagerPerformanceTool, getWeeklySalesReportTool, getWeeklyUpdatesTool, saveWeeklyUpdateTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, updateCustomerTool, listConversationsTool, getConversationTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
 import { logCall, setFollowup, logPriceQuote, assignLeadManager, updateLeadTool, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 import { transferContractTool } from './actions-contract-transfer';
 import { listLeadCategoriesTool, setLeadCategory } from './actions-lead-category';
@@ -138,6 +138,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     create_social_post: ({ shopId, args, confirm, userName }) => createSocialPost(shopId, args, confirm, userName),
     remember_fact: ({ shopId, args, confirm, userName }) => rememberFact(shopId, args, confirm, userName),
     list_viewings: ({ shopId, args, scope }) => listViewingsTool(shopId, args, scope),
+    get_meeting_interests: ({ shopId, args, scope }) => getMeetingInterestsTool(shopId, args, scope),
     get_viewing_options: ({ shopId, args, scope }) => getViewingOptionsTool(shopId, args, scope),
     calculate_viewing_quote: ({ shopId, args, scope }) => calculateViewingQuoteTool(shopId, args, scope),
     update_viewing: ({ shopId, args, confirm, userId, userName, scope }) => updateViewingSelectionTool(shopId, args, confirm, userId, userName, scope),

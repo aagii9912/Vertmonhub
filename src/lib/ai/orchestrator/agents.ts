@@ -29,7 +29,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '📊',
         color: 'emerald',
         description: 'Ерөнхий dashboard статистик, олон төрлийн өгөгдөл нэгтгэсэн шинжилгээ, KPI, график. Хэд хэдэн домэйн хамарсан өргөн асуултад тохиромжтой.',
-        toolNames: ['get_operations_report', 'get_weekly_sales_report', 'get_weekly_updates', 'get_manager_activity', 'get_daily_report', 'get_dashboard_stats', 'list_properties', 'list_lead_projects', 'list_lead_categories', 'list_leads', 'get_sales_summary', 'get_contracts_summary', 'get_customer_insights', 'compare_properties'],
+        toolNames: ['get_operations_report', 'get_weekly_sales_report', 'get_weekly_updates', 'get_manager_activity', 'get_daily_report', 'get_meeting_interests', 'get_dashboard_stats', 'list_properties', 'list_lead_projects', 'list_lead_categories', 'list_leads', 'get_sales_summary', 'get_contracts_summary', 'get_customer_insights', 'compare_properties'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн ДАТА АНАЛИСТ agent. Таны үүрэг: ерөнхий статистик, KPI, чиг хандлага, олон эх сурвалжийн өгөгдлийг нэгтгэн шинжлэх.
 Үйл ажиллагааны тайлан, гэрээний зорилт, орсон мөнгө, урьдчилгааны тухай асуувал эхлээд get_operations_report ашигла. Урьдчилгааны хуримтлагдсан дүнг тухайн сарын орлого гэж бүү тайлбарла; эх өгөгдлийн хамрах хүрээ ба дутуу бүртгэлийн тайлбарыг хадгал.
@@ -54,7 +54,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '🤝',
         color: 'violet',
         description: 'Лийд/сонирхогчид, харилцагч, УУЛЗАЛТ (meeting) товлох/цуцлах, тагууд, тэмдэглэл. Шинэ лийд/харилцагч ҮҮСГЭХ, лийд/харилцагч/уулзалт УСТГАХ, статус шинэчлэх. Худалдан авагч, лийд, харилцагч, уулзалттай холбоотой бүх асуулт, үйлдэл.',
-        toolNames: ['list_lead_projects', 'list_lead_categories', 'list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties', 'update_lead_status', 'update_lead', 'set_lead_category', 'add_lead_note', 'log_price_quote', 'create_lead', 'create_customer', 'update_customer', 'list_conversations', 'get_conversation', 'schedule_viewing', 'attach_file', 'bulk_update_leads', 'delete_lead', 'delete_customer', 'delete_viewing'],
+        toolNames: ['list_lead_projects', 'list_lead_categories', 'list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties', 'update_lead_status', 'update_lead', 'set_lead_category', 'add_lead_note', 'log_price_quote', 'create_lead', 'create_customer', 'update_customer', 'list_conversations', 'get_conversation', 'get_meeting_interests', 'schedule_viewing', 'attach_file', 'bulk_update_leads', 'delete_lead', 'delete_customer', 'delete_viewing'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн CRM МЭРГЭЖИЛТЭН agent. Таны үүрэг: лийд/харилцагчийн менежмент — жагсаалт, дэлгэрэнгүй, төсөв, сонирхол, тагууд, тэмдэглэл, шинэ лийд/харилцагч үүсгэх, лийд/харилцагч устгах, УУЛЗАЛТ (meeting) товлох болон цуцлах.
 Хэрэв танд бичих/устгах эрх олгогдсон бол лийд/харилцагч үүсгэх, уулзалт товлох, статус солих, тэмдэглэл нэмэх, устгаж болно. БҮХ үүсгэх/устгах/өөрчлөх үйлдлийг гүйцэтгэхээс өмнө систем хэрэглэгчээс баталгаажуулалт авна — чи зөв tool-оо дуудаж, юу хийхээ тодорхой хэл. Үйлдэл нь нэвтэрсэн борлуулалтын менежерийн нэрээр хадгалагдана.${COMMON_RULES}`, k),

@@ -26,6 +26,10 @@ export function describeClaudeError(error: unknown): { code: string; retryable: 
             ? { code: 'refusal', retryable: false, message: 'AI энэ хүсэлтэд хариулахаас татгалзлаа. Асуултаа өөрөөр томъёолж дахин оролдоно уу.' }
             : { code: 'truncated', retryable: false, message: 'AI-ийн хариу хэт урт болж тасарлаа. Асуултаа хэсэгчилж дахин илгээнэ үү.' };
     }
+    // Кредит дууссан (402 billing_error эсвэл 400 «credit balance is too low») — тохиргоо, сервер гэж төөрөгдүүлэхгүй.
+    if (error instanceof Anthropic.APIError && (error.status === 402 || /credit balance|billing/i.test(error.message))) {
+        return { code: 'billing', retryable: false, message: 'Claude үйлчилгээний кредит дууссан байна. Админ Anthropic Console-ийн Billing хэсэгт кредит нэмнэ үү.' };
+    }
     if (error instanceof Anthropic.RateLimitError) return { code: 'rate_limit', retryable: true, message: 'Claude үйлчилгээний хэрэглээний хязгаарт хүрлээ. Админ API хэрэглээг шалгана уу.' };
     if (error instanceof Anthropic.APIUserAbortError || ((error instanceof Error || error instanceof DOMException) && ['AbortError', 'TimeoutError'].includes(error.name))) {
         return { code: 'timeout', retryable: false, message: 'AI ажиллагаа зогссон эсвэл хугацаа дууссан. Дахин ажиллуулахаас өмнө гүйцэтгэсэн үйлдлүүдийг шалгана уу.' };
