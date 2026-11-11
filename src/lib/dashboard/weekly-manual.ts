@@ -3,8 +3,10 @@
  *
  *  - гэрээний менежер: HUB жагсаалт менежергүй ирдэг → гэрээн дээр сонгоно (PATCH `sales_manager`, хязгааргүй
  *    бичих эрхтэй хэрэглэгч, аудиттай);
- *  - гэрээний огноо: огноогүй амьд гэрээ долоо хоног, сарын тоонд ордоггүй → гэрээний «Огноо оруулах»;
+ *  - гэрээний огноо: огноогүй амьд гэрээ долоо хоног, сарын тоонд ордоггүй → гэрээний «Огноо оруулах»
+ *    (PATCH `order_date`, нэг удаа);
  *  - сарын төлөвлөгөө ба гараар оруулсан гүйцэтгэл (`team_sales_targets`, Удирдлага → «Борлуулалтын төлөвлөгөө»).
+ * Гурвууланг нь алхам дотроос шууд оруулна (эзэмшигчийн хүсэлт 2026-11-11: өөр хуудас руу явахгүй).
  *
  * Зөвхөн «оруулсан эсэх»-ийг дамжуулна — дүн энд байхгүй. Мөнгөн урсгалын мөр санхүүгийн эрхгүй хүнд null.
  * ERP-ийн гэрээний экспортоор ажилладаг төсөлд менежер, огноо экспортоос ирдэг тул гэрээний хоёр мөр хамаарахгүй.
@@ -25,6 +27,9 @@ export interface WeeklyManualContract {
     inWeek: boolean;
 }
 
+/** Огноогүй гэрээ: `dateEntry` — «Захиалга өгсөн огноо» хоосон тул огноог эндээс нэг удаа оруулж болно. */
+export interface WeeklyManualUndatedContract extends WeeklyManualContract { manager: string | null; dateEntry: boolean }
+
 /** `true` = оруулсан (0 ч гэсэн утга), `false` = хоосон; `cashflow: null` = харах эрхгүй. */
 export interface WeeklyManualEntered { contractAmount: boolean; contractCount: boolean; cashflow: boolean | null }
 
@@ -35,6 +40,8 @@ export interface WeeklyManual {
     managerless: { count: number; contracts: WeeklyManualContract[] };
     /** Огноогүй амьд гэрээний тоо. */
     undated: number;
+    /** Огноогүй амьд гэрээний эхний `WEEKLY_MANUAL_LIST_LIMIT` (хуучин хариунд байхгүй байж болно). */
+    undatedContracts?: WeeklyManualUndatedContract[];
     plan: WeeklyManualEntered;
     manualActuals: WeeklyManualEntered;
 }

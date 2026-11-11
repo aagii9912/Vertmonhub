@@ -72,7 +72,7 @@ describe('loadWeeklyManual', () => {
             contract('53'),
             contract('54', { sales_manager: '', contract_date: '2026-10-20', product_type: 'parking', total_price: null }),
             contract('55', { contract_date: null }),
-            contract('56', { sales_manager: 'Ану.Бат', contract_date: null }),
+            contract('56', { sales_manager: 'Ану.Бат', contract_date: null, order_date: '2026-10-30' }),
             contract('57', { contract_status: 'cancelled' }),
             contract('58', { deleted_at: '2026-11-01T00:00:00Z' }),
             contract('59', { shop_id: 'other' }),
@@ -97,6 +97,11 @@ describe('loadWeeklyManual', () => {
         ]);
         // Огноогүй амьд гэрээ: 55, 56 (цуцалсан 60 орохгүй).
         expect(result.undated).toBe(2);
+        // Огноог мөр дээр нь оруулна: «Захиалга өгсөн огноо» хоосон гэрээнд л (56 нь бүртгэлтэй тул гэрээн дээрээ шалгана).
+        expect(result.undatedContracts).toEqual([
+            expect.objectContaining({ id: '55', date: null, manager: null, dateEntry: true, customer: 'Б.Энхжин', kindLabel: 'Орон сууц' }),
+            expect.objectContaining({ id: '56', manager: 'Ану.Бат', dateEntry: false }),
+        ]);
     });
 
     it('reports whether each plan and manual actual of the report month is entered — 0 is a value, empty is not', async () => {
@@ -111,6 +116,7 @@ describe('loadWeeklyManual', () => {
     it('hides customer names without contract access and the cash rows without finance access', async () => {
         const result = await loadWeeklyManual(fakeDb(tables), { shopId: 's', meetingDate: '2026-11-11', canSeeCustomers: false, canSeeCash: false });
         expect(result.managerless.contracts.every(row => row.customer === null)).toBe(true);
+        expect(result.undatedContracts!.every(row => row.customer === null)).toBe(true);
         expect(result.plan.cashflow).toBeNull();
         expect(result.manualActuals.cashflow).toBeNull();
     });

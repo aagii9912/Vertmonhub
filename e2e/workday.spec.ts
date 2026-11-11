@@ -7,6 +7,7 @@ import { buildMarketingPerformance, previousRange, type MarketingActivity, type 
 import { nextMeetingDate, shiftReviewDate, weeklyReviewRange } from '../src/lib/dashboard/weekly-review';
 import { buildWeeklySales } from '../src/lib/dashboard/weekly-sales';
 import { buildWeeklyFiles } from '../src/lib/dashboard/weekly-files';
+import { emptyMonthlySales, monthlySalesWithBlockTotals } from '../src/lib/sales/monthly';
 import type { ErpProduct, ErpSale } from '../src/lib/erp/records';
 import { scoreKpi } from '../src/lib/sales/kpi';
 import { buildBudgetOverview } from '../src/lib/marketing/budget';
@@ -58,7 +59,10 @@ async function setup(page: Page, restricted = false) {
     const state = { updates: [] as Record<string, unknown>[], failure: false, failSave: false, missingFx: false, requests: [] as string[], errors: [] as string[], writes: 0,
         kpiWrites: [] as Record<string, unknown>[], slides: [] as Record<string, unknown>[], media: new Map<string, Buffer>(), content: [] as Record<string, unknown>[],
         // «Гараар нөхөх» алхам: `office` — хязгааргүй (удирдлагын) хэрэглэгч; `hubContracts` — гэрээг CRM-ээс (HUB жагсаалт) уншдаг төсөл.
-        office: false, hubContracts: false, managerWrites: [] as Record<string, unknown>[],
+        office: false, hubContracts: false, managerWrites: [] as Record<string, unknown>[], planWrites: [] as Record<string, unknown>[],
+        undated: [{ id: 'c-54', number: 'EL-54', date: null, block: 'Б1', unit: 'Б1-76 (01)', kindLabel: 'Зогсоол', customer: null, total: 72600000, inWeek: false, manager: null, dateEntry: true }],
+        planMonths: emptyMonthlySales().map(row => row.month === Number(range.to.slice(5, 7))
+            ? { ...row, revision: 2, target_amount: 900000000, block_amounts: { b1: { target_amount: 900000000 } } } : row),
         managerless: [
             { id: 'c-53', number: null, date: range.to, block: 'Б1', unit: 'Б1-53, E2', kindLabel: 'Орон сууц', customer: 'Б.Энхжин', total: 450000000, inWeek: true },
             { id: 'c-54', number: 'EL-54', date: null, block: 'Б1', unit: 'Б1-76 (01)', kindLabel: 'Зогсоол', customer: null, total: 72600000, inWeek: false },
@@ -71,19 +75,39 @@ async function setup(page: Page, restricted = false) {
         if (path.startsWith('/api/auth/')) return route.continue();
         state.requests.push(path);
         const reply = (json: unknown, status = 200) => route.fulfill({ status, json });
-        if (path === '/api/me') return reply({ user: { fullName: 'Номин' }, role: 'sales_manager', permissions: { ...ROLE_PERMISSIONS.sales_manager, modules: restricted ? ['dashboard'] : [...ROLE_PERMISSIONS.sales_manager.modules, 'reports', 'marketing-roi', 'ai-assistant'] }, shops: [{ id: shopId, name: 'Vertmon · Туршилтын өгөгдөл', is_active: true, setup_completed: true }] });
+        // `office` — супер админ (төлөвлөгөө оруулах эрхтэй); эс бөгөөс борлуулалтын менежер.
+        if (path === '/api/me') return reply({ user: { fullName: 'Номин' }, role: state.office ? 'super_admin' : 'sales_manager', permissions: { ...ROLE_PERMISSIONS.sales_manager, modules: restricted ? ['dashboard'] : [...ROLE_PERMISSIONS.sales_manager.modules, 'reports', 'marketing-roi', 'ai-assistant'] }, shops: [{ id: shopId, name: 'Vertmon · Туршилтын өгөгдөл', is_active: true, setup_completed: true }] });
         if (path === '/api/dashboard/mode') return reply(state.office ? { mode: 'org', managerName: null, isManager: false, canViewTeam: true }
             : { mode: 'personal', managerName: 'Номин', isManager: true, canViewTeam: !restricted });
-        if (path === '/api/dashboard/reports/weekly-manual') return reply({ month: range.to.slice(0, 7), undated: 1,
-            managerless: { count: state.managerless.length, contracts: state.managerless },
-            plan: { contractAmount: true, contractCount: false, cashflow: null }, manualActuals: { contractAmount: false, contractCount: false, cashflow: null } });
+        if (path === '/api/dashboard/reports/weekly-manual') {
+            const plan = state.planMonths[Number(range.to.slice(5, 7)) - 1];
+            return reply({ month: range.to.slice(0, 7), undated: state.undated.length, undatedContracts: state.undated,
+                managerless: { count: state.managerless.length, contracts: state.managerless },
+                plan: { contractAmount: plan.target_amount !== null, contractCount: plan.contract_count_target !== null, cashflow: null },
+                manualActuals: { contractAmount: false, contractCount: false, cashflow: null } });
+        }
+        // Сарын төлөвлөгөө: алхам доторх засварлагч зөвхөн саруудыг уншиж, өөрчилсөн нүдээ хувилбартай нь илгээнэ.
+        if (path === '/api/admin/sales-targets' && request.method() === 'GET') return reply({ year: Number(range.to.slice(0, 4)), months: state.planMonths, extrasAvailable: true });
+        if (path === '/api/admin/sales-targets' && request.method() === 'POST') {
+            const body = request.postDataJSON() as { months: Array<{ month: number; block_amounts?: Record<string, Record<string, number | null>> }> };
+            state.planWrites.push(body);
+            state.planMonths = state.planMonths.map(row => {
+                const patch = body.months.find(item => item.month === row.month);
+                if (!patch) return row;
+                const blocks = { ...row.block_amounts } as Record<string, Record<string, number | null>>;
+                for (const [block, cells] of Object.entries(patch.block_amounts ?? {})) blocks[block] = { ...blocks[block], ...cells };
+                return monthlySalesWithBlockTotals({ ...row, revision: row.revision + 1, block_amounts: blocks });
+            });
+            return reply({ success: true, months: state.planMonths });
+        }
         if (path === '/api/dashboard/contracts/managers') return reply({ managers: [{ name: 'Номин.Менежер', roster: true, contracts: 4 }, { name: 'Сараа.Менежер', roster: false, contracts: 1 }] });
-        const managerless = state.managerless.find(contract => path === `/api/dashboard/contracts/${contract.id}`);
-        if (managerless && request.method() === 'PATCH') {
+        const fixed = [...state.managerless, ...state.undated].find(contract => path === `/api/dashboard/contracts/${contract.id}`);
+        if (fixed && request.method() === 'PATCH') {
             const body = request.postDataJSON() as Record<string, unknown>;
-            state.managerWrites.push({ id: managerless.id, ...body });
-            state.managerless = state.managerless.filter(contract => contract !== managerless);
-            return reply({ contract: { id: managerless.id, sales_manager: body.sales_manager } });
+            state.managerWrites.push({ id: fixed.id, ...body });
+            if (body.sales_manager) state.managerless = state.managerless.filter(contract => contract.id !== fixed.id);
+            if (body.order_date) state.undated = state.undated.filter(contract => contract.id !== fixed.id);
+            return reply({ contract: { id: fixed.id, ...body } });
         }
         if (path === '/api/dashboard/nav-counts') return reply({ leads: 8, inbox: 3, meetings: 2 });
         if (path === '/api/dashboard/my-stats') return reply({ manager: { name: 'Номин', isSelf: true, inRoster: true, hasAccount: true }, onboarding: false, period: 'today', missing: [],
@@ -408,7 +432,7 @@ test('алдаатай эх үүсвэрийг тэг гэж үзүүлэхгү�
     expect(state.errors).toEqual([]);
 });
 
-test('удирдлага менежергүй гэрээний менежерийг «Гараар нөхөх» алхам дотроос сонгоно', async ({ page }) => {
+test('удирдлага менежер, огноо, сарын төлөвлөгөөг «Гараар нөхөх» алхам дотроос өөр хуудас руу явалгүй оруулна', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1050 });
     const state = await setup(page);
     Object.assign(state, { office: true, hubContracts: true });
@@ -417,10 +441,10 @@ test('удирдлага менежергүй гэрээний менежери�
     await expect(steps.getByRole('button', { name: /Гараар нөхөх/ })).toContainText('гараар нөхөх зүйл байна');
     const manual = page.getByRole('region', { name: 'Гараар нөхөх' });
     await expect(manual.getByRole('status')).toContainText('Нөхөх зүйл: менежергүй 2 гэрээ, огноогүй 1 гэрээ.');
+    await expect(manual.getByRole('link', { name: 'Огноогүй гэрээ' })).toHaveAttribute('href', '/dashboard/contracts?filter=undated');
     const rows = manual.getByRole('list', { name: 'Менежергүй гэрээ' }).getByRole('listitem');
     await expect(rows).toHaveCount(2);
     await expect(rows.first()).toContainText('Энэ долоо хоног');
-    await expect(manual.getByRole('link', { name: 'Огноогүй гэрээ' })).toHaveAttribute('href', '/dashboard/contracts?filter=undated');
     mkdirSync('output/workday', { recursive: true });
     await page.screenshot({ path: 'output/workday/desktop-weekly-steps-manual.png', fullPage: true });
 
@@ -431,6 +455,40 @@ test('удирдлага менежергүй гэрээний менежери�
     await expect(manual.getByRole('status')).toContainText('Нөхөх зүйл: менежергүй 1 гэрээ, огноогүй 1 гэрээ.');
     await expect(rows).toHaveCount(1);
     expect(state.managerWrites).toEqual([{ id: 'c-53', sales_manager: 'Номин.Менежер' }]);
+
+    // Огноогүй гэрээ: огноог мөр дээр нь сонгож, баталгаажуулаад хадгална (нэг удаа оруулдаг).
+    const undated = manual.getByRole('list', { name: 'Огноогүй гэрээ' }).getByRole('listitem');
+    await expect(undated).toHaveCount(1);
+    await manual.getByLabel('Б1-76 (01): захиалга өгсөн огноо').fill(range.from);
+    await manual.getByRole('button', { name: 'Б1-76 (01): огноо хадгалах' }).click();
+    const confirm = page.getByRole('dialog').filter({ hasText: `Б1-76 (01): огноог ${range.from} гэж хадгалах уу?` });
+    await expect(confirm).toContainText('Хадгалсны дараа солихгүй.');
+    await confirm.getByRole('button', { name: 'Хадгалах', exact: true }).click();
+    await expect(manual.getByRole('list', { name: 'Огноогүй гэрээ' })).toHaveCount(0);
+    await expect(manual.getByText('Огноогүй амьд гэрээ алга.')).toBeVisible();
+    expect(state.managerWrites[1]).toEqual({ id: 'c-54', order_date: range.from });
+
+    // Сарын төлөвлөгөө: хүснэгт алхам дотор нээгдэнэ. Хадгалаагүй өөрчлөлттэй бол өөр алхам руу шилжихгүй.
+    await manual.getByRole('button', { name: 'Төлөвлөгөө засах', exact: true }).click();
+    const plan = manual.getByRole('form', { name: /сарын төлөвлөгөө, гүйцэтгэл$/ });
+    await expect(plan.getByRole('textbox', { name: 'Б1 блок Гэрээний төлөвлөгөө' })).toHaveValue('900,000,000');
+    await plan.getByRole('textbox', { name: 'Б2 блок Гэрээний төлөвлөгөө' }).fill('600000000');
+    await plan.getByRole('textbox', { name: 'Б1 блок Гэрээний тооны төлөвлөгөө' }).fill('4');
+    await expect(plan.getByRole('cell', { name: 'Нийт Гэрээний төлөвлөгөө' })).toContainText('1,500,000,000');
+    await page.screenshot({ path: 'output/workday/desktop-weekly-steps-manual-plan.png', fullPage: true });
+    await page.getByRole('button', { name: 'Дараах: Тоон тойм', exact: true }).click();
+    await expect(page.getByText('Төлөвлөгөөний өөрчлөлтөө эхлээд «Хадгалах» эсвэл «Болих» дарна уу.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Гараар нөхөх', exact: true })).toBeVisible();
+    await plan.getByRole('button', { name: 'Хадгалах', exact: true }).click();
+    await expect(page.getByText('Төлөвлөгөө, гүйцэтгэл хадгалагдлаа')).toBeVisible();
+    await expect(plan).toHaveCount(0);
+    expect(state.planWrites).toEqual([{ shopId, year: Number(range.to.slice(0, 4)), months: [{ month: Number(range.to.slice(5, 7)), expectedRevision: 2,
+        block_amounts: { b1: { contract_count_target: 4 }, b2: { target_amount: 600000000 } } }] }]);
+    // Бүгд нөхөгдсөн: менежергүй нэг гэрээ л үлдсэн.
+    await expect(manual.getByRole('status')).toContainText('Нөхөх зүйл: менежергүй 1 гэрээ.');
+    await expect(manual.getByText(/Төлөвлөгөө орсон: гэрээний тоо, гэрээний дүн\./)).toBeVisible();
+    await page.getByRole('button', { name: 'Дараах: Тоон тойм', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Тоон тойм', exact: true })).toBeFocused();
     expect(state.errors).toEqual([]);
 });
 

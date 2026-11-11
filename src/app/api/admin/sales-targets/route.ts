@@ -51,7 +51,7 @@ function systemActuals(plan: PlanPerformance) {
 /**
  * Багийн борлуулалтын төлөвлөгөө + идэвхтэй менежерийн бүртгэл (admin only).
  *
- * GET  ?shopId=&year=
+ * GET  ?shopId=&year=   (`&only=months` → зөвхөн 12 сарын төлөвлөгөө, гүйцэтгэл)
  *      → багийн 12 сарын төлөвлөгөө + гүйцэтгэл, бүртгэлтэй менежерүүд
  *        (идэвхтэй эсэх + жилийн борлуулалт), акаунт холбох багийн гишүүд.
  *      extrasAvailable=false бол нэмэлт ба идэвхжлийн төлөвлөгөөний багана (migration 20261023150000) алга.
@@ -103,6 +103,14 @@ export async function GET(request: NextRequest) {
         if (!await assertShopAccess(shopId)) return NextResponse.json({ error: 'Энэ төсөлд хандах эрхгүй' }, { status: 403 });
 
         const supabase = supabaseAdmin();
+
+        // `only=months`: зөвхөн 12 сарын төлөвлөгөө, гүйцэтгэл (Лхагвын тайлангийн «Гараар нөхөх» алхмын засварлагч) —
+        // системийн харьцуулалт, менежерийн бүртгэлийг уншихгүй.
+        if (sp.get('only') === 'months') {
+            let available = true;
+            const months = await getTeamMonthlySales(supabase, shopId!, year, { onExtrasUnavailable: () => { available = false; } });
+            return NextResponse.json({ year, months, extrasAvailable: available }, { headers: { 'Cache-Control': 'private, no-store' } });
+        }
 
         // Системийн дүн зөвхөн харьцуулалт: уншиж чадахгүй бол төлөвлөгөө засварыг хаахгүй, «тооцоолж чадсангүй» гэнэ.
         const system = loadPlanPerformance(supabase, { shopId: shopId!, year, canReadFinance: true }).then(systemActuals).catch(error => {

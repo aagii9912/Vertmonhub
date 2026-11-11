@@ -4,12 +4,13 @@ import { customerShortName } from '@/lib/contracts/list-format';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { weeklyReviewRange } from './weekly-review';
 import { crmKind } from './weekly-sales-load';
-import { WEEKLY_MANUAL_LIST_LIMIT, type WeeklyManual } from './weekly-manual';
+import { WEEKLY_MANUAL_LIST_LIMIT, type WeeklyManual, type WeeklyManualContract } from './weekly-manual';
 
 type ContractRow = {
     id: string; contract_number: string | null; contract_date: string | null; contract_status: string | null; product_type: string | null;
     block_name: string | null; unit_label: string | null; unit_number: string | null; total_price: number | string | null;
     sales_manager: string | null; customer_name: string | null; customer_first_name: string | null; customer_last_name: string | null;
+    order_date?: string | null;
 };
 type TargetRow = Record<'target_amount' | 'cashflow_target_amount' | 'contract_count_target' | 'manual_contract_actual_amount'
     | 'manual_cashflow_actual_amount' | 'manual_contract_count_actual', number | string | null>;
@@ -31,7 +32,7 @@ export async function loadWeeklyManual(db: SupabaseClient, options: { shopId: st
         fetchAllRows<ContractRow>((from, to) => db.from('property_contracts').select(CONTRACT_FIELDS)
             .eq('shop_id', shopId).is('deleted_at', null).or('sales_manager.is.null,sales_manager.eq.""')
             .order('contract_date', { ascending: false, nullsFirst: false }).order('id').range(from, to)),
-        fetchAllRows<{ id: string; contract_status: string | null }>((from, to) => db.from('property_contracts').select('id, contract_status')
+        fetchAllRows<ContractRow>((from, to) => db.from('property_contracts').select(`${CONTRACT_FIELDS}, order_date`)
             .eq('shop_id', shopId).is('deleted_at', null).is('contract_date', null).order('id').range(from, to)),
         db.from('team_sales_targets').select(TARGET_FIELDS).eq('shop_id', shopId).eq('year', Number(month.slice(0, 4))).eq('month', Number(month.slice(5, 7))).maybeSingle(),
     ]);
@@ -39,20 +40,26 @@ export async function loadWeeklyManual(db: SupabaseClient, options: { shopId: st
     const row = (target.data ?? null) as TargetRow | null;
     const live = <T extends { contract_status: string | null }>(rows: T[]) => rows.filter(contract => contract.contract_status !== 'cancelled');
     const managerless = live(managerlessRows).filter(contract => !contract.sales_manager?.trim());
+    const undated = live(undatedRows);
+    const line = (contract: ContractRow): WeeklyManualContract => ({
+        id: contract.id, number: contract.contract_number, date: contract.contract_date, block: contract.block_name,
+        unit: contract.unit_label ?? contract.unit_number, kindLabel: PRODUCT_KIND_LABEL[crmKind(contract.product_type)],
+        customer: options.canSeeCustomers ? customerShortName(contract) : null,
+        total: contract.total_price === null || contract.total_price === '' ? null : erpNumber(String(contract.total_price)),
+        inWeek: !!contract.contract_date && contract.contract_date >= range.from && contract.contract_date <= range.to,
+    });
 
     return {
         month,
         managerless: {
             count: managerless.length,
-            contracts: managerless.slice(0, WEEKLY_MANUAL_LIST_LIMIT).map(contract => ({
-                id: contract.id, number: contract.contract_number, date: contract.contract_date, block: contract.block_name,
-                unit: contract.unit_label ?? contract.unit_number, kindLabel: PRODUCT_KIND_LABEL[crmKind(contract.product_type)],
-                customer: options.canSeeCustomers ? customerShortName(contract) : null,
-                total: contract.total_price === null || contract.total_price === '' ? null : erpNumber(String(contract.total_price)),
-                inWeek: !!contract.contract_date && contract.contract_date >= range.from && contract.contract_date <= range.to,
-            })),
+            contracts: managerless.slice(0, WEEKLY_MANUAL_LIST_LIMIT).map(line),
         },
-        undated: live(undatedRows).length,
+        undated: undated.length,
+        // «Захиалга өгсөн огноо» хоосон үед л гэрээний огноог оруулж болно (PATCH-ийн дүрэм).
+        undatedContracts: undated.slice(0, WEEKLY_MANUAL_LIST_LIMIT).map(contract => ({
+            ...line(contract), manager: contract.sales_manager?.trim() || null, dateEntry: !contract.order_date,
+        })),
         plan: {
             contractAmount: entered(row?.target_amount), contractCount: entered(row?.contract_count_target),
             cashflow: options.canSeeCash ? entered(row?.cashflow_target_amount) : null,

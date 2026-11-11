@@ -84,6 +84,25 @@ describe('monthly sales API boundary', () => {
         expect(mocks.load).not.toHaveBeenCalled();
     });
 
+    it('reads only the months for the weekly report\'s inline editor — same gate, no system comparison or roster', async () => {
+        const months = emptyMonthlySales();
+        months[10] = { ...months[10], revision: 3, target_amount: 900_000_000, block_amounts: { b1: { target_amount: 900_000_000 } } };
+        mocks.load.mockResolvedValue(months);
+        const url = `http://localhost/api/admin/sales-targets?shopId=${shopId}&year=2026&only=months`;
+        const response = await GET(new NextRequest(url));
+        expect(response.status).toBe(200);
+        expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+        const result = await response.json();
+        expect(Object.keys(result).sort()).toEqual(['extrasAvailable', 'months', 'year']);
+        expect(result.months[10]).toMatchObject({ month: 11, revision: 3, target_amount: 900_000_000 });
+        expect(mocks.plan).not.toHaveBeenCalled();
+        expect(mocks.actuals).not.toHaveBeenCalled();
+        mocks.superAdmin = false;
+        expect((await GET(new NextRequest(url))).status).toBe(403);
+        mocks.superAdmin = true; mocks.accessible = false;
+        expect((await GET(new NextRequest(url))).status).toBe(403);
+    });
+
     it('returns conflict instead of pretending a stale save succeeded', async () => {
         mocks.save.mockResolvedValue({ data: null, error: { code: '40001', message: 'stale' } });
         const response = await POST(request(payload()));

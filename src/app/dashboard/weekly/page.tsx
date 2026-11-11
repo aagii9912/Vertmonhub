@@ -61,7 +61,10 @@ function WeeklyReviewRoute() {
 function WeeklyReview({ initial }: { initial: { view: View; track: string | null; step: string | null } }) {
     const { shop, user } = useAuth();
     const [meetingDate, setMeetingDate] = useState(() => nextMeetingDate());
-    const [dirty, setDirty] = useState(false);
+    // Хадгалаагүй зүйл: «Миний шинэчлэл»-ийн бичвэр эсвэл «Гараар нөхөх» алхмын төлөвлөгөөний засвар.
+    const [updateDirty, setDirty] = useState(false);
+    const [planDirty, setPlanDirty] = useState(false);
+    const dirty = updateDirty || planDirty;
     const [view, setView] = useState<View>(initial.view);
     const [trackId, setTrackId] = useState(initial.track);
     const [stepId, setStepId] = useState(initial.step);
@@ -224,8 +227,8 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
     // Хоёр дахь алхам: файлд байдаггүй зүйлсийг (гэрээний менежер, огноо, сарын төлөвлөгөө) гараар нөхнө.
     const contractsFromErp = weeklySales?.sources.contracts === 'erp';
     const manualFixes = <WeeklyManualFixes query={manualQuery} contractsFromErp={contractsFromErp}
-        canSetManager={canWrite && can('contracts') && mode?.isManager === false} canOpenContracts={can('contracts')}
-        canEditPlan={user?.role === 'super_admin'} canOpenDaily={can('dashboard')} />;
+        canEditContracts={canWrite && can('contracts') && mode?.isManager === false} canOpenContracts={can('contracts')}
+        canEditPlan={user?.role === 'super_admin'} canOpenDaily={can('dashboard')} onDirty={setPlanDirty} />;
     const manualStatus = manualQuery.data && weeklySales ? weeklyManualStatus(manualQuery.data, { contractsFromErp }) : undefined;
     // Лидийн эх сурвалж, хөрвөлт нь борлуулалтын үзүүлэлт — маркетингийн албаны ажлыг үүгээр хэмжихгүй.
     const leadSources = marketingQuery.isPending ? <Skeleton className="h-36" /> : marketing ? <>
@@ -306,7 +309,7 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
                     hint: 'Тайлангийн гэрээ, үлдэгдэл, давхрын зураглал ERP-ээс оруулсан файлаас гардаг. Эхлээд энэ долоо хоногийн файлаа оруулна — оруулаагүй бол дараагийн алхмуудын тоо өмнөх файлынх байна.' },
                 { id: 'manual', title: 'Гараар нөхөх', body: manualFixes, done: manualStatus?.ready,
                     warn: !!manualQuery.error || !!manualStatus?.pending.length, warnText: manualQuery.error ? undefined : 'гараар нөхөх зүйл байна',
-                    hint: 'ERP-ийн файлд байдаггүй зүйлсийг энд гараар нөхнө: гэрээний менежер, огноо, сарын төлөвлөгөө. Мөр бүр юу дутууг, хаана засахыг заана — нөхөх зүйлгүй мөр «Бүрэн» гэж гарна.' },
+                    hint: 'ERP-ийн файлд байдаггүй зүйлсийг энд гараар нөхнө: гэрээний менежер, огноо, сарын төлөвлөгөө. Өөр хуудас руу явалгүй мөр дээр нь шууд оруулна — нөхөх зүйлгүй мөр «Бүрэн» гэж гарна.' },
                 { id: 'overview', title: 'Тоон тойм', body: salesOverview, href: `/dashboard/reports/operations?${params}`, warn: !!salesQuery.error,
                     hint: 'Шинэ лид, гэрээ, уулзалтын тоо зөв эсэхийг шалгана. Буруу бол лид, уулзалт, гэрээний бүртгэлээ засаад «Шинэчлэх» дарна.' },
                 { id: 'contracts', title: 'Гэрээ, үлдэгдэл', body: salesDetails, href: can('erp-imports') ? '/dashboard/reports/erp' : undefined, warn: !!weeklySalesQuery.error,
@@ -352,7 +355,8 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
 
     /** Хадгалаагүй шинэчлэлийг алгасаж алдахгүй (маягт зөвхөн өөрийн алхамд байдаг). */
     function canLeave() {
-        if (dirty) toast.error('Шинэчлэлээ эхлээд «Тайланд оруулах» эсвэл «Болих» дарна уу.');
+        if (planDirty) toast.error('Төлөвлөгөөний өөрчлөлтөө эхлээд «Хадгалах» эсвэл «Болих» дарна уу.');
+        else if (dirty) toast.error('Шинэчлэлээ эхлээд «Тайланд оруулах» эсвэл «Болих» дарна уу.');
         return !dirty;
     }
     function goToStep(id: string) {
