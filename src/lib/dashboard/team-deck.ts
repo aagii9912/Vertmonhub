@@ -24,8 +24,8 @@ import { assigneeInitialsText, workPlanProgress, type WorkPlanData } from '@/lib
  * LAYOUT_WIDE) — `weekly-deck.ts`-ийн туслахуудыг хуваалцана. Цэвэр функц: хөтөч (`weekly-deck-export.ts`) ба тест.
  *
  * Дүрэм (W1–W17): 7 хоног = Лхагва→Мягмар; дүн бүтэн оронтой (`formatMNT`), хувь бүхэл, доод хязгаар «+»,
- * тодорхойгүй «—» (хэзээ ч 0₮ биш). «Урьдчилгаа» = нөхцлөөр төлөх урьдчилгаа — орсон мөнгө биш (W6/W7), мөнгөн
- * урсгалд нэмэхгүй. Мөнгөн урсгалыг зөвхөн санхүүгийн эрхтэйд (`cashHidden` бол тоо огт гаргахгүй). Ачаалж чадаагүй
+ * тодорхойгүй «—» (хэзээ ч 0₮ биш). Сарын гэрээний «Урьдчилгаа» багана = санхүүгийн эрхтэйд ERP-ийн «Нийт төлсөн дүн»
+ * (эзэмшигчийн шийдвэр 2026-11-13), эс бөгөөс нөхцлөөр төлөх урьдчилгаа — орсон мөнгө биш (W6/W7); мөнгөн урсгалд нэмэхгүй. Мөнгөн урсгалыг зөвхөн санхүүгийн эрхтэйд (`cashHidden` бол тоо огт гаргахгүй). Ачаалж чадаагүй
  * эх сурвалжийн слайд «мэдээлэл ачаалж чадсангүй» гэж бичиж, шалтгааныг тэмдэглэлд — бусад слайд хэвээр.
  */
 
@@ -224,35 +224,38 @@ const MONTH_LINES_ONE_SLIDE = 10;
 const HEAD_H = 0.42;
 const ROW_H = 0.27;
 
-function parkingTable(lines: ReportContractLine[]): { head: Cell[]; rows: Cell[][]; footer: Cell[] } {
+/** «Урьдчилгаа» баганын утга: ERP-ийн төлсөн дүн (мэдэгдэж байвал) эсвэл нөхцлөөр төлөх урьдчилгаа — `monthContractSlides` шийднэ. */
+type AdvanceOf = (line: ReportContractLine) => number | null;
+
+function parkingTable(lines: ReportContractLine[], advanceOf: AdvanceOf): { head: Cell[]; rows: Cell[][]; footer: Cell[] } {
     return {
         head: PARKING_HEAD.map((text, index) => headCell(text, [3, 6, 7, 8].includes(index) ? 'right' : index === 0 || index === 5 ? 'center' : 'left')),
         rows: lines.map((line, index) => [
             bodyCell(String(index + 1), 'center'), bodyCell(managerShort(line.manager)), bodyCell(line.unit ?? '—'), bodyCell(area(line.area), 'right'),
             bodyCell(line.customer ? clip(line.customer, 24) : '—'), bodyCell(line.advanceCondition ?? '—', 'center'), bodyCell(money(line.total), 'right'),
-            bodyCell(money(line.advance), 'right'), bodyCell('—', 'right'),
+            bodyCell(money(advanceOf(line)), 'right'), bodyCell('—', 'right'),
         ]),
         footer: [
             bodyCell('Нийт', 'left', { bold: true, colspan: 3 }), bodyCell(sumText(lines.map(line => line.area), value => area(value)), 'right', { bold: true }),
             bodyCell(''), bodyCell(''), bodyCell(footerSum(lines.map(line => line.total)), 'right', { bold: true }),
-            bodyCell(footerSum(lines.map(line => line.advance)), 'right', { bold: true }), bodyCell('—', 'right', { bold: true }),
+            bodyCell(footerSum(lines.map(advanceOf)), 'right', { bold: true }), bodyCell('—', 'right', { bold: true }),
         ],
     };
 }
 
-function residentialTable(lines: ReportContractLine[]): { head: Cell[]; rows: Cell[][]; footer: Cell[] } {
+function residentialTable(lines: ReportContractLine[], advanceOf: AdvanceOf): { head: Cell[]; rows: Cell[][]; footer: Cell[] } {
     return {
         head: RESIDENTIAL_HEAD.map((text, index) => headCell(text, [5, 8, 9, 10].includes(index) ? 'right' : [0, 2, 3, 4, 7].includes(index) ? 'center' : 'left')),
         rows: lines.map((line, index) => [
             bodyCell(String(index + 1), 'center'), bodyCell(managerShort(line.manager)), bodyCell(line.rooms ? `${line.rooms} өрөө` : '—', 'center'),
             bodyCell(line.block ?? '—', 'center'), bodyCell(count(line.floor), 'center'), bodyCell(area(line.area), 'right'),
             bodyCell(line.customer ? clip(line.customer, 18) : '—'), bodyCell(line.advanceCondition ?? '—', 'center'), bodyCell(money(line.pricePerSqm), 'right'),
-            bodyCell(money(line.total), 'right'), bodyCell(money(line.advance), 'right'), bodyCell(line.referral ? clip(line.referral, 16) : '—'),
+            bodyCell(money(line.total), 'right'), bodyCell(money(advanceOf(line)), 'right'), bodyCell(line.referral ? clip(line.referral, 16) : '—'),
         ]),
         footer: [
             bodyCell('Нийт', 'left', { bold: true, colspan: 5 }), bodyCell(sumText(lines.map(line => line.area), value => area(value)), 'right', { bold: true }),
             bodyCell(''), bodyCell(''), bodyCell(''), bodyCell(footerSum(lines.map(line => line.total)), 'right', { bold: true }),
-            bodyCell(footerSum(lines.map(line => line.advance)), 'right', { bold: true }), bodyCell(''),
+            bodyCell(footerSum(lines.map(advanceOf)), 'right', { bold: true }), bodyCell(''),
         ],
     };
 }
@@ -275,20 +278,30 @@ function monthContractSlides(pres: PptxGenJS, ctx: Ctx) {
         const rows = others.filter(line => line.kind === kind);
         return `${PRODUCT_KIND_LABEL[kind]} ${rows.length} гэрээ (${footerSum(rows.map(row => row.total))})`;
     });
+    // «Урьдчилгаа» багана (эзэмшигчийн шийдвэр 2026-11-13): санхүүгийн эрхтэй үед ERP-ийн «Нийт төлсөн дүн» — HUB гэрээний
+    // жагсаалтын файлаас гэрээгээр тулгасан дүн (`plan.contractPaid`), ERP гэрээний экспортоос уншсан сард мөрийн өөрийн
+    // төлсөн дүн. Мэдэгдэхгүй нь «—» (0₮ биш). Эрхгүй эсвэл төлсөн дүнгийн файлгүй бол өмнөх шиг нөхцлөөр төлөх урьдчилгаа.
+    const hubPaid = ctx.cashVisible ? ctx.input.plan?.contractPaid ?? null : null;
+    const erpExport = ctx.cashVisible && report.sources.contracts === 'erp';
+    const advanceOf: AdvanceOf = hubPaid ? line => hubPaid.byContract[line.key] ?? null : erpExport ? line => line.paid : line => line.advance;
+    const advanceNote = hubPaid
+        ? `«Урьдчилгаа» — ERP-ийн «Нийт төлсөн дүн» (HUB гэрээний жагсаалт, ${hubPaid.asOf}-ний файлаар): тухайн гэрээнд өнөөг хүртэл орсон мөнгө. Файлд дүнгүй эсвэл тулгагдаагүй гэрээ «—» (0₮ биш); нийлбэрийн «+» = зарим нь тодорхойгүй.`
+        : erpExport ? '«Урьдчилгаа» — ERP гэрээний экспортын «Нийт төлсөн дүн»: тухайн гэрээнд өнөөг хүртэл орсон мөнгө; дүнгүй бол «—».'
+            : `«Урьдчилгаа» — Нөхцлөөр төлөх урьдчилгаа — орсон мөнгө биш (W7).${ctx.cashVisible ? ' ERP-ийн «Нийт төлсөн дүн»-тэй HUB файл оруулбал орсон мөнгө гарна.' : ' Орсон мөнгийг (ERP-ийн «Нийт төлсөн дүн») санхүүгийн эрхтэй хэрэглэгчийн татсан илтгэл харуулна.'}`;
     const notes = [
         report.sources.contracts === 'erp' && report.sources.sales
             ? `Эх сурвалж: ERP гэрээний экспорт «${report.sources.sales.source}» (${report.sources.sales.date}).`
             : 'Эх сурвалж: Hub-ийн гэрээ (HUB гэрээний жагсаалт, захиалга өгсөн огноогоор).',
         `Сарын эхнээс тайлант өдөр (${report.range.to}) хүртэлх амьд гэрээ; цуцлагдсан орохгүй.`,
-        '«Урьдчилгаа» — Нөхцлөөр төлөх урьдчилгаа — орсон мөнгө биш (W7).',
+        advanceNote,
         '«Хүлээгдэж буй» — төлбөрийн мэдээлэл ороогүй тул «—» (W16).',
         'Захиалагчийн нэрийг зөвхөн гэрээний эрхтэй хэрэглэгч харна; регистрийн дугаар гаргахгүй.',
         otherKinds.length ? `Хүснэгтэд ороогүй: ${otherKinds.join(', ')}.` : null,
         undated ? undatedContractsHint(undated) : null,
     ].filter((line): line is string => !!line);
     const kinds = [
-        { label: 'Дулаан зогсоол', lines: parking, table: parkingTable(parking), colW: PARKING_W },
-        { label: 'Орон сууц', lines: residential, table: residentialTable(residential), colW: RESIDENTIAL_W },
+        { label: 'Дулаан зогсоол', lines: parking, table: parkingTable(parking, advanceOf), colW: PARKING_W },
+        { label: 'Орон сууц', lines: residential, table: residentialTable(residential, advanceOf), colW: RESIDENTIAL_W },
     ];
     const empty = undated ? `Огноотой гэрээ алга — огноогүй ${undated} гэрээтэй тул тоо тодорхойгүй.` : 'Энэ сард гэрээ бүртгэгдээгүй.';
     if (parking.length + residential.length > MONTH_LINES_ONE_SLIDE) {

@@ -214,6 +214,13 @@ export interface PlanPerformance {
         availability: 'full' | 'partial' | 'none' | 'no_ledger'; unknownPaid: number; liveContracts: number; ledgerSince: string | null;
         source: 'ledger' | 'hub_paid'; hubPaidAsOf: string | null;
     };
+    /**
+     * Гэрээ тус бүрийн ERP «Нийт төлсөн дүн» (HUB файлын огноогоор; эзэмшигчийн шийдвэр 2026-11-13: Лхагвын илтгэлийн сарын
+     * гэрээний «Урьдчилгаа» багана). Зөвхөн санхүүгийн эрхтэйд ба HUB файлд төлсөн дүн байгаа үед; үгүй бол null/байхгүй.
+     * Тайлангийн оны огноотой амьд гэрээ: түлхүүр = гэрээний id, null = файлын мөрөнд дүн хоосон; түлхүүргүй = файлд
+     * тулгагдаагүй (тодорхойгүй). Гэрээний `paid_amount` биш — импортын snapshot.
+     */
+    contractPaid?: null | { asOf: string; byContract: Record<string, number | null> };
 }
 
 const UNDATED_LIST_LIMIT = 100;
@@ -550,6 +557,11 @@ export function buildPlanPerformance(input: PlanPerformanceInput): PlanPerforman
         cash: cashVisible ? {
             availability, unknownPaid, liveContracts: live.length, ledgerSince: hub ? null : ledgerSince,
             source: hub ? 'hub_paid' : 'ledger', hubPaidAsOf: hub?.asOf ?? null,
+        } : null,
+        contractPaid: hub ? {
+            asOf: hub.asOf,
+            byContract: Object.fromEntries(live.filter(contract => contract.contract_date?.slice(0, 4) === String(year) && hub.paid.has(contract.id))
+                .map(contract => [contract.id, hub.paid.get(contract.id) ?? null])),
         } : null,
     };
 }

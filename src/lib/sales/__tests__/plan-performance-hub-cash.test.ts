@@ -119,4 +119,21 @@ describe('HUB paid cash cohort (W5/W6)', () => {
         expect(october.blocks.parking.prepaymentDue).toBe(25_980_000);
         expect(october.total.prepaymentDue).toBe(475_980_000);
     });
+
+    // Лхагвын илтгэлийн сарын гэрээний «Урьдчилгаа» багана (эзэмшигчийн шийдвэр 2026-11-13): гэрээ тус бүрийн ERP төлсөн дүн.
+    it('carries each live dated contract\'s file paid amount for the deck, and nothing without finance access or a paid file', () => {
+        const { contracts, paid } = fixture();
+        paid.set('b2-3', null);
+        paid.delete('p-1');
+        const report = buildPlanPerformance(base({ hubPaid: { asOf: AS_OF, paid }, contracts: [...contracts, contract('b1', { id: 'b1-2025', contract_date: '2025-12-30' }), contract('b1', { id: 'b1-undated', contract_date: null })] }));
+        expect(report.contractPaid).toEqual({
+            asOf: AS_OF,
+            // Файлын мөрөнд дүн хоосон = null; файлд тулгагдаагүй (p-1), цуцалсан (b2-x), өөр оны ба огноогүй гэрээ түлхүүргүй.
+            byContract: { 'b2-1': 43_981_200, 'b2-2': 72_604_800, 'b2-3': null, 'b1-9': 268_348_500 },
+        });
+        expect(buildPlanPerformance(base({ hubPaid: null })).contractPaid).toBeNull();
+        // Санхүүгийн эрхгүй: дэвтэр (receipts) ирээгүй тул мөнгөн урсгалын хэсэг бүхэлдээ, гэрээний төлсөн дүн ч гарахгүй.
+        expect(buildPlanPerformance(base({ receipts: null })).contractPaid).toBeNull();
+    });
 });
+

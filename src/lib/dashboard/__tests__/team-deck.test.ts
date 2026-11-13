@@ -203,6 +203,33 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(note).toContain('Хүснэгтэд ороогүй: Агуулах 1 гэрээ (10,700,000₮)');
     });
 
+    // Эзэмшигчийн шийдвэр 2026-11-13: «Урьдчилгаа» = ERP-ийн «Нийт төлсөн дүн» (санхүүгийн эрхтэйд, HUB файлаас).
+    it('month contracts: «Урьдчилгаа» shows the ERP paid amount per contract — a real 0 stays 0, unknown is «—», the total is a lower bound', async () => {
+        const paid = { asOf: '2026-10-20', byContract: { 'А1-013': 25_980_000, 'Б2-1201': 0, 'Б2-1402': null } as Record<string, number | null> };
+        const { text, notes } = await render(teamInput({ plan: { ...plan(), contractPaid: paid } }));
+        const slide = at(text, '10-Р САР ЗАХИАЛГЫН ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ');
+        expect(slide).toMatch(/1 Хонгорзул А1-013 12\.5 Б\.Мэндбаяр 30% 86,600,000₮ 25,980,000₮ — Нийт 12\.5 86,600,000₮ 25,980,000₮/);
+        // Б2-1201: файлд 0 төлсөн (мэдэгдэж буй) — нөхцлөөр төлөх 93,749,400₮ биш.
+        expect(slide).toMatch(/1 Хонгорзул 2 өрөө Б2 12 57\.87 Б\.Мэндбаяр 30% 5,400,000₮ 312,498,000₮ 0₮ Инстаграм/);
+        expect(slide).not.toContain('93,749,400₮');
+        // Б2-1402 файлын мөрөнд дүн хоосон, Б1-0703 файлд тулгагдаагүй — «—»; нийлбэр доод хязгаар.
+        expect(slide).toMatch(/3 өрөө Б2 14 89\.73 — 10-30% [\d,]+₮ 484,542,000₮ — Ойрхон амьдардаг/);
+        expect(slide).toMatch(/Нийт 205\.47 1,109,538,000₮ 0₮\+/);
+        const note = notes[text.indexOf(slide)];
+        expect(note).toContain('«Урьдчилгаа» — ERP-ийн «Нийт төлсөн дүн» (HUB гэрээний жагсаалт, 2026-10-20-ний файлаар)');
+        expect(note).not.toContain('орсон мөнгө биш');
+    });
+
+    it('month contracts: without finance access or a paid file the column stays the advance due and the note says so', async () => {
+        const noFinance = await render(teamInput({ plan: { ...plan({ cashHidden: true }), contractPaid: { asOf: '2026-10-20', byContract: { 'А1-013': 1 } } } }));
+        const hidden = at(noFinance.text, '10-Р САР ЗАХИАЛГЫН ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ');
+        expect(hidden).toContain('86,600,000₮ 25,980,000₮ —');
+        expect(hidden).toContain('93,749,400₮');
+        expect(noFinance.notes[noFinance.text.indexOf(hidden)]).toContain('Нөхцлөөр төлөх урьдчилгаа — орсон мөнгө биш (W7). Орсон мөнгийг (ERP-ийн «Нийт төлсөн дүн») санхүүгийн эрхтэй хэрэглэгчийн татсан илтгэл харуулна.');
+        const noFile = await render(teamInput());
+        expect(noFile.notes[noFile.text.indexOf(at(noFile.text, '10-Р САР ЗАХИАЛГЫН ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ'))]).toContain('ERP-ийн «Нийт төлсөн дүн»-тэй HUB файл оруулбал орсон мөнгө гарна.');
+    });
+
     it('month contracts: a long month splits each table over pages with «Нийт» on the last page', async () => {
         const report = weeklySales();
         const residential = report.month.lines.find(line => line.kind === 'residential')!;
