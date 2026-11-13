@@ -13,7 +13,7 @@ import { formatMNT } from '@/lib/utils/currency';
 import { useViewings, useCreateViewing, useUpdateViewing, usePropertySearch, useViewingOptions, type ViewingRow, type ViewingRange, type PropertyOption } from '@/hooks/useViewings';
 import { includeDraftInterest, interestInput, viewingSelectionText, type ViewingInterestInput } from '@/lib/viewings/interests';
 import { ViewingInterestPicker } from './ViewingInterestPicker';
-import { useLeadDetail, useLeadProjects, useManagers } from '@/hooks/useLeads';
+import { useLeadDetail, useLeadProjects, useManagers, useUpdateLead } from '@/hooks/useLeads';
 import { MEETING_TYPES, MEETING_TYPE_META, VIEWING_STATUS_META, viewingStatusLabel, viewingStatusTone, dayHeading, type MeetingType } from '@/lib/viewings/labels';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/Sheet';
 import { Avatar, Pill, Skeleton } from '@/components/dashboard/v2/primitives';
@@ -24,6 +24,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { Checkbox } from '@/components/ui/Checkbox';
 import { ANONYMOUS_LEAD_LABEL, ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
 import { useReferralSources } from '@/hooks/useReferralSources';
+import { PAYMENT_TERM_FIELD_LABEL, paymentTermsText, selectablePaymentTerms, type PaymentTermKind } from '@/lib/viewings/payment-terms';
 import { REFERRAL_FIELD_LABEL, REFERRAL_LIST_FAILED, isActiveReferral, referralNameMap, referralOptionLabel, referralRequired, referralSubmitError } from '@/lib/sales/referral-sources';
 
 /**
@@ -176,7 +177,7 @@ function Row({ v, now, referral, canWrite, busy, onEdit, onArrived, onNoShow, on
             {v.lead ? <Link href={`/dashboard/leads?lead=${v.lead.id}`} className="block truncate text-sm font-medium text-foreground hover:text-brand-strong focus-ring">{name}</Link> : <span className="text-sm font-medium">{name}</span>}
             <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><MapPin className="size-3 shrink-0" /><span className="truncate">{viewingSelectionText(v.interests, v.property ? [v.property.name, v.property.district].filter(Boolean).join(' · ') : null) || 'Байр сонгоогүй'}</span></div>
             {v.agent_notes && <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{v.agent_notes}</p>}
-            {(mt || referral) && <p className="mt-1 text-xs text-muted-foreground">{[mt?.label, referral ? `${REFERRAL_FIELD_LABEL}: ${referral}` : null].filter(Boolean).join(' · ')}</p>}
+            {(mt || referral || paymentTermsText(v)) && <p className="mt-1 text-xs text-muted-foreground">{[mt?.label, referral ? `${REFERRAL_FIELD_LABEL}: ${referral}` : null, paymentTermsText(v)].filter(Boolean).join(' · ')}</p>}
         </div>
         {v.sales_manager_name && <span className="hidden items-center gap-2 lg:inline-flex"><Avatar name={v.sales_manager_name} /><span className="text-xs text-fg-2">{v.sales_manager_name}</span></span>}
         <div className="col-span-2 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:ml-auto sm:shrink-0 sm:border-0 sm:pt-0">
@@ -224,6 +225,11 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
     const [interests, setInterests] = useState<ViewingInterestInput[]>([]);
     const [draftInterest, setDraftInterest] = useState<ViewingInterestInput | null>(null);
     const [referralId, setReferralId] = useState('');
+    const [advanceTerm, setAdvanceTerm] = useState('');
+    const [remainderTerm, setRemainderTerm] = useState('');
+    // «Хэлэлцэж буй гэрээ»: лидийн төлөвийг «Хэлэлцэж байна» болгоно — «Яригдаж буй гэрээ» тайланд шууд орно.
+    const [negotiating, setNegotiating] = useState(false);
+    const updateLead = useUpdateLead();
     // «Сэжим (хаанаас ирсэн)»: жагсаалтгүй төсөлд товлохыг хаахгүй. Ачаалж байгаа / уншиж чадаагүй үед шинэ
     // харилцагчийн уулзалтыг илгээхгүй (сервер жагсаалттай төсөлд шаардана) — алдааг энд харуулж дахин оролдуулна.
     const referralQuery = useReferralSources({ inlineError: true });
@@ -268,8 +274,17 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                 feedback: walkIn ? feedback.trim() || null : null,
                 interests: includeDraftInterest(interests, draftInterest),
                 ...(referralOptions.some(item => item.id === referralId) ? { referral_source_id: referralId } : {}),
+                ...(advanceTerm ? { advance_payment_term: advanceTerm } : {}),
+                ...(remainderTerm ? { remainder_payment_term: remainderTerm } : {}),
             });
+            // Уулзалт хадгалагдсаны дараа лидийг тэмдэглэнэ; тэмдэглэж чадаагүй бол уулзалтыг дахин бүртгүүлэхгүй.
+            let markFailed = false;
+            if (negotiating && result.lead_id) {
+                try { await updateLead.mutateAsync({ id: result.lead_id, patch: { status: 'negotiating' } }); }
+                catch { markFailed = true; }
+            }
             if (result.warning) toast.warning(result.warning);
+            else if (markFailed) toast.warning(`Уулзалт хадгалагдсан. «${NEGOTIATING_LABEL}» гэж тэмдэглэж чадсангүй — лидээ нээгээд тэмдэглэнэ үү.`);
             else toast.success(walkIn ? 'Ирсэн уулзалт бүртгэгдлээ' : 'Уулзалт товлогдлоо');
             onClose();
         } catch (e) {
@@ -381,6 +396,14 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                         {referralOptions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                     </select>
                 </Field>}
+                {!referralFailed && !referralLoading && referralOptions.length === 0 && <p className="text-xs text-muted-foreground">«{REFERRAL_FIELD_LABEL}»-ийн жагсаалт хоосон тул энд сонгох талбар алга. Админ Тохиргоо → «{REFERRAL_FIELD_LABEL}» хэсэгт сонголтуудыг нэмнэ.</p>}
+
+                <PaymentTermFields advance={advanceTerm} remainder={remainderTerm} onAdvance={setAdvanceTerm} onRemainder={setRemainderTerm} />
+
+                <label className="flex items-center gap-2 text-[13px] text-foreground">
+                    <Checkbox id="meeting-negotiating" checked={negotiating} onCheckedChange={(checked) => setNegotiating(checked === true)} />
+                    <span>{NEGOTIATING_LABEL} <span className="text-xs text-muted-foreground">— «Яригдаж буй гэрээ» тайланд орно</span></span>
+                </label>
 
                 {walkIn && (
                     <>
@@ -424,6 +447,13 @@ function EditSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
     const [property, setProperty] = useState<{ id: string; name: string } | null>(v.property);
     const [propertyQuery, setPropertyQuery] = useState('');
     const [referralId, setReferralId] = useState(v.referral_source_id ?? '');
+    const [advanceTerm, setAdvanceTerm] = useState(v.advance_payment_term ?? '');
+    const [remainderTerm, setRemainderTerm] = useState(v.remainder_payment_term ?? '');
+    // «Хэлэлцэж буй гэрээ» — лидийн төлөв. Хаагдсан («Амжилттай», «Алдсан») лидийг эндээс хөндөхгүй.
+    const leadStatus = v.lead?.status ?? null;
+    const canMarkNegotiating = !!v.lead && leadStatus !== 'closed_won' && leadStatus !== 'closed_lost';
+    const [negotiating, setNegotiating] = useState(leadStatus === 'negotiating');
+    const updateLead = useUpdateLead();
     // Засварт заавал биш. Одоогийн (архивласан ч) сонголт жагсаалтад үлдэнэ.
     const referralQuery = useReferralSources({ inlineError: true });
     const referralOptions = (referralQuery.data?.sources ?? []).filter(item => isActiveReferral(item) || item.id === v.referral_source_id);
@@ -441,10 +471,15 @@ function EditSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
         if (when !== ubInputDate(v.scheduled_at)) patch.scheduled_at = new Date(`${when}:00+08:00`).toISOString();
         if ((property?.id ?? null) !== v.property_id) patch.property_id = property?.id ?? null;
         if ((referralId || null) !== (v.referral_source_id ?? null)) patch.referral_source_id = referralId || null;
-        if (!Object.keys(patch).length) { onClose(); return; }
+        if ((advanceTerm || null) !== (v.advance_payment_term ?? null)) patch.advance_payment_term = advanceTerm || null;
+        if ((remainderTerm || null) !== (v.remainder_payment_term ?? null)) patch.remainder_payment_term = remainderTerm || null;
+        const markLead = canMarkNegotiating && negotiating !== (leadStatus === 'negotiating');
+        if (!Object.keys(patch).length && !markLead) { onClose(); return; }
         try {
-            const result = await update.mutateAsync({ id: v.id, patch });
-            if (result.warning) toast.warning(result.warning); else toast.success('Уулзалтын мэдээлэл шинэчлэгдлээ');
+            const result = Object.keys(patch).length ? await update.mutateAsync({ id: v.id, patch }) : null;
+            // Чекийг авбал лид «Холбогдсон» руу буцна (уулзалт болсон тул «Шинэ» биш).
+            if (markLead && v.lead) await updateLead.mutateAsync({ id: v.lead.id, patch: { status: negotiating ? 'negotiating' : 'contacted' } });
+            if (result?.warning) toast.warning(result.warning); else toast.success('Уулзалтын мэдээлэл шинэчлэгдлээ');
             onClose();
         } catch (error) { toast.error(error instanceof Error ? error.message : 'Хадгалж чадсангүй'); }
     };
@@ -472,9 +507,14 @@ function EditSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
                 <option value="">Сонгоогүй</option>
                 {referralOptions.map(item => <option key={item.id} value={item.id}>{referralOptionLabel(item)}</option>)}
             </select></Field>}
+            <PaymentTermFields advance={advanceTerm} remainder={remainderTerm} onAdvance={setAdvanceTerm} onRemainder={setRemainderTerm} current={{ advance: v.advance_payment_term, remainder: v.remainder_payment_term }} />
+            {canMarkNegotiating && <label className="flex items-center gap-2 text-[13px] text-foreground">
+                <Checkbox id="meeting-edit-negotiating" checked={negotiating} onCheckedChange={(checked) => setNegotiating(checked === true)} />
+                <span>{NEGOTIATING_LABEL} <span className="text-xs text-muted-foreground">— «Яригдаж буй гэрээ» тайланд орно</span></span>
+            </label>}
             <Field label="Тэмдэглэл"><textarea aria-label="Тэмдэглэл" className={cn(inputCls, 'h-auto py-2')} rows={3} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
         </div>
-        <footer className="flex justify-end gap-2 border-t border-border p-4"><Button variant="secondary" onClick={onClose}>Болих</Button><Button disabled={update.isPending} onClick={() => void save()}>Хадгалах</Button></footer>
+        <footer className="flex justify-end gap-2 border-t border-border p-4"><Button variant="secondary" onClick={onClose}>Болих</Button><Button disabled={update.isPending || updateLead.isPending} onClick={() => void save()}>Хадгалах</Button></footer>
     </div>;
 }
 
@@ -535,6 +575,27 @@ function OutcomeSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
             </footer>
         </div>
     );
+}
+
+/** Лидийг «Хэлэлцэж байна» төлөвт оруулах чекийн нэр (лидийн самбарын товчтой ижил). */
+const NEGOTIATING_LABEL = 'Хэлэлцэж буй гэрээ';
+
+/** Урьдчилгаа / үлдэгдэл төлбөрийн нөхцөл — тогтмол жагсаалтаас нэг нэг сонголт; заавал биш. */
+function PaymentTermFields({ advance, remainder, onAdvance, onRemainder, current }: {
+    advance: string; remainder: string; onAdvance: (value: string) => void; onRemainder: (value: string) => void;
+    current?: { advance?: string | null; remainder?: string | null };
+}) {
+    const fields: Array<{ kind: PaymentTermKind; value: string; onChange: (value: string) => void }> = [
+        { kind: 'advance', value: advance, onChange: onAdvance }, { kind: 'remainder', value: remainder, onChange: onRemainder },
+    ];
+    return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {fields.map(({ kind, value, onChange }) => <Field key={kind} label={PAYMENT_TERM_FIELD_LABEL[kind]}>
+            <select aria-label={PAYMENT_TERM_FIELD_LABEL[kind]} className={inputCls} value={value} onChange={e => onChange(e.target.value)}>
+                <option value="">Сонгоогүй</option>
+                {selectablePaymentTerms(kind, current?.[kind]).map(option => <option key={option.code} value={option.code}>{option.label}</option>)}
+            </select>
+        </Field>)}
+    </div>;
 }
 
 const inputCls = 'h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]';

@@ -457,7 +457,7 @@ const writeDefinitions: ToolDefinition[] = [
     },
     {
         name: 'update_lead_status',
-        description: 'Лидийн төлөв өөрчлөх. closed_won нь хүчинтэй дугаар/дүнтэй гэрээ, closed_lost нь lost_reason шаарддаг. Баталгаажуулалт авна.',
+        description: 'Лидийн төлөв өөрчлөх. negotiating = «Хэлэлцэж буй гэрээ» (Лхагвын тайлангийн «Яригдаж буй гэрээ»-нд орно); closed_won = «Гэрээ болсон» гэсэн менежерийн тэмдэглэгээ (гэрээ үүсгэхгүй, гэрээ HUB импортоор орж ирнэ); closed_lost нь lost_reason шаарддаг. Баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {

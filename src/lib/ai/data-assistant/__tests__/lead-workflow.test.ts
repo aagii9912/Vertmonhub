@@ -157,19 +157,31 @@ describe('AI individual lead closure', () => {
         expect(update.eq).toHaveBeenCalledWith('shop_id', 'shop-1');
         expect(update.is).toHaveBeenCalledWith('deleted_at', null);
     });
+    // «Гэрээ болсон» (эзэмшигчийн шийдвэр 2026-11-13): холбогдсон гэрээ шаардахгүй — гэрээ HUB импортоор орж ирнэ.
+    it('marks a lead as contracted without a linked contract when the lead carries no amount', async () => {
+        query('leads', [lead]);
+        const check = query('leads', { conversion_value: null });
+        expect(await updateLeadStatus('shop-1', { lead_id: lead.id, new_status: 'closed_won' })).toHaveProperty('requiresConfirmation', true);
+        expect(check.eq).toHaveBeenCalledWith('shop_id', 'shop-1');
+        expect(check.eq).toHaveBeenCalledWith('id', lead.id);
+        expect(from).toHaveBeenCalledTimes(2);
+    });
+    // Дүнтэй лид + гэрээгүй → DB trigger хоосон (stub) гэрээ үүсгэнэ: татгалзана.
     it.each([
         { contracts: [] },
         { contracts: [{ contract_number: 'C-1', total_price: 0, contract_status: 'active' }] },
         { contracts: [{ contract_number: 'C-1', total_price: 100, contract_status: 'cancelled' }] },
         { contracts: [{ contract_number: '  ', total_price: 100, contract_status: 'active' }] },
-    ])('rejects won for absent, stub or cancelled contract $contracts', async ({ contracts }) => {
+    ])('rejects won for a lead with an amount and an absent, stub or cancelled contract $contracts', async ({ contracts }) => {
         query('leads', [lead]);
+        query('leads', { conversion_value: 100 });
         query('property_contracts', contracts);
         expect(await updateLeadStatus('shop-1', { lead_id: lead.id, new_status: 'closed_won' }, true)).toHaveProperty('error');
-        expect(from).toHaveBeenCalledTimes(2);
+        expect(from).toHaveBeenCalledTimes(3);
     });
-    it('accepts a numbered, positive-value active contract', async () => {
+    it('accepts won for a lead with an amount and a numbered, positive-value active contract', async () => {
         query('leads', [lead]);
+        query('leads', { conversion_value: '100' });
         const contracts = query('property_contracts', [{ contract_number: 'C-1', total_price: '100', contract_status: 'active' }]);
         expect(await updateLeadStatus('shop-1', { lead_id: lead.id, new_status: 'closed_won' })).toHaveProperty('requiresConfirmation', true);
         expect(contracts.eq).toHaveBeenCalledWith('shop_id', 'shop-1');

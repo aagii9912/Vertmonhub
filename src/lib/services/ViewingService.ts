@@ -18,6 +18,7 @@ import { PricingSelectionError } from '@/lib/sales/pricing-store';
 import { formalManagerName } from '@/lib/dashboard/daily-report';
 import { isMissingReferralSchema, REFERRAL_UNAVAILABLE, resolveReferralSource } from '@/lib/sales/referral-sources-store';
 import type { ReferralSource } from '@/lib/sales/referral-sources';
+import { AdvancePaymentTermSchema, RemainderPaymentTermSchema } from '@/lib/viewings/payment-terms';
 
 export interface Actor {
     userId: string | null;
@@ -37,6 +38,9 @@ export interface ViewingPatch {
     interests?: ViewingInterestInput[];
     /** «Сэжим (хаанаас ирсэн)»; null = цэвэрлэх. Засварт заавал биш. */
     referral_source_id?: string | null;
+    /** Урьдчилгаа / үлдэгдэл төлбөрийн нөхцөлийн код (`lib/viewings/payment-terms.ts`); null = цэвэрлэх. */
+    advance_payment_term?: string | null;
+    remainder_payment_term?: string | null;
     /** Зөвхөн дотоод soft-delete үйлдэл; API PATCH schema-д нээхгүй. */
     deleted_at?: string;
 }
@@ -62,6 +66,9 @@ export const CreateViewingSchema = z.object({
     referral_source_id: z.guid().nullish(),
     /** «Сэжим»-ийн нэр (AI): id өгөөгүй үед жагсаалтаас яг таарсныг авна. */
     referral_source: z.string().trim().max(200).nullish(),
+    /** Харилцагчийн сонирхсон урьдчилгаа / үлдэгдэл төлбөрийн нөхцөл (тогтмол жагсаалтын код); заавал биш. */
+    advance_payment_term: AdvancePaymentTermSchema,
+    remainder_payment_term: RemainderPaymentTermSchema,
 }).refine(p => p.walk_in || !!p.scheduled_at, { message: 'Уулзалтын огноо, цаг шаардлагатай' })
     .refine(p => !!(p.lead_id || p.customer_name || p.customer_phone || p.anonymous), { message: 'Лид эсвэл харилцагчийн мэдээлэл шаардлагатай' });
 
@@ -267,6 +274,9 @@ export async function createViewing(db: SupabaseClient, shopId: string, input: u
                 ...(interests !== undefined ? { interests } : {}),
                 // Сэжимгүй үед түлхүүрийг илгээхгүй (migration-ий өмнөх RPC мэдэхгүй түлхүүрийг татгалздаг).
                 ...(p.referral_source_id ? { referral_source_id: p.referral_source_id } : {}),
+                // Нөхцөл сонгоогүй үед түлхүүрийг илгээхгүй (migration 20261113120000-ийн өмнөх RPC татгалздаг).
+                ...(p.advance_payment_term ? { advance_payment_term: p.advance_payment_term } : {}),
+                ...(p.remainder_payment_term ? { remainder_payment_term: p.remainder_payment_term } : {}),
             },
         });
         if (error || !viewing) {
@@ -286,6 +296,8 @@ export async function createViewing(db: SupabaseClient, shopId: string, input: u
         agent_notes: p.notes || null, sales_manager_name: lead?.sales_manager_name || actor.managerName, completed_at: p.walk_in ? now : null,
         interest_level: p.walk_in ? p.interest_level ?? null : null, customer_feedback: p.walk_in ? p.feedback || null : null,
         ...(p.referral_source_id ? { referral_source_id: p.referral_source_id } : {}),
+        ...(p.advance_payment_term ? { advance_payment_term: p.advance_payment_term } : {}),
+        ...(p.remainder_payment_term ? { remainder_payment_term: p.remainder_payment_term } : {}),
     }).select('id, scheduled_at, status').single();
     if (error || !viewing) return { ok: false, status: 500, partialSuccess: createdLead, leadId: lead?.id,
         error: createdLead ? 'Лид үүссэн боловч уулзалт хадгалагдсангүй. Лидээ нээгээд уулзалтаа товлоно уу.' : 'Уулзалт хадгалсныг баталгаажуулж чадсангүй. Жагсаалтаа шалгана уу.' };
@@ -314,6 +326,8 @@ export async function updateViewing(db: SupabaseClient, shopId: string, viewingI
     let validatedPatch: Record<string, unknown> = { ...p };
     const editsSelection = p.interests !== undefined || p.property_id !== undefined || p.meeting_type !== undefined;
     const editsReferral = p.referral_source_id !== undefined;
+    // Төлбөрийн нөхцөл: лидийн түүх, хамрах хүрээний шалгалттай нэг гүйлгээнд хадгалахын тулд RPC-ээр.
+    const editsTerms = p.advance_payment_term !== undefined || p.remainder_payment_term !== undefined;
     if (editsReferral) {
         // Одоогийн (архивласан ч) сонголтоо хэвээр үлдээж болно; шинээр зөвхөн идэвхтэй. Хамрах хүрээг RPC шалгана.
         const current = await db.from('property_viewings').select('referral_source_id').eq('id', viewingId).eq('shop_id', shopId).is('deleted_at', null).maybeSingle();
@@ -345,7 +359,7 @@ export async function updateViewing(db: SupabaseClient, shopId: string, viewingI
             }
         }
     }
-    if (scope.projectIds !== null || editsSelection || editsReferral) {
+    if (scope.projectIds !== null || editsSelection || editsReferral || editsTerms) {
         if (scope.projectIds !== null && !actor.userId) return { ok: false, error: 'Нэвтрэх шаардлагатай', status: 401 };
         if (scope.projectIds !== null && (!scope.managerName || !scope.projectIds.length)) return { ok: false, error: 'Уулзалт олдсонгүй', status: 404 };
         // Уншилтын дараах эзэмшигчийн өөрчлөлтөөс хамгаална. RPC лидийг түгжиж,

@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import Link from 'next/link';
-import { Phone, CalendarPlus, FileText, StickyNote, X, ExternalLink, PhoneCall, Check, UserPen, BadgeDollarSign } from 'lucide-react';
+import { Phone, CalendarPlus, FileCheck, Handshake, StickyNote, X, ExternalLink, PhoneCall, Check, UserPen, BadgeDollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
@@ -272,9 +272,24 @@ export function LeadPanel({
                     <button type="button" onClick={() => noteRef.current?.focus()} className="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-[12.5px] font-medium text-foreground hover:bg-surface-2 focus-ring">
                         <StickyNote className="h-4 w-4" /> Тэмдэглэл
                     </button>
-                    <Link href={`/dashboard/contracts/generate?lead=${lead.id}`} className="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-[12.5px] font-medium text-foreground hover:bg-surface-2 focus-ring">
-                        <FileText className="h-4 w-4" /> Гэрээ үүсгэх
-                    </Link>
+{/* Гэрээг эндээс үүсгэхгүй (гэрээ HUB импортоор орж ирнэ): менежер зөвхөн тэмдэглэнэ. «Хэлэлцэж буй гэрээ» =
+                        төлөв «Хэлэлцэж байна» → Лхагвын тайлангийн «Яригдаж буй гэрээ»; «Гэрээ болсон» = төлөв «Амжилттай». */}
+                    {canEdit && lead.status !== 'closed_lost' && (
+                        <>
+                            <button type="button" aria-pressed={lead.status === 'negotiating'} disabled={lead.status === 'closed_won'}
+                                title="«Яригдаж буй гэрээ» тайланд орно"
+                                onClick={() => patch({ status: lead.status === 'negotiating' ? 'contacted' : 'negotiating' })}
+                                className={cn(markCls, lead.status === 'negotiating' ? 'border-status-pending bg-status-pending-soft text-status-pending' : 'border-border-strong bg-surface text-foreground hover:bg-surface-2')}>
+                                {lead.status === 'negotiating' ? <Check className="h-4 w-4" /> : <Handshake className="h-4 w-4" />} Хэлэлцэж буй гэрээ
+                            </button>
+                            <button type="button" aria-pressed={lead.status === 'closed_won'}
+                                title="Гэрээ хийгдсэн гэж тэмдэглэнэ. Гэрээ нь гэрээний жагсаалтын импортоор орж ирнэ."
+                                onClick={() => patch({ status: lead.status === 'closed_won' ? 'negotiating' : 'closed_won' })}
+                                className={cn(markCls, lead.status === 'closed_won' ? 'border-status-success bg-status-success-soft text-status-success' : 'border-border-strong bg-surface text-foreground hover:bg-surface-2')}>
+                                {lead.status === 'closed_won' ? <Check className="h-4 w-4" /> : <FileCheck className="h-4 w-4" />} Гэрээ болсон
+                            </button>
+                        </>
+                    )}
                 </div>
 
                 {/* Тэмдэглэл бичих */}
@@ -384,6 +399,9 @@ export function LeadPanel({
 function Label({ children }: { children: React.ReactNode }) {
     return <span className="pt-0.5 text-[12px] text-muted-foreground">{children}</span>;
 }
+
+/** «Хэлэлцэж буй гэрээ», «Гэрээ болсон» тэмдэглэгээний товч (aria-pressed). */
+const markCls = 'inline-flex h-[30px] items-center gap-1.5 rounded-md border px-2.5 text-[12.5px] font-medium focus-ring disabled:cursor-not-allowed disabled:opacity-50';
 
 export function nextStep(lead: { next_followup_at?: string | null; viewing_scheduled_at?: string | null; status: string }): string {
     const now = Date.now();

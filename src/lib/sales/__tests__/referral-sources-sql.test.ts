@@ -13,6 +13,8 @@ const viewingInterests = readFileSync('supabase/migrations/20261008121000_viewin
 const dailyReports = readFileSync('supabase/migrations/20261007120000_daily_reports.sql', 'utf8');
 const dailyTeam = readFileSync('supabase/migrations/20261019120000_daily_report_team_entry.sql', 'utf8');
 const migration = readFileSync('supabase/migrations/20261023151000_sales_referral_sources.sql', 'utf8');
+// 20261113120000 хоёр viewing RPC-г дахин тодорхойлдог тул энэ схем дээр хамт шалгана.
+const paymentTerms = readFileSync('supabase/migrations/20261113120000_viewing_payment_terms.sql', 'utf8');
 
 // Supabase-ийн default privilege (шинэ хүснэгт, функц anon/authenticated-д нээлттэй) + RPC-ийн хүрдэг баганууд.
 const prerequisites = `
@@ -230,3 +232,58 @@ it('daily report meeting RPC records the referral of the meeting and rejects for
         await db.close();
     }
 });
+
+it('20261113120000: viewing RPCs store payment-term codes, reject malformed ones and keep every earlier rule', async () => {
+    const db = await setup();
+    try {
+        await db.exec(paymentTerms);
+        await db.exec(paymentTerms); // Дахин ажиллуулж болно.
+        expect((await db.query<{ ok: boolean }>(migrationVerifyQuery('20261113120000'))).rows[0].ok).toBe(true);
+        await db.exec('SET ROLE service_role');
+        const facebook = await source(db, 'Facebook');
+        const lead = (await db.query<{ id: string }>(`INSERT INTO public.leads(shop_id, project_id, customer_name, customer_phone, status, sales_manager_name)
+            VALUES ($1, $2, 'Болд', '99112233', 'new', 'Бат') RETURNING id`, [shop, garden])).rows[0].id;
+        const create = async (input: Record<string, unknown>, scoped = true) => (await db.query<{ result: { id: string; status: string } }>(
+            'SELECT public.create_scoped_sales_viewing($1,$2,$3,$4,$5,$6) AS result',
+            [shop, lead, batUser, scoped ? 'Бат' : null, scoped ? [garden] : null,
+                JSON.stringify({ project_id: garden, walk_in: true, meeting_type: 'new_customer', ...input })])).rows[0].result;
+        const update = async (id: string, patch: Record<string, unknown>, scoped = true) => (await db.query<{ result: Record<string, unknown> }>(
+            'SELECT public.update_scoped_sales_viewing($1,$2,$3,$4,$5,$6) AS result',
+            [shop, id, batUser, scoped ? 'Бат' : null, scoped ? [garden] : null, JSON.stringify(patch)])).rows[0].result;
+        const saved = async (id: string) => (await db.query<{ advance_payment_term: string | null; remainder_payment_term: string | null; referral_source_id: string | null; agent_notes: string | null }>(
+            'SELECT advance_payment_term, remainder_payment_term, referral_source_id, agent_notes FROM public.property_viewings WHERE id = $1', [id])).rows[0];
+        const updateNotes = async () => Number((await db.query<{ n: string }>(
+            `SELECT count(*) AS n FROM public.lead_activities WHERE content = 'Уулзалтын мэдээлэл шинэчлэв'`)).rows[0].n);
+
+        // Шинэ уулзалт: кодууд сэжимтэй хамт хадгалагдана; түлхүүргүй хуучин оролт хэвээр ажиллана (NULL).
+        const withTerms = await create({ advance_payment_term: 'barter', remainder_payment_term: 'mortgage', referral_source_id: facebook, agent_notes: 'Ойрхон амьдардаг' });
+        expect(await saved(withTerms.id)).toEqual({ advance_payment_term: 'barter', remainder_payment_term: 'mortgage', referral_source_id: facebook, agent_notes: 'Ойрхон амьдардаг' });
+        const plain = await create({}, false);
+        expect(await saved(plain.id)).toMatchObject({ advance_payment_term: null, remainder_payment_term: null });
+        const explicitNull = await create({ advance_payment_term: null });
+        expect(await saved(explicitNull.id)).toMatchObject({ advance_payment_term: null });
+
+        // Код биш утга (монгол нэр, том үсэг, тоо, хэт урт, мөр биш) — юу ч бичихгүй.
+        const before = Number((await db.query<{ n: string }>('SELECT count(*) AS n FROM public.property_viewings')).rows[0].n);
+        for (const bad of ['Бэлэн', 'CASH', '1cash', 'cash loan', 'a'.repeat(41), 5, true, ['cash']]) {
+            await expect(create({ advance_payment_term: bad })).rejects.toThrow(/Уулзалтын мэдээлэл буруу/);
+            await expect(update(withTerms.id, { remainder_payment_term: bad })).rejects.toThrow(/Уулзалтын өөрчлөлт буруу/);
+        }
+        expect(Number((await db.query<{ n: string }>('SELECT count(*) AS n FROM public.property_viewings')).rows[0].n)).toBe(before);
+
+        // Засвар: зөвхөн өгсөн түлхүүр өөрчлөгдөнө; null = цэвэрлэх; лидийн түүхэнд тэмдэглэл үлдэнэ.
+        const notes = await updateNotes();
+        await update(withTerms.id, { remainder_payment_term: 'bank_loan' });
+        expect(await saved(withTerms.id)).toMatchObject({ advance_payment_term: 'barter', remainder_payment_term: 'bank_loan', referral_source_id: facebook });
+        await update(withTerms.id, { advance_payment_term: null }, false);
+        expect(await saved(withTerms.id)).toMatchObject({ advance_payment_term: null, remainder_payment_term: 'bank_loan' });
+        expect(await updateNotes()).toBe(notes + 2);
+        // Нөхцөлийг хөндөөгүй засвар тэдгээрийг хадгална.
+        await update(withTerms.id, { agent_notes: 'Ипотекоор сонирхсон' });
+        expect(await saved(withTerms.id)).toMatchObject({ remainder_payment_term: 'bank_loan', agent_notes: 'Ипотекоор сонирхсон' });
+
+        // Багана өөрөө кодын хэлбэрийг шалгана (RPC-ээс гадуурх бичилт).
+        await expect(db.query(`UPDATE public.property_viewings SET advance_payment_term = 'Бэлэн' WHERE id = $1`, [withTerms.id])).rejects.toThrow();
+    } finally { await db.close(); }
+});
+

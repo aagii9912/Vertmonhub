@@ -19,7 +19,7 @@ import {
     normalizeLeadName, statusLabel, toLeadSource,
 } from '@/lib/leads/labels';
 import { PROPERTY_TYPES } from '@/lib/inventory/labels';
-import { hasRealContractFields } from '@/lib/leads/contracts';
+import { leadWonBlocker } from '@/lib/leads/contracts';
 import { resolveActiveManagerName, resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
@@ -376,19 +376,11 @@ export async function updateStaffLead(
         }
     }
 
-    // «Амжилттай» — зөвхөн бодит гэрээтэй лид. DB trigger (create_contract_on_lead_won)
-    // гэрээгүй closed_won-д үнэгүй stub гэрээ үүсгэж статистикийг өсгөдөг байв (review H5).
+    // «Гэрээ болсон» (closed_won): менежер өөрөө тэмдэглэнэ, холбогдсон гэрээ шаардахгүй (эзэмшигчийн шийдвэр
+    // 2026-11-13) — гэрээ HUB импортоор тусдаа орж ирдэг. Stub гэрээ үүсгэх тохиолдлыг `leadWonBlocker` хаана.
     if (updates.status === 'closed_won' && lead.status !== 'closed_won') {
-        const { data: contracts, error: contractError } = await db
-            .from('property_contracts')
-            .select('contract_number, total_price, contract_status')
-            .eq('lead_id', leadId)
-            .eq('shop_id', shopId)
-            .is('deleted_at', null);
-        if (contractError) return fail(500, 'Гэрээ шалгахад алдаа гарлаа');
-        if (!contracts?.some(hasRealContractFields)) {
-            return fail(400, 'Гэрээгүй лидийг «Амжилттай» болгох боломжгүй. Эхлээд «Гэрээ үүсгэх»-ээр гэрээ бүртгэнэ үү.');
-        }
+        const blocked = await leadWonBlocker(db, shopId, leadId);
+        if (blocked) return fail(400, blocked);
     }
     // «Алдсан» — шалтгаан заавал.
     if (updates.status === 'closed_lost' && lead.status !== 'closed_lost' && !updates.lost_reason && !lead.lost_reason) {

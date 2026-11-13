@@ -7,6 +7,7 @@ import { updateViewing } from '@/lib/services/ViewingService';
 import { resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { withRoute } from '@/lib/api/route';
 import { ViewingInterestsSchema } from '@/lib/viewings/interests';
+import { AdvancePaymentTermPatchSchema, RemainderPaymentTermPatchSchema } from '@/lib/viewings/payment-terms';
 
 const PatchSchema = z.object({
     status: z.enum(['scheduled', 'completed', 'cancelled', 'no_show']).optional(),
@@ -21,6 +22,9 @@ const PatchSchema = z.object({
     interests: ViewingInterestsSchema.optional(),
     /** «Сэжим (хаанаас ирсэн)» — төслийн жагсаалтын id; null = цэвэрлэх (засварт заавал биш). */
     referral_source_id: z.guid().nullable().optional(),
+    /** Урьдчилгаа / үлдэгдэл төлбөрийн нөхцөлийн код; null = цэвэрлэх. */
+    advance_payment_term: AdvancePaymentTermPatchSchema,
+    remainder_payment_term: RemainderPaymentTermPatchSchema,
 });
 
 /**

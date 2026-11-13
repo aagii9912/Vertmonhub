@@ -7,7 +7,7 @@ import type { ViewingRow } from '@/hooks/useViewings';
 import type { ViewingUnitOption, ViewingCondition } from '@/lib/viewings/interests';
 import { elysiumViewingConditions } from '@/lib/sales/viewing-conditions';
 
-const mocks = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), error: vi.fn(), units: [] as ViewingUnitOption[], conditions: [] as ViewingCondition[], viewings: [] as ViewingRow[],
+const mocks = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), updateLead: vi.fn(), error: vi.fn(), units: [] as ViewingUnitOption[], conditions: [] as ViewingCondition[], viewings: [] as ViewingRow[],
     referrals: undefined as { sources: Array<{ id: string; name: string; sort_order: number; archived_at: string | null }>; available: boolean } | undefined,
     referralState: 'ready' as 'ready' | 'loading' | 'error', refetchReferrals: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
@@ -15,6 +15,7 @@ vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: { role: 'admi
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: mocks.error } }));
 vi.mock('@/hooks/useLeads', () => ({
     useLeadDetail: () => ({ data: undefined }), useManagers: () => ({ data: [] }),
+    useUpdateLead: () => ({ mutateAsync: mocks.updateLead, isPending: false }),
     useLeadProjects: () => ({ data: [{ id: 'mandala', name: 'Mandala Garden' }, { id: 'elysium', name: 'Elysium' }], isLoading: false }),
 }));
 vi.mock('@/hooks/useViewings', () => ({
@@ -28,7 +29,7 @@ vi.mock('@/hooks/useReferralSources', () => ({ useReferralSources: () => ({
     data: mocks.referrals, isLoading: mocks.referralState === 'loading', isError: mocks.referralState === 'error', isFetching: false, refetch: mocks.refetchReferrals,
 }) }));
 
-beforeEach(() => { vi.clearAllMocks(); mocks.units = []; mocks.conditions = []; mocks.viewings = []; mocks.referrals = undefined; mocks.referralState = 'ready'; mocks.create.mockResolvedValue({ viewing: { id: 'meeting' } }); mocks.update.mockResolvedValue({ viewing: { id: 'meeting' } }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.units = []; mocks.conditions = []; mocks.viewings = []; mocks.referrals = undefined; mocks.referralState = 'ready'; mocks.create.mockResolvedValue({ viewing: { id: 'meeting' } }); mocks.update.mockResolvedValue({ viewing: { id: 'meeting' } }); mocks.updateLead.mockResolvedValue({}); });
 
 describe('viewing project selection', () => {
     it('selects and saves a payment condition without an active price, even if the selection was not explicitly added', async () => {
@@ -197,6 +198,76 @@ describe('viewing project selection', () => {
             fireEvent.change(select, { target: { value: 'ref-facebook' } });
             fireEvent.click(dialog.getByRole('button', { name: 'Хадгалах' }));
             await waitFor(() => expect(mocks.update).toHaveBeenCalledWith({ id: 'meeting', patch: { referral_source_id: 'ref-facebook' } }));
+        });
+    });
+
+    // Борлуулалтын багийн хүсэлт 2026-11-12: уулзалтад урьдчилгаа / үлдэгдэл төлбөрийн нөхцөл ба «Хэлэлцэж буй гэрээ».
+    describe('төлбөрийн нөхцөл ба «Хэлэлцэж буй гэрээ»', () => {
+        const completed = (lead: { status: string }, extra: Partial<ViewingRow> = {}): ViewingRow => ({ id: 'meeting', status: 'completed', scheduled_at: '2026-11-10T01:00:00Z', lead_id: 'lead', property_id: null, property: null,
+            lead: { id: 'lead', customer_name: 'Болд', customer_phone: '99112233', ...lead }, agent_notes: null, customer_feedback: null,
+            meeting_type: 'new_customer', interest_level: null, completed_at: '2026-11-10T01:00:00Z', sales_manager_name: null, interests: [], ...extra });
+
+        it('sends the chosen advance and remainder terms with a new meeting and marks the lead as negotiating afterwards', async () => {
+            mocks.create.mockResolvedValue({ viewing: { id: 'meeting' }, lead_id: 'lead-9' });
+            render(<ViewingsPage />);
+            fireEvent.click(screen.getAllByRole('button', { name: 'Уулзалт товлох' })[0]);
+            const dialog = within(screen.getByRole('dialog'));
+            fireEvent.change(dialog.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'elysium' } });
+            fireEvent.change(dialog.getByPlaceholderText('Б. Болд'), { target: { value: 'Болд' } });
+            expect(within(dialog.getByRole('combobox', { name: 'Урьдчилгаа төлбөрийн нөхцөл' })).getAllByRole('option').map(option => option.textContent))
+                .toEqual(['Сонгоогүй', 'Бэлэн', 'Бартер', 'Урьдчилгаа хуваах']);
+            fireEvent.change(dialog.getByRole('combobox', { name: 'Урьдчилгаа төлбөрийн нөхцөл' }), { target: { value: 'barter' } });
+            fireEvent.change(dialog.getByRole('combobox', { name: 'Үлдэгдэл төлбөрийн нөхцөл' }), { target: { value: 'mortgage' } });
+            fireEvent.click(dialog.getByRole('checkbox', { name: /Хэлэлцэж буй гэрээ/ }));
+            fireEvent.click(dialog.getByRole('button', { name: 'Товлох' }));
+            await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ advance_payment_term: 'barter', remainder_payment_term: 'mortgage' })));
+            await waitFor(() => expect(mocks.updateLead).toHaveBeenCalledWith({ id: 'lead-9', patch: { status: 'negotiating' } }));
+        });
+
+        it('sends no term keys and leaves the lead alone when nothing is chosen', async () => {
+            render(<ViewingsPage />);
+            fireEvent.click(screen.getAllByRole('button', { name: 'Уулзалт товлох' })[0]);
+            const dialog = within(screen.getByRole('dialog'));
+            fireEvent.change(dialog.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'elysium' } });
+            fireEvent.change(dialog.getByPlaceholderText('Б. Болд'), { target: { value: 'Болд' } });
+            fireEvent.click(dialog.getByRole('button', { name: 'Товлох' }));
+            await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+            const input = mocks.create.mock.calls[0][0];
+            expect(input).not.toHaveProperty('advance_payment_term');
+            expect(input).not.toHaveProperty('remainder_payment_term');
+            expect(mocks.updateLead).not.toHaveBeenCalled();
+        });
+
+        it('shows the terms on the row and fills them in on a held meeting, patching only what changed', async () => {
+            mocks.viewings = [completed({ status: 'contacted' }, { advance_payment_term: 'cash' })];
+            render(<ViewingsPage />);
+            expect(screen.getByText(/Урьдчилгаа: Бэлэн/)).toBeInTheDocument();
+            fireEvent.click(screen.getByRole('button', { name: 'Болд: уулзалт засах' }));
+            const dialog = within(screen.getByRole('dialog'));
+            expect(dialog.getByRole('combobox', { name: 'Урьдчилгаа төлбөрийн нөхцөл' })).toHaveValue('cash');
+            fireEvent.change(dialog.getByRole('combobox', { name: 'Үлдэгдэл төлбөрийн нөхцөл' }), { target: { value: 'bank_loan' } });
+            fireEvent.click(dialog.getByRole('button', { name: 'Хадгалах' }));
+            await waitFor(() => expect(mocks.update).toHaveBeenCalledWith({ id: 'meeting', patch: { remainder_payment_term: 'bank_loan' } }));
+            expect(mocks.updateLead).not.toHaveBeenCalled();
+        });
+
+        it('toggles the negotiating mark from the edit dialog without touching the meeting, and hides it for closed leads', async () => {
+            mocks.viewings = [completed({ status: 'negotiating' })];
+            const view = render(<ViewingsPage />);
+            fireEvent.click(screen.getByRole('button', { name: 'Болд: уулзалт засах' }));
+            const dialog = within(screen.getByRole('dialog'));
+            const mark = dialog.getByRole('checkbox', { name: /Хэлэлцэж буй гэрээ/ });
+            expect(mark).toBeChecked();
+            fireEvent.click(mark);
+            fireEvent.click(dialog.getByRole('button', { name: 'Хадгалах' }));
+            await waitFor(() => expect(mocks.updateLead).toHaveBeenCalledWith({ id: 'lead', patch: { status: 'contacted' } }));
+            expect(mocks.update).not.toHaveBeenCalled();
+            view.unmount();
+            cleanup();
+            mocks.viewings = [completed({ status: 'closed_won' })];
+            render(<ViewingsPage />);
+            fireEvent.click(screen.getByRole('button', { name: 'Болд: уулзалт засах' }));
+            expect(within(screen.getByRole('dialog')).queryByRole('checkbox', { name: /Хэлэлцэж буй гэрээ/ })).not.toBeInTheDocument();
         });
     });
 });

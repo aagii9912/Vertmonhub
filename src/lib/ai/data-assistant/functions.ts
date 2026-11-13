@@ -16,7 +16,7 @@ import { loadMetaAdsReport } from '@/lib/marketing/meta-ads-load';
 import { formatMetaMoney, formatMetaSpend, type MetaResultSummary } from '@/lib/marketing/meta-ads-report';
 import { spendQuality, SPEND_BASIS } from '@/lib/marketing/performance';
 import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
-import { hasRealContractFields } from '@/lib/leads/contracts';
+import { leadWonBlocker } from '@/lib/leads/contracts';
 import { resolveActiveManagerName, resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { createViewing, resolveViewingInput, updateViewing } from '@/lib/services/ViewingService';
 import { applyLeadScope, assertProjectManager, canAccessProject, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
@@ -1129,13 +1129,10 @@ export async function updateLeadStatus(shopId: string, args: any, confirm = fals
     const oldStatus = lead.status;
     const lostReason = args.lost_reason === undefined ? lead.lost_reason : typeof args.lost_reason === 'string' ? args.lost_reason.trim().slice(0, 300) : null;
     if (args.new_status === 'closed_lost' && !lostReason) return { error: 'Алдсан шалтгааныг (lost_reason) хэрэглэгчээс тодруулна уу' };
-    // Хоосон stub / цуцалсан гэрээг бодит борлуулалтад тооцохгүй.
+    // «Гэрээ болсон»: холбогдсон гэрээ шаардахгүй; stub гэрээ үүсгэх тохиолдлыг л хаана (UI PATCH-тай нэг дүрэм).
     if (args.new_status === 'closed_won' && oldStatus !== 'closed_won') {
-        const { data: contracts, error: contractError } = await supabaseAdmin.from('property_contracts')
-            .select('contract_number, total_price, contract_status')
-            .eq('lead_id', lead.id).eq('shop_id', shopId).is('deleted_at', null);
-        if (contractError) return { error: 'Лидийн гэрээ шалгахад алдаа гарлаа' };
-        if (!contracts?.some(hasRealContractFields)) return { error: `"${leadDisplayName(lead)}" лидэд хүчинтэй, дугаартай, дүнтэй гэрээ бүртгэгдээгүй байна. Эхлээд гэрээг бүртгээд дараа нь статусыг closed_won болго.` };
+        const blocked = await leadWonBlocker(supabaseAdmin, shopId, lead.id);
+        if (blocked) return { error: blocked };
     }
     if (!confirm) {
         return confirmNeeded('update_lead_status',

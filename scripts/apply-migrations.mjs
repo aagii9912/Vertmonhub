@@ -108,6 +108,12 @@ const VERIFY = {
         AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sales_kpi_months' AND column_name = 'daily') AS ok`,
     '20261004164000': `SELECT to_regclass('public.external_lead_sync') IS NOT NULL AND to_regclass('public.external_lead_imports') IS NOT NULL AS ok`,
     '20261004165000': `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_profiles' AND column_name = 'phone') AS ok`,
+    '20261113120000': `SELECT (SELECT count(*) = 2 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'property_viewings'
+            AND column_name IN ('advance_payment_term', 'remainder_payment_term'))
+        AND (SELECT count(*) = 2 FROM pg_proc WHERE pronamespace = 'public'::regnamespace
+            AND proname IN ('create_scoped_sales_viewing', 'update_scoped_sales_viewing') AND prosrc LIKE '%remainder_payment_term%')
+        AND NOT has_function_privilege('anon', 'public.create_scoped_sales_viewing(uuid,uuid,uuid,text,uuid[],jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.update_scoped_sales_viewing(uuid,uuid,uuid,text,uuid[],jsonb)', 'EXECUTE') AS ok`,
 };
 
 function databaseUrl() {

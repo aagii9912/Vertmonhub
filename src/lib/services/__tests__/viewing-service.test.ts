@@ -435,4 +435,38 @@ describe('«Сэжим (хаанаас ирсэн)» on meetings', () => {
         const missingViewing = fakeDb({ property_viewings: [ok(null)] });
         expect(await updateViewing(missingViewing.db, 'shop', 'viewing', { referral_source_id: facebook }, actor)).toMatchObject({ ok: false, status: 404 });
     });
+
+    // Урьдчилгаа / үлдэгдэл төлбөрийн нөхцөл (migration 20261113120000) — тогтмол жагсаалтын код.
+    it('stores payment terms through the RPC and the direct insert, omits unset keys and refuses unknown codes before any write', async () => {
+        const scope = { projectIds: [projectId], managerName: 'Канон' };
+        const restricted = fakeDb({ leads: [ok({ id: leadId, project_id: projectId, status: 'contacted', sales_manager_name: 'Канон' })], projects: [ok({ id: projectId })], sales_referral_sources: [list] }, ok(viewing));
+        expect(await createViewing(restricted.db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, meeting_type: 'repeat_customer', advance_payment_term: 'barter', remainder_payment_term: 'mortgage' }, { ...actor, scope })).toMatchObject({ ok: true });
+        expect(restricted.rpcCalls[0].params.p_input).toMatchObject({ advance_payment_term: 'barter', remainder_payment_term: 'mortgage' });
+
+        const unset = fakeDb({ leads: [ok({ id: leadId, project_id: projectId, status: 'contacted', sales_manager_name: 'Канон' })], projects: [ok({ id: projectId })], sales_referral_sources: [list] }, ok(viewing));
+        expect(await createViewing(unset.db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, meeting_type: 'repeat_customer', advance_payment_term: null }, { ...actor, scope })).toMatchObject({ ok: true });
+        expect(unset.rpcCalls[0].params.p_input).not.toHaveProperty('advance_payment_term');
+        expect(unset.rpcCalls[0].params.p_input).not.toHaveProperty('remainder_payment_term');
+
+        const admin = fakeDb({ leads: [ok({ id: leadId, status: 'contacted' }), ok({ id: leadId })], sales_referral_sources: [list], property_viewings: [ok(viewing)] });
+        expect(await createViewing(admin.db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, meeting_type: 'repeat_customer', remainder_payment_term: 'leasing' }, actor)).toMatchObject({ ok: true });
+        const insert = admin.queries.find(query => query.table === 'property_viewings')?.insert;
+        expect(insert).toMatchObject({ remainder_payment_term: 'leasing' });
+        expect(insert).not.toHaveProperty('advance_payment_term');
+
+        // Үлдэгдлийн код урьдчилгаанд хүчингүй; монгол нэр код биш.
+        for (const bad of [{ advance_payment_term: 'mortgage' }, { remainder_payment_term: 'Ипотек' }, { advance_payment_term: 5 }]) {
+            const refused = fakeDb({ leads: [ok({ id: leadId, status: 'contacted' })], sales_referral_sources: [list] });
+            expect(await createViewing(refused.db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, meeting_type: 'repeat_customer', ...bad }, actor)).toMatchObject({ ok: false, status: 400 });
+            expect(refused.rpcCalls).toEqual([]);
+            expect(refused.queries.some(query => query.insert || query.updates)).toBe(false);
+        }
+    });
+
+    it('edits payment terms through the atomic RPC even for an unrestricted user', async () => {
+        const edit = fakeDb({}, ok({ id: 'viewing', status: 'completed', scheduled_at: scheduledAt, lead_id: leadId, property_id: null }));
+        expect(await updateViewing(edit.db, 'shop', 'viewing', { remainder_payment_term: 'bank_loan', advance_payment_term: null }, actor)).toMatchObject({ ok: true });
+        expect(edit.rpcCalls[0]).toMatchObject({ name: 'update_scoped_sales_viewing', params: { p_project_ids: null, p_patch: { remainder_payment_term: 'bank_loan', advance_payment_term: null } } });
+        expect(edit.queries.some(query => query.updates)).toBe(false);
+    });
 });

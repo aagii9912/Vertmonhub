@@ -109,13 +109,18 @@ for (const compact of [false, true]) {
         await expect(page.getByRole('dialog', { name: 'Уулзалт товлох', exact: true })).toBeVisible();
         await expect(page.getByText('Туршилтын Харилцагч', { exact: true }).first()).toBeVisible();
         await page.locator('input[type="datetime-local"]').fill('2027-01-10T11:00');
+        // Урьдчилгаа / үлдэгдэл төлбөрийн нөхцөл: тогтмол жагсаалтаас сонгож, кодоор илгээнэ.
+        const meeting = page.getByRole('dialog', { name: 'Уулзалт товлох', exact: true });
+        await meeting.getByLabel('Урьдчилгаа төлбөрийн нөхцөл', { exact: true }).selectOption({ label: 'Бартер' });
+        await meeting.getByLabel('Үлдэгдэл төлбөрийн нөхцөл', { exact: true }).selectOption({ label: 'Ипотек' });
         await page.getByRole('button', { name: 'Товлох', exact: true }).click();
         await expect(page.getByRole('dialog', { name: 'Уулзалт товлох', exact: true })).not.toBeVisible();
         expect(state.requests).toHaveLength(2);
         expect(state.requests[0].body.client_request_id).toMatch(/^[0-9a-f-]{36}$/);
         expect(state.requests[0].body.project_id).toBe(projectId);
         expect(state.requests[0].body.category_id).toBeNull();
-        expect(state.requests[1].body).toMatchObject({ lead_id: leadId, property_id: null, scheduled_at: '2027-01-10T03:00:00.000Z', meeting_type: 'new_customer' });
+        expect(state.requests[1].body).toMatchObject({ lead_id: leadId, property_id: null, scheduled_at: '2027-01-10T03:00:00.000Z', meeting_type: 'new_customer',
+            advance_payment_term: 'barter', remainder_payment_term: 'mortgage' });
         await page.goto('/dashboard/reports/operations?from=2026-09-01&to=2026-09-30');
         await expect(page.getByText('Гэрээний бүртгэлтэй дүн', { exact: true })).toBeVisible();
         await expect(page.getByText('Санхүүгийн эрх шаардлагатай', { exact: true }).first()).toBeVisible();

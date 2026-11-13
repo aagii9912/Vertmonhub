@@ -90,14 +90,26 @@ describe('staff lead edit rules shared by PATCH /leads/[id] and the AI', () => {
             .toMatchObject({ ok: false, status: 409 });
     });
 
-    it('requires a real contract for closed_won and a reason for closed_lost', async () => {
+    it('refuses closed_won only when it would create a stub contract, and requires a reason for closed_lost', async () => {
+        // Дүнтэй лид + бодит гэрээгүй → DB trigger хоосон гэрээ үүсгэнэ.
         query('leads', lead);
+        query('leads', { conversion_value: 500 });
         query('property_contracts', [{ contract_number: null, total_price: 0, contract_status: 'active' }]);
         expect(await updateStaffLead(db, 'shop-1', lead.id, { status: 'closed_won' }, { userId: 'user-1', scope: UNRESTRICTED_SALES_SCOPE }))
-            .toMatchObject({ ok: false, status: 400, error: expect.stringContaining('Гэрээгүй') });
+            .toMatchObject({ ok: false, status: 400, error: expect.stringContaining('хоосон гэрээ') });
         query('leads', lead);
         expect(await updateStaffLead(db, 'shop-1', lead.id, { status: 'closed_lost' }, { userId: 'user-1', scope: UNRESTRICTED_SALES_SCOPE }))
             .toMatchObject({ ok: false, status: 400, error: expect.stringContaining('шалтгаан') });
+    });
+
+    // «Гэрээ болсон» (эзэмшигчийн шийдвэр 2026-11-13): холбогдсон гэрээгүй лидийг менежер өөрөө тэмдэглэнэ.
+    it('marks a lead without an amount as contracted without a linked contract', async () => {
+        query('leads', lead);
+        query('leads', { conversion_value: null });
+        const write = query('leads', { id: lead.id });
+        query('lead_activities', { id: 'activity-1' });
+        expect(await updateStaffLead(db, 'shop-1', lead.id, { status: 'closed_won' }, { userId: 'user-1', scope: UNRESTRICTED_SALES_SCOPE })).toEqual({ ok: true });
+        expect(write.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'closed_won' }));
     });
 
     it('records status changes in the lead history with the acting manager', async () => {

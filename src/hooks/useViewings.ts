@@ -24,6 +24,9 @@ export interface ViewingRow {
     interests?: ViewingInterest[];
     /** «Сэжим (хаанаас ирсэн)» (migration-ий өмнө байхгүй). */
     referral_source_id?: string | null;
+    /** Урьдчилгаа / үлдэгдэл төлбөрийн нөхцөлийн код (migration 20261113120000-ийн өмнө байхгүй). */
+    advance_payment_term?: string | null;
+    remainder_payment_term?: string | null;
 }
 
 export type ViewingRange = 'today' | 'upcoming' | 'past' | 'all';
@@ -66,6 +69,8 @@ export interface CreateViewingInput {
     interests?: ViewingInterestInput[];
     /** «Сэжим (хаанаас ирсэн)»; шинэ харилцагчийн уулзалтад заавал (жагсаалттай төсөлд). */
     referral_source_id?: string | null;
+    advance_payment_term?: string | null;
+    remainder_payment_term?: string | null;
 }
 
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
@@ -100,6 +105,8 @@ export type ViewingPatch = Partial<{
     meeting_type: MeetingType;
     interests: ViewingInterestInput[];
     referral_source_id: string | null;
+    advance_payment_term: string | null;
+    remainder_payment_term: string | null;
 }>;
 
 export function useUpdateViewing() {
