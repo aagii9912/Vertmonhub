@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
 import { exportTeamDeck } from '../weekly-deck-export';
-import { meetingDate, meetings, negotiations, plan, range, slides, weeklySales } from './team-deck-fixture';
+import { meetingDate, meetings, negotiations, plan, range, slides, weeklySales, workPlan } from './team-deck-fixture';
 
 /** Хөтөчийн экспорт (jsdom): эх сурвалж бүтэлгүйтсэн ч илтгэл татагдаж, тэр слайд нь «ачаалж чадсангүй». */
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -49,6 +49,7 @@ describe('exportTeamDeck (browser export)', () => {
             if (url.startsWith('/api/dashboard/reports/sales-activity')) return json({ error: 'Өдрийн тайлангийн хүснэгт алга' }, 503);
             if (url.startsWith('/api/dashboard/reports/meeting-details')) return json(meetings());
             if (url.startsWith('/api/dashboard/reports/negotiations')) return json(negotiations());
+            if (url.startsWith('/api/dashboard/work-plan')) return json(workPlan());
             if (url.startsWith('/api/dashboard/report-branding')) return json({ error: 'Хандах эрхгүй' }, 403);
             return json({ error: `unexpected ${url}` }, 500);
         });
@@ -63,11 +64,14 @@ describe('exportTeamDeck (browser export)', () => {
             '/api/dashboard/reports/sales-activity?meeting=2026-10-21',
             '/api/dashboard/reports/meeting-details?meeting=2026-10-21',
             '/api/dashboard/reports/negotiations',
+            '/api/dashboard/work-plan?month=2026-10',
             '/api/dashboard/report-branding',
         ]));
         const { text, layouts } = await slideTexts(blobs[0]);
         expect(text.find(slide => slide.includes('БОРЛУУЛАЛТЫН АЛБА-ТООН МЭДЭЭЛЭЛ'))).toContain('Мэдээлэл ачаалж чадсангүй.');
         expect(text.find(slide => slide.includes('Б2 БЛОК'))).toContain('2,195,395,000₮');
+        // Сарын ажлын төлөвлөгөө Hub-ийн жагсаалтаас: хариуцагчийн нэрийн эхний үсэг, хийгдсэн ✓.
+        expect(text.find(slide => slide.includes('10-р сарын бусад ажлын төлөвлөгөө'))).toContain('✓ Showroom тохижуулах Ч, Х');
         // Брэндгүй: төслийн нэр, анхдагч хөл бичвэр.
         expect(text[0]).toBe('Elysium Residence 2026 оны 10.14-10.20 хүртэлх тайлан');
         expect(layouts).toContain('ВЕРТМОН ПРОПЕРТИС');
@@ -80,7 +84,8 @@ describe('exportTeamDeck (browser export)', () => {
             return json({ error: 'Түр боломжгүй' }, 503);
         });
         const result = await exportTeamDeck({ projectName: 'Elysium Residence', meetingDate, range, weeklySalesError: 'Гэрээ, үлдэгдлийн тайлан ачаалж чадсангүй', slides: [] });
-        expect(result.failedSources).toBe(5);
+        // 4 тайлан + сарын ажлын төлөвлөгөө + хуудаснаас ирээгүй долоо хоногийн тайлан.
+        expect(result.failedSources).toBe(6);
         const { text } = await slideTexts(blobs[0]);
         for (const title of ['ЗАХИАЛГЫН ГЭРЭЭНИЙ', 'ДАВХРЫН ЗУРАГЛАЛ', 'Б1 БЛОК', 'ЯРИГДАЖ БУЙ']) {
             expect(text.find(slide => slide.includes(title)), title).toContain('Мэдээлэл ачаалж чадсангүй.');

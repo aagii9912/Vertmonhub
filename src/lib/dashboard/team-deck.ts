@@ -16,6 +16,7 @@ import {
     planValueText, PLAN_SOURCE_LABEL, type PlanCell, type PlanMetricKey, type PlanMonthRow, type PlanPerformance, type PlanScopeCells, type PlanYearScope,
 } from '@/lib/sales/plan-performance';
 import { formatMNT } from '@/lib/utils/currency';
+import { assigneeInitialsText, workPlanProgress, type WorkPlanData } from '@/lib/sales/work-plan';
 
 /**
  * Лхагвын хурлын БОРЛУУЛАЛТЫН АЛБАНЫ ЗАГВАРЫН илтгэл (W2, `sales-team` — «Борлуулалт (албаны загвар)»).
@@ -29,13 +30,14 @@ import { formatMNT } from '@/lib/utils/currency';
  */
 
 /** Багийн загварын илтгэлийн эх сурвалж (ачаалж чадаагүйг тэмдэглэлд нэрлэнэ). */
-export type TeamDeckSource = 'plan' | 'activity' | 'meetings' | 'negotiations' | 'weeklySales';
+export type TeamDeckSource = 'plan' | 'activity' | 'meetings' | 'negotiations' | 'weeklySales' | 'workPlan';
 export const TEAM_DECK_SOURCE_LABEL: Record<TeamDeckSource, string> = {
     plan: 'Төлөвлөгөөний биелэлт',
     activity: 'Борлуулалтын тоон мэдээлэл',
     meetings: 'Уулзалтын дэлгэрэнгүй',
     negotiations: 'Ярилцаж буй гэрээ',
     weeklySales: 'Сарын гэрээ, давхрын зураглал',
+    workPlan: 'Сарын ажлын төлөвлөгөө',
 };
 /** Хөлийн анхдагч бичвэр (брэндийн `footer_text` хоосон бол). */
 export const TEAM_DECK_FOOTER = 'ВЕРТМОН ПРОПЕРТИС';
@@ -61,6 +63,8 @@ export interface TeamDeckInput {
     meetings: MeetingDetailsReport | null;
     negotiations: NegotiationsReport | null;
     weeklySales: WeeklySalesReport | null;
+    /** Сарын «бусад ажлын төлөвлөгөө»-ний жагсаалт (хариуцагч, чек); өгөөгүй / ачаалж чадаагүй бол зөвхөн нэмэлт слайдаар. */
+    workPlan?: WorkPlanData | null;
     /** Хурлын нэмэлт слайд (борлуулалтын хэсгийнх л ашиглагдана). */
     slides: WeeklySlide[];
     images: Record<string, DeckImage>;
@@ -776,13 +780,36 @@ function monthSpans(months: readonly number[]): string {
     return spans.join(', ');
 }
 
-// 16. Сарын бусад ажлын төлөвлөгөө («Энэ сард хийгдэх ажил» — мөр бүр цэг).
+// 16. Сарын бусад ажлын төлөвлөгөө: Hub-ийн жагсаалт (ажил, хариуцагчийн нэрийн эхний үсэг, хийгдсэн ✓) — борлуулалтын багийн
+// хүсэлт 2026-11-12; дараа нь «Энэ сард хийгдэх ажил» сэдвийн нэмэлт слайдууд (мөр бүр цэг).
+const WORK_PLAN_PER_SLIDE = 12;
 function planWorkSlides(pres: PptxGenJS, ctx: Ctx) {
     const title = `${ctx.month}-р сарын бусад ажлын төлөвлөгөө`;
     const slides = salesSlides(ctx, ['plan']);
-    if (!slides.length) {
+    const plan = ctx.input.workPlan;
+    const items = plan?.items ?? [];
+    if (items.length) {
+        const progress = workPlanProgress(items);
+        tableSlides(pres, {
+            kicker: ctx.name, title, subtitle: `Хийгдсэн ${progress.done}/${progress.total} · хариуцагч — нэрийн эхний үсгээр`,
+            head: [headCell('', 'center'), headCell('Ажил'), headCell('Хариуцагч')],
+            rows: items.map(item => [
+                bodyCell(item.done ? '✓' : '', 'center', { bold: true, color: C.success }),
+                bodyCell(clip(item.title, 110), 'left', item.done ? { color: C.muted } : {}),
+                bodyCell(assigneeInitialsText(item.assignees, plan!.roster) ?? '—', 'left', { bold: true }),
+            ]),
+            colW: [0.6, CW - 0.6 - 2.6, 2.6], perSlide: WORK_PLAN_PER_SLIDE, fontSize: 13, fitHeight: true,
+            notes: [
+                'Эх сурвалж: Hub-ийн «Хурлын бэлтгэл» → «Сарын ажлын төлөвлөгөө» (ажил, хариуцагч, хийгдсэн чек).',
+                `Хариуцагч: ${plan!.roster.map(manager => `${assigneeInitialsText([manager], plan!.roster)} = ${manager.name}`).join(', ') || 'жагсаалт хоосон'}.`,
+                '✓ = хийгдсэн гэж чеклэсэн; хоосон = хийгдээгүй.',
+            ],
+        });
+    }
+    if (!items.length && !slides.length) {
         const slide = content(pres, ctx.name, title);
-        muted(slide, 'Энэ сарын ажлын төлөвлөгөө оруулаагүй. Хурлын хуудасны «Борлуулалтын нэмэлт слайд» хэсэгт «Энэ сард хийгдэх ажил» сэдвээр нэмнэ.', TOP - 0.2, 0.9);
+        muted(slide, 'Энэ сарын ажлын төлөвлөгөө оруулаагүй. Хурлын хуудасны «Сарын ажлын төлөвлөгөө» хэсэгт ажлаа нэмж, хариуцагчийг нь сонгоно.', TOP - 0.2, 0.9);
+        if (ctx.input.failed?.workPlan) note(slide, [`${TEAM_DECK_SOURCE_LABEL.workPlan}: ${ctx.input.failed.workPlan}.`, 'Hub-ийн «Лхагва гарагийн хурал» хуудсыг шинэчлээд дахин татна уу.']);
         return;
     }
     for (const slide of slides) customSlide(pres, { ...slide, title: slide.title.trim() || title }, ctx.input.images);

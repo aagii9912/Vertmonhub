@@ -1,3 +1,4 @@
+import { workPlanMonth, type WorkPlanData } from '@/lib/sales/work-plan';
 import type PptxGenJS from 'pptxgenjs';
 import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 import type { BudgetOverview, BudgetSpendMonth } from '@/lib/marketing/budget';
@@ -204,11 +205,12 @@ export async function exportTeamDeck(input: TeamDeckExportInput): Promise<{ file
     const year = input.range.to.slice(0, 4);
     const meeting = encodeURIComponent(input.meetingDate);
     const slides = input.slides.filter(slide => slide.part === 'sales');
-    const [plan, activity, meetings, negotiations, branding, media, { default: PptxGenJS }] = await Promise.all([
+    const [plan, activity, meetings, negotiations, workPlan, branding, media, { default: PptxGenJS }] = await Promise.all([
         settle(dashboardJson<TeamPlanReport>(`/api/dashboard/reports/plan-performance?year=${year}&through=${input.range.to}&hubAsOf=${input.meetingDate}`)),
         settle(dashboardJson<SalesActivityReport>(`/api/dashboard/reports/sales-activity?meeting=${meeting}`)),
         settle(dashboardJson<MeetingDetailsReport>(`/api/dashboard/reports/meeting-details?meeting=${meeting}`)),
         settle(dashboardJson<NegotiationsReport>('/api/dashboard/reports/negotiations')),
+        settle(dashboardJson<WorkPlanData>(`/api/dashboard/work-plan?month=${workPlanMonth(input.range.to)}`)),
         loadBranding(),
         loadImages(slides.flatMap(slide => slide.image_paths)),
         import('pptxgenjs'),
@@ -218,12 +220,14 @@ export async function exportTeamDeck(input: TeamDeckExportInput): Promise<{ file
     if (activity.error) failed.activity = activity.error;
     if (meetings.error) failed.meetings = meetings.error;
     if (negotiations.error) failed.negotiations = negotiations.error;
+    if (workPlan.error) failed.workPlan = workPlan.error;
     if (!input.weeklySales) failed.weeklySales = input.weeklySalesError || 'долоо хоногийн борлуулалтын тайлан ачаалагдаагүй';
     const pres = new PptxGenJS();
     buildTeamDeck(pres, {
         projectName: input.projectName, meetingDate: input.meetingDate, range: input.range, generatedAt: stamp(),
         branding: branding.branding, coverImage: branding.cover, logo: branding.logo,
         plan: plan.data, activity: activity.data, meetings: meetings.data, negotiations: negotiations.data, weeklySales: input.weeklySales ?? null,
+        workPlan: workPlan.data,
         slides, images: media.images, failed,
     });
     const fileName = weeklyDeckFileName(input.projectName, input.meetingDate, 'sales-team');

@@ -9,7 +9,7 @@ import { BOTTOM, weeklyDeckFileName } from '../weekly-deck';
 import { EMPTY_REPORT_BRANDING, hasReportBranding } from '../report-branding';
 import { buildSalesActivity } from '../sales-activity';
 import { DEFAULT_DAILY_REPORT_CONFIG } from '../daily-report';
-import { activity, CASH_NUMBERS, elysiumFloorMaps, negotiations, plan, range, teamInput, weeklySales } from './team-deck-fixture';
+import { activity, CASH_NUMBERS, elysiumFloorMaps, negotiations, plan, range, teamInput, weeklySales, workPlan } from './team-deck-fixture';
 import { lineOverflows, slideTables, wordOverflows } from './table-layout';
 
 async function render(deck: TeamDeckInput) {
@@ -331,6 +331,38 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const known = (at(text, 'ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ').match(/\d+%\+?/g) ?? []).filter(value => !/^0%/.test(value)).length;
         expect(known).toBeGreaterThan(0);
         expect(bars(year)).toHaveLength(known);
+    });
+
+    // Сарын ажлын төлөвлөгөө (борлуулалтын багийн хүсэлт 2026-11-12): Hub-ийн жагсаалт — хариуцагчийн нэрийн эхний үсэг, хийгдсэн ✓.
+    it('work plan: lists the Hub items with a ✓ and assignee initials, then the text slides of the plan section', async () => {
+        const { text, notes } = await render(teamInput({ workPlan: workPlan() }));
+        const slides = text.filter(slide => slide.includes('10-р сарын бусад ажлын төлөвлөгөө'));
+        // Жагсаалтын слайд + «Энэ сард хийгдэх ажил» сэдвийн нэмэлт слайд.
+        expect(slides).toHaveLength(2);
+        expect(slides[0]).toContain('Хийгдсэн 1/3 · хариуцагч — нэрийн эхний үсгээр');
+        expect(slides[0]).toContain('Ажил Хариуцагч ✓ Showroom тохижуулах Ч, Х Төлөвлөлтийн санал өгөх А, Х, Ч Хаалганд tag байршуулах —');
+        expect(notes[text.indexOf(slides[0])]).toContain('Хариуцагч: А = Ариунбилэг.Бат, Х = Хонгорзул.Мөнхгэрэл, Ч = Чанцалдулам.Раднаа.');
+        expect(slides[1]).toContain('Vertmon HUB хөгжүүлэлт');
+    });
+
+    it('work plan: without Hub items the text slides stand alone, and with neither it says where to add them', async () => {
+        const fallback = await render(teamInput({ workPlan: { ...workPlan(), items: [] } }));
+        expect(fallback.text.filter(slide => slide.includes('10-р сарын бусад ажлын төлөвлөгөө'))).toHaveLength(1);
+        const empty = await render(teamInput({ workPlan: { ...workPlan(), items: [] }, slides: [] }));
+        expect(at(empty.text, '10-р сарын бусад ажлын төлөвлөгөө')).toContain('Хурлын хуудасны «Сарын ажлын төлөвлөгөө» хэсэгт ажлаа нэмж, хариуцагчийг нь сонгоно.');
+        // Жагсаалтыг ачаалж чадаагүй бол шалтгаан тэмдэглэлд.
+        const failed = await render(teamInput({ workPlan: null, slides: [], failed: { workPlan: 'Түр боломжгүй' } }));
+        expect(failed.notes[failed.text.indexOf(at(failed.text, '10-р сарын бусад ажлын төлөвлөгөө'))]).toContain('Сарын ажлын төлөвлөгөө: Түр боломжгүй.');
+    });
+
+    it('work plan: a long list continues on a second slide', async () => {
+        const base = workPlan();
+        const items = Array.from({ length: 15 }, (_, index) => ({ ...base.items[1], id: `item-${index}`, title: `Ажил ${index + 1}` }));
+        const { text } = await render(teamInput({ workPlan: { ...base, items }, slides: [] }));
+        const slides = text.filter(slide => slide.includes('10-р сарын бусад ажлын төлөвлөгөө'));
+        expect(slides).toHaveLength(2);
+        expect(slides[0]).toContain('(1/2)');
+        expect(slides[1]).toContain('Ажил 15');
     });
 
     it('negotiations exported after the meeting say on the slide that the list and prices are as of the export day', async () => {

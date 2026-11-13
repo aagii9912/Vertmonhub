@@ -60,6 +60,8 @@ async function setup(page: Page, restricted = false) {
         kpiWrites: [] as Record<string, unknown>[], slides: [] as Record<string, unknown>[], media: new Map<string, Buffer>(), content: [] as Record<string, unknown>[],
         // «Гараар нөхөх» алхам: `office` — хязгааргүй (удирдлагын) хэрэглэгч; `hubContracts` — гэрээг CRM-ээс (HUB жагсаалт) уншдаг төсөл.
         office: false, hubContracts: false, managerWrites: [] as Record<string, unknown>[], planWrites: [] as Record<string, unknown>[],
+        // Сарын ажлын төлөвлөгөө (хариуцагч, чек).
+        workPlan: [] as Record<string, any>[],
         undated: [{ id: 'c-54', number: 'EL-54', date: null, block: 'Б1', unit: 'Б1-76 (01)', kindLabel: 'Зогсоол', customer: null, total: 72600000, inWeek: false, manager: null, dateEntry: true }],
         planMonths: emptyMonthlySales().map(row => row.month === Number(range.to.slice(5, 7))
             ? { ...row, revision: 2, target_amount: 900000000, block_amounts: { b1: { target_amount: 900000000 } } } : row),
@@ -268,6 +270,26 @@ async function setup(page: Page, restricted = false) {
             if (!item) return reply({ error: 'Контент олдсонгүй' }, 404);
             const body = request.postDataJSON();
             Object.assign(item, body.status ? { status: body.status } : {}, { updated_at: new Date().toISOString() });
+            return reply({ item });
+        }
+        if (path === '/api/dashboard/work-plan') {
+            const roster = [{ id: '00000000-0000-4000-8000-0000000000a1', name: 'Номин.Менежер' }, { id: '00000000-0000-4000-8000-0000000000a2', name: 'Хонгорзул.Мөнхгэрэл' }];
+            if (request.method() === 'POST') {
+                const body = request.postDataJSON();
+                const item = { id: `00000000-0000-4000-8000-0000000002${String(state.workPlan.length).padStart(2, '0')}`, month: body.month, title: body.title,
+                    assignees: roster.filter(manager => body.assigneeIds.includes(manager.id)), done: false, done_at: null, done_by_name: null,
+                    created_by: userId, created_by_name: 'Номин', sort_order: (state.workPlan.length + 1) * 10 };
+                state.workPlan.push(item);
+                return reply({ item }, 201);
+            }
+            return reply({ month: url.searchParams.get('month'), available: true, roster, items: state.workPlan.filter(item => item.month === url.searchParams.get('month')) });
+        }
+        const workPlanItem = path.match(/^\/api\/dashboard\/work-plan\/([0-9a-f-]+)$/);
+        if (workPlanItem) {
+            const item = state.workPlan.find(candidate => candidate.id === workPlanItem[1]);
+            if (!item) return reply({ error: 'Ажил олдсонгүй' }, 404);
+            const body = request.postDataJSON();
+            if (body.done !== undefined) Object.assign(item, { done: body.done, done_at: body.done ? new Date().toISOString() : null, done_by_name: body.done ? 'Номин' : null });
             return reply({ item });
         }
         if (path === '/api/dashboard/weekly-slides') {
@@ -515,7 +537,7 @@ test('хурлын тайланг алхам алхмаар бэлдэж, алх
     const state = await setup(page);
     await page.goto('/dashboard/weekly');
     const salesSteps = page.getByRole('navigation', { name: 'Борлуулалтын тайлан: алхмууд' });
-    await expect(salesSteps.getByRole('button')).toHaveText([/ERP мэдээлэл оруулах/, /Гараар нөхөх/, /Тоон тойм/, /Гэрээ, үлдэгдэл/, /Лидийн эх сурвалж/, /Нэмэлт слайд/, /Миний шинэчлэл/, /Шалгаад татах/]);
+    await expect(salesSteps.getByRole('button')).toHaveText([/ERP мэдээлэл оруулах/, /Гараар нөхөх/, /Тоон тойм/, /Гэрээ, үлдэгдэл/, /Лидийн эх сурвалж/, /Сарын ажлын төлөвлөгөө/, /Нэмэлт слайд/, /Миний шинэчлэл/, /Шалгаад татах/]);
     // Эхний алхам: ERP-ийн файл. Хуучин файлыг нэрлэж, оруулах хуудас руу нь холбоно; тайлангийн тоо дараагийн алхмаас.
     await expect(page.getByRole('heading', { name: 'ERP мэдээлэл оруулах', exact: true })).toBeVisible();
     const files = page.getByRole('region', { name: 'ERP мэдээлэл оруулах' });
@@ -553,6 +575,15 @@ test('хурлын тайланг алхам алхмаар бэлдэж, алх
     await expect(page).toHaveURL(/\?track=sales&step=contracts$/);
     await expect(salesSteps.getByRole('button', { name: /Тоон тойм/ })).toContainText('бөглөсөн');
 
+    // Сарын ажлын төлөвлөгөө: ажил нэмж, хариуцагчтай нь харна (илтгэлийн слайдын эх сурвалж).
+    await salesSteps.getByRole('button', { name: /Сарын ажлын төлөвлөгөө/ }).click();
+    await expect(page).toHaveURL(/\?track=sales&step=workplan$/);
+    await page.getByLabel('Шинэ ажлын нэр').fill('Showroom тохижуулах');
+    await page.getByRole('group', { name: 'Шинэ ажлын хариуцагч' }).getByRole('button', { name: 'Бүх баг', exact: true }).click();
+    await page.getByRole('button', { name: 'Ажил нэмэх', exact: true }).click();
+    await expect(page.getByRole('checkbox', { name: 'Showroom тохижуулах: хийгдсэн' })).not.toBeChecked();
+    await expect(page.getByText('0/1')).toBeVisible();
+    await page.screenshot({ path: 'output/workday/desktop-weekly-steps-workplan.png', fullPage: true });
     await salesSteps.getByRole('button', { name: /Миний шинэчлэл/ }).click();
     await page.getByLabel('Хийсэн ажил', { exact: true }).fill('Гурван гэрээ байгуулсан.');
     // Хадгалаагүй шинэчлэлтэй бол өөр алхам руу шилжиж бичвэрээ алдахгүй.
@@ -693,6 +724,14 @@ test('борлуулалтын албаны загварын слайд: алб�
     const state = await setup(page);
     await page.goto('/dashboard/weekly?view=full');
     const button = page.getByRole('button', { name: 'Борлуулалт (албаны загвар)', exact: true });
+    // Сарын ажлын төлөвлөгөө: ажил нэмж, хариуцагч оноож, хийгдсэн гэж чеклэнэ — илтгэлд эхний үсэг, ✓-тэй гарна.
+    const workPlan = page.locator('section', { has: page.getByRole('heading', { name: /бусад ажлын төлөвлөгөө/ }) });
+    await workPlan.getByLabel('Шинэ ажлын нэр').fill('Хаалганд tag байршуулах');
+    await workPlan.getByRole('group', { name: 'Шинэ ажлын хариуцагч' }).getByRole('button', { name: 'Хонгорзул', exact: true }).click();
+    await workPlan.getByRole('button', { name: 'Ажил нэмэх' }).click();
+    await workPlan.getByRole('checkbox', { name: 'Хаалганд tag байршуулах: хийгдсэн' }).click();
+    await expect(workPlan.getByRole('checkbox', { name: 'Хаалганд tag байршуулах: хийгдсэн' })).toBeChecked();
+    await expect(workPlan.getByText('1/1')).toBeVisible();
     await expect(button).toBeEnabled();
     const download = page.waitForEvent('download');
     await button.click();
@@ -710,6 +749,7 @@ test('борлуулалтын албаны загварын слайд: алб�
         `${range.to.slice(0, 4)} ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ`, `${month}-р сарын бусад ажлын төлөвлөгөө`, 'Анхаарал хандуулсанд баярлалаа.']) {
         expect(deck.text, needle).toContain(needle);
     }
+    for (const needle of ['Хаалганд tag байршуулах', 'Хийгдсэн 1/1', '✓']) expect(deck.text, needle).toContain(needle);
     // Хуучин борлуулалтын илтгэлийн хэсэг, нэмэлт төлөвлөгөөгүй сарын слайд орохгүй.
     for (const needle of ['Борлуулалтын тойм', 'Энэ хурлаар шийдэх', 'НЭМЭЛТ ТӨЛӨВЛӨГӨӨ']) expect(deck.text).not.toContain(needle);
     // Нүүрний зураг, лого (брэнд) орно.

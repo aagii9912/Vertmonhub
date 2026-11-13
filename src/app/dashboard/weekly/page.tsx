@@ -31,6 +31,8 @@ import { useMarketingConnections, WeeklyMarketingConnections } from '@/component
 import { WeeklySocialPage } from '@/components/weekly/WeeklySocialPage';
 import { WeeklyInstagram } from '@/components/weekly/WeeklyInstagram';
 import { useWeeklySlides, WeeklySlides } from '@/components/weekly/WeeklySlides';
+import { WeeklyWorkPlan } from '@/components/weekly/WeeklyWorkPlan';
+import { workPlanMonth, workPlanMonthLabel } from '@/lib/sales/work-plan';
 import { contentPlanWindow, useContentPlan, WeeklyContentPlan } from '@/components/weekly/WeeklyContentPlan';
 import { WEEKLY_SLIDE_PART_MODULE, type WeeklySlidePart } from '@/lib/dashboard/weekly-slides';
 import { summarizeContentPlan } from '@/lib/marketing/content-plan';
@@ -272,6 +274,14 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
     const addTaskButton = <button type="button" disabled={!canWrite} onClick={() => openQuickCreate('task')} className="flex min-h-11 w-full items-center gap-2 px-2 text-sm text-fg-2 hover:text-foreground disabled:opacity-50 focus-ring"><Plus className="size-4" />Хурлаас гарсан ажил нэмэх</button>;
 
     // Алхмууд: борлуулалт, маркетинг тус тусдаа (эрхээр); аль ч эрхгүй бол зөвхөн өөрийн шинэчлэл.
+    // Сарын ажлын төлөвлөгөө: баг бүхэлдээ харна (`dashboard` модуль); бичих эрхтэй нь нэмж, оноож, чеклэнэ.
+    const planMonth = workPlanMonth(range.to);
+    const workPlan = <WeeklyWorkPlan month={planMonth} canWrite={canWrite && can('dashboard')}
+        canDeleteOthers={user?.role === 'super_admin' || (!!user?.permissions.canDelete && can('dashboard'))} />;
+    const workPlanStep: Step = {
+        id: 'workplan', title: 'Сарын ажлын төлөвлөгөө', body: workPlan,
+        hint: `${workPlanMonthLabel(planMonth)}ын бусад ажлыг нэмж, хариуцагчийг нь сонгоно. Хийгдсэн ажлаа чеклэнэ — илтгэлийн «бусад ажлын төлөвлөгөө» слайдад хариуцагчийн нэрийн эхний үсэгтэй гарна.`,
+    };
     const updateStep: Step = {
         id: 'update', title: 'Миний шинэчлэл', body: updateForm,
         hint: 'Энэ долоо хоногт хийсэн ажил, саад, дараагийн алхмаа бичээд «Тайланд оруулах» дарна. Хадгалаагүй бол дараагийн алхам руу шилжихгүй.',
@@ -316,6 +326,7 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
                     hint: 'Долоо хоногийн гэрээ, мөнгөн орлого, давхрын зураглал эхний алхамд оруулсан файлаас гарна. Эх сурвалжийн огноо хуучин бол «ERP мэдээлэл оруулах» алхам руу буцаж шинэ файл оруулна.' },
                 ...(can('marketing-roi') ? [{ id: 'leads', title: 'Лидийн эх сурвалж', body: leadSources, href: `/marketing?${params}`, warn: !!marketingQuery.error,
                     hint: 'Аль сувгаас хэдэн лид ирж, менежерт шилжиж, гэрээ болсныг шалгана.' }] : []),
+                workPlanStep,
                 { id: 'slides', title: 'Нэмэлт слайд', body: salesSlides,
                     hint: 'Слайдад орох зураг, дэлгэцийн зураг, тайлбараа нэмнэ. Заавал биш — нэмэх зүйлгүй бол алгасна.' },
                 updateStep,
@@ -335,7 +346,7 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
             ],
         }] : []),
     ];
-    if (!tracks.length) tracks.push({ id: 'self', label: 'Миний тайлан', steps: [updateStep, finishStep(null)] });
+    if (!tracks.length) tracks.push({ id: 'self', label: 'Миний тайлан', steps: [workPlanStep, updateStep, finishStep(null)] });
     const track = tracks.find(item => item.id === trackId) ?? tracks[0];
     const stepIndex = Math.max(0, track.steps.findIndex(item => item.id === stepId));
     const step = track.steps[stepIndex];
@@ -516,6 +527,11 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
                             <ReportHeading number="02·3" title="Дэлгэцийн зураг, нэмэлт слайд" />
                             {marketingSlides}
                         </section>}
+
+                        <section className="break-inside-avoid space-y-4">
+                            <ReportHeading number="02·4" title={`${workPlanMonthLabel(planMonth)}ын бусад ажлын төлөвлөгөө`} />
+                            {workPlan}
+                        </section>
 
                         <section className="space-y-4">
                             <ReportHeading number="03" title={updates?.canViewTeam ? 'Багийн явц, хэлэлцэх зүйл' : 'Миний явц, хэлэлцэх зүйл'} />

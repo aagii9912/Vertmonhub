@@ -2,6 +2,7 @@
  * Багийн загварын илтгэлийн (team-deck) тестийн өгөгдөл — Elysium-ийн 2026-10-21-ний хурлын бодит дүнтэй ойролцоо:
  * 10-р сарын Б2 төлөвлөгөө 2,245,776,000 / гүйцэтгэл 2,195,395,000 (98%), мөнгөн урсгал гар/дэвтэр холимог.
  */
+import type { WorkPlanData } from '@/lib/sales/work-plan';
 import { buildPlanPerformance, type PlanContract } from '@/lib/sales/plan-performance';
 import { emptyMonthlySales, type MonthlySalesMonth } from '@/lib/sales/monthly';
 import type { ErpProduct } from '@/lib/erp/records';
@@ -206,6 +207,23 @@ export function slides(): WeeklySlide[] {
         slide('s-neg', { section: 'negotiation', position: 0, title: 'Банкны зээлийн нөхцөл', note: 'Хоёр харилцагч банкны хариу хүлээж байна.' }),
         slide('s-mkt', { part: 'marketing', section: 'social', title: 'Маркетингийн пост', image_paths: [media(5)] }),
     ];
+}
+
+/** Сарын ажлын төлөвлөгөө (Hub-ийн жагсаалт): хариуцагчтай, нэг нь хийгдсэн. */
+export function workPlan(): WorkPlanData {
+    const roster = [
+        { id: '00000000-0000-4000-8000-0000000000a1', name: 'Ариунбилэг.Бат' }, { id: '00000000-0000-4000-8000-0000000000a2', name: 'Хонгорзул.Мөнхгэрэл' },
+        { id: '00000000-0000-4000-8000-0000000000a3', name: 'Чанцалдулам.Раднаа' },
+    ];
+    const item = (n: number, title: string, assignees: typeof roster, done = false) => ({
+        id: `00000000-0000-4000-8000-0000000000b${n}`, month: '2026-10', title, assignees, done, done_at: done ? '2026-10-15T03:00:00Z' : null,
+        done_by_name: done ? 'Чанцал' : null, created_by: 'user-1', created_by_name: 'Чанцал', sort_order: n * 10,
+    });
+    return { month: '2026-10', available: true, roster, items: [
+        item(1, 'Showroom тохижуулах', [roster[2], roster[1]], true),
+        item(2, 'Төлөвлөлтийн санал өгөх', roster),
+        item(3, 'Хаалганд tag байршуулах', []),
+    ] };
 }
 
 export const images = (): Record<string, DeckImage> => Object.fromEntries([1, 2, 3, 4, 5].map(n => [media(n), { data: PNG, width: 1600, height: 1200 }]));

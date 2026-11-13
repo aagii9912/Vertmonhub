@@ -114,6 +114,11 @@ const VERIFY = {
             AND proname IN ('create_scoped_sales_viewing', 'update_scoped_sales_viewing') AND prosrc LIKE '%remainder_payment_term%')
         AND NOT has_function_privilege('anon', 'public.create_scoped_sales_viewing(uuid,uuid,uuid,text,uuid[],jsonb)', 'EXECUTE')
         AND NOT has_function_privilege('authenticated', 'public.update_scoped_sales_viewing(uuid,uuid,uuid,text,uuid[],jsonb)', 'EXECUTE') AS ok`,
+    '20261113150000': `SELECT EXISTS (SELECT 1 FROM pg_class WHERE oid = to_regclass('public.sales_work_plan_items') AND relrowsecurity)
+        AND NOT has_table_privilege('authenticated', 'public.sales_work_plan_items', 'SELECT,INSERT,UPDATE,DELETE')
+        AND NOT has_table_privilege('anon', 'public.sales_work_plan_items', 'SELECT,INSERT,UPDATE,DELETE')
+        AND has_table_privilege('service_role', 'public.sales_work_plan_items', 'SELECT,INSERT,UPDATE')
+        AND NOT has_table_privilege('service_role', 'public.sales_work_plan_items', 'DELETE') AS ok`,
 };
 
 function databaseUrl() {
