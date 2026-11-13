@@ -63,7 +63,8 @@ describe('buildMeetingDetails', () => {
             byModel: [{ key: 'B1|E7', label: 'Б1 E7 · 89.73 м² · 3 өрөө', count: 3 }, { key: 'B2|A', label: 'Б2 A · 57.87 м² · 2 өрөө', count: 1 }],
         });
         expect(report.weeks[2].byModel).toEqual([{ key: 'B2|X', label: 'Б2 X · 60 м²', count: 1 }]);
-        expect(report.notes).toEqual(['1 уулзалтад сонирхсон загвар бүртгэгдээгүй («Сонголтгүй»).', '2 шинэ уулзалтад «Сэжим» сонгоогүй.']);
+        expect(report.notes).toEqual(['1 уулзалтад сонирхсон загвар бүртгэгдээгүй («Сонголтгүй»).', '2 шинэ уулзалтад «Сэжим» сонгоогүй.',
+            'Төлбөрийн нөхцөлийн талбар хараахан нэмэгдээгүй тул уулзалт бүгд «Тодорхойгүй».']);
     });
 
     it('merges one model written in Cyrillic/Latin or another case into one slice, named as in the unit register', () => {
@@ -126,5 +127,64 @@ describe('buildMeetingDetails', () => {
         const missing = buildMeetingDetails({ meetingDate: '2026-10-21', units, meetings, referrals: { available: false, byViewing } });
         expect(missing.referral).toEqual({ rows: [], unknown: 4, total: 4, available: false });
         expect(missing.notes.join(' ')).toContain('хараахан нэмэгдээгүй');
+    });
+
+    // Борлуулалтын багийн хүснэгт (2026-11-12): сонирхсон байр м²-ийн бүлгээр, блок хамаарахгүй.
+    it('groups the first interest by area band regardless of block, and other kinds by their category', () => {
+        const register = [...units,
+            { block: 'Б1', model: 'G01', rooms: 1, category: 'commercial' }, { block: 'Б1', model: 'A-1', rooms: 1, category: 'parking' },
+            { block: 'Б1', model: 'E5', rooms: 3, category: 'residential' }, { block: 'Б2', model: 'C', rooms: 3, category: 'residential' },
+        ];
+        const report = buildMeetingDetails({
+            meetingDate: '2026-10-21', units: register, referrals: none,
+            meetings: [
+                meeting('a', '2026-10-14', 'new_customer', interest('Б1', 'E6', 51.17)), meeting('b', '2026-10-14', 'new_customer', interest('Б2', 'A', 57.87)),
+                // Б1 E5 (80.32) ба Б2 C (80.35) — нэг төрлийн байр «80 м²»; Б1 E3 (80.53–85.19) — «81/85 м²».
+                meeting('c', '2026-10-15', 'new_customer', interest('Б1', 'E5', 80.32)), meeting('d', '2026-10-15', 'repeat_customer', interest('Б2', 'C', 80.35)),
+                meeting('e', '2026-10-16', 'new_customer', interest('Б1', 'E3', 80.53)), meeting('f', '2026-10-16', 'new_customer', interest('Б1', 'E3', 85.19)),
+                meeting('g', '2026-10-17', 'new_customer', interest('Б2', 'E', 88.79)),
+                meeting('h', '2026-10-17', 'new_customer', interest('Б2', 'B', 100.05)), meeting('i', '2026-10-18', 'existing_buyer', interest('Б1', 'E4', 139.08)),
+                // Орон сууц биш: талбайгаар биш ангиллаар.
+                meeting('j', '2026-10-18', 'new_customer', interest('Б1', 'G01', 84)), meeting('k', '2026-10-19', 'new_customer', interest('Б1', 'A-1', 12.5)),
+                meeting('l', '2026-10-19', 'new_customer', []),
+                // Талбайгүй сонирхол → «Бусад» (таамаглахгүй).
+                meeting('m', '2026-10-08', 'new_customer', [{ block: 'Б1', model: 'E7' }]),
+            ],
+        });
+        expect(report.weeks[3].byBand).toEqual({ a51: 2, a80: 2, a81: 2, a89: 1, a102: 2, 'cat:commercial': 1, 'cat:parking': 1 });
+        expect(report.weeks[3]).toMatchObject({ total: 12, withoutInterest: 1 });
+        expect(report.weeks[2].byBand).toEqual({ other: 1 });
+        expect(report.bands.map(band => band.label)).toEqual(['Үйлчилгээ', '51–64 м²', '80 м²', '81/85 м²', '89 м²', '102/138 м²', 'Зогсоол', 'Бусад']);
+        // Уулзалт бүр яг нэг баганад: мөрийн нийлбэр = уулзалтын тоо.
+        for (const week of report.weeks) expect(Object.values(week.byBand).reduce((sum, value) => sum + value, 0) + week.withoutInterest).toBe(week.total);
+    });
+
+    it('always lists «Үйлчилгээ» and the five apartment bands, other kinds only when a meeting chose one', () => {
+        const report = buildMeetingDetails({ meetingDate: '2026-10-21', units, referrals: none, meetings: [meeting('a', '2026-10-14', 'new_customer', interest('Б1', 'E7', 89.73))] });
+        expect(report.bands.map(band => band.key)).toEqual(['cat:commercial', 'a51', 'a80', 'a81', 'a89', 'a102']);
+        expect(report.weeks[3].byBand).toEqual({ a89: 1 });
+    });
+
+    it('counts this week\'s held meetings of every type by advance and remainder term; unset stays unknown', () => {
+        const held = (id: string, day: string, type: string, advanceTerm: string | null, remainderTerm: string | null): MeetingDetailRow => ({ ...meeting(id, day, type), advanceTerm, remainderTerm });
+        const meetings = [
+            held('a', '2026-10-14', 'new_customer', 'cash', 'bank_loan'), held('b', '2026-10-15', 'repeat_customer', 'cash', 'mortgage'),
+            held('c', '2026-10-16', 'existing_buyer', 'barter', null), held('d', '2026-10-17', 'new_customer', null, 'old_code'),
+            // Өмнөх 7 хоног — тоологдохгүй.
+            held('e', '2026-10-10', 'new_customer', 'split', 'leasing'),
+        ];
+        const report = buildMeetingDetails({ meetingDate: '2026-10-21', units, meetings, referrals: none, paymentTermsAvailable: true });
+        expect(report.paymentTerms).toEqual({
+            // Жагсаалтын дарааллаар бүх сонголт (0-тэй нь ч); жагсаалтад байхгүй хуучин код сүүлд, өөрөөрөө.
+            advance: { rows: [{ label: 'Бэлэн', count: 2 }, { label: 'Бартер', count: 1 }, { label: 'Урьдчилгаа хуваах', count: 0 }], unknown: 1 },
+            remainder: { rows: [{ label: 'Ипотек', count: 1 }, { label: 'Энгийн зээл', count: 1 }, { label: 'Хувь лизинг', count: 0 }, { label: 'Бэлэн', count: 0 }, { label: 'old_code', count: 1 }], unknown: 1 },
+            total: 4, available: true,
+        });
+        expect(report.notes).toContain('Тайлант 7 хоногийн 4 уулзалтаас урьдчилгааны нөхцөл сонгоогүй 1, үлдэгдлийн нөхцөл сонгоогүй 1.');
+
+        // Талбар DB-д алга: бүгд «Тодорхойгүй», 0 гэж хасахгүй.
+        const missing = buildMeetingDetails({ meetingDate: '2026-10-21', units, meetings, referrals: none });
+        expect(missing.paymentTerms).toMatchObject({ advance: { unknown: 4 }, remainder: { unknown: 4 }, total: 4, available: false });
+        expect(missing.paymentTerms.advance.rows.every(row => row.count === 0)).toBe(true);
     });
 });

@@ -125,4 +125,30 @@ describe('loadViewingReferrals', () => {
         const result = await loadViewingReferrals(fakeDb(tables), 's', ['v1']);
         expect(result.byViewing.get('v1')).toBeNull();
     });
+
+    // Урьдчилгаа / үлдэгдэл төлбөрийн нөхцөл (migration 20261113120000) ба м²-ийн бүлэг.
+    it('reads the payment terms of this week\'s held meetings and groups interests by area band', async () => {
+        const tables = base();
+        tables.property_viewings = tables.property_viewings.map(row => row.id === 'v6' ? row : { ...row, advance_payment_term: 'cash', remainder_payment_term: null });
+        const report = await loadMeetingDetails(fakeDb(tables), { shopId: 's', meetingDate: '2026-10-21' });
+        expect(report.paymentTerms.available).toBe(true);
+        expect(report.paymentTerms.total).toBe(report.weeks[3].total);
+        expect(report.paymentTerms.advance.rows[0]).toEqual({ label: 'Бэлэн', count: report.weeks[3].total });
+        expect(report.paymentTerms.remainder.unknown).toBe(report.weeks[3].total);
+        // Б1 E3 85.19 → «81/85 м²»; Б2 A 57.87 (өмнөх 7 хоног) → «51–64 м²».
+        expect(report.weeks[3].byBand).toEqual({ a81: 1 });
+        expect(report.weeks[2].byBand).toEqual({ a51: 1 });
+    });
+
+    it('falls back to a report without payment terms when the columns are missing, and still surfaces other errors', async () => {
+        const calls: string[] = [];
+        const missing = { code: '42703', message: 'column property_viewings.advance_payment_term does not exist' };
+        const report = await loadMeetingDetails(fakeDb(base(), { columnErrors: { advance_payment_term: missing } }, calls), { shopId: 's', meetingDate: '2026-10-21' });
+        expect(report.paymentTerms).toMatchObject({ available: false, total: 3 });
+        expect(report.paymentTerms.advance.unknown).toBe(3);
+        expect(report.weeks[3].total).toBe(3);
+        expect(calls.filter(call => call.startsWith('property_viewings:id, scheduled_at'))).toHaveLength(2);
+        await expect(loadMeetingDetails(fakeDb(base(), { columnErrors: { meeting_type: { code: '57014', message: 'statement timeout' } } }), { shopId: 's', meetingDate: '2026-10-21' }))
+            .rejects.toThrow('statement timeout');
+    });
 });

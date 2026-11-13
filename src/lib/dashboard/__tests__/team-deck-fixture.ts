@@ -110,11 +110,18 @@ export function meetings(): MeetingDetailsReport {
     const a = { key: 'B2|A', label: 'Б2 A · 57.87 м² · 2 өрөө' };
     return {
         range,
-        weeks: weeks.map((week, index) => index === 0 ? { ...week, total: 0, withoutInterest: 0, byModel: [], coverage: 'none' as const } : {
+        weeks: weeks.map((week, index) => index === 0 ? { ...week, total: 0, withoutInterest: 0, byModel: [], coverage: 'none' as const, byBand: {} as Record<string, number> } : {
             ...week, total: 6 + index, withoutInterest: 1, coverage: 'full' as const,
             byModel: [{ ...e7, count: 3 + index }, { ...a, count: 2 }],
+            byBand: { a89: 3 + index, a51: 2 },
         }),
         referral: { rows: [{ label: 'Ойрхон амьдардаг', count: 5 }, { label: 'Сошиал медиа', count: 3 }, { label: 'Мандала Гарден ОС', count: 2 }], unknown: 2, total: 12, available: true },
+        bands: [{ key: 'cat:commercial', label: 'Үйлчилгээ' }, { key: 'a51', label: '51–64 м²' }, { key: 'a80', label: '80 м²' }, { key: 'a81', label: '81/85 м²' }, { key: 'a89', label: '89 м²' }, { key: 'a102', label: '102/138 м²' }],
+        paymentTerms: {
+            advance: { rows: [{ label: 'Бэлэн', count: 5 }, { label: 'Бартер', count: 1 }, { label: 'Урьдчилгаа хуваах', count: 1 }], unknown: 2 },
+            remainder: { rows: [{ label: 'Ипотек', count: 1 }, { label: 'Энгийн зээл', count: 5 }, { label: 'Хувь лизинг', count: 1 }, { label: 'Бэлэн', count: 0 }], unknown: 2 },
+            total: 9, available: true,
+        },
         notes: [],
     };
 }

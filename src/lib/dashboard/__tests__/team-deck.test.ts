@@ -64,8 +64,8 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const indexes = order.map(needle => text.findIndex(slide => slide.includes(needle)));
         for (const [i, index] of indexes.entries()) expect(index, order[i]).toBeGreaterThanOrEqual(0);
         expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
-        // 17 слайд (14–15 = өдөрлөг, гарчиггүй барилгын зураг) + «Яригдаж буй гэрээ» сэдвийн нэмэлт слайд.
-        expect(text).toHaveLength(18);
+        // 18 слайд (тоон мэдээлэл 2: дуудлага ба чат, уулзалт; 15–16 = өдөрлөг, гарчиггүй барилгын зураг) + «Яригдаж буй гэрээ» сэдвийн нэмэлт слайд.
+        expect(text).toHaveLength(19);
         const photoOnly = text[indexes[14] + 1];
         expect(photoOnly.trim()).toMatch(/^\d*$/); // зөвхөн слайдын дугаар
         // Маркетингийн слайд, хуучин илтгэлийн хэсэг орохгүй.
@@ -135,10 +135,10 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const { text } = await render(teamInput());
         const b1 = at(text, 'Б1 БЛОК');
         expect(b1).toMatch(/ТӨЛӨВЛӨГӨӨ 842,166,000₮ ГҮЙЦЭТГЭЛ — ХУВЬ —/);
-        const activity = at(text, 'БОРЛУУЛАЛТЫН АЛБА-ТООН МЭДЭЭЛЭЛ');
-        expect(activity).toMatch(/7786 Оператор 145 Төлөвлөгөө 367\/550 Биелэлт 40%/);
-        expect(activity).toMatch(/Шинэ уулзалт 24\+ Төлөвлөгөө 73\/110 Биелэлт —/);
-        expect(activity).toMatch(/Чат — Төлөвлөгөө оруулаагүй Биелэлт —/);
+        const activity = text.filter(slide => slide.includes('БОРЛУУЛАЛТЫН АЛБА-ТООН МЭДЭЭЛЭЛ')).join(' ');
+        expect(activity).toMatch(/7786 Оператор Сарын төлөвлөгөө –\s+550 10\/20 хүртэл –\s+367 Гүйцэтгэл –\s+145 Гүйцэтгэл хувь –\s+40%/);
+        expect(activity).toMatch(/Шинэ уулзалт Сарын төлөвлөгөө –\s+110 10\/20 хүртэл –\s+73 Гүйцэтгэл –\s+24\+ Гүйцэтгэл хувь –\s+—/);
+        expect(activity).toMatch(/Чат Сарын төлөвлөгөө –\s+оруулаагүй 10\/20 хүртэл –\s+— Гүйцэтгэл –\s+— Гүйцэтгэл хувь –\s+—/);
         for (const slide of text) expect(slide).not.toMatch(/(^|[^\d,.])0₮/);
     });
 
@@ -217,85 +217,51 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(notes[text.indexOf(pages[1])]).toContain('Дулаан зогсоол: Энэ сард гэрээ бүртгэгдээгүй.');
     });
 
-    it('adds native charts: the activity column chart and the weekly model pies', async () => {
-        const { zip, xml } = await render(teamInput());
-        const charts = Object.keys(zip.files).filter(name => /^ppt\/charts\/chart\d+\.xml$/.test(name));
-        // 1 багана график + 3 дугуй (уулзалтгүй 7 хоногт график зурахгүй).
-        expect(charts).toHaveLength(4);
-        const rels = await Promise.all(Object.keys(zip.files).filter(name => /^ppt\/slides\/_rels\/slide\d+\.xml\.rels$/.test(name)).map(name => zip.file(name)!.async('string')));
-        for (const chart of charts) expect(rels.join(' ')).toContain(`/charts/${chart.split('/').pop()}"`);
-        const bodies = await Promise.all(charts.map(name => zip.file(name)!.async('string')));
-        for (const body of bodies) {
-            const parser = new SaxesParser();
-            expect(() => { parser.write(body); parser.close(); }).not.toThrow();
-        }
-        const bar = bodies.find(body => body.includes('<c:barChart>'))!;
-        for (const name of ['10/01–10/06', '10/07–10/13', '10/14–10/20', '7786 Оператор', 'Менежер дугаар', 'Шинэ уулзалт', 'Чат']) expect(bar).toContain(name);
-        // Мэдээлэлгүй 7 хоног (09/23–09/29, 09/30) графикт орохгүй; тодорхойгүй цэг хоосон (0 биш).
-        expect(bar).not.toContain('09/23–09/29');
-        expect(bar).toContain('<c:dispBlanksAs val="gap"/>');
-        expect(bar).toContain('<c:barDir val="col"/>');
-        expect(bar).toContain('<c:grouping val="clustered"/>');
-        expect(bar).toMatch(/<c:pt idx="1"><c:v><\/c:v><\/c:pt>/);
-        const pies = bodies.filter(body => body.includes('<c:pieChart>'));
-        expect(pies).toHaveLength(3);
-        for (const pie of pies) for (const name of ['Б1 E7 · 89.73 м² · 3 өрөө', 'Сонголтгүй']) expect(pie).toContain(name);
-        const meetings = xml.find(part => part.includes('НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ'))!;
-        // Бүртгэл эхлэхээс өмнөх 7 хоног тодорхойгүй (9-р слайдтай нэг дүрэм), «уулзалт алга» биш.
-        expect(meetings).toContain('Бүртгэлгүй (тодорхойгүй)');
-        expect(meetings).not.toContain('Болсон уулзалт алга');
-        for (const needle of ['Ойрхон амьдардаг', 'Тодорхойгүй', 'Нийт']) expect(meetings).toContain(needle);
-        expect(meetings).toMatch(/<a:t>Нийт<\/a:t>[\s\S]*?<a:t>12<\/a:t>/);
+    // Борлуулалтын багийн загвар (2026-11-12): график биш хүснэгт; хувийн нүдийг өнгөөр дүүргэнэ (Excel-ийн data bar).
+    const bars = (part: string) => [...part.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)].map(match => match[0])
+        .filter(shape => shape.includes('<a:srgbClr val="BBD0FB"/>')).map(shape => Number(shape.match(/<a:ext cx="(\d+)"/)![1]));
+
+    it('activity: two table slides (calls and chat, meetings) with month lines, weekly plan = month ÷ 4 and a bar per known percentage', async () => {
+        const { zip, xml, text } = await render(teamInput());
+        expect(Object.keys(zip.files).filter(name => /^ppt\/charts\/chart\d+\.xml$/.test(name))).toEqual([]);
+        const slides = text.filter(slide => slide.includes('БОРЛУУЛАЛТЫН АЛБА-ТООН МЭДЭЭЛЭЛ'));
+        expect(slides).toHaveLength(2);
+        const [calls, meetings] = slides;
+        expect(calls).toContain('Дуудлага, чат · сарын эхнээс 2026.10.01 – 2026.10.20');
+        expect(meetings).toContain('Уулзалт · сарын эхнээс 2026.10.01 – 2026.10.20');
+        expect(calls).toMatch(/7786 Оператор Сарын төлөвлөгөө –\s+550 10\/20 хүртэл –\s+367 Гүйцэтгэл –\s+145 Гүйцэтгэл хувь –\s+40%/);
+        expect(calls).toContain('7 хоног Төлөвлөгөө Гүйцэтгэл Хувь');
+        // 550 ÷ 4 = 138; 53 / 138 = 38%. Менежерийн шугам 300 ÷ 4 = 75; 65 / 75 = 87%.
+        expect(calls).toContain('10/07–10/13 138 40 29% 10/14–10/20 138 53 38%');
+        expect(calls).toContain('10/14–10/20 75 65 87%');
+        // Тоо оруулаагүй 7 хоног «—» (0 биш); төлөвлөгөөгүй чат хувьгүй.
+        expect(calls).toContain('09/23–09/29 138 — —');
+        expect(calls).toContain('10/14–10/20 — 45 —');
+        expect(meetings).toMatch(/Давтан уулзалт Сарын төлөвлөгөө –\s+30 10\/20 хүртэл –\s+20 Гүйцэтгэл –\s+4 Гүйцэтгэл хувь –\s+20%/);
+        expect(meetings).toContain('10/07–10/13 8 1 13% 10/14–10/20 8 3 38%');
+
+        // Дүүргэлт: хувь мэдэгдэх мөр бүрт нэг, урт нь хувьтай пропорциональ (29% : 38% : 87%).
+        const callBars = bars(xml[text.indexOf(calls)]);
+        expect(callBars).toHaveLength(3);
+        expect(callBars[0] / callBars[1]).toBeCloseTo(29 / 38, 2);
+        expect(callBars[1] / callBars[2]).toBeCloseTo(38 / 87, 2);
+        expect(bars(xml[text.indexOf(meetings)])).toHaveLength(5);
     });
 
-    it('meeting pies and the legend give one model key one label (the colour never carries two names)', async () => {
-        // Хуучин хариу шиг: 10/14–10/20-нд Б1 E7-г өөр талбайгаар нэрлэсэн — тайлбар ба бүх графикт нэг нэр.
-        const base = teamInput();
-        const weeks = base.meetings!.weeks.map((week, index) => index === 3
-            ? { ...week, byModel: week.byModel.map(model => model.key === 'B1|E7' ? { ...model, label: 'Б1 E7 · 85.19 м² · 3 өрөө' } : model) } : week);
-        const { zip, xml } = await render(teamInput({ meetings: { ...base.meetings!, weeks } }));
-        const charts = await Promise.all(Object.keys(zip.files).filter(name => /^ppt\/charts\/chart\d+\.xml$/.test(name)).map(name => zip.file(name)!.async('string')));
-        const pies = charts.filter(chart => chart.includes('<c:pieChart>'));
-        expect(pies).toHaveLength(3);
-        for (const pie of pies) {
-            expect(pie).toContain('Б1 E7 · 89.73 м² · 3 өрөө');
-            expect(pie).not.toContain('85.19');
-        }
-        const slide = xml.find(part => part.includes('НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ'))!;
-        expect(slide).toContain('<a:t>Б1 E7 · 89.73 м² · 3 өрөө</a:t>');
-        expect(slide).not.toContain('85.19');
-    });
-
-    it('meeting pies: a fully recorded empty week says «Болсон уулзалт алга», a straddling week is a lower bound «N+»', async () => {
-        const base = teamInput();
-        const weeks = base.meetings!.weeks.map((week, index) => index === 0 ? { ...week, coverage: 'full' as const }
-            : index === 1 ? { ...week, coverage: 'partial' as const } : week);
-        const { zip, xml } = await render(teamInput({ meetings: { ...base.meetings!, weeks } }));
-        const meetings = xml.find(part => part.includes('НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ'))!;
-        expect(meetings).toContain('Болсон уулзалт алга');
-        const charts = await Promise.all(Object.keys(zip.files).filter(name => /^ppt\/charts\/chart\d+\.xml$/.test(name)).map(name => zip.file(name)!.async('string')));
-        expect(charts.some(chart => chart.includes(`${weeks[1].label} · ${weeks[1].total}+`))).toBe(true);
-    });
-
-    it('activity chart: a real 0 stays 0 in the editable workbook, unknown stays an empty cell; lower bounds are named under the chart', async () => {
+    it('activity: a real 0 stays 0, a lower bound is «N+» with «%+», and a bar never exceeds its cell', async () => {
         const report = activity();
-        // 10/14–10/20-ны чат 0 (оруулсан), 10/07–10/13-ны менежер дугаар тодорхойгүй.
-        report.buckets = report.buckets.map(bucket => bucket.label === '10/14–10/20' ? { ...bucket, values: { ...bucket.values, chats: 0 } } : bucket);
-        const { zip, text } = await render(teamInput({ activity: report }));
-        const chart = (await Promise.all(Object.keys(zip.files).filter(name => /^ppt\/charts\/chart\d+\.xml$/.test(name))
-            .map(async name => [name, await zip.file(name)!.async('string')] as const))).find(([, body]) => body.includes('<c:barChart>'))!;
-        const rels = await zip.file(chart[0].replace('charts/', 'charts/_rels/') + '.rels')!.async('string');
-        const workbook = await JSZip.loadAsync(await zip.file(`ppt/${rels.match(/Target="\.\.\/(embeddings\/[^"]+\.xlsx)"/)![1]}`)!.async('uint8array'));
-        const sheet = await workbook.file('xl/worksheets/sheet1.xml')!.async('string');
-        // Багана: B = 10/01–10/06, C = 10/07–10/13, D = 10/14–10/20; мөр: 2 шугам, 3 менежер дугаар, 4 шинэ уулзалт, 5 чат.
-        expect(sheet).toContain('<c r="D5"><v>0</v></c>');
-        expect(sheet).toContain('<c r="C3"><v></v></c>');
-        expect(sheet).toContain('<c r="D2"><v>53</v></c>');
-        const series = chart[1].split('<c:ser>');
-        expect(series[3]).toContain('<c:pt idx="3"><c:v>0</c:v></c:pt>');
-        expect(series[2]).toContain('<c:pt idx="1"><c:v></c:v></c:pt>');
-        // 10/01–10/06-ны шинэ уулзалт (бүртгэл 10/05-нд эхэлсэн) — графикийн доор «N+», эх сурвалжийг нэрлэнэ.
-        expect(at(text, 'ТООН МЭДЭЭЛЭЛ')).toContain('Доод хязгаар (N+): 10/01–10/06 · Шинэ уулзалт 2+ — уулзалтын бүртгэл 7 хоногийн дунд эхэлсэн.');
+        // 10/14–10/20-ны менежерийн шугам 0 (оруулсан); 7786-ийн 10/14–10/20 төлөвлөгөөнөөс давсан.
+        report.buckets = report.buckets.map(bucket => bucket.label === '10/14–10/20' ? { ...bucket, values: { ...bucket.values, managerLine: 0, hotline: 400 } } : bucket);
+        const { xml, text } = await render(teamInput({ activity: report }));
+        const [calls, meetings] = text.filter(slide => slide.includes('ТООН МЭДЭЭЛЭЛ'));
+        expect(calls).toContain('10/14–10/20 75 0 0%');
+        expect(calls).toContain('10/14–10/20 138 400 290%');
+        // 10/01–10/06-ны шинэ уулзалт (бүртгэл 10/05-нд эхэлсэн) доод хязгаар.
+        expect(meetings).toContain('10/01–10/06 28 2+ 7%+');
+        // 0%-д дүүргэлтгүй; 290% нь 100%-ийн өргөнөөр (29%-ийн мөртэй харьцуулахад 100 : 29).
+        const callBars = bars(xml[text.indexOf(calls)]);
+        expect(callBars).toHaveLength(2);
+        expect(callBars[1] / callBars[0]).toBeCloseTo(100 / 29, 1);
     });
 
     it('activity «N+» notes name the source that started mid-period: daily-report counts, not meeting records (prod 10-28 deck)', async () => {
@@ -311,22 +277,60 @@ describe('team-format Wednesday deck (.pptx)', () => {
             meetingsSince: '2026-09-01', countsSince: '2026-10-08', targets: null, targetsAvailable: true,
         });
         const { text, notes } = await render(teamInput({ activity: report }));
-        const slide = at(text, 'ТООН МЭДЭЭЛЭЛ');
-        expect(slide).toContain('Доод хязгаар (N+): 10/07–10/13 · Төслийн утас 12+; 10/07–10/13 · Менежер дугаар 7+; 10/07–10/13 · Чат 4+ — өдрийн тайлангийн тоо 7 хоногийн дунд эхэлсэн.');
-        expect(slide).not.toContain('уулзалтын бүртгэл');
-        const note = notes[text.indexOf(slide)];
+        const [calls, meetings] = text.filter(slide => slide.includes('ТООН МЭДЭЭЛЭЛ'));
+        expect(calls).toContain('10/07–10/13 — 12+ —');
+        const note = notes[text.indexOf(calls)];
         expect(note).toContain('«N+» — өдрийн тайлангийн тоо хугацааны дунд эхэлсэн тул доод хязгаар (Төслийн утас, Менежерийн дуудлага, Чат)');
         expect(note).not.toContain('уулзалтын бүртгэл хугацааны дунд');
         // Эхэлсэн өдрийг тайлангийн өөрийн тэмдэглэл нэрлэнэ.
         expect(note).toContain('Өдрийн тайлангийн тоо 2026-10-08-нээс эхэлсэн');
+        expect(notes[text.indexOf(meetings)]).not.toContain('«N+» —');
 
-        // Хоёулаа дунд нь эхэлсэн бол хоёуланг нэрлэнэ.
+        // Хоёулаа дунд нь эхэлсэн бол слайд тус бүр өөрийн эх сурвалжийг нэрлэнэ.
         const both = activity();
         both.buckets = both.buckets.map(bucket => bucket.label === '10/07–10/13' ? { ...bucket, partial: { ...bucket.partial, hotline: true } } : bucket);
         const mixed = await render(teamInput({ activity: both }));
-        const mixedSlide = at(mixed.text, 'ТООН МЭДЭЭЛЭЛ');
-        expect(mixedSlide).toContain('10/07–10/13 · 7786 Оператор 40+ — өдрийн тайлангийн тоо ба уулзалтын бүртгэл 7 хоногийн дунд эхэлсэн.');
-        expect(mixed.notes[mixed.text.indexOf(mixedSlide)]).toContain('«N+» — өдрийн тайлангийн тоо ба уулзалтын бүртгэл хугацааны дунд эхэлсэн тул доод хязгаар (7786 Оператор, Шинэ уулзалт)');
+        const [mixedCalls, mixedMeetings] = mixed.text.filter(slide => slide.includes('ТООН МЭДЭЭЛЭЛ'));
+        expect(mixedCalls).toContain('10/07–10/13 138 40+ 29%+');
+        expect(mixed.notes[mixed.text.indexOf(mixedCalls)]).toContain('«N+» — өдрийн тайлангийн тоо хугацааны дунд эхэлсэн тул доод хязгаар (7786 Оператор)');
+        expect(mixed.notes[mixed.text.indexOf(mixedMeetings)]).toContain('«N+» — уулзалтын бүртгэл хугацааны дунд эхэлсэн тул доод хязгаар (Шинэ уулзалт)');
+    });
+
+    it('meetings: interest by area band per week, the referral and both payment-term tables', async () => {
+        const { text, notes } = await render(teamInput());
+        const meetings = at(text, 'НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ');
+        expect(meetings).toContain('Уулзалт Үйлчилгээ 51–64 м² 80 м² 81/85 м² 89 м² 102/138 м² Сонголтгүй Нийт');
+        // Бүртгэл эхлэхээс өмнөх 7 хоног тодорхойгүй (9-р слайдтай нэг дүрэм) — мөр бүхэлдээ «—», 0 биш.
+        expect(meetings).toContain('09/23–09/29 — — — — — — — —');
+        // Тоогүй бүлэг хоосон нүд: 51–64 = 2, 89 = 6, сонголтгүй 1, нийт 9.
+        expect(meetings).toContain('10/14–10/20 2 6 1 9');
+        expect(meetings).toContain('Сэжим (хаанаас ирсэн) — шинэ уулзалт Сэжим Уулзалт Ойрхон амьдардаг 5 Сошиал медиа 3 Мандала Гарден ОС 2 Тодорхойгүй 2 Нийт 12');
+        expect(meetings).toContain('Урьдчилгаа төлбөрийн нөхцөл Нөхцөл Уулзалт Бэлэн 5 Бартер 1 Урьдчилгаа хуваах 1 Тодорхойгүй 2 Нийт 9');
+        expect(meetings).toContain('Үлдэгдэл төлбөрийн нөхцөл Нөхцөл Уулзалт Ипотек 1 Энгийн зээл 5 Хувь лизинг 1 Бэлэн 0 Тодорхойгүй 2 Нийт 9');
+        const note = notes[text.indexOf(meetings)];
+        expect(note).toContain('блок хамаарахгүй');
+        expect(note).toContain('Сонирхол — мөнгө биш');
+    });
+
+    it('meetings: a fully recorded empty week shows 0, a straddling week is a lower bound «N+», extra bands appear only with data', async () => {
+        const base = teamInput();
+        const weeks = base.meetings!.weeks.map((week, index) => index === 0 ? { ...week, coverage: 'full' as const }
+            : index === 1 ? { ...week, coverage: 'partial' as const, byBand: { ...week.byBand, 'cat:parking': 1 } } : week);
+        const bands = [...base.meetings!.bands, { key: 'cat:parking', label: 'Зогсоол' }];
+        const { text } = await render(teamInput({ meetings: { ...base.meetings!, weeks, bands } }));
+        const meetings = at(text, 'НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ');
+        expect(meetings).toContain('102/138 м² Зогсоол Сонголтгүй Нийт');
+        // Бүрэн бүртгэлтэй, уулзалтгүй 7 хоног: нүд хоосон, нийт 0.
+        expect(meetings).toContain('09/23–09/29 0 09/30–10/06');
+        expect(meetings).toContain(`${weeks[1].label} 2 4 1 1 ${weeks[1].total}+`);
+    });
+
+    it('year plan table: a bar behind every known percentage, none behind «—»', async () => {
+        const { xml, text } = await render(teamInput());
+        const year = xml[text.indexOf(at(text, 'ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ'))];
+        const known = (at(text, 'ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ').match(/\d+%\+?/g) ?? []).filter(value => !/^0%/.test(value)).length;
+        expect(known).toBeGreaterThan(0);
+        expect(bars(year)).toHaveLength(known);
     });
 
     it('negotiations exported after the meeting say on the slide that the list and prices are as of the export day', async () => {

@@ -50,8 +50,15 @@ export function teamDeckFixtures(meetingDate: string, shopId: string) {
         weeks: meetingDetailWeeks(meetingDate).map((week, index) => ({
             ...week, total: 5 + index, withoutInterest: 1, coverage: 'full' as const,
             byModel: [{ key: 'B1|E7', label: 'Б1 E7 · 89.73 м² · 3 өрөө', count: 2 + index }, { key: 'B2|A', label: 'Б2 A · 57.87 м² · 2 өрөө', count: 2 }],
+            byBand: { a89: 2 + index, a51: 2 },
         })),
         referral: { rows: [{ label: 'Ойрхон амьдардаг', count: 5 }, { label: 'Сошиал медиа', count: 3 }], unknown: 1, total: 9, available: true },
+        bands: [{ key: 'cat:commercial', label: 'Үйлчилгээ' }, { key: 'a51', label: '51–64 м²' }, { key: 'a80', label: '80 м²' }, { key: 'a81', label: '81/85 м²' }, { key: 'a89', label: '89 м²' }, { key: 'a102', label: '102/138 м²' }],
+        paymentTerms: {
+            advance: { rows: [{ label: 'Бэлэн', count: 5 }, { label: 'Бартер', count: 1 }, { label: 'Урьдчилгаа хуваах', count: 1 }], unknown: 1 },
+            remainder: { rows: [{ label: 'Ипотек', count: 1 }, { label: 'Энгийн зээл', count: 5 }, { label: 'Хувь лизинг', count: 1 }, { label: 'Бэлэн', count: 0 }], unknown: 1 },
+            total: 8, available: true,
+        },
         notes: [],
     };
     const negotiations: NegotiationsReport = {

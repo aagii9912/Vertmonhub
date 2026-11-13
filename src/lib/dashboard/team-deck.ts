@@ -6,7 +6,7 @@ import {
 import type { ReportContractLine, WeeklySalesReport } from './weekly-sales';
 import type { WeeklySlide, WeeklySlideSection } from './weekly-slides';
 import { ACTIVITY_METRIC_LABEL, ACTIVITY_METRICS, type ActivityMetric, type SalesActivityReport } from './sales-activity';
-import type { MeetingDetailsReport } from './meeting-details';
+import { MEETING_AREA_BANDS, type MeetingDetailsReport } from './meeting-details';
 import type { NegotiationsReport, NegotiationSum } from './negotiations';
 import { hasReportBranding, type ReportBranding } from './report-branding';
 import { undatedContractsHint } from './contract-dates';
@@ -479,17 +479,9 @@ function stretchSlide(pres: PptxGenJS, ctx: Ctx) {
     ]);
 }
 
-// 9. Борлуулалтын албаны тоон мэдээлэл: 7 хоногоор багана график (засаж болох), сарын эхнээс карт.
-const CHART_METRICS: readonly ActivityMetric[] = ['hotline', 'managerLine', 'newMeetings', 'chats'];
-/** Хуучин → шинэ 7 хоног (хамгийн шинэ нь Hub-ийн цэнхэр). Hex, «#»-гүй. */
-const BUCKET_COLORS = ['D5DEF7', 'A9B8E8', '7F96E0', '5479DC', C.brand];
-const ACTIVITY_CHART_H = 2.85;
-/**
- * Графикийн цэг: тодорхойгүй = null (хоосон нүд, dispBlanksAs=gap). pptxgenjs 4.0.1 баганан графикийн суулгасан Excel
- * хүснэгтэд утгыг `value || ''` гэж бичдэг тул жинхэнэ 0 хоосон нүд болж («Edit Data»-гаар засвал тодорхойгүй болж)
- * хувирна — «0» мөрөөр өгвөл кэш, хүснэгт хоёуланд `0` бичигдэнэ.
- */
-const chartPoint = (value: number | null): number | null => (value === 0 ? '0' as unknown as number : value);
+// 9. Борлуулалтын албаны тоон мэдээлэл (борлуулалтын багийн загвар, 2026-11-12): үзүүлэлт бүр нэг карт — сарын
+// төлөвлөгөө, тайлант өдөр хүртэлх төлөвлөгөө, гүйцэтгэл, хувь + 7 хоног бүрийн төлөвлөгөө / гүйцэтгэл / хувь (хувийг
+// Excel-ийн data bar шиг өнгөөр дүүргэнэ). Хоёр слайд: дуудлага ба чат; уулзалт.
 /**
  * «N+»-ийн эх сурвалж үзүүлэлтээр (`sales-activity.ts`): дуудлага, чат — өдрийн тайлангийн тоо (`countsSince`),
  * уулзалт — CRM-ийн уулзалтын бүртгэл (`dataSince`). Хоёр нь өөр өдрөөс эхэлдэг тул тэмдэглэлд аль нь болохыг нэрлэнэ.
@@ -501,137 +493,164 @@ const LOWER_BOUND_SOURCE: Record<ActivityMetric, string> = {
 const lowerBoundSources = (metrics: readonly ActivityMetric[]) =>
     [...new Set(ACTIVITY_METRICS.filter(metric => metrics.includes(metric)).map(metric => LOWER_BOUND_SOURCE[metric]))].join(' ба ');
 
-function activitySlide(pres: PptxGenJS, ctx: Ctx) {
+/** Сарын төлөвлөгөөг 7 хоногт хуваах тоо (багийн дүрэм: сарын ÷ 4). */
+export const WEEKLY_PLAN_PARTS = 4;
+/**
+ * 7 хоногийн төлөвлөгөө = сарын төлөвлөгөө ÷ 4. Сарын хилээр тасарсан богино хэсэгт өдрөөр нь (өдөр / 7) хувь
+ * тэнцүүлнэ — 3 өдрийн хэсгийг бүтэн 7 хоногийн төлөвлөгөөтэй харьцуулахгүй. Төлөвлөгөөгүй бол null.
+ */
+export function weeklyPlan(monthly: number | null, days: number): number | null {
+    return monthly === null ? null : Math.round(monthly / WEEKLY_PLAN_PARTS * Math.min(Math.max(days, 0), 7) / 7);
+}
+
+/** Хувийн нүдний өнгөн дүүргэлт (data bar): 100%-д нүд дүүрнэ. Хүснэгтээс ӨМНӨ нэмнэ — нүд дэвсгэргүй тул ард нь харагдана. */
+const PCT_BAR_COLOR = 'BBD0FB';
+function pctBar(slide: Slide, cell: { x: number; y: number; w: number; h: number }, pct: number | null) {
+    if (pct === null || !(pct > 0)) return;
+    const inset = 0.04;
+    slide.addShape('rect', {
+        x: cell.x + inset, y: cell.y + inset, w: (cell.w - inset * 2) * Math.min(pct, 100) / 100, h: cell.h - inset * 2,
+        fill: { color: PCT_BAR_COLOR }, line: { color: PCT_BAR_COLOR, width: 0 },
+    });
+}
+
+const ACTIVITY_HEAD_H = 0.32;
+const ACTIVITY_ROW_H = 0.3;
+function activityCard(slide: Slide, report: SalesActivityReport, metric: ActivityMetric, label: string, box: { x: number; y: number; w: number }) {
+    const month = report.month.metrics[metric];
+    const known = (value: number | null, plus = false) => value === null ? '—' : `${value.toLocaleString('en-US')}${plus ? '+' : ''}`;
+    slide.addText(label, { x: box.x, y: box.y, w: box.w, h: 0.36, fontFace: FONT, fontSize: 16, bold: true, color: C.ink, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
+    const lines: Array<[string, string]> = [
+        ['Сарын төлөвлөгөө', month.plan === null ? 'оруулаагүй' : known(month.plan)],
+        [`${report.month.to.slice(5, 7)}/${report.month.to.slice(8, 10)} хүртэл`, known(month.planToDate)],
+        ['Гүйцэтгэл', known(month.actual, month.partial)],
+        ['Гүйцэтгэл хувь', month.pct === null ? '—' : `${month.pct}%`],
+    ];
+    slide.addText(lines.flatMap(([name, value], index) => [
+        { text: `${name} – `, options: { color: C.ink2 } },
+        { text: value, options: { bold: true, color: C.ink, breakLine: index < lines.length - 1 } },
+    ]), { x: box.x, y: box.y + 0.42, w: box.w, h: 1.3, fontFace: FONT, fontSize: 13, margin: 0, valign: 'top', paraSpaceAfter: 3, isTextBox: true });
+
+    // Толгойн үг («Төлөвлөгөө», «Гүйцэтгэл») багандаа багтах доод өргөн; илүү зайг 7 хоног ба хувийн багана хуваана.
+    const spare = Math.max(0, box.w - (1.0 + 1.08 + 0.93 + 0.78)) / 2;
+    const colW = [1.0 + spare, 1.08, 0.93, 0.78 + spare];
+    const tableY = box.y + 1.85;
+    const pctX = box.x + colW[0] + colW[1] + colW[2];
+    const rows = report.buckets.map((bucket, index) => {
+        const plan = weeklyPlan(month.plan, bucket.days);
+        const actual = bucket.values[metric];
+        const pct = actual === null || !plan ? null : Math.round(actual / plan * 100);
+        pctBar(slide, { x: pctX, y: tableY + ACTIVITY_HEAD_H + index * ACTIVITY_ROW_H, w: colW[3], h: ACTIVITY_ROW_H }, pct);
+        return [
+            bodyCell(bucket.label), bodyCell(known(plan), 'right'), bodyCell(known(actual, bucket.partial[metric]), 'right', { bold: true }),
+            bodyCell(pct === null ? '—' : `${pct}%${bucket.partial[metric] ? '+' : ''}`, 'center'),
+        ];
+    });
+    slide.addTable([[headCell('7 хоног'), headCell('Төлөвлөгөө', 'right'), headCell('Гүйцэтгэл', 'right'), headCell('Хувь', 'center')], ...rows], {
+        x: box.x, y: tableY, w: box.w, colW, rowH: [ACTIVITY_HEAD_H, ...rows.map(() => ACTIVITY_ROW_H)], fontFace: FONT, fontSize: 11,
+        border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.02, 0.08, 0.02, 0.08], autoPage: false,
+    });
+}
+
+function activitySlides(pres: PptxGenJS, ctx: Ctx) {
     const title = 'БОРЛУУЛАЛТЫН АЛБА-ТООН МЭДЭЭЛЭЛ';
     const report = ctx.input.activity;
     if (!report) return unavailable(content(pres, ctx.name, title), ctx, 'activity', TOP - 0.2);
-    const slide = content(pres, ctx.name, title, `7 хоногоор (Лхагва–Мягмар) · сарын эхнээс ${dot(report.month.from)} – ${dot(report.month.to)}`);
     const hotline = report.lines.hotline?.trim() || ACTIVITY_METRIC_LABEL.hotline;
     const managerLine = report.lines.managerLine?.trim() || ACTIVITY_METRIC_LABEL.managerLine;
-    const categories = [hotline, 'Менежер дугаар', 'Шинэ уулзалт', 'Чат'];
-    // Тодорхойгүй утгыг 0 биш хоосон цэг (null + dispBlanksAs=gap); нэг ч утгагүй 7 хоногийг графикт оруулахгүй.
-    const charted = report.buckets.filter(bucket => CHART_METRICS.some(metric => bucket.values[metric] !== null));
-    const skipped = report.buckets.filter(bucket => !charted.includes(bucket));
-    const blanks = charted.some(bucket => CHART_METRICS.some(metric => bucket.values[metric] === null));
-    // Доод хязгаартай үзүүлэлт (7 хоног эсвэл сарын эхнээс) — тэмдэглэлд эх сурвалжаар нь нэрлэнэ.
-    const partial = ACTIVITY_METRICS.filter(metric => report.month.metrics[metric].partial || report.buckets.some(bucket => bucket.partial[metric]));
-    if (charted.length) {
-        const colors = BUCKET_COLORS.slice(-charted.length);
-        slide.addChart('bar', charted.map(bucket => ({ name: bucket.label, labels: categories, values: CHART_METRICS.map(metric => chartPoint(bucket.values[metric])) })), {
-            x: M, y: TOP - 0.05, w: CW, h: ACTIVITY_CHART_H, barDir: 'col', barGrouping: 'clustered', barGapWidthPct: 60, chartColors: colors,
-            showValue: true, dataLabelPosition: 'outEnd', dataLabelFontSize: 9, dataLabelFontFace: FONT, dataLabelColor: C.ink,
-            showLegend: true, legendPos: 'b', legendFontSize: 10, legendFontFace: FONT, legendColor: C.ink2,
-            catAxisLabelFontSize: 11, catAxisLabelFontFace: FONT, catAxisLabelColor: C.ink2, valAxisHidden: true, valGridLine: { style: 'none' },
-            displayBlanksAs: 'gap', altText: `Борлуулалтын албаны тоон мэдээлэл 7 хоногоор: ${categories.join(', ')}`,
-        });
-        // Доод хязгаар (өдрийн тайлангийн тоо эсвэл уулзалтын бүртгэл 7 хоногийн дунд эхэлсэн) — баганын шошго «N+» болж
-        // чадахгүй тул графикийн доор, эх сурвалжийг нь нэрлэж.
-        const bounded = charted.flatMap(bucket => CHART_METRICS.filter(metric => bucket.partial[metric] && bucket.values[metric] !== null).map(metric => ({ bucket, metric })));
-        if (bounded.length) {
-            const lowerBounds = bounded.map(({ bucket, metric }) => `${bucket.label} · ${categories[CHART_METRICS.indexOf(metric)]} ${count(bucket.values[metric])}+`);
-            slide.addText(`Доод хязгаар (N+): ${lowerBounds.join('; ')} — ${lowerBoundSources(bounded.map(item => item.metric))} 7 хоногийн дунд эхэлсэн.`, {
-                x: M, y: TOP - 0.05 + ACTIVITY_CHART_H + 0.02, w: CW, h: 0.3, fontFace: FONT, fontSize: 11, color: C.muted, margin: 0, valign: 'middle', isTextBox: true,
-            });
-        }
-    } else {
-        muted(slide, 'Сүүлийн 7 хоногуудад тоон мэдээлэл оруулаагүй — тодорхойгүй.', TOP + 0.6);
-    }
-    const value = (metric: ActivityMetric) => {
-        const cell = report.month.metrics[metric];
-        return cell.actual === null ? '—' : `${cell.actual.toLocaleString('en-US')}${cell.partial ? '+' : ''}`;
-    };
-    const helper = (metric: ActivityMetric) => {
-        const cell = report.month.metrics[metric];
-        return `${cell.plan === null ? 'Төлөвлөгөө оруулаагүй' : `Төлөвлөгөө ${count(cell.planToDate)}/${count(cell.plan)}`}\nБиелэлт ${cell.pct === null ? '—' : `${cell.pct}%`}`;
-    };
     const labels: Record<ActivityMetric, string> = { hotline, managerLine, newMeetings: 'Шинэ уулзалт', repeatMeetings: 'Давтан уулзалт', chats: 'Чат' };
-    statRow(slide, TOP + 3.25, ACTIVITY_METRICS.map(metric => ({ label: labels[metric], value: value(metric), helper: helper(metric) })), 1.8);
-    note(slide, [
-        'Эх сурвалж: дуудлага, чат — менежерүүдийн өдрийн тайланд гараар оруулсан тоо; уулзалт — CRM-ийн болсон уулзалт (шинэ / давтан харилцагч).',
-        `Шугам: «${hotline}» = өдрийн тайлангийн загварын эхний шугам, «${managerLine}» = хоёр дахь шугам; чат = ${report.lines.chats.join(', ') || 'суваггүй'}.`,
-        `Өдрийн тайлангийн хамрах хүрээ (тоо оруулсан өдөр / нийт өдөр): ${report.buckets.map(bucket => `${bucket.label} ${bucket.knownDays}/${bucket.days}`).join(', ')}.`,
-        `Төлөвлөгөө «хувь тэнцүүлсэн / сарын» = сарын төлөвлөгөө × min(өдөр, 30) / 30 (${dot(report.month.to)} хүртэл); биелэлт = гүйцэтгэл / хувь тэнцүүлсэн төлөвлөгөө.`,
-        blanks ? 'Графикийн хоосон багана = тодорхойгүй (тоо оруулаагүй), 0 биш; графикийн өгөгдлийн хүснэгтэд (Edit Data) хоосон нүд, жинхэнэ 0 нь 0.' : null,
-        skipped.length ? `${skipped.map(bucket => bucket.label).join(', ')}: тоон мэдээлэл огт оруулаагүй тул графикт ороогүй.` : null,
-        partial.length ? `«N+» — ${lowerBoundSources(partial)} хугацааны дунд эхэлсэн тул доод хязгаар (${partial.map(metric => labels[metric]).join(', ')}); графикт мэдэгдэх тоо, графикийн доорх мөрөнд «N+».` : null,
-        ...report.notes,
-    ]);
+    const period = `сарын эхнээс ${dot(report.month.from)} – ${dot(report.month.to)} · 7 хоног = Лхагва–Мягмар`;
+    const groups: Array<{ name: string; metrics: ActivityMetric[]; source: string }> = [
+        { name: 'Дуудлага, чат', metrics: ['hotline', 'managerLine', 'chats'], source: 'Эх сурвалж: менежерүүдийн өдрийн тайланд гараар оруулсан дуудлага, чатын тоо.' },
+        { name: 'Уулзалт', metrics: ['newMeetings', 'repeatMeetings'], source: 'Эх сурвалж: CRM-ийн болсон уулзалт (шинэ / давтан харилцагч).' },
+    ];
+    for (const group of groups) {
+        const slide = content(pres, ctx.name, title, `${group.name} · ${period}`);
+        const gap = 0.35;
+        const w = (CW - gap * (group.metrics.length - 1)) / group.metrics.length;
+        group.metrics.forEach((metric, index) => activityCard(slide, report, metric, labels[metric], { x: M + index * (w + gap), y: TOP - 0.05, w }));
+        const partial = group.metrics.filter(metric => report.month.metrics[metric].partial || report.buckets.some(bucket => bucket.partial[metric]));
+        note(slide, [
+            group.source,
+            group.metrics.includes('hotline') ? `Шугам: «${hotline}» = өдрийн тайлангийн загварын эхний шугам, «${managerLine}» = хоёр дахь шугам; чат = ${report.lines.chats.join(', ') || 'суваггүй'}.` : null,
+            `«${report.month.to.slice(5, 7)}/${report.month.to.slice(8, 10)} хүртэл» = сарын төлөвлөгөө × min(өдөр, 30) / 30; «Гүйцэтгэл хувь» = гүйцэтгэл / тэр хүртэлх төлөвлөгөө (сарын бүтэн төлөвлөгөөтэй биш).`,
+            `7 хоногийн төлөвлөгөө = сарын төлөвлөгөө ÷ ${WEEKLY_PLAN_PARTS}; сарын хилээр тасарсан богино хэсэгт өдрөөр нь (өдөр / 7). Өмнөх сарын хэсэг ч энэ сарын төлөвлөгөөгөөр.`,
+            'Хувийн нүдний өнгөн дүүргэлт: 100%-д нүд дүүрнэ. «—» = тодорхойгүй (тоо оруулаагүй эсвэл төлөвлөгөөгүй), 0 биш.',
+            group.metrics.includes('hotline') ? `Өдрийн тайлангийн хамрах хүрээ (тоо оруулсан өдөр / нийт өдөр): ${report.buckets.map(bucket => `${bucket.label} ${bucket.knownDays}/${bucket.days}`).join(', ')}.` : null,
+            partial.length ? `«N+» — ${lowerBoundSources(partial)} хугацааны дунд эхэлсэн тул доод хязгаар (${partial.map(metric => labels[metric]).join(', ')}).` : null,
+            ...report.notes,
+        ]);
+    }
 }
 
-// 10. Нийт уулзалтын дэлгэрэнгүй: сонирхсон загвар 7 хоногоор (дугуй график), «Сэжим» хүснэгт.
-const PIE_COLORS = ['2D5FDD', 'A9823F', '13784A', '7F96E0', '0E1A3A', 'C9A86A', '5BA67F', 'A9B8E8', '9A5A00', '3A404C'];
+// 10. Нийт уулзалтын дэлгэрэнгүй (борлуулалтын багийн загвар, 2026-11-12): сонирхсон байр м²-ийн бүлгээр 7 хоногоор
+// (блок хамаарахгүй), «Сэжим», урьдчилгаа / үлдэгдэл төлбөрийн нөхцөл.
 const NO_INTEREST = 'Сонголтгүй';
-const NO_INTEREST_COLOR = 'C5CAD3';
+const MEETING_ROW_H = 0.3;
+function countTable(slide: Slide, box: { x: number; y: number; w: number }, title: string, head: [string, string], rows: Array<{ label: string; count: number }>, unknown: number, total: number) {
+    slide.addText(title, { x: box.x, y: box.y, w: box.w, h: 0.3, fontFace: FONT, fontSize: 12, bold: true, color: C.ink2, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
+    const body = [
+        [headCell(head[0]), headCell(head[1], 'right')],
+        ...rows.map(row => [bodyCell(clip(row.label, 30)), bodyCell(String(row.count), 'right')]),
+        [bodyCell('Тодорхойгүй', 'left', { color: C.muted }), bodyCell(String(unknown), 'right', { color: C.muted })],
+        [bodyCell('Нийт', 'left', { bold: true }), bodyCell(String(total), 'right', { bold: true })],
+    ];
+    slide.addTable(body, {
+        x: box.x, y: box.y + 0.34, w: box.w, colW: [box.w - 1.1, 1.1], rowH: body.map(() => 0.27), fontFace: FONT, fontSize: 11,
+        border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.02, 0.08, 0.02, 0.08], autoPage: false,
+    });
+}
 
 function meetingSlide(pres: PptxGenJS, ctx: Ctx) {
     const title = 'НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ';
     const report = ctx.input.meetings;
     if (!report) return unavailable(content(pres, ctx.name, title), ctx, 'meetings', TOP - 0.2);
-    const slide = content(pres, ctx.name, title, 'Сонирхож буй загвар 7 хоногоор · «Сэжим» — тайлант 7 хоногийн шинэ уулзалт');
-    const tableW = 3.5;
-    const leftW = CW - tableW - 0.3;
-    // Загварын өнгө, нэр 4 графикт ижил: нийт тоогоор эрэмбэлж өнгө онооно; нэр нь түлхүүр бүрт нэг (тайлбар ба графикийн
-    // ангилал ижил нэртэй — нэг өнгө хоёр нэртэй болохгүй).
-    const totals = new Map<string, { label: string; count: number }>();
-    for (const week of report.weeks) for (const model of week.byModel) {
-        const entry = totals.get(model.key) ?? { label: model.label, count: 0 };
-        entry.count += model.count;
-        totals.set(model.key, entry);
-    }
-    const order = [...totals].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0], 'mn', { numeric: true }));
-    const colorOf = new Map(order.map(([key], index) => [key, PIE_COLORS[index % PIE_COLORS.length]]));
+    const slide = content(pres, ctx.name, title, `Сонирхож буй байр м²-ээр, 7 хоногоор · сэжим ба төлбөрийн нөхцөл — тайлант 7 хоног (${dot(report.range.from)} – ${dot(report.range.to)})`);
+
+    // Дээд хүснэгт: мөр = 7 хоног, багана = м²-ийн бүлэг (блок хамаарахгүй). Тоогүй нүд хоосон; бүртгэлгүй 7 хоног «—».
     const anyWithout = report.weeks.some(week => week.withoutInterest > 0);
-    const pieW = leftW / Math.max(1, report.weeks.length);
-    const pieH = 2.55;
-    report.weeks.forEach((week, index) => {
-        const x = M + index * pieW;
-        // Бүртгэл эхлэхээс өмнөх 7 хоног тодорхойгүй («0» биш); бүрэн бүртгэлтэй 7 хоногт л «уулзалт алга» (9-р слайдтай нэг дүрэм).
+    const columns = [...report.bands, ...(anyWithout ? [{ key: NO_INTEREST, label: NO_INTEREST }] : [])];
+    const labelW = 1.7;
+    const totalW = 1.0;
+    const bandW = (CW - labelW - totalW) / Math.max(1, columns.length);
+    const valueOf = (week: MeetingDetailsReport['weeks'][number], key: string) => key === NO_INTEREST ? week.withoutInterest : week.byBand[key] ?? 0;
+    const weekRows = report.weeks.map(week => {
+        // Бүртгэл эхлэхээс өмнөх 7 хоног тодорхойгүй («0» биш); дунд нь эхэлсэн бол нийт нь доод хязгаар (9-р слайдтай нэг дүрэм).
         const unknown = (week.coverage ?? 'full') === 'none' || (week.coverage === 'partial' && !week.total);
-        if (unknown || !week.total) {
-            slide.addText([{ text: week.label, options: { bold: true, breakLine: true } }, { text: unknown ? 'Бүртгэлгүй (тодорхойгүй)' : 'Болсон уулзалт алга' }],
-                { x, y: TOP - 0.05, w: pieW - 0.1, h: 0.9, fontFace: FONT, fontSize: 11, color: C.muted, align: 'center', margin: 0, valign: 'top', isTextBox: true });
-            return;
-        }
-        const labels = [...week.byModel.map(model => totals.get(model.key)?.label ?? model.label), ...(week.withoutInterest ? [NO_INTEREST] : [])];
-        const values = [...week.byModel.map(model => model.count), ...(week.withoutInterest ? [week.withoutInterest] : [])];
-        const colors = [...week.byModel.map(model => colorOf.get(model.key) ?? PIE_COLORS[0]), ...(week.withoutInterest ? [NO_INTEREST_COLOR] : [])];
-        slide.addChart('pie', [{ name: week.label, labels, values }], {
-            x, y: TOP - 0.05, w: pieW - 0.1, h: pieH, chartColors: colors, showLegend: false, showValue: true, showPercent: false,
-            dataLabelPosition: 'outEnd', dataLabelFontSize: 9, dataLabelFontFace: FONT, dataLabelColor: C.ink,
-            showTitle: true, title: `${week.label} · ${week.total}${week.coverage === 'partial' ? '+' : ''}`, titleFontSize: 11, titleFontFace: FONT, titleColor: C.ink,
-            altText: `Сонирхсон загвар ${week.label}: ${labels.map((label, i) => `${label} ${values[i]}`).join(', ')}`,
-        });
+        return [
+            bodyCell(week.label, 'left', { bold: true, color: C.ink2 }),
+            ...columns.map(column => bodyCell(unknown ? '—' : valueOf(week, column.key) ? String(valueOf(week, column.key)) : '', 'center')),
+            bodyCell(unknown ? '—' : `${week.total}${week.coverage === 'partial' ? '+' : ''}`, 'center', { bold: true }),
+        ];
     });
-    // Нийтлэг тайлбар (загвар → өнгө) графикийн доор, хоёр баганаар.
-    const legend = [...order.map(([key, entry]) => ({ label: entry.label, color: colorOf.get(key)! })), ...(anyWithout ? [{ label: NO_INTEREST, color: NO_INTEREST_COLOR }] : [])];
-    const legendTop = TOP - 0.05 + pieH + 0.15;
-    const perColumn = Math.max(1, Math.floor((BOTTOM - legendTop) / 0.27));
-    const shown = legend.slice(0, perColumn * 2);
-    shown.forEach((item, index) => {
-        const x = M + Math.floor(index / perColumn) * (leftW / 2);
-        const y = legendTop + (index % perColumn) * 0.27;
-        slide.addShape('rect', { x, y: y + 0.06, w: 0.16, h: 0.16, fill: { color: item.color }, line: { color: item.color } });
-        slide.addText(item.label, { x: x + 0.24, y, w: leftW / 2 - 0.3, h: 0.27, fontFace: FONT, fontSize: 10, color: C.ink2, margin: 0, valign: 'middle', isTextBox: true });
-    });
-    const referral = report.referral;
-    const rows = referral.rows.slice(0, 12);
-    const rest = referral.rows.slice(12).reduce((sum, row) => sum + row.count, 0);
     slide.addTable([
-        [headCell('Сэжим'), headCell('Шинэ уулзалт', 'right')],
-        ...rows.map(row => [bodyCell(clip(row.label, 28)), bodyCell(String(row.count), 'right')]),
-        ...(rest ? [[bodyCell('Бусад'), bodyCell(String(rest), 'right')]] : []),
-        [bodyCell('Тодорхойгүй', 'left', { color: C.muted }), bodyCell(String(referral.unknown), 'right', { color: C.muted })],
-        [bodyCell('Нийт', 'left', { bold: true }), bodyCell(String(referral.total), 'right', { bold: true })],
+        [headCell('Уулзалт'), ...columns.map(column => headCell(column.label, 'center')), headCell('Нийт', 'center')],
+        ...weekRows,
     ], {
-        x: M + leftW + 0.3, y: TOP - 0.05, w: tableW, colW: [2.4, 1.1], fontFace: FONT, fontSize: 11,
-        border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.04, 0.08, 0.04, 0.08], autoPage: false,
+        x: M, y: TOP - 0.05, w: CW, colW: [labelW, ...columns.map(() => bandW), totalW], rowH: [0.34, ...weekRows.map(() => MEETING_ROW_H)], fontFace: FONT, fontSize: 11,
+        border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.02, 0.08, 0.02, 0.08], autoPage: false,
     });
+
+    // Доод гурван хүснэгт: сэжим (шинэ уулзалт), урьдчилгаа ба үлдэгдэл төлбөрийн нөхцөл (бүх болсон уулзалт).
+    const y = TOP - 0.05 + 0.34 + report.weeks.length * MEETING_ROW_H + 0.35;
+    const gap = 0.3;
+    const w = (CW - gap * 2) / 3;
+    const referral = report.referral;
+    const shown = referral.rows.slice(0, 7);
+    const rest = referral.rows.slice(7).reduce((sum, row) => sum + row.count, 0);
+    countTable(slide, { x: M, y, w }, 'Сэжим (хаанаас ирсэн) — шинэ уулзалт', ['Сэжим', 'Уулзалт'],
+        [...shown, ...(rest ? [{ label: 'Бусад', count: rest }] : [])], referral.unknown, referral.total);
+    const terms = report.paymentTerms;
+    countTable(slide, { x: M + w + gap, y, w }, 'Урьдчилгаа төлбөрийн нөхцөл', ['Нөхцөл', 'Уулзалт'], terms.advance.rows, terms.advance.unknown, terms.total);
+    countTable(slide, { x: M + (w + gap) * 2, y, w }, 'Үлдэгдэл төлбөрийн нөхцөл', ['Нөхцөл', 'Уулзалт'], terms.remainder.rows, terms.remainder.unknown, terms.total);
+
     note(slide, [
-        'Эх сурвалж: CRM-ийн болсон уулзалт (ирээгүй, цуцалсан биш), уулзалтын эхний сонирхсон байр (блок + загвар); 7 хоног = Лхагва–Мягмар.',
-        `«${NO_INTEREST}» — сонирхсон загвар бүртгээгүй уулзалт.`,
+        'Эх сурвалж: CRM-ийн болсон уулзалт (ирээгүй, цуцалсан биш); 7 хоног = Лхагва–Мягмар.',
+        `м²-ийн хүснэгт: уулзалтын эхний сонирхсон байр, блок хамаарахгүй — орон сууц талбайгаараа (${MEETING_AREA_BANDS.map(band => band.label).join(', ')}), бусад төрөл ангиллаараа. Уулзалт бүр нэг баганад; «Нийт» = тухайн 7 хоногийн уулзалт.`,
+        anyWithout ? `«${NO_INTEREST}» — сонирхсон байр бүртгээгүй уулзалт.` : null,
         `«Сэжим» — тайлант 7 хоногийн (${dot(report.range.from)} – ${dot(report.range.to)}) шинэ харилцагчтай уулзалт хаанаас ирснээр; «Нийт» = шинэ уулзалтын тоо.`,
+        `Төлбөрийн нөхцөл — тайлант 7 хоногийн бүх болсон уулзалт (шинэ, давтан, худалдан авагч); уулзалт бүрт төрөл тус бүрээс нэг сонголт. «Тодорхойгүй» = сонгоогүй (0 биш). Сонирхол — мөнгө биш.`,
         referral.available ? null : '«Сэжим (хаанаас ирсэн)» жагсаалт/талбар хараахан бэлэн биш (шинэчлэл суулгаагүй) — шинэ уулзалт бүгд «Тодорхойгүй».',
-        legend.length > shown.length ? `Тайлбарт багтаагүй ${legend.length - shown.length} загвар графикт байна.` : null,
         ...report.notes,
     ]);
 }
@@ -662,6 +681,9 @@ const YEAR_LABEL_W = 0.85;
 const YEAR_METRIC_W = 1.2;
 const YEAR_PCT_W = 0.88;
 const YEAR_AMOUNT_W = (CW - YEAR_LABEL_W - YEAR_METRIC_W - 3 * YEAR_PCT_W) / 6;
+/** Толгойн хоёр мөр (хоёр дахь нь «Нийт төлөвлөгөө» 2 мөр болж болно) ба биеийн мөрийн өндөр — хувийн дүүргэлтийн байрлалд. */
+const YEAR_HEAD_H: [number, number] = [0.3, 0.48];
+const YEAR_ROW_H = 0.3;
 function yearTableSlide(pres: PptxGenJS, ctx: Ctx) {
     const slide = content(pres, ctx.name, `${ctx.year} ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ`, `Тайлант өдөр ${dot(ctx.input.range.to)} хүртэл · дүн ₮`);
     const plan = ctx.input.plan;
@@ -699,14 +721,29 @@ function yearTableSlide(pres: PptxGenJS, ctx: Ctx) {
             bodyCell(fmt(ytd?.yearPlan), 'right', extra), bodyCell(fmt(ytd?.actual, ytd?.lowerBound), 'right', extra), bodyCell(wholePct(ytd?.actual, ytd?.yearPlan, ytd?.lowerBound), 'center', extra),
         ];
     }));
+    // «Гүйцэтгэл хувиар» нүдний өнгөн дүүргэлт (багийн Excel-ийн data bar): мөрийн өндөр тогтмол тул нүдний байрлал тооцогдоно.
+    const ratio = (actual: number | null | undefined, target: number | null | undefined) =>
+        actual === null || actual === undefined || target === null || target === undefined || target <= 0 ? null : actual / target * 100;
+    const tableY = TOP - 0.05;
+    const groupW = YEAR_AMOUNT_W * 2 + YEAR_PCT_W;
+    let rowIndex = 0;
+    for (const scope of scopes) for (const metric of metrics) {
+        const month = scope.month.metrics[metric.key];
+        const ytd = scope.ytd.metrics[metric.key];
+        const y = tableY + YEAR_HEAD_H[0] + YEAR_HEAD_H[1] + rowIndex++ * YEAR_ROW_H;
+        [ratio(month?.actual, month?.plan), ratio(ytd?.actual, ytd?.plan), ratio(ytd?.actual, ytd?.yearPlan)].forEach((pct, group) =>
+            pctBar(slide, { x: M + YEAR_LABEL_W + YEAR_METRIC_W + group * groupW + YEAR_AMOUNT_W * 2, y, w: YEAR_PCT_W, h: YEAR_ROW_H }, pct));
+    }
     slide.addTable([head1, head2, ...body], {
-        x: M, y: TOP - 0.05, w: CW, colW: [YEAR_LABEL_W, YEAR_METRIC_W, ...[0, 1, 2].flatMap(() => [YEAR_AMOUNT_W, YEAR_AMOUNT_W, YEAR_PCT_W])], fontFace: FONT, fontSize: 10,
+        x: M, y: tableY, w: CW, colW: [YEAR_LABEL_W, YEAR_METRIC_W, ...[0, 1, 2].flatMap(() => [YEAR_AMOUNT_W, YEAR_AMOUNT_W, YEAR_PCT_W])], fontFace: FONT, fontSize: 10,
+        rowH: [...YEAR_HEAD_H, ...body.map(() => YEAR_ROW_H)],
         border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.03, 0.06, 0.03, 0.06], autoPage: false,
     });
     note(slide, [
         `Эх сурвалж: «Төлөвлөгөөний биелэлт» — ${ctx.year} он, тайлант өдөр (${ctx.input.range.to}) хүртэл; гэрээ захиалга өгсөн огноогоор, цуцлагдсаныг хассан.`,
         `«${ctx.year} он»-ы гүйцэтгэл = 1–${ytdMonth} сарын гүйцэтгэл; хувь = бүтэн жилийн төлөвлөгөөнөөс. Аль нэг сард төлөвлөгөө оруулаагүй бол нийт төлөвлөгөө «—».`,
         ytdMonth !== ctx.month ? `Тайлант 7 хоног дуусаагүй тул он эхнээсх гүйцэтгэл ${ytdMonth}-р сар хүртэл (татсан өдрөөр); ${ctx.month}-р сарын гүйцэтгэл «—».` : null,
+        'Хувийн нүдний өнгөн дүүргэлт: 100%-д нүд дүүрнэ; «—» нүд дүүргэлтгүй.',
         ctx.cashVisible ? cashSource(plan, row.total.metrics.cashflow) : 'Мөнгөн урсгалын мөрийг санхүүгийн эрхтэй хүн харна.',
         row.total.undated ? `Гэрээний тоо, дүнгийн «+» — огноогүй ${row.total.undated} гэрээтэй тул доод хязгаар. ${undatedContractsHint(row.total.undated)}` : null,
         ctx.cashVisible && plan.throughMonth !== null ? yearCashGapNote(plan, plan.throughMonth) : null,
@@ -787,7 +824,7 @@ export function buildTeamDeck(pres: PptxGenJS, input: TeamDeckInput): PptxGenJS 
         row.outside.count ? `Төлөвлөгөөнд хамаарахгүй ${row.outside.count} гэрээ (Агуулах, Үйлчилгээ г.м.) гүйцэтгэлд ороогүй.` : null,
     ]);
     stretchSlide(pres, ctx);                                                     // 8
-    activitySlide(pres, ctx);                                                    // 9
+    activitySlides(pres, ctx);                                                   // 9 (дуудлага, чат) + 9б (уулзалт)
     meetingSlide(pres, ctx);                                                     // 10
     floorMaps(pres, ctx);                                                        // 11–12
     yearTableSlide(pres, ctx);                                                   // 13

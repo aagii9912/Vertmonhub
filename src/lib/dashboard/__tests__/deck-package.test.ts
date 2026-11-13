@@ -7,10 +7,17 @@ import { buildTeamDeck } from '../team-deck';
 import { fillEmptyHeaders, finalizeDeck, PPTX_MIME, repairTableRef } from '../deck-package';
 import { teamInput } from './team-deck-fixture';
 
-/** pptxgenjs-ийн бичсэн жинхэнэ илтгэл (баганан, бялуун график — суулгасан Excel-тэй). */
+/**
+ * pptxgenjs-ийн бичсэн жинхэнэ илтгэл + баганан, бялуун график (суулгасан Excel-тэй). Багийн загварын илтгэл 2026-11-13-наас
+ * графикгүй (хүснэгт + өнгөн дүүргэлт) болсон тул `finalizeDeck`-ийн графикийн засварыг туршилтын хоёр графикаар шалгана.
+ */
 async function rawDeck(): Promise<ArrayBuffer> {
     const pres = new PptxGenJS();
     buildTeamDeck(pres, teamInput());
+    const slide = pres.addSlide();
+    slide.addChart('bar', [{ name: '10/07–10/13', labels: ['7786 Оператор', 'Чат'], values: [40, 33] }, { name: '10/14–10/20', labels: ['7786 Оператор', 'Чат'], values: [53, 45] }],
+        { x: 0.6, y: 1.2, w: 6, h: 3, barDir: 'col', barGrouping: 'clustered' });
+    slide.addChart('pie', [{ name: '10/14–10/20', labels: ['Б1 E7', 'Б2 A'], values: [6, 2] }], { x: 7, y: 1.2, w: 4, h: 3 });
     return await pres.write({ outputType: 'arraybuffer' }) as ArrayBuffer;
 }
 
