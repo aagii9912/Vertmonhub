@@ -190,7 +190,7 @@ it('enables «Батлах» for a re-export whose only change is «Нийт т�
         .mockResolvedValueOnce(reply(201, { ok: true, import_id: 'i-2', inserted: 0, updated: 0, replayed: false }));
     renderPage();
     await upload();
-    expect(screen.getByText('Гэрээнд өөрчлөлт алга — зөвхөн «Нийт төлсөн дүн» шинэчлэгдэнэ')).toBeInTheDocument();
+    expect(screen.getByText('Гэрээнд өөрчлөлт алга — зөвхөн төлсөн дүн («Бэлэн төлөлт») шинэчлэгдэнэ')).toBeInTheDocument();
     expect(screen.getByText(/мөрийн төлсөн дүн ижил огноотой өмнөх импортоос зөрүүтэй/)).toHaveTextContent('12 мөрийн төлсөн дүн');
     expect(screen.getByText(/мөрийн төлсөн дүн ижил огноотой өмнөх импортоос зөрүүтэй/)).toHaveTextContent('«Төлөвлөгөөний биелэлт»-д гараар оруулаагүй сарын орсон мөнгийг');
     expect(screen.queryByText('Бүгд хэвээр — өөрчлөх зүйлгүй.')).not.toBeInTheDocument();
@@ -198,8 +198,8 @@ it('enables «Батлах» for a re-export whose only change is «Нийт т�
     const confirm = screen.getByRole('button', { name: 'Батлах' });
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
-    expect(transport.confirm).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining('зөвхөн файлын «Нийт төлсөн дүн» (76 мөр)') }));
+    expect(transport.confirm).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining('зөвхөн файлын төлсөн дүн («Бэлэн төлөлт», 76 мөр)') }));
     expect(await screen.findByText('Хадгалсан')).toBeInTheDocument();
     expect(transport.fetch.mock.calls[1][1].body.get('action')).toBe('commit');
-    expect(screen.getByText(/Зөвхөн «Нийт төлсөн дүн» шинэчлэгдлээ/)).toHaveTextContent('гараар оруулаагүй сарын орсон мөнгө');
+    expect(screen.getByText(/Зөвхөн төлсөн дүн \(«Бэлэн төлөлт»\) шинэчлэгдлээ/)).toHaveTextContent('гараар оруулаагүй сарын орсон мөнгө');
 });

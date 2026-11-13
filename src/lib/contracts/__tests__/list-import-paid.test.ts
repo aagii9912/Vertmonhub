@@ -103,7 +103,7 @@ describe('HUB «Нийт төлсөн дүн» rows', () => {
         const hubRow = (row: number, orderDate: string, status: 'active' | 'cancelled', paidTotal: number) => ({
             row, productType: 'residential' as const, block: 'Б2', unitNumber: '7', floor: null, model: null, area: null, prepaymentCondition: null,
             pricePerSqm: null, total: 100, prepaymentDue: null, overdue: null, orderDate, status, firstName: null, lastName: null,
-            paymentCondition: null, contractNumber: null, salesManager: null, paidTotal,
+            paymentCondition: null, contractNumber: null, salesManager: null, paidTotal, barterTotal: null,
         });
         const fileRows = [hubRow(2, '2026-08-01', 'cancelled', 1), hubRow(3, '2026-09-20', 'active', 7)];
         const db = (id: string, status: string, date: string | null) => ({
@@ -135,7 +135,7 @@ describe('«Нийт төлсөн дүн»-гийн дахин импорт (и�
     const fileRow = (row: number, unitNumber: string, paidTotal: number | null): HubRow => ({
         row, productType: 'residential', block: 'Б2', unitNumber, floor: null, model: null, area: null, prepaymentCondition: null, pricePerSqm: null,
         total: 100, prepaymentDue: null, overdue: null, orderDate: '2026-09-20', status: 'active', firstName: null, lastName: null,
-        paymentCondition: null, contractNumber: null, salesManager: null, paidTotal,
+        paymentCondition: null, contractNumber: null, salesManager: null, paidTotal, barterTotal: null,
     });
     // Өмнө нь энэ файлын огноогоор импортлогдсон гэрээ — файлтай яг ижил (хоцролтын огноо орно).
     const db = (n: string): ContractListContract => ({

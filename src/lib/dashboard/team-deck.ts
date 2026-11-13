@@ -287,9 +287,9 @@ function monthContractSlides(pres: PptxGenJS, ctx: Ctx) {
     const erpExport = ctx.cashVisible && report.sources.contracts === 'erp';
     const advanceOf: AdvanceOf = hubPaid ? line => hubPaid.byContract[line.key] ?? null : erpExport ? line => line.paid : line => line.advance;
     const advanceNote = hubPaid
-        ? `«Урьдчилгаа» — ERP-ийн «Нийт төлсөн дүн» (HUB гэрээний жагсаалт, ${hubPaid.asOf}-ний файлаар): тухайн гэрээнд өнөөг хүртэл орсон мөнгө. Файлд дүнгүй эсвэл тулгагдаагүй гэрээ «—» (0₮ биш); нийлбэрийн «+» = зарим нь тодорхойгүй.`
+        ? `«Урьдчилгаа» — ERP-ийн төлсөн дүн («Бэлэн төлөлт», бартер ороогүй; HUB гэрээний жагсаалт, ${hubPaid.asOf}-ний файлаар): тухайн гэрээнд өнөөг хүртэл бэлнээр орсон мөнгө. Файлд дүнгүй эсвэл тулгагдаагүй гэрээ «—» (0₮ биш); нийлбэрийн «+» = зарим нь тодорхойгүй.`
         : erpExport ? '«Урьдчилгаа» — ERP гэрээний экспортын «Нийт төлсөн дүн»: тухайн гэрээнд өнөөг хүртэл орсон мөнгө; дүнгүй бол «—».'
-            : `«Урьдчилгаа» — Нөхцлөөр төлөх урьдчилгаа — орсон мөнгө биш (W7).${ctx.cashVisible ? ' ERP-ийн «Нийт төлсөн дүн»-тэй HUB файл оруулбал орсон мөнгө гарна.' : ' Орсон мөнгийг (ERP-ийн «Нийт төлсөн дүн») санхүүгийн эрхтэй хэрэглэгчийн татсан илтгэл харуулна.'}`;
+            : `«Урьдчилгаа» — Нөхцлөөр төлөх урьдчилгаа — орсон мөнгө биш (W7).${ctx.cashVisible ? ' «Бэлэн төлөлт» (эсвэл «Нийт төлсөн дүн») баганатай HUB файл оруулбал орсон мөнгө гарна.' : ' Орсон мөнгийг (ERP-ийн «Бэлэн төлөлт») санхүүгийн эрхтэй хэрэглэгчийн татсан илтгэл харуулна.'}`;
     const notes = [
         report.sources.contracts === 'erp' && report.sources.sales
             ? `Эх сурвалж: ERP гэрээний экспорт «${report.sources.sales.source}» (${report.sources.sales.date}).`
@@ -342,7 +342,7 @@ function cashSource(plan: TeamPlanReport, cell: PlanCell | undefined): string | 
     if (!plan.cash) return null;
     if (cell?.source === 'manual') return 'Мөнгөн урсгалын гүйцэтгэл: удирдлагын гараар оруулсан дүн.';
     const system = plan.cash.source === 'hub_paid'
-        ? `HUB файлын «Нийт төлсөн дүн» (${plan.cash.hubPaidAsOf ?? '—'}-ний байдлаар) — тухайн сард захиалсан гэрээнээс орсон мөнгө`
+        ? `HUB файлын төлсөн дүн («Бэлэн төлөлт», бартер ороогүй; ${plan.cash.hubPaidAsOf ?? '—'}-ний байдлаар) — тухайн сард захиалсан гэрээнээс орсон мөнгө`
         : plan.cash.availability === 'no_ledger' ? 'санхүүгийн дэвтэрт мөнгөн орлого бүртгэгдээгүй («—»)'
         : plan.cash.availability === 'none' ? 'амьд гэрээний төлсөн дүн тодорхойгүй («—»)'
         : `санхүүгийн дэвтрийн бүртгэсэн мөнгөн орлого${plan.cash.ledgerSince ? ` (${plan.cash.ledgerSince}-нээс)` : ''}`;

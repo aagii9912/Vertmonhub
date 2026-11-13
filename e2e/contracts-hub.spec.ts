@@ -417,7 +417,7 @@ test('гэрээний Excel импорт: файл → шалгах (тоо, ш
     await expect(page.getByText('Файлын нийлбэр', { exact: true })).toBeVisible();
     const preview = state.lastPreview!;
     expect(preview.counts).toMatchObject({ insert: 1, insertCancelled: 1, review: 1, blocking: 0, missing: 1 });
-    await expect(page.getByText(/HUB data\.xlsx · 9 мөр · 16 багана танигдлаа/)).toBeVisible();
+    await expect(page.getByText(/HUB data\.xlsx · 9 мөр · HUB багана танигдлаа · /)).toBeVisible();
     await expect(tile(page, 'Шинэ гэрээ')).toContainText('2');
     await expect(tile(page, 'Шинэ гэрээ')).toContainText('1 идэвхтэй · 1 цуцлагдсан');
     await expect(tile(page, 'Шинэчлэгдэх')).toContainText(String(preview.counts.update));

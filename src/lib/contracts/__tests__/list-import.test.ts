@@ -35,7 +35,7 @@ const SHOP_UNITS: ContractListUnit[] = [
 const hub = (overrides: Partial<HubRow> = {}): HubRow => ({
     row: 2, productType: 'residential', block: 'Б1', unitNumber: '16', floor: '05', model: 'B', area: 58, prepaymentCondition: '30%',
     pricePerSqm: 7800000, total: 452400000, prepaymentDue: 135720000, overdue: 0, orderDate: '2026-10-15', status: 'active',
-    firstName: 'Тэмүүлэн', lastName: 'Болд', paymentCondition: 'Энгийн', contractNumber: null, salesManager: null, paidTotal: null, ...overrides,
+    firstName: 'Тэмүүлэн', lastName: 'Болд', paymentCondition: 'Энгийн', contractNumber: null, salesManager: null, paidTotal: null, barterTotal: null, ...overrides,
 });
 const id = (n: number) => `40000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const contract = (n: number, overrides: Partial<ContractListContract> = {}): ContractListContract => ({
@@ -84,7 +84,7 @@ describe('parseContractList', () => {
         expect(parsed.rows[0]).toEqual({
             row: 2, productType: 'residential', block: 'Б2', unitNumber: '231', floor: '22', model: 'A', area: 58, prepaymentCondition: '10-30%',
             pricePerSqm: 7800000, total: 452400000, prepaymentDue: 135720000, overdue: 0, orderDate: '2026-10-15', status: 'active',
-            firstName: 'Тэмүүлэн', lastName: 'Болд', paymentCondition: 'Энгийн', contractNumber: null, salesManager: null, paidTotal: null,
+            firstName: 'Тэмүүлэн', lastName: 'Болд', paymentCondition: 'Энгийн', contractNumber: null, salesManager: null, paidTotal: null, barterTotal: null,
         });
         expect(parsed.rows[1]).toMatchObject({ row: 3, productType: 'parking', unitNumber: '17', floor: 'B1', area: 12.5, total: 95000000,
             prepaymentDue: 403416000, overdue: 0, orderDate: '2026-09-03', status: 'closed', lastName: null });
@@ -142,7 +142,9 @@ describe('parseContractList', () => {
         expect(picked.sheetName).toBe('HUB');
         const missing = parseContractList([sheet([{}], HEADERS.filter(h => h !== 'Төлөв' && h !== 'Овог '))]);
         expect(missing).toMatchObject({ found: false, rows: [] });
-        expect(missing.errors).toEqual(['Файлд HUB загварын 16 баганатай sheet олдсонгүй. Дутуу багана: Төлөв, Овог']);
+        expect(missing.errors).toEqual(['Файлд HUB загварын баганатай sheet олдсонгүй. Дутуу багана: Төлөв, Овог']);
+        // «Гэрээлсэн талбай» заавал биш (ERP-ийн 2026-11-13-ны экспорт) — түүнгүй sheet HUB хэвээр.
+        expect(isContractListSheet(HEADERS.filter(h => h.trim() !== 'Гэрээлсэн талбай'))).toBe(true);
     });
 
     it('reads a real .xlsx written by the export helpers (Date cells, number formats)', async () => {
@@ -151,6 +153,68 @@ describe('parseContractList', () => {
         const parsed = parseContractList(await readWorkbookSheets(buffer));
         expect(parsed.errors).toEqual([]);
         expect(parsed.rows[0]).toMatchObject({ unitNumber: '16', orderDate: '2026-09-15', total: 452400000, overdue: 20010000, firstName: 'Тэмүүлэн.Болд', lastName: null });
+    });
+});
+
+// ERP-ийн 2026-11-13-ны экспорт: «Гэрээлсэн талбай» алга; «Бартер», «Бэлэн төлөлт», «Нийт үлдэгдэл», «РД» нэмэгдсэн.
+describe('HUB export of 2026-11-13 (no area column, cash paid and barter columns)', () => {
+    const NEW_HEADERS = ['Блок', 'Төрөл', 'Давхар', 'Захиалгын нөхцөл', 'Урьдчилгааны нөхцөл', 'М.кв үнэ', 'Нийт дүн', 'Урьдчилгааны дүн', 'Бартер',
+        'Бэлэн төлөлт', 'Нийт үлдэгдэл', 'Төлбөр хоцролт', 'Захиалга өгсөн огноо', 'Нэр', 'Овог', 'РД', 'Төлөв', 'Тоот', 'Загвар'];
+    const newRow = (cells: Cells = {}) => {
+        const { 'Гэрээлсэн талбай': _area, 'Нэр ': first, 'Овог ': last, ...rest } = fileRow();
+        return { ...rest, 'Нэр': first, 'Овог': last, 'Бартер': '', 'Бэлэн төлөлт': 135720000, 'Нийт үлдэгдэл': 316680000, 'РД': 'УП99112233', ...cells };
+    };
+
+    it('reads the file: area untouched, cash paid and barter recognised, balance and РД ignored and never stored', () => {
+        const parsed = parseContractList([sheet([
+            newRow(),
+            newRow({ 'Тоот': 16, 'Блок': 'Б1', 'Бэлэн төлөлт': '', 'Бартер': 151265400, 'РД': 'ЧБ88001122' }),
+        ], NEW_HEADERS)], { reportDate: '2026-11-13' });
+        expect(parsed.errors).toEqual([]);
+        expect(parsed).toMatchObject({ found: true, missingColumns: ['Гэрээлсэн талбай'], extraColumns: ['Бэлэн төлөлт', 'Бартер'], ignoredColumns: ['Нийт үлдэгдэл', 'РД'] });
+        expect(parsed.rows[0]).toMatchObject({ area: null, total: 452400000, prepaymentDue: 135720000, paidTotal: 135720000, barterTotal: 0 });
+        // Энэ экспорт тэгийг хоосон бичдэг: «Бэлэн төлөлт», «Бартер», «Төлбөр хоцролт»-ын хоосон нүд = 0; бартер мөнгө биш — тусдаа.
+        expect(parsed.rows[1]).toMatchObject({ unitNumber: '16', paidTotal: 0, barterTotal: 151265400 });
+        // Регистрийн дугаар, үлдэгдэл мөрөнд байхгүй (импортын түүхэнд хадгалагдах мөр нь энэ мөр).
+        for (const row of parsed.rows) {
+            expect(JSON.stringify(row)).not.toMatch(/УП99112233|ЧБ88001122|316680000/);
+            expect(Object.keys(row)).not.toEqual(expect.arrayContaining(['РД']));
+        }
+    });
+
+    it('reads a blank overdue, cash or barter cell as 0 only in this export; older files keep a blank as unknown', () => {
+        const parsed = parseContractList([sheet([newRow({ 'Төлбөр хоцролт': '', 'Бэлэн төлөлт': ' ', 'Бартер': null, 'Урьдчилгааны дүн': '' })], NEW_HEADERS)], { reportDate: '2026-11-13' });
+        // «Урьдчилгааны дүн» хоосон бол тодорхойгүй хэвээр (энэ экспортод үргэлж бөглөгдсөн).
+        expect(parsed.rows[0]).toMatchObject({ overdue: 0, paidTotal: 0, barterTotal: 0, prepaymentDue: null });
+        const old = parseContractList([sheet([fileRow({ 'Төлбөр хоцролт': '', 'Нийт төлсөн дүн': '' })], [...HEADERS, 'Нийт төлсөн дүн'])], { reportDate: '2026-10-22' });
+        expect(old.rows[0]).toMatchObject({ overdue: null, paidTotal: null, barterTotal: null });
+    });
+
+    it('prefers «Бэлэн төлөлт» over an older «Нийт төлсөн дүн» column and keeps the old column working alone', () => {
+        const both = parseContractList([sheet([newRow({ 'Нийт төлсөн дүн': 999 })], [...NEW_HEADERS, 'Нийт төлсөн дүн'])], { reportDate: '2026-11-13' });
+        expect(both.rows[0].paidTotal).toBe(135720000);
+        const old = parseContractList([sheet([fileRow({ 'Нийт төлсөн дүн': 77 })], [...HEADERS, 'Нийт төлсөн дүн'])], { reportDate: '2026-10-22' });
+        expect(old).toMatchObject({ extraColumns: ['Нийт төлсөн дүн'], missingColumns: [] });
+        expect(old.rows[0]).toMatchObject({ paidTotal: 77, barterTotal: null, area: 58 });
+    });
+
+    it('plans without touching areas; the price per m² is checked against the stored area', () => {
+        const rows = parseContractList([sheet([newRow({ 'Тоот': 16, 'Блок': 'Б1', 'Давхар': '5', 'Загвар': 'B', 'Захиалга өгсөн огноо': new Date(2026, 9, 15),
+            'М.кв үнэ': 7900000, 'Нийт дүн': 458200000 })], NEW_HEADERS)], { reportDate: '2026-11-13' }).rows;
+        // Гэрээнд 58 м²: 58 × 7,900,000 = 458,200,000 — файлын нийт дүнтэй таарч, м.кв үнэ (ба нийт дүн) шалгах өөрчлөлт болно.
+        const result = plan({ rows, contracts: [contract(1, { order_date: '2026-10-15', contract_date: '2026-10-15' })], reportDate: '2026-11-13', today: '2026-11-13' });
+        expect(result.errors).toEqual([]);
+        const update = result.ops.find(op => op.op === 'update');
+        expect(update?.op === 'update' && update.set).toMatchObject({ price_per_sqm: 7900000, total_price: 458200000 });
+        expect(update?.op === 'update' && 'contracted_area' in update.set).toBe(false);
+        expect(result.review[0].changes.map(change => change.field)).toEqual(expect.arrayContaining(['total_price', 'price_per_sqm']));
+        // Гэрээнд талбай алга бол м.кв үнийг шалгах боломжгүй — хөндөхгүй.
+        const noArea = plan({ rows, contracts: [contract(1, { order_date: '2026-10-15', contract_date: '2026-10-15', contracted_area: null })], reportDate: '2026-11-13', today: '2026-11-13' });
+        const op = noArea.ops.find(item => item.op === 'update');
+        expect(op?.op === 'update' && 'price_per_sqm' in op.set).toBe(false);
+        // Хадгалах мөрөнд төлсөн дүн, бартер — гэрээнд (ops) хэзээ ч биш.
+        expect(result.rows[0]).toMatchObject({ paidTotal: 135720000, barterTotal: 0 });
+        expect(JSON.stringify(result.ops)).not.toMatch(/paid_amount|balance|barter/);
     });
 });
 

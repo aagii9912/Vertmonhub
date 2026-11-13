@@ -145,9 +145,9 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const month = at(text, '10-Р САРЫН БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ');
         expect(month).toContain('Б1 блок Тоо хэмжээ 5 2 40% Гэрээний дүн 2,807,220,000 1,128,031,000 40% Мөнгөн урсгал 842,166,000 282,007,750 33%');
         const note = notes[text.indexOf(month)];
-        expect(note).toMatch(/Б1 блок: (?:(?!Б2 блок:).)*Мөнгөн урсгалын гүйцэтгэл: HUB файлын «Нийт төлсөн дүн» \(2026-10-20-ний байдлаар\)/);
+        expect(note).toMatch(/Б1 блок: (?:(?!Б2 блок:).)*Мөнгөн урсгалын гүйцэтгэл: HUB файлын төлсөн дүн \(«Бэлэн төлөлт», бартер ороогүй; 2026-10-20-ний байдлаар\)/);
         expect(note).toMatch(/Б2 блок: (?:(?!Зогсоол:).)*Мөнгөн урсгалын гүйцэтгэл: удирдлагын гараар оруулсан дүн\./);
-        expect(note).toContain('Мөнгөн урсгалын гүйцэтгэл: гараар оруулсан блок + бусад блок — HUB файлын «Нийт төлсөн дүн»');
+        expect(note).toContain('Мөнгөн урсгалын гүйцэтгэл: гараар оруулсан блок + бусад блок — HUB файлын төлсөн дүн («Бэлэн төлөлт»');
         // Урьдчилгааны мэдээлэл мөнгөн урсгалд нэмэгдэхгүй.
         expect(month).toMatch(/Нийт Тоо хэмжээ 14 7 50% Гэрээний дүн [\d,]+ [\d,]+ 64% Мөнгөн урсгал 1,605,898,800 469,832,550 29%/);
     });
@@ -221,7 +221,7 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(slide).toMatch(/3 өрөө Б2 14 89\.73 — 10-30% [\d,]+₮ 484,542,000₮ — Ойрхон амьдардаг/);
         expect(slide).toMatch(/Нийт 205\.47 1,109,538,000₮ 0₮\+/);
         const note = notes[text.indexOf(slide)];
-        expect(note).toContain('«Урьдчилгаа» — ERP-ийн «Нийт төлсөн дүн» (HUB гэрээний жагсаалт, 2026-10-20-ний файлаар)');
+        expect(note).toContain('«Урьдчилгаа» — ERP-ийн төлсөн дүн («Бэлэн төлөлт», бартер ороогүй; HUB гэрээний жагсаалт, 2026-10-20-ний файлаар)');
         expect(note).not.toContain('орсон мөнгө биш');
     });
 
@@ -230,9 +230,9 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const hidden = at(noFinance.text, '10-Р САР ЗАХИАЛГЫН ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ');
         expect(hidden).toContain('86,600,000₮ 25,980,000₮ —');
         expect(hidden).toContain('93,749,400₮');
-        expect(noFinance.notes[noFinance.text.indexOf(hidden)]).toContain('Нөхцлөөр төлөх урьдчилгаа — орсон мөнгө биш (W7). Орсон мөнгийг (ERP-ийн «Нийт төлсөн дүн») санхүүгийн эрхтэй хэрэглэгчийн татсан илтгэл харуулна.');
+        expect(noFinance.notes[noFinance.text.indexOf(hidden)]).toContain('Нөхцлөөр төлөх урьдчилгаа — орсон мөнгө биш (W7). Орсон мөнгийг (ERP-ийн «Бэлэн төлөлт») санхүүгийн эрхтэй хэрэглэгчийн татсан илтгэл харуулна.');
         const noFile = await render(teamInput());
-        expect(noFile.notes[noFile.text.indexOf(at(noFile.text, '10-Р САР ЗАХИАЛГЫН ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ'))]).toContain('ERP-ийн «Нийт төлсөн дүн»-тэй HUB файл оруулбал орсон мөнгө гарна.');
+        expect(noFile.notes[noFile.text.indexOf(at(noFile.text, '10-Р САР ЗАХИАЛГЫН ГЭРЭЭНИЙ ДЭЛГЭРЭНГҮЙ'))]).toContain('«Бэлэн төлөлт» (эсвэл «Нийт төлсөн дүн») баганатай HUB файл оруулбал орсон мөнгө гарна.');
     });
 
     it('month contracts: a long month splits each table over pages with «Нийт» on the last page', async () => {

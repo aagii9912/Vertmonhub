@@ -317,7 +317,7 @@ describe('import_contract_list with the planner (lib/contracts/list-import)', ()
     const hubRow = (overrides: Partial<HubRow>): HubRow => ({
         row: 2, productType: 'residential', block: 'Б1', unitNumber: '16', floor: '05', model: null, area: null, prepaymentCondition: null,
         pricePerSqm: null, total: 439503120, prepaymentDue: null, overdue: 0, orderDate: '2026-09-15', status: 'active',
-        firstName: null, lastName: null, paymentCondition: null, contractNumber: null, salesManager: null, paidTotal: null, ...overrides,
+        firstName: null, lastName: null, paymentCondition: null, contractNumber: null, salesManager: null, paidTotal: null, barterTotal: null, ...overrides,
     });
 
     it('refuses to cancel a contract with cash-ledger payments', async () => {

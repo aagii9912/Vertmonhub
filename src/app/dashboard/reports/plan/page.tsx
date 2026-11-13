@@ -28,7 +28,7 @@ const SEGMENTS: Array<{ key: Segment; label: string }> = [
     ...MONTHLY_SALES_BLOCKS.map(block => ({ key: block, label: block === 'parking' ? 'Зогсоол' : MONTHLY_SALES_BLOCK_LABELS[block].replace(' блок', '') })),
 ];
 const CASH_TOOLTIP = 'Тухайн сард бодитоор орсон урьдчилгаа, төлбөр: удирдлагын гараар оруулсан дүн, эс бөгөөс системд бүртгэсэн төлбөр.';
-const HUB_CASH_TOOLTIP = 'Тухайн сард захиалсан гэрээнээс орсон мөнгө: удирдлагын гараар оруулсан дүн, эс бөгөөс HUB файлын «Нийт төлсөн дүн» (файлын огноогоор).';
+const HUB_CASH_TOOLTIP = 'Тухайн сард захиалсан гэрээнээс орсон мөнгө: удирдлагын гараар оруулсан дүн, эс бөгөөс HUB файлын төлсөн дүн («Бэлэн төлөлт», бартер ороогүй) — файлын огноогоор.';
 const cashTooltip = (cash: PlanPerformance['cash']) => cash?.source === 'hub_paid' ? HUB_CASH_TOOLTIP : CASH_TOOLTIP;
 const ADVANCE_TOOLTIP = 'Тухайн сард захиалсан гэрээний нөхцлөөр төлөх ёстой дүн. Орсон мөнгө биш — төлөвлөгөөтэй харьцуулж хувь гаргахгүй.';
 const LOWER_BOUND_NOTE = '«+» — огноогүй гэрээ байгаа тул доод хязгаар; тухайн сард гэрээгүй бол «—».';
@@ -261,13 +261,13 @@ function CashTable({ data, segment, segmentLabel }: { data: PlanResponse; segmen
         <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-3.5 py-2.5">
             <h2 className="text-sm font-semibold" title={cashTooltip(cash)}>Мөнгөн урсгал · {segmentLabel}</h2>
             <p className="text-xs text-muted-foreground">{cash.source === 'hub_paid'
-                ? <>Дүн ₮-өөр · HUB файлын «Нийт төлсөн дүн» · <span className="num">{cash.hubPaidAsOf}</span>-ны байдлаар</>
+                ? <>Дүн ₮-өөр · HUB файлын төлсөн дүн («Бэлэн төлөлт») · <span className="num">{cash.hubPaidAsOf}</span>-ны байдлаар</>
                 : 'Дүн ₮-өөр · бэлэн, банк, ипотек; бартер орохгүй'}</p>
         </header>
         {cash.source === 'hub_paid' && <div className="border-b border-border p-3"><Alert variant="info">
             <AlertTitle>Орсон мөнгө HUB файлаас</AlertTitle>
             <AlertDescription>
-                Сар бүрийн орсон мөнгө = тухайн сард захиалсан гэрээний HUB файлын «Нийт төлсөн дүн», <span className="num">{cash.hubPaidAsOf}</span>-ны
+                Сар бүрийн орсон мөнгө = тухайн сард захиалсан гэрээний HUB файлын төлсөн дүн («Бэлэн төлөлт», бартер ороогүй), <span className="num">{cash.hubPaidAsOf}</span>-ны
                 файлын байдлаар (хуучин гэрээний дараагийн төлбөр орохгүй). Гараар оруулсан блокийн дүн давамгайлна.
                 {cash.unknownPaid > 0 && <> Файлд дүнгүй эсвэл файлд байхгүй <span className="num">{cash.unknownPaid}</span> гэрээтэй сар доод хязгаар («+»).</>}
             </AlertDescription>
@@ -276,10 +276,10 @@ function CashTable({ data, segment, segmentLabel }: { data: PlanResponse; segmen
             {/* Гараар оруулсан сар байвал «бүртгэгдээгүй» гэж бичихгүй — хүснэгтэд тэр дүн харагдана. */}
             {ytd?.actual === null || ytd?.actual === undefined ? <>
                 <AlertTitle>Орсон мөнгө бүртгэгдээгүй</AlertTitle>
-                <AlertDescription>HUB файлд төлсөн дүн байхгүй тул автоматаар тооцохгүй. Сарын дүнг «Төлөвлөгөө ба баг» хуудсанд оруулах, эсвэл файлдаа «Нийт төлсөн дүн» багана нэмбэл тухайн сард захиалсан гэрээнээс орсон мөнгийг файлын огноогоор тооцно.</AlertDescription>
+                <AlertDescription>HUB файлд төлсөн дүн байхгүй тул автоматаар тооцохгүй. Сарын дүнг «Төлөвлөгөө ба баг» хуудсанд оруулах, эсвэл «Бэлэн төлөлт» (эсвэл «Нийт төлсөн дүн») баганатай HUB файл оруулбал тухайн сард захиалсан гэрээнээс орсон мөнгийг файлын огноогоор тооцно.</AlertDescription>
             </> : <>
                 <AlertTitle>Зөвхөн гараар оруулсан орсон мөнгө</AlertTitle>
-                <AlertDescription>HUB файлд төлсөн дүн байхгүй тул системээс тооцохгүй; «Төлөвлөгөө ба баг» хуудсанд оруулсан сарын дүн л харагдана. Файлдаа «Нийт төлсөн дүн» багана нэмбэл тухайн сард захиалсан гэрээнээс орсон мөнгийг файлын огноогоор тооцно.</AlertDescription>
+                <AlertDescription>HUB файлд төлсөн дүн байхгүй тул системээс тооцохгүй; «Төлөвлөгөө ба баг» хуудсанд оруулсан сарын дүн л харагдана. «Бэлэн төлөлт» (эсвэл «Нийт төлсөн дүн») баганатай HUB файл оруулбал тухайн сард захиалсан гэрээнээс орсон мөнгийг файлын огноогоор тооцно.</AlertDescription>
             </>}
         </Alert></div>}
         {cash.availability === 'no_ledger' && <div className="border-b border-border p-3"><Alert variant="info">

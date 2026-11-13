@@ -158,7 +158,7 @@ describe('plan fulfilment page', () => {
         });
         const cache = open({ ...built, shopName: 'Elysium Residence' });
         expect(await screen.findByText('Орсон мөнгө HUB файлаас')).toBeInTheDocument();
-        expect(screen.getByText(/тухайн сард захиалсан гэрээний HUB файлын «Нийт төлсөн дүн»/)).toBeInTheDocument();
+        expect(screen.getByText(/тухайн сард захиалсан гэрээний HUB файлын төлсөн дүн \(«Бэлэн төлөлт», бартер ороогүй\)/)).toBeInTheDocument();
         expect(screen.getByText(/Файлд дүнгүй эсвэл файлд байхгүй/)).toBeInTheDocument();
         expect(screen.queryByText('Орсон мөнгө бүртгэгдээгүй')).not.toBeInTheDocument();
         const cashTable = screen.getByRole('table', { name: /орсон мөнгөний төлөвлөгөө/ });

@@ -10,6 +10,15 @@
  *    шилжүүлээгүй гэрээнд бөглөгдөнө.
  *  • Байрны төлөв (property_units) өөрчлөгдөхгүй — зөрүүг жагсаана. Файлд байхгүй гэрээ хэвээр, жагсаана.
  *
+ * ERP-ийн 2026-11-13-ны экспорт (эзэмшигчийн хүсэлт 2026-11-13): «Гэрээлсэн талбай» баганагүй, шинэ «Бартер», «Бэлэн
+ * төлөлт», «Нийт үлдэгдэл», «РД» баганатай. «Гэрээлсэн талбай» заавал биш — байхгүй бол талбай өөрчлөгдөхгүй. «Бэлэн
+ * төлөлт» (өнөөг хүртэл бэлнээр төлсөн, бартер ороогүй) нь мөрийн төлсөн дүн (`paidTotal`), «Бартер» тусдаа (`barterTotal`) —
+ * хоёулаа гэрээнд бичигдэхгүй, зөвхөн импортын түүхэнд. «Нийт үлдэгдэл» = Нийт дүн − Урьдчилгааны дүн (төлбөрийн хуваарийн
+ * тоо, мөнгө биш) ба «РД» (регистрийн дугаар) — уншихгүй, хадгалахгүй.
+ * Энэ экспорт тэгийг хоосон нүдээр бичдэг (өмнөх экспорт 0 гэж бичдэг байсан): «Бэлэн төлөлт» хоосон мөр бүрт урьдчилгаа бүтэн
+ * хугацаа хэтэрсэн, «Төлбөр хоцролт» хоосон мөр бүрт бэлэн + бартер урьдчилгааг хангасан. Иймд «Бэлэн төлөлт» баганатай файлд
+ * «Төлбөр хоцролт», «Бэлэн төлөлт», «Бартер»-ын хоосон нүд = 0 (`BLANK_IS_ZERO`); бусад файлд хоосон = тодорхойгүй хэвээр.
+ *
  * Тулгалт байраар (`${product_type}|${unit_label}`): идэвхтэй/хаасан мөр ↔ амьд гэрээ (ижил огноо эхэлж,
  * дараа нь шинэ ↔ шинэ); цуцалсан мөр ↔ цуцалсан гэрээ огноогоор; цуцалсан мөртэй ижил огноотой амьд гэрээ
  * цуцлагдана (шалгах; байр дахин зарагдсан бол шинэ мөр шинэ гэрээ болно); байранд амьд мөр байхгүй бол үлдсэн
@@ -24,8 +33,18 @@ import { ubDateStr } from '@/lib/utils/date';
 
 // ---------------------------------------------------------------- Файл задлах
 
-/** Нэмэлтээр танигдах багана (гэрээнд төлсөн дүн ХЭЗЭЭ Ч бичигдэхгүй — зөвхөн мөрийн түүхэнд). */
-export const CONTRACT_LIST_EXTRA_COLUMNS = ['Гэрээний дугаар', 'Борлуулалтын менежер', 'Нийт төлсөн дүн'] as const;
+/** Нэмэлтээр танигдах багана (гэрээнд төлсөн дүн, бартер ХЭЗЭЭ Ч бичигдэхгүй — зөвхөн мөрийн түүхэнд). */
+export const CONTRACT_LIST_EXTRA_COLUMNS = ['Гэрээний дугаар', 'Борлуулалтын менежер', 'Бэлэн төлөлт', 'Нийт төлсөн дүн', 'Бартер'] as const;
+/** Мөрийн төлсөн дүнгийн багана (эхний байгаа нь): «Бэлэн төлөлт» — бартер ороогүй бэлэн; хуучин экспортын «Нийт төлсөн дүн». */
+const PAID_COLUMNS = ['Бэлэн төлөлт', 'Нийт төлсөн дүн'] as const;
+/**
+ * HUB-ийн 16 баганаас файлд байхгүй байж болох нь — байхгүй бол тухайн талбарыг импорт хөндөхгүй (DB-ийн утга хэвээр).
+ * ERP-ийн 2026-11-13-ны экспортод «Гэрээлсэн талбай» алга.
+ */
+export const CONTRACT_LIST_OPTIONAL_COLUMNS = ['Гэрээлсэн талбай'] as const;
+const REQUIRED_COLUMNS = CONTRACT_LIST_COLUMNS.filter(column => !(CONTRACT_LIST_OPTIONAL_COLUMNS as readonly string[]).includes(column));
+/** «Бэлэн төлөлт» баганатай экспортод хоосон нүд нь 0 гэсэн утгатай мөнгөн баганууд (файлын тайлбарыг үз). */
+const BLANK_IS_ZERO = ['Төлбөр хоцролт', 'Бэлэн төлөлт', 'Бартер'] as const;
 const ERROR_LIMIT = 100;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -55,32 +74,39 @@ export interface HubRow {
     paymentCondition: string | null;
     contractNumber: string | null;
     salesManager: string | null;
-    /** «Нийт төлсөн дүн» — ирээдүйн мөнгөн урсгалын зөрүүнд хадгална, гэрээнд бичихгүй. */
+    /**
+     * Өнөөг хүртэл төлсөн дүн — «Бэлэн төлөлт» (бартер ороогүй), эс бөгөөс «Нийт төлсөн дүн». Мөнгөн урсгалын cohort ба
+     * илтгэлийн «Урьдчилгаа»-д хадгална, гэрээнд бичихгүй. null = багана алга эсвэл нүд хоосон (тодорхойгүй).
+     */
     paidTotal: number | null;
+    /** «Бартер» — бартераар тооцсон дүн, мөнгө биш; тусдаа хадгална, гэрээнд бичихгүй. */
+    barterTotal: number | null;
 }
 
 export interface ContractListSheet { name: string; columns: string[]; rows: Record<string, unknown>[] }
 
 export interface ContractListParse {
-    /** HUB-ийн 16 баганатай sheet олдсон эсэх. */
+    /** HUB-ийн sheet олдсон эсэх (заавал багана бүгд байгаа). */
     found: boolean;
     sheetName: string | null;
     rows: HubRow[];
     errors: string[];
-    /** Таньсан нэмэлт багана (Гэрээний дугаар, Борлуулалтын менежер, Нийт төлсөн дүн). */
+    /** Таньсан нэмэлт багана (Гэрээний дугаар, Борлуулалтын менежер, Бэлэн төлөлт, Нийт төлсөн дүн, Бартер). */
     extraColumns: string[];
     /** Импортлохгүй багана. */
     ignoredColumns: string[];
+    /** Файлд байхгүй, заавал биш HUB багана — тэдгээрийн талбарыг импорт хөндөхгүй. */
+    missingColumns: string[];
     /** Импортлоогүй мөр («Тоот шилжсэн», байрны мэдээлэлгүй мөр). */
     skipped: Array<{ row: number; reason: string }>;
 }
 
 const cleanHeader = (value: string) => value.trim().replace(/\s+/g, ' ');
 
-/** HUB-ийн 16 багана бүгд байгаа эсэх (толгойн зай хамаагүй). ERP импортын хуудас үүгээр таньж чиглүүлнэ. */
+/** HUB-ийн заавал баганууд бүгд байгаа эсэх (толгойн зай хамаагүй). ERP импортын хуудас үүгээр таньж чиглүүлнэ. */
 export function isContractListSheet(columns: readonly string[]): boolean {
     const present = new Set(columns.map(cleanHeader));
-    return CONTRACT_LIST_COLUMNS.every(column => present.has(column));
+    return REQUIRED_COLUMNS.every(column => present.has(column));
 }
 
 function cellText(value: unknown): string | null {
@@ -121,10 +147,10 @@ export function parseContractList(sheets: readonly ContractListSheet[], options:
     if (!sheet) {
         const best = [...sheets].sort((a, b) => matchCount(b.columns) - matchCount(a.columns))[0];
         const present = new Set((best?.columns ?? []).map(cleanHeader));
-        const missing = CONTRACT_LIST_COLUMNS.filter(column => !present.has(column));
+        const missing = REQUIRED_COLUMNS.filter(column => !present.has(column));
         return {
-            found: false, sheetName: null, rows: [], extraColumns: [], ignoredColumns: [], skipped: [],
-            errors: [`Файлд HUB загварын 16 баганатай sheet олдсонгүй. Дутуу багана: ${missing.join(', ')}`],
+            found: false, sheetName: null, rows: [], extraColumns: [], ignoredColumns: [], missingColumns: [], skipped: [],
+            errors: [`Файлд HUB загварын баганатай sheet олдсонгүй. Дутуу багана: ${missing.join(', ')}`],
         };
     }
     const keyOf = new Map<string, string>();
@@ -134,7 +160,12 @@ export function parseContractList(sheets: readonly ContractListSheet[], options:
     }
     const known = new Set<string>([...CONTRACT_LIST_COLUMNS, ...CONTRACT_LIST_EXTRA_COLUMNS]);
     const extraColumns = CONTRACT_LIST_EXTRA_COLUMNS.filter(column => keyOf.has(column));
+    // «РД», «Нийт үлдэгдэл» гэх мэт танихгүй багана — уншихгүй, хадгалахгүй (жагсаалтад нэрээр л).
     const ignoredColumns = [...keyOf.keys()].filter(column => !known.has(column) && !column.startsWith('__EMPTY'));
+    const missingColumns = CONTRACT_LIST_OPTIONAL_COLUMNS.filter(column => !keyOf.has(column));
+    const paidColumn = PAID_COLUMNS.find(column => keyOf.has(column)) ?? null;
+    // ERP-ийн 2026-11-13-ны экспорт («Бэлэн төлөлт» баганатай) тэгийг хоосон бичдэг.
+    const blankIsZero = keyOf.has('Бэлэн төлөлт');
     const get = (row: Record<string, unknown>, column: string) => {
         const key = keyOf.get(column);
         return key === undefined ? undefined : row[key];
@@ -181,8 +212,10 @@ export function parseContractList(sheets: readonly ContractListSheet[], options:
             return parsed.value;
         };
         const money = (column: string): number | null => {
+            const raw = get(source, column);
             const value = nonNegativeMoney(number(column));
             if (value === 'negative') { fail(`«${column}» сөрөг байж болохгүй`); return null; }
+            if (value === null && blankIsZero && (BLANK_IS_ZERO as readonly string[]).includes(column) && (raw === null || raw === undefined || (typeof raw === 'string' && !raw.trim()))) return 0;
             return value;
         };
         const areaRaw = number('Гэрээлсэн талбай');
@@ -192,7 +225,8 @@ export function parseContractList(sheets: readonly ContractListSheet[], options:
         if (total === null || total <= 0) fail('«Нийт дүн» хоосон эсвэл 0');
         const prepaymentDue = money('Урьдчилгааны дүн');
         const overdue = money('Төлбөр хоцролт');
-        const paidTotal = extraColumns.includes('Нийт төлсөн дүн') ? money('Нийт төлсөн дүн') : null;
+        const paidTotal = paidColumn ? money(paidColumn) : null;
+        const barterTotal = keyOf.has('Бартер') ? money('Бартер') : null;
 
         const orderDate = toDateStr(typeof dateRaw === 'string' ? dateRaw.trim() : dateRaw);
         if (!orderDate) fail(`«Захиалга өгсөн огноо» буруу (${cellText(dateRaw) ?? 'огноо'})`);
@@ -220,14 +254,15 @@ export function parseContractList(sheets: readonly ContractListSheet[], options:
             contractNumber: cellText(get(source, 'Гэрээний дугаар')),
             salesManager: cellText(get(source, 'Борлуулалтын менежер')),
             paidTotal,
+            barterTotal,
         });
     });
-    return { found: true, sheetName: sheet.name, rows: errors.length ? [] : rows, errors: capErrors(errors), extraColumns, ignoredColumns, skipped };
+    return { found: true, sheetName: sheet.name, rows: errors.length ? [] : rows, errors: capErrors(errors), extraColumns, ignoredColumns, missingColumns, skipped };
 }
 
 function matchCount(columns: readonly string[]): number {
     const present = new Set(columns.map(cleanHeader));
-    return CONTRACT_LIST_COLUMNS.filter(column => present.has(column)).length;
+    return REQUIRED_COLUMNS.filter(column => present.has(column)).length;
 }
 
 function capErrors(errors: string[]): string[] {
@@ -880,8 +915,9 @@ function diffPair({ row, contract }: Pair, ctx: { label: string; reportDate: str
     }
     fillOrReview('total_price', row.total, moneyOf(contract.total_price));
     fillOrReview('prepayment_due', row.prepaymentDue, moneyOf(contract.prepayment_due));
-    // Зогсоол/агуулахын «М.кв үнэ» нь нэгжийн үнэ — 1%-ийн дүрмээр л хадгална.
-    fillOrReview('price_per_sqm', pricePerSqmOrNull(row.area, row.pricePerSqm, row.total), moneyOf(contract.price_per_sqm));
+    // Зогсоол/агуулахын «М.кв үнэ» нь нэгжийн үнэ — 1%-ийн дүрмээр л хадгална. Файлд талбай алга (багана эсвэл нүд хоосон)
+    // бол гэрээний одоогийн талбайгаар шалгана.
+    fillOrReview('price_per_sqm', pricePerSqmOrNull(row.area ?? areaOf(contract.contracted_area), row.pricePerSqm, row.total), moneyOf(contract.price_per_sqm));
     fillOrReview('contracted_area', row.area, areaOf(contract.contracted_area));
     // Хоцролт файлын огноогоор: файлд хоосон бол «мэдэгдэхгүй» (хуучин дүнг одоогийнх мэт үлдээхгүй).
     const overdue = moneyOf(contract.overdue_amount);

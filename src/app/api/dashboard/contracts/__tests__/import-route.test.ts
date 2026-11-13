@@ -147,7 +147,7 @@ describe('POST /api/dashboard/contracts/import — gates', () => {
         expect((await xls.json()).error).toContain('.xls');
         const other = await preview(await fileOf([{ Код: 'Б1-1' }], 'products.xlsx', ['Код']));
         expect(other.status).toBe(400);
-        expect((await other.json()).error).toContain('16 баганатай sheet олдсонгүй');
+        expect((await other.json()).error).toContain('баганатай sheet олдсонгүй');
         const broken = await preview(await fileOf([hubRow({ 'Төлөв': 'Батлагдсан' }), hubRow({ 'Тоот': 999 })]));
         expect(broken.status).toBe(400);
         expect((await broken.json()).errors).toEqual(['Мөр 2: «Батлагдсан» төлөв танигдсангүй (Гэрээ үүссэн / Гэрээ хаасан / Цуцлагдсан)']);

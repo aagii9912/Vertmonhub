@@ -54,6 +54,8 @@ interface Preview {
     paidUpdate: ContractListPaidUpdate | null;
     extraColumns: string[];
     ignoredColumns: string[];
+    /** Файлд байхгүй, заавал биш HUB багана (ж: «Гэрээлсэн талбай») — талбар нь өөрчлөгдөхгүй. Хуучин хариунд алга. */
+    missingColumns?: string[];
     skipped: Array<{ row: number; reason: string }>;
     planHash: string;
     opsCount: number;
@@ -156,7 +158,7 @@ function ImportWorkspace({ shopId }: { shopId: string }) {
         const ok = await confirmToast({
             title: 'Импортыг батлах уу?',
             description: paidOnly
-                ? `Гэрээ өөрчлөгдөхгүй — зөвхөн файлын «Нийт төлсөн дүн» (${paidOnly.rows} мөр) импортын түүхэнд хадгалагдана. Гэрээний төлсөн дүн, үлдэгдэл өөрчлөгдөхгүй.`
+                ? `Гэрээ өөрчлөгдөхгүй — зөвхөн файлын төлсөн дүн («Бэлэн төлөлт», ${paidOnly.rows} мөр) импортын түүхэнд хадгалагдана. Гэрээний төлсөн дүн, үлдэгдэл өөрчлөгдөхгүй.`
                 : `${created} шинэ гэрээ, ${preview.counts.update} гэрээний шинэчлэл хадгалагдана. Төлсөн дүн, үлдэгдэл өөрчлөгдөхгүй.`,
             confirmLabel: 'Батлах',
             cancelLabel: 'Болих',
@@ -192,7 +194,7 @@ function ImportWorkspace({ shopId }: { shopId: string }) {
     return (
         <div className="flex min-w-0 flex-col gap-5">
             <PageHeader title="Гэрээний Excel импорт" className="mb-0"
-                subtitle="ERP-ийн HUB гэрээний жагсаалтыг (16 багана) оруулж, гэрээний огноо, нөхцөл, төлбөр хоцролтыг шинэчилнэ." />
+                subtitle="ERP-ийн HUB гэрээний жагсаалтыг оруулж, гэрээний огноо, нөхцөл, төлбөр хоцролтыг шинэчилнэ." />
             <ol className="flex flex-wrap items-center gap-2 text-sm" aria-label="Импортын алхам">
                 {STEPS.map(([key, label], index) => {
                     const current = step === key;
@@ -257,7 +259,7 @@ function ImportWorkspace({ shopId }: { shopId: string }) {
                     <p className="mt-3 text-sm">
                         <span className="num">{saved.inserted}</span> шинэ · <span className="num">{saved.updated}</span> шинэчилсэн · <span className="num">{preview.counts.unchanged}</span> хэвээр · <span className="num">{preview.reportDate}</span>-ны файл
                     </p>
-                    {paidOnlyOf(preview) && <p className="mt-1 text-xs text-muted-foreground">Зөвхөн «Нийт төлсөн дүн» шинэчлэгдлээ — «Төлөвлөгөөний биелэлт»-д гараар оруулаагүй сарын орсон мөнгө <span className="num">{preview.reportDate}</span>-ны энэ файлаар тооцогдоно.</p>}
+                    {paidOnlyOf(preview) && <p className="mt-1 text-xs text-muted-foreground">Зөвхөн төлсөн дүн («Бэлэн төлөлт») шинэчлэгдлээ — «Төлөвлөгөөний биелэлт»-д гараар оруулаагүй сарын орсон мөнгө <span className="num">{preview.reportDate}</span>-ны энэ файлаар тооцогдоно.</p>}
                     {preview.stillUndated > 0 && <p className="mt-1 text-xs text-muted-foreground">Огноогүй <span className="num">{preview.stillUndated}</span> гэрээ файлд байхгүй тул огноогүй хэвээр — гэрээ бүрийн дэлгэрэнгүйгээс огноо оруулна.</p>}
                     <div className="mt-4 flex flex-wrap gap-2">
                         {can('reports') && <Button href="/dashboard/weekly?track=sales&step=files">Лхагвын тайлан руу буцах</Button>}
@@ -301,7 +303,7 @@ function ReviewStep({ preview, busy, acceptReview, onAcceptReview, allowOlder, o
     return (
         <>
             <p className="text-sm text-muted-foreground">
-                {preview.fileName ?? 'Файл'} · <span className="num">{preview.rowCount}</span> мөр · 16 багана танигдлаа · <span className="num">{preview.units.distinct}</span> байр
+                {preview.fileName ?? 'Файл'} · <span className="num">{preview.rowCount}</span> мөр · HUB багана танигдлаа{preview.missingColumns?.length ? ` («${preview.missingColumns.join('», «')}» алга — өөрчлөгдөхгүй)` : ''} · <span className="num">{preview.units.distinct}</span> байр
                 {preview.units.resold > 0 && <> (<span className="num">{preview.units.resold}</span> байр цуцлагдаж дахин зарагдсан)</>} · файлын огноо <span className="num">{preview.reportDate}</span>
             </p>
 
@@ -317,12 +319,12 @@ function ReviewStep({ preview, busy, acceptReview, onAcceptReview, allowOlder, o
             {nothing && !blocked && <Alert variant="success">Бүгд хэвээр — өөрчлөх зүйлгүй.</Alert>}
             {paidOnly && !blocked && (
                 <Alert variant="info">
-                    <AlertTitle>Гэрээнд өөрчлөлт алга — зөвхөн «Нийт төлсөн дүн» шинэчлэгдэнэ</AlertTitle>
+                    <AlertTitle>Гэрээнд өөрчлөлт алга — зөвхөн төлсөн дүн («Бэлэн төлөлт») шинэчлэгдэнэ</AlertTitle>
                     <AlertDescription>
                         {paidOnly.reimport
                             ? <><span className="num">{paidOnly.changed}</span> мөрийн төлсөн дүн ижил огноотой өмнөх импортоос зөрүүтэй.</>
                             : <>Файлд <span className="num">{paidOnly.rows}</span> мөрийн төлсөн дүн байна.</>}
-                        {' '}Батлахад энэ файл <span className="num">{preview.reportDate}</span>-ны «Нийт төлсөн дүн»-гийн эх болж, «Төлөвлөгөөний биелэлт»-д гараар оруулаагүй сарын орсон мөнгийг тооцоход ашиглагдана. Гэрээний төлсөн дүн, үлдэгдэл өөрчлөгдөхгүй.
+                        {' '}Батлахад энэ файл <span className="num">{preview.reportDate}</span>-ны төлсөн дүнгийн эх болж, «Төлөвлөгөөний биелэлт»-д гараар оруулаагүй сарын орсон мөнгийг тооцоход ашиглагдана. Гэрээний төлсөн дүн, үлдэгдэл өөрчлөгдөхгүй.
                     </AlertDescription>
                 </Alert>
             )}
@@ -424,7 +426,7 @@ function ReviewStep({ preview, busy, acceptReview, onAcceptReview, allowOlder, o
             {(preview.skipped.length > 0 || preview.ignoredColumns.length > 0 || preview.extraColumns.length > 0) && (
                 <SectionCard title="Импортлоогүй">
                     {preview.ignoredColumns.length > 0 && <p className="mt-2 text-sm">Импортлохгүй багана: {preview.ignoredColumns.join(', ')}</p>}
-                    {preview.extraColumns.length > 0 && <p className="mt-2 text-sm text-muted-foreground">Нэмэлт багана танигдлаа: {preview.extraColumns.join(', ')}. «Нийт төлсөн дүн» гэрээнд бичигдэхгүй — импортын түүхэнд хадгалагдаж, «Төлөвлөгөөний биелэлт»-ийн орсон мөнгийг (тухайн сард захиалсан гэрээнээс, файлын огноогоор) тооцоход ашиглагдана.</p>}
+                    {preview.extraColumns.length > 0 && <p className="mt-2 text-sm text-muted-foreground">Нэмэлт багана танигдлаа: {preview.extraColumns.join(', ')}. Төлсөн дүн («Бэлэн төлөлт», эс бөгөөс «Нийт төлсөн дүн») ба «Бартер» гэрээнд бичигдэхгүй — импортын түүхэнд хадгалагдаж, «Төлөвлөгөөний биелэлт»-ийн орсон мөнгө (бартер ороогүй) ба илтгэлийн «Урьдчилгаа»-г тооцоход ашиглагдана.</p>}
                     {preview.skipped.length > 0 && <Table head={['Мөр', 'Шалтгаан']} rows={preview.skipped.map(item => [String(item.row), item.reason])} />}
                 </SectionCard>
             )}
