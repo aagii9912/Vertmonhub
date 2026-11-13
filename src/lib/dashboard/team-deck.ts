@@ -1,7 +1,7 @@
 import type PptxGenJS from 'pptxgenjs';
 import {
     area, bodyCell, BOTTOM, C, clip, content, count, COVER, customSlide, CW, defineLayouts, dot, floorMapSlides, FONT, footerSum,
-    H, headCell, inventorySourceNote, M, managerShort, money, note, statRow, tableSlides, TOP, W, WEEKLY_DECK_LABEL, type DeckImage,
+    H, headCell, inventorySourceNote, M, managerShort, money, note, tableSlides, TOP, W, WEEKLY_DECK_LABEL, type DeckImage,
 } from './weekly-deck';
 import type { ReportContractLine, WeeklySalesReport } from './weekly-sales';
 import type { WeeklySlide, WeeklySlideSection } from './weekly-slides';
@@ -11,16 +11,18 @@ import type { NegotiationsReport, NegotiationSum } from './negotiations';
 import { hasReportBranding, type ReportBranding } from './report-branding';
 import { undatedContractsHint } from './contract-dates';
 import { PRODUCT_KIND_LABEL } from '@/lib/erp/records';
-import { MONTHLY_SALES_BLOCK_LABELS, MONTHLY_SALES_BLOCKS, type MonthlySalesBlock } from '@/lib/sales/monthly';
+import { MONTHLY_SALES_BLOCK_LABELS, MONTHLY_SALES_BLOCKS } from '@/lib/sales/monthly';
 import {
-    planValueText, PLAN_SOURCE_LABEL, type PlanCell, type PlanMetricKey, type PlanMonthRow, type PlanPerformance, type PlanScopeCells, type PlanYearScope,
+    planValueText, type PlanCell, type PlanMetricKey, type PlanMonthRow, type PlanPerformance, type PlanScopeCells, type PlanYearScope,
 } from '@/lib/sales/plan-performance';
 import { formatMNT } from '@/lib/utils/currency';
 import { assigneeInitialsText, workPlanProgress, type WorkPlanData } from '@/lib/sales/work-plan';
 
 /**
  * Лхагвын хурлын БОРЛУУЛАЛТЫН АЛБАНЫ ЗАГВАРЫН илтгэл (W2, `sales-team` — «Борлуулалт (албаны загвар)»).
- * Агуулга, дараалал нь борлуулалтын албаны гараар хийдэг 17 слайдтай ижил; загвар нь Hub-ийнх (Arial, Hub-ийн өнгө,
+ * Агуулга, дараалал нь борлуулалтын албаны загварын (tailan jishee, 2026-11-13) 12 слайдтай ижил: нүүр, сарын захиалгын
+ * гэрээ, яригдаж буй гэрээ, сарын ба оны төлөвлөгөө-гүйцэтгэл, тоон мэдээлэл (дуудлага; уулзалт), уулзалтын дэлгэрэнгүй,
+ * давхрын зураглал, бусад ажлын төлөвлөгөө, төгсгөл — хурлын хуудсанд гараар нэмсэн слайд зөвхөн нэмсэн үед; загвар нь Hub-ийнх (Arial, Hub-ийн өнгө,
  * LAYOUT_WIDE) — `weekly-deck.ts`-ийн туслахуудыг хуваалцана. Цэвэр функц: хөтөч (`weekly-deck-export.ts`) ба тест.
  *
  * Дүрэм (W1–W17): 7 хоног = Лхагва→Мягмар; дүн бүтэн оронтой (`formatMNT`), хувь бүхэл, доод хязгаар «+»,
@@ -332,12 +334,8 @@ function monthContractSlides(pres: PptxGenJS, ctx: Ctx) {
     note(slide, notes);
 }
 
-// 4–8. Сарын төлөвлөгөө (блок, нийт, нэмэлт): гэрээний дүн, мөнгөн урсгал (санхүүгийн эрхтэйд), урьдчилгааны мэдээлэл.
-const BLOCK_TITLE: Record<MonthlySalesBlock, string> = { b1: 'Б1 БЛОК', b2: 'Б2 БЛОК', parking: 'ДУЛААН ЗОГСООЛ' };
+// 4. Сарын төлөвлөгөө, гүйцэтгэл: эх сурвалж, «+»-ийн шалтгааны туслахууд (слайд нь `monthPlanSlide`).
 const CASH_HIDDEN = 'Мөнгөн урсгалыг санхүүгийн эрхтэй ажилтан харна.';
-
-const actualText = (cell: Pick<PlanCell, 'actual' | 'lowerBound'> | undefined) => planValueText(cell?.actual ?? null, !!cell?.lowerBound, value => formatMNT(value));
-const cellPct = (cell: Pick<PlanCell, 'actual' | 'plan' | 'lowerBound'> | undefined) => wholePct(cell?.actual, cell?.plan, !!cell?.lowerBound);
 
 /** Мөнгөн урсгалын гүйцэтгэлийн эх сурвалж (гар / HUB «Нийт төлсөн дүн» / дэвтэр). */
 function cashSource(plan: TeamPlanReport, cell: PlanCell | undefined): string | null {
@@ -361,16 +359,6 @@ function contractSource(cell: PlanCell | undefined): string | null {
 }
 
 /**
- * Гүйцэтгэлийн картын тайлбар: эх сурвалж (Гараар / Систем / Холимог); гэрээний тоо нь дүнтэй ижил эх сурвалжтай бол л
- * («Гараар» дүнгийн хажууд системийн «0 гэрээ» бичихгүй).
- */
-function contractHelper(contract: PlanCell | undefined, countCell: PlanCell | undefined): string | undefined {
-    if (!contract?.source || contract.actual === null) return undefined;
-    const label = PLAN_SOURCE_LABEL[contract.source];
-    return countCell?.actual != null && countCell.source === contract.source ? `${countCell.actual}${countCell.lowerBound ? '+' : ''} гэрээ · ${label}` : label;
-}
-
-/**
  * «Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй)» — мэдээлэл, мөнгөн урсгал биш (W6). Урьдчилгааны дүнгүй гэрээ
  * эсвэл тухайн хүрээнд огноогүй гэрээ (энэ сарынх байж болох) байвал доод хязгаар «+» (`prepaymentLowerBound`).
  */
@@ -384,10 +372,6 @@ function prepaymentNote(cells: PlanScopeCells): string | null {
     ].filter(Boolean);
     return `Энэ сарын урьдчилгаа доод хязгаар («+»): ${reasons.join(', ')}.`;
 }
-function prepaymentLine(slide: Slide, cells: PlanScopeCells, y: number) {
-    slide.addText(`Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй): ${prepaymentText(cells)}`, { x: M, y, w: CW, h: 0.4, fontFace: FONT, fontSize: 14, color: C.ink2, margin: 0, isTextBox: true });
-}
-
 /** Мөнгөн урсгалд гараар ч, системд ч дүнгүй блокууд (нийт хүрээ: эдгээрээс «+» үүснэ). */
 function missingCashBlocks(row: PlanMonthRow, scope: PlanScopeCells): string[] {
     if (scope !== row.total) return [];
@@ -419,8 +403,8 @@ function cashLowerBoundNote(plan: TeamPlanReport, row: PlanMonthRow, scope: Plan
     return `${head}: ${causes.length ? causes.join('; ') : 'системийн дүн бүрэн биш'}.${missing.length ? ' Мөнгө ороогүй блокт /admin/sales-targets-д 0 гэж оруулна.' : ''}`;
 }
 
-/** `cashShown` — слайд мөнгөн урсгалын гүйцэтгэлийг зурдаг эсэх (нэмэлт төлөвлөгөөгүй бол нэмэлт слайдад зурахгүй). */
-function planNotes(ctx: Ctx, plan: TeamPlanReport, row: PlanMonthRow, cells: PlanScopeCells, cashShown = ctx.cashVisible): string[] {
+/** Сарын төлөвлөгөөний слайдын тэмдэглэл (нийт хүрээ): эх сурвалж, «+»-ийн шалтгаан, урьдчилгааны мэдээлэл. */
+function planNotes(ctx: Ctx, plan: TeamPlanReport, row: PlanMonthRow, cells: PlanScopeCells): string[] {
     const contract = cells.metrics.contract;
     return [
         `Эх сурвалж: «Төлөвлөгөөний биелэлт» — ${ctx.year} оны ${ctx.month}-р сар, тайлант өдөр (${ctx.input.range.to}) хүртэл.`,
@@ -428,71 +412,98 @@ function planNotes(ctx: Ctx, plan: TeamPlanReport, row: PlanMonthRow, cells: Pla
         ctx.cashVisible ? cashSource(plan, cells.metrics.cashflow) : 'Мөнгөн урсгалын төлөвлөгөө, гүйцэтгэлийг санхүүгийн эрхтэй хүн харна.',
         contract?.lowerBound
             ? `«+» — доод хязгаар: ${cells.undated ? `огноогүй ${cells.undated} гэрээ` : 'дүн нь тодорхойгүй гэрээ'} байна; тухайн сард мэдэгдэх дүнгүй бол «—».` : null,
-        cashShown && cells.metrics.cashflow?.lowerBound ? cashLowerBoundNote(plan, row, cells, cells.metrics.cashflow.actual !== null) : null,
+        ctx.cashVisible && cells.metrics.cashflow?.lowerBound ? cashLowerBoundNote(plan, row, cells, cells.metrics.cashflow.actual !== null) : null,
         'Хувь = гүйцэтгэл / төлөвлөгөө, бүхэл тоогоор.',
         '«Энэ сарын гэрээний урьдчилгаа» = тухайн сард захиалсан амьд гэрээний нөхцлөөр төлөх урьдчилгаа (орсон + хүлээгдэж буй) — мөнгөн урсгал биш, мөнгөн урсгалд нэмэхгүй (W6).',
         prepaymentNote(cells),
     ].filter((line): line is string => !!line);
 }
 
-function planCardSlide(pres: PptxGenJS, ctx: Ctx, title: string, pick: (row: PlanMonthRow) => PlanScopeCells, extraNotes: (row: PlanMonthRow) => Array<string | null> = () => []) {
-    const slide = content(pres, ctx.name, title, `${ctx.month}-р сар · ${dot(ctx.monthRange.from)} – ${dot(ctx.monthRange.to)} хүртэл`);
+/**
+ * 4. Сарын борлуулалтын төлөвлөгөө, гүйцэтгэл — багийн загварын НЭГ хүснэгт (2026-11-13: блок тус бүрийн карт, «нэмэлт
+ * төлөвлөгөө» слайдын оронд): блок × үзүүлэлт (тоо хэмжээ, гэрээний дүн, санхүүгийн эрхтэйд мөнгөн урсгал) × төлөвлөгөө /
+ * гүйцэтгэл / хувь, хувийн нүд өнгөн дүүргэлттэй. Доор нь сарын урьдчилгааны мэдээлэл (W6) ба нэмэлт төлөвлөгөө (W8) нэг
+ * нэг мөрөөр; эх сурвалж, «+»-ийн шалтгаан тэмдэглэлд блокоор.
+ */
+const MONTH_PLAN_HEAD_H = 0.36;
+const MONTH_PLAN_ROW_H = 0.32;
+const MONTH_PLAN_LABEL_W = 1.7;
+const MONTH_PLAN_METRIC_W = 2.0;
+const MONTH_PLAN_PCT_W = 1.7;
+const MONTH_PLAN_AMOUNT_W = (CW - MONTH_PLAN_LABEL_W - MONTH_PLAN_METRIC_W - MONTH_PLAN_PCT_W) / 2;
+function monthPlanSlide(pres: PptxGenJS, ctx: Ctx) {
+    const slide = content(pres, ctx.name, `${ctx.month}-Р САРЫН БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ`, `${dot(ctx.monthRange.from)} – ${dot(ctx.monthRange.to)} хүртэл · дүн ₮`);
     const plan = ctx.input.plan;
     const row = plan?.months[ctx.month - 1];
     if (!plan || !row) return unavailable(slide, ctx, 'plan');
-    const cells = pick(row);
-    const contract = cells.metrics.contract;
-    const countCell = cells.metrics.contract_count;
-    sectionLabel(slide, TOP - 0.05, 'Гэрээний дүн');
-    statRow(slide, TOP + 0.28, [
-        { label: 'ТӨЛӨВЛӨГӨӨ', value: money(contract?.plan), tone: 'gold' },
-        { label: 'ГҮЙЦЭТГЭЛ', value: actualText(contract), helper: contractHelper(contract, countCell) },
-        { label: 'ГҮЙЦЭТГЭЛИЙН ХУВЬ', value: cellPct(contract) },
-    ], 1.45);
-    if (ctx.cashVisible) {
-        const cash = cells.metrics.cashflow;
-        sectionLabel(slide, TOP + 1.9, 'Мөнгөн урсгал');
-        statRow(slide, TOP + 2.23, [
-            { label: 'ТӨЛӨВЛӨГӨӨ', value: money(cash?.plan), tone: 'gold' },
-            { label: 'ГҮЙЦЭТГЭЛ', value: actualText(cash), helper: cash?.actual != null && cash.source ? PLAN_SOURCE_LABEL[cash.source] : undefined },
-            { label: 'ХУВЬ', value: cellPct(cash) },
-        ], 1.45);
-    } else {
-        muted(slide, CASH_HIDDEN, TOP + 1.95, 0.4, 13);
-    }
-    prepaymentLine(slide, cells, ctx.cashVisible ? TOP + 3.9 : TOP + 2.55);
-    note(slide, [...planNotes(ctx, plan, row, cells), ...extraNotes(row)]);
-}
+    const metrics: Array<{ key: PlanMetricKey; label: string; format: (value: number) => string }> = [
+        { key: 'contract_count', label: 'Тоо хэмжээ', format: value => value.toLocaleString('en-US') },
+        { key: 'contract', label: 'Гэрээний дүн', format: digits },
+        ...(ctx.cashVisible ? [{ key: 'cashflow' as const, label: 'Мөнгөн урсгал', format: digits }] : []),
+    ];
+    const scopes: Array<{ label: string; cells: PlanScopeCells; total?: boolean }> = [
+        ...MONTHLY_SALES_BLOCKS.map(block => ({ label: MONTHLY_SALES_BLOCK_LABELS[block], cells: row.blocks[block] })),
+        { label: 'Нийт', cells: row.total, total: true },
+    ];
+    const tableY = TOP - 0.05;
+    const pctX = M + MONTH_PLAN_LABEL_W + MONTH_PLAN_METRIC_W + MONTH_PLAN_AMOUNT_W * 2;
+    let rowIndex = 0;
+    const body: Cell[][] = scopes.flatMap(scope => metrics.map((metric, index) => {
+        const cell = scope.cells.metrics[metric.key];
+        const pct = cell?.actual == null || cell.plan == null || cell.plan <= 0 ? null : cell.actual / cell.plan * 100;
+        pctBar(slide, { x: pctX, y: tableY + MONTH_PLAN_HEAD_H + rowIndex++ * MONTH_PLAN_ROW_H, w: MONTH_PLAN_PCT_W, h: MONTH_PLAN_ROW_H }, pct);
+        const extra = scope.total ? { bold: true } : {};
+        return [
+            ...(index === 0 ? [bodyCell(scope.label, 'left', { bold: true, rowspan: metrics.length, valign: 'middle' })] : []),
+            bodyCell(metric.label, 'left', extra),
+            bodyCell(planValueText(cell?.plan ?? null, false, metric.format), 'right', extra),
+            bodyCell(planValueText(cell?.actual ?? null, !!cell?.lowerBound, metric.format), 'right', extra),
+            bodyCell(wholePct(cell?.actual, cell?.plan, cell?.lowerBound), 'center', extra),
+        ];
+    }));
+    slide.addTable([
+        [headCell('Блок'), headCell('Үзүүлэлт'), headCell('Нийт төлөвлөгөө', 'right'), headCell('Нийт гүйцэтгэл', 'right'), headCell('Гүйцэтгэл хувиар', 'center')],
+        ...body,
+    ], {
+        x: M, y: tableY, w: CW, colW: [MONTH_PLAN_LABEL_W, MONTH_PLAN_METRIC_W, MONTH_PLAN_AMOUNT_W, MONTH_PLAN_AMOUNT_W, MONTH_PLAN_PCT_W],
+        rowH: [MONTH_PLAN_HEAD_H, ...body.map(() => MONTH_PLAN_ROW_H)], fontFace: FONT, fontSize: 12,
+        border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.02, 0.08, 0.02, 0.08], autoPage: false,
+    });
 
-function stretchSlide(pres: PptxGenJS, ctx: Ctx) {
-    const plan = ctx.input.plan;
-    const row = plan?.months[ctx.month - 1];
-    // Нэмэлт төлөвлөгөөгүй бол слайдгүй (тодорхойгүй эх сурвалжид ч — төлөвлөгөөний слайдууд алдааг харуулна).
-    if (!plan || !row || (row.stretch.contract === null && row.stretch.cashflow === null)) return;
-    const slide = content(pres, ctx.name, `${ctx.month}-Р САРЫН ГЭРЭЭНИЙ НЭМЭЛТ ТӨЛӨВЛӨГӨӨ`, `${ctx.month}-р сар · ${dot(ctx.monthRange.from)} – ${dot(ctx.monthRange.to)} хүртэл · гүйцэтгэл нь үндсэн төлөвлөгөөнийхтэй ижил`);
+    // Хүснэгтийн доорх мөрүүд: сарын урьдчилгааны мэдээлэл (мөнгөн урсгал биш), нэмэлт төлөвлөгөө, санхүүгийн эрхгүйн тайлбар.
     const contract = row.total.metrics.contract;
-    sectionLabel(slide, TOP - 0.05, 'Гэрээний дүн');
-    statRow(slide, TOP + 0.28, [
-        { label: 'НЭМЭЛТ ТӨЛӨВЛӨГӨӨ', value: money(row.stretch.contract), tone: 'gold' },
-        { label: 'ГҮЙЦЭТГЭЛ', value: actualText(contract) },
-        { label: 'ГҮЙЦЭТГЭЛИЙН ХУВЬ', value: wholePct(contract?.actual, row.stretch.contract, !!contract?.lowerBound) },
-    ], 1.45);
-    if (ctx.cashVisible) {
-        const cash = row.total.metrics.cashflow;
-        sectionLabel(slide, TOP + 1.9, 'Мөнгөн урсгал');
-        if (row.stretch.cashflow === null) muted(slide, 'Мөнгөн урсгалын нэмэлт төлөвлөгөө оруулаагүй.', TOP + 2.25, 0.4, 13);
-        else statRow(slide, TOP + 2.23, [
-            { label: 'НЭМЭЛТ ТӨЛӨВЛӨГӨӨ', value: money(row.stretch.cashflow), tone: 'gold' },
-            { label: 'ГҮЙЦЭТГЭЛ', value: actualText(cash) },
-            { label: 'ХУВЬ', value: wholePct(cash?.actual, row.stretch.cashflow, !!cash?.lowerBound) },
-        ], 1.45);
-    } else {
-        muted(slide, CASH_HIDDEN, TOP + 1.95, 0.4, 13);
-    }
-    prepaymentLine(slide, row.total, ctx.cashVisible ? TOP + 3.9 : TOP + 2.55);
+    const cash = row.total.metrics.cashflow;
+    const stretch = [
+        row.stretch.contract === null ? null : `гэрээ ${money(row.stretch.contract)} — биелэлт ${wholePct(contract?.actual, row.stretch.contract, !!contract?.lowerBound)}`,
+        !ctx.cashVisible || row.stretch.cashflow === null ? null : `мөнгөн урсгал ${money(row.stretch.cashflow)} — биелэлт ${wholePct(cash?.actual, row.stretch.cashflow, !!cash?.lowerBound)}`,
+    ].filter(Boolean);
+    const lines = [
+        `Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй): ${prepaymentText(row.total)} (${MONTHLY_SALES_BLOCKS.map(block => `${MONTHLY_SALES_BLOCK_LABELS[block]} ${prepaymentText(row.blocks[block])}`).join(', ')})`,
+        stretch.length ? `Нэмэлт төлөвлөгөө: ${stretch.join('; ')}` : null,
+        ctx.cashVisible ? null : CASH_HIDDEN,
+    ].filter((line): line is string => !!line);
+    const linesY = tableY + MONTH_PLAN_HEAD_H + body.length * MONTH_PLAN_ROW_H + 0.12;
+    lines.forEach((line, index) => slide.addText(line, {
+        x: M, y: linesY + index * 0.3, w: CW, h: 0.3, fontFace: FONT, fontSize: 12, color: C.ink2, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true,
+    }));
+
     note(slide, [
-        'Нэмэлт төлөвлөгөө — сарын нийт гэрээ (ба мөнгөн урсгал)-ний дүн, блокгүй (W8); /admin/sales-targets-д оруулна.',
-        ...planNotes(ctx, plan, row, row.total, ctx.cashVisible && row.stretch.cashflow !== null),
+        ...planNotes(ctx, plan, row, row.total),
+        // Блок бүрийн эх сурвалж, «+»-ийн шалтгаан (өмнө нь блок тус бүрийн слайдын тэмдэглэлд байсан).
+        ...MONTHLY_SALES_BLOCKS.map(block => {
+            const cells = row.blocks[block];
+            const blockCash = cells.metrics.cashflow;
+            const parts = [
+                contractSource(cells.metrics.contract),
+                ctx.cashVisible ? cashSource(plan, blockCash) : null,
+                ctx.cashVisible && blockCash?.lowerBound ? cashLowerBoundNote(plan, row, cells, blockCash.actual !== null) : null,
+                prepaymentNote(cells),
+            ].filter(Boolean);
+            return parts.length ? `${MONTHLY_SALES_BLOCK_LABELS[block]}: ${parts.join(' ')}` : null;
+        }),
+        row.outside.count ? `Төлөвлөгөөнд хамаарахгүй ${row.outside.count} гэрээ (Агуулах, Үйлчилгээ г.м.) гүйцэтгэлд ороогүй.` : null,
+        stretch.length ? 'Нэмэлт төлөвлөгөө — сарын нийт гэрээ (ба мөнгөн урсгал)-ний дүн, блокгүй (W8); /admin/sales-targets-д оруулна. Гүйцэтгэл нь үндсэн төлөвлөгөөнийхтэй ижил.' : null,
+        'Хувийн нүдний өнгөн дүүргэлт: 100%-д нүд дүүрнэ; «—» нүд дүүргэлтгүй.',
     ]);
 }
 
@@ -569,6 +580,14 @@ function activityCard(slide: Slide, report: SalesActivityReport, metric: Activit
     });
 }
 
+/** Чат слайдад гарахгүй (багийн загвар) — сарын тоо, төлөвлөгөө, биелэлтийг тэмдэглэлд үлдээнэ. */
+function chatNote(report: SalesActivityReport): string {
+    const chat = report.month.metrics.chats;
+    const actual = chat.actual === null ? '—' : `${chat.actual.toLocaleString('en-US')}${chat.partial ? '+' : ''}`;
+    const plan = chat.plan === null ? 'төлөвлөгөө оруулаагүй' : `төлөвлөгөө ${count(chat.planToDate)}/${count(chat.plan)}, биелэлт ${chat.pct === null ? '—' : `${chat.pct}%`}`;
+    return `Чат (${report.lines.chats.join(', ') || 'суваггүй'}) — слайдад гарахгүй: сарын эхнээс ${actual}, ${plan}.`;
+}
+
 function activitySlides(pres: PptxGenJS, ctx: Ctx) {
     const title = 'БОРЛУУЛАЛТЫН АЛБА-ТООН МЭДЭЭЛЭЛ';
     const report = ctx.input.activity;
@@ -578,7 +597,8 @@ function activitySlides(pres: PptxGenJS, ctx: Ctx) {
     const labels: Record<ActivityMetric, string> = { hotline, managerLine, newMeetings: 'Шинэ уулзалт', repeatMeetings: 'Давтан уулзалт', chats: 'Чат' };
     const period = `сарын эхнээс ${dot(report.month.from)} – ${dot(report.month.to)} · 7 хоног = Лхагва–Мягмар`;
     const groups: Array<{ name: string; metrics: ActivityMetric[]; source: string }> = [
-        { name: 'Дуудлага, чат', metrics: ['hotline', 'managerLine', 'chats'], source: 'Эх сурвалж: менежерүүдийн өдрийн тайланд гараар оруулсан дуудлага, чатын тоо.' },
+        // Багийн загварт чатын карт алга (2026-11-13): чатын сарын тоо тэмдэглэлд.
+        { name: 'Дуудлага', metrics: ['hotline', 'managerLine'], source: 'Эх сурвалж: менежерүүдийн өдрийн тайланд гараар оруулсан дуудлагын тоо.' },
         { name: 'Уулзалт', metrics: ['newMeetings', 'repeatMeetings'], source: 'Эх сурвалж: CRM-ийн болсон уулзалт (шинэ / давтан харилцагч).' },
     ];
     for (const group of groups) {
@@ -589,7 +609,8 @@ function activitySlides(pres: PptxGenJS, ctx: Ctx) {
         const partial = group.metrics.filter(metric => report.month.metrics[metric].partial || report.buckets.some(bucket => bucket.partial[metric]));
         note(slide, [
             group.source,
-            group.metrics.includes('hotline') ? `Шугам: «${hotline}» = өдрийн тайлангийн загварын эхний шугам, «${managerLine}» = хоёр дахь шугам; чат = ${report.lines.chats.join(', ') || 'суваггүй'}.` : null,
+            group.metrics.includes('hotline') ? `Шугам: «${hotline}» = өдрийн тайлангийн загварын эхний шугам, «${managerLine}» = хоёр дахь шугам.` : null,
+            group.metrics.includes('hotline') ? chatNote(report) : null,
             `«${report.month.to.slice(5, 7)}/${report.month.to.slice(8, 10)} хүртэл» = сарын төлөвлөгөө × min(өдөр, 30) / 30; «Гүйцэтгэл хувь» = гүйцэтгэл / тэр хүртэлх төлөвлөгөө (сарын бүтэн төлөвлөгөөтэй биш).`,
             `7 хоногийн төлөвлөгөө = сарын төлөвлөгөө ÷ ${WEEKLY_PLAN_PARTS}; сарын хилээр тасарсан богино хэсэгт өдрөөр нь (өдөр / 7). Өмнөх сарын хэсэг ч энэ сарын төлөвлөгөөгөөр.`,
             'Хувийн нүдний өнгөн дүүргэлт: 100%-д нүд дүүрнэ. «—» = тодорхойгүй (тоо оруулаагүй эсвэл төлөвлөгөөгүй), 0 биш.',
@@ -854,22 +875,18 @@ export function buildTeamDeck(pres: PptxGenJS, input: TeamDeckInput): PptxGenJS 
         cashVisible: !!input.plan && !input.plan.cashHidden && input.plan.cash !== null,
     };
 
+    // Борлуулалтын албаны загварын 12 слайдын дараалал (tailan jishee, 2026-11-13). Хурлын хуудсанд гараар нэмсэн слайд
+    // (яригдаж буй гэрээний тайлбар, өдөрлөг / барилгын зураг) зөвхөн нэмсэн үед, холбогдох хэсгийнхээ дараа гарна.
     coverSlide(pres, ctx);                                                       // 1
-    negotiationSlides(pres, ctx);                                                // 2
-    monthContractSlides(pres, ctx);                                              // 3
-    for (const block of MONTHLY_SALES_BLOCKS) {                                  // 4–6
-        planCardSlide(pres, ctx, BLOCK_TITLE[block], row => row.blocks[block]);
-    }
-    planCardSlide(pres, ctx, `${ctx.month}-Р САРЫН ГЭРЭЭНИЙ НИЙТ ТӨЛӨВЛӨГӨӨ`, row => row.total, row => [  // 7
-        row.outside.count ? `Төлөвлөгөөнд хамаарахгүй ${row.outside.count} гэрээ (Агуулах, Үйлчилгээ г.м.) гүйцэтгэлд ороогүй.` : null,
-    ]);
-    stretchSlide(pres, ctx);                                                     // 8
-    activitySlides(pres, ctx);                                                   // 9 (дуудлага, чат) + 9б (уулзалт)
-    meetingSlide(pres, ctx);                                                     // 10
-    floorMaps(pres, ctx);                                                        // 11–12
-    yearTableSlide(pres, ctx);                                                   // 13
-    for (const slide of salesSlides(ctx, TEAM_DECK_PHOTO_SECTIONS)) customSlide(pres, slide, input.images);  // 14–15
-    planWorkSlides(pres, ctx);                                                   // 16
-    closingSlide(pres, ctx);                                                     // 17
+    monthContractSlides(pres, ctx);                                              // 2
+    negotiationSlides(pres, ctx);                                                // 3
+    monthPlanSlide(pres, ctx);                                                   // 4
+    yearTableSlide(pres, ctx);                                                   // 5
+    activitySlides(pres, ctx);                                                   // 6 (дуудлага), 7 (уулзалт)
+    meetingSlide(pres, ctx);                                                     // 8
+    floorMaps(pres, ctx);                                                        // 9–10
+    for (const slide of salesSlides(ctx, TEAM_DECK_PHOTO_SECTIONS)) customSlide(pres, slide, input.images);  // нэмсэн үед
+    planWorkSlides(pres, ctx);                                                   // 11
+    closingSlide(pres, ctx);                                                     // 12
     return pres;
 }

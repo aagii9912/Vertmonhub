@@ -69,7 +69,7 @@ describe('exportTeamDeck (browser export)', () => {
         ]));
         const { text, layouts } = await slideTexts(blobs[0]);
         expect(text.find(slide => slide.includes('БОРЛУУЛАЛТЫН АЛБА-ТООН МЭДЭЭЛЭЛ'))).toContain('Мэдээлэл ачаалж чадсангүй.');
-        expect(text.find(slide => slide.includes('Б2 БЛОК'))).toContain('2,195,395,000₮');
+        expect(text.find(slide => slide.includes('10-Р САРЫН БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ'))).toContain('Гэрээний дүн 2,245,776,000 2,195,395,000 98%');
         // Сарын ажлын төлөвлөгөө Hub-ийн жагсаалтаас: хариуцагчийн нэрийн эхний үсэг, хийгдсэн ✓.
         expect(text.find(slide => slide.includes('10-р сарын бусад ажлын төлөвлөгөө'))).toContain('✓ Showroom тохижуулах Ч, Х');
         // Брэндгүй: төслийн нэр, анхдагч хөл бичвэр.
@@ -87,7 +87,7 @@ describe('exportTeamDeck (browser export)', () => {
         // 4 тайлан + сарын ажлын төлөвлөгөө + хуудаснаас ирээгүй долоо хоногийн тайлан.
         expect(result.failedSources).toBe(6);
         const { text } = await slideTexts(blobs[0]);
-        for (const title of ['ЗАХИАЛГЫН ГЭРЭЭНИЙ', 'ДАВХРЫН ЗУРАГЛАЛ', 'Б1 БЛОК', 'ЯРИГДАЖ БУЙ']) {
+        for (const title of ['ЗАХИАЛГЫН ГЭРЭЭНИЙ', 'ДАВХРЫН ЗУРАГЛАЛ', 'САРЫН БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ', 'ЯРИГДАЖ БУЙ']) {
             expect(text.find(slide => slide.includes(title)), title).toContain('Мэдээлэл ачаалж чадсангүй.');
         }
         expect(text.at(-1)).toContain('Анхаарал хандуулсанд баярлалаа.');
