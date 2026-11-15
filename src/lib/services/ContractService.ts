@@ -9,6 +9,7 @@ import { logger } from '@/lib/utils/logger';
 import { normalizePhone } from '@/lib/utils/phone';
 import { ubDateStr } from '@/lib/utils/date';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { orSearchTerm } from '@/lib/utils/search';
 import { recomputeCustomerScore } from '@/lib/services/CustomerScoringService';
 import type { SalesProjectScope } from '@/lib/sales/project-scope';
 import {
@@ -148,17 +149,12 @@ export async function latestContractChangeDate(db: SupabaseClient, shopId: strin
     return latest ?? null;
 }
 
-/** Хайлтын үгийг PostgREST `.or()`-д аюулгүй болгоно (таслал, хаалт, %/_ хасна). */
-function sanitizeTerm(term: string): string {
-    return term.replace(/[%_,()\\*]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
 /**
  * Өмнөх эзэмшигчийн нэр, утас, регистрээр гэрээний ID-г олно (шилжүүлсэн гэрээ хуучин
  * худалдан авагчаараа ч хайлтад гарна). URL-ийн уртаас сэргийлж сүүлийн 100.
  */
 export async function contractIdsByPreviousHolder(db: SupabaseClient, shopId: string, term: string): Promise<string[]> {
-    const search = sanitizeTerm(term);
+    const search = orSearchTerm(term);
     if (!search) return [];
     const { data, error } = await db.from('contract_transfers').select('contract_id')
         .eq('shop_id', shopId)
