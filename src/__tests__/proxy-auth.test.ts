@@ -1,5 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+type SessionCookie = { name: string; value: string; options: Record<string, unknown> };
+type CookieAdapter = { getAll(): { name: string; value: string }[]; setAll(cookies: SessionCookie[]): void };
 
 const mocks = vi.hoisted(() => ({
     getUser: vi.fn(),
@@ -7,23 +10,29 @@ const mocks = vi.hoisted(() => ({
     rateLimit: vi.fn(),
     log: vi.fn(),
 }));
-vi.mock('@/lib/auth/supabase-auth', () => ({ createSupabaseMiddlewareClient: mocks.client }));
+// The real getProxySession runs against a fake Supabase client: getUser() can rotate the session
+// through the cookie adapter exactly as @supabase/ssr does when the access token has expired.
+vi.mock('@supabase/ssr', () => ({ createServerClient: mocks.client }));
+vi.mock('@/lib/supabase-env', () => ({ requireSupabaseAnon: () => ({ url: 'https://project.supabase.co', anonKey: 'anon-key' }) }));
 vi.mock('@/lib/utils/rate-limiter', () => ({ checkMiddlewareRateLimit: mocks.rateLimit }));
 vi.mock('@/lib/utils/request-logger', () => ({ logApiRequest: mocks.log }));
 import { proxy } from '@/proxy';
 
 const ORIGIN = 'https://app.example';
-const run = (path: string) => proxy(new NextRequest(`${ORIGIN}${path}`));
+const TOKEN = 'sb-project-auth-token';
+const run = (path: string, cookie?: string) =>
+    proxy(new NextRequest(`${ORIGIN}${path}`, cookie ? { headers: { cookie } } : undefined));
 const loginRedirect = (requested: string) => `${ORIGIN}/auth/login?redirect_url=${encodeURIComponent(requested)}`;
 /** NextResponse.next() marks the response with this header; a redirect does not. */
 const passedThrough = (response: Response) => response.headers.get('x-middleware-next') === '1';
 
-let sessionResponse: NextResponse;
+let cookies: CookieAdapter;
 beforeEach(() => {
     vi.clearAllMocks();
-    sessionResponse = NextResponse.next();
-    sessionResponse.headers.set('x-test-session', 'checked');
-    mocks.client.mockImplementation(() => ({ supabase: { auth: { getUser: mocks.getUser } }, response: sessionResponse }));
+    mocks.client.mockImplementation((_url: string, _key: string, options: { cookies: CookieAdapter }) => {
+        cookies = options.cookies;
+        return { auth: { getUser: mocks.getUser } };
+    });
     mocks.getUser.mockResolvedValue({ data: { user: null }, error: null });
     mocks.rateLimit.mockResolvedValue({ allowed: true });
 });
@@ -81,17 +90,58 @@ describe('protected staff routes', () => {
         expect(new URL(response.headers.get('location')!).searchParams.get('redirect_url')).toBe(requested);
     });
 
-    it.each(['/marketing/budget', '/dashboard/leads', '/admin/users'])('lets a signed-in user through %s with the session response', async (path) => {
+    it.each(['/marketing/budget', '/dashboard/leads', '/admin/users'])('lets a signed-in user through %s', async (path) => {
         signIn();
         const response = await run(path);
-        expect(response).toBe(sessionResponse);
+        expect(passedThrough(response)).toBe(true);
         expect(response.headers.get('location')).toBeNull();
+        // A session that did not need a refresh leaves the browser's cookies alone.
+        expect(response.headers.get('set-cookie')).toBeNull();
     });
 
     it('fails closed when the auth service cannot be reached', async () => {
         mocks.getUser.mockRejectedValue(new Error('GoTrue down'));
         const response = await run('/marketing/budget');
         expect(response.headers.get('location')).toBe(loginRedirect('/marketing/budget'));
+    });
+});
+
+describe('session refresh', () => {
+    const options = { path: '/', sameSite: 'lax', httpOnly: false, maxAge: 400 * 24 * 60 * 60 };
+
+    it('sends a refreshed session to the browser and to the page being rendered', async () => {
+        mocks.getUser.mockImplementation(async () => {
+            // Expired access token: Supabase spends the one-time refresh token and hands back new cookies.
+            expect(cookies.getAll()).toEqual([{ name: TOKEN, value: 'expired' }]);
+            cookies.setAll([{ name: TOKEN, value: 'rotated', options }]);
+            return { data: { user: { id: 'user-a' } }, error: null };
+        });
+        const response = await run('/dashboard/leads?status=new', `${TOKEN}=expired`);
+
+        expect(passedThrough(response)).toBe(true);
+        expect(response.cookies.get(TOKEN)).toMatchObject({ value: 'rotated', path: '/', sameSite: 'lax' });
+        // Server Components read the request cookies the proxy forwards, not the browser's old ones.
+        expect(response.headers.get('x-middleware-override-headers')).toContain('cookie');
+        expect(response.headers.get('x-middleware-request-cookie')).toBe(`${TOKEN}=rotated`);
+    });
+
+    it('clears a dead session in the browser while sending the visitor to login', async () => {
+        mocks.getUser.mockImplementation(async () => {
+            cookies.setAll([{ name: TOKEN, value: '', options: { ...options, maxAge: 0 } }]);
+            return { data: { user: null }, error: { name: 'AuthApiError', message: 'Invalid Refresh Token: Already Used' } };
+        });
+        const response = await run('/dashboard', `${TOKEN}=revoked`);
+
+        expect(response.headers.get('location')).toBe(loginRedirect('/dashboard'));
+        expect(response.cookies.get(TOKEN)).toMatchObject({ value: '', maxAge: 0 });
+    });
+
+    it('keeps the cookies when the auth service is unreachable, so the session survives the outage', async () => {
+        mocks.getUser.mockRejectedValue(new Error('GoTrue down'));
+        const response = await run('/dashboard', `${TOKEN}=valid`);
+
+        expect(response.headers.get('location')).toBe(loginRedirect('/dashboard'));
+        expect(response.headers.get('set-cookie')).toBeNull();
     });
 });
 

@@ -21,13 +21,37 @@ const accounts = [
     { id: '00000000-0000-4000-8000-000000000103', email: 'onboarding-manager-2@example.invalid', password: 'onboarding-test-only', name: 'Тест Менежер Хоёр', role: 'sales_manager' },
 ];
 const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+const accessToken = id => `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: id, aud: 'authenticated', role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600, session_id: randomUUID() })}.${encode(randomUUID())}`;
 const identities = accounts.map(account => {
     const user = { id: account.id, email: account.email, aud: 'authenticated', role: 'authenticated',
         email_confirmed_at: new Date().toISOString(), app_metadata: { provider: 'email', providers: ['email'] },
         user_metadata: { full_name: account.name }, identities: [], created_at: '2026-01-01T00:00:00Z' };
-    const token = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: user.id, aud: 'authenticated', role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600, session_id: randomUUID() })}.${encode(randomUUID())}`;
-    return { ...account, user, token };
+    return { ...account, user, token: accessToken(user.id) };
 });
+// GoTrue rotation: a refresh token works once; reused within the 10 s reuse interval it returns the
+// same new session, later it fails. Lets browser specs prove a refreshed session reaches the browser.
+const REUSE_INTERVAL_MS = 10_000;
+const accessTokens = new Map(identities.map(account => [account.token, account]));
+const refreshTokens = new Map();
+const session = (account, token = account.token) => {
+    const refresh_token = `fixture-${account.id}-${randomUUID()}`;
+    refreshTokens.set(refresh_token, { account, child: null, usedAt: 0 });
+    return { access_token: token, token_type: 'bearer', expires_in: 3600, refresh_token, user: account.user };
+};
+const refresh = (token) => {
+    const parent = refreshTokens.get(token);
+    if (!parent) return [400, { code: 'refresh_token_not_found', message: 'Invalid Refresh Token: Refresh Token Not Found' }];
+    if (parent.child) {
+        return Date.now() - parent.usedAt <= REUSE_INTERVAL_MS
+            ? [200, parent.child]
+            : [400, { code: 'refresh_token_already_used', message: 'Invalid Refresh Token: Already Used' }];
+    }
+    const rotated = accessToken(parent.account.id);
+    accessTokens.set(rotated, parent.account);
+    parent.child = session(parent.account, rotated);
+    parent.usedAt = Date.now();
+    return [200, parent.child];
+};
 const managerInvite = /^manager-([12])-invite-[a-z0-9-]+$/; // onboarding-manager-1 / -2
 const usedHashes = new Set();
 
@@ -41,10 +65,10 @@ const server = createServer(async (request, response) => {
     const body = async () => { let raw = ''; for await (const chunk of request) raw += chunk; return JSON.parse(raw || '{}'); };
     if (request.method === 'OPTIONS') return send(200, {});
     const url = new URL(request.url, authOrigin);
-    const session = (account) => ({ access_token: account.token, token_type: 'bearer', expires_in: 3600, refresh_token: `fixture-${account.id}`, user: account.user });
 
     if (url.pathname === '/auth/v1/token') {
         const credentials = await body();
+        if (url.searchParams.get('grant_type') === 'refresh_token') return send(...refresh(credentials.refresh_token));
         const account = identities.find(candidate => candidate.email === credentials.email);
         if (!account || credentials.password !== account.password) return send(400, { code: 'invalid_credentials', message: 'Invalid login credentials' });
         return send(200, session(account));
@@ -58,7 +82,7 @@ const server = createServer(async (request, response) => {
         return send(200, session(identities.find(account => account.email === `onboarding-manager-${match[1]}@example.invalid`)));
     }
     if (url.pathname === '/auth/v1/user') {
-        const identity = identities.find(account => request.headers.authorization === `Bearer ${account.token}`);
+        const identity = accessTokens.get(request.headers.authorization?.replace(/^Bearer /, ''));
         return identity ? send(200, identity.user) : send(401, { message: 'Invalid fixture session' });
     }
     if (url.pathname === '/rest/v1/user_roles') {
