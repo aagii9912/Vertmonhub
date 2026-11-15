@@ -288,8 +288,8 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const [calls, meetings] = text.filter(slide => slide.includes('ТООН МЭДЭЭЛЭЛ'));
         expect(calls).toContain('10/14–10/20 75 0 0%');
         expect(calls).toContain('10/14–10/20 138 400 290%');
-        // 10/01–10/06-ны шинэ уулзалт (бүртгэл 10/05-нд эхэлсэн) доод хязгаар.
-        expect(meetings).toContain('10/01–10/06 28 2 7%');
+        // 09/30–10/06-ны шинэ уулзалт (бүртгэл 10/05-нд эхэлсэн) доод хязгаар.
+        expect(meetings).toContain('09/30–10/06 28 2 7%');
         // 0%-д дүүргэлтгүй; 290% нь 100%-ийн өргөнөөр (29%-ийн мөртэй харьцуулахад 100 : 29).
         const callBars = bars(xml[text.indexOf(calls)]);
         expect(callBars).toHaveLength(2);
@@ -326,6 +326,42 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(mixedCalls).toContain('10/07–10/13 138 40 29%');
         expect(mixed.notes[mixed.text.indexOf(mixedCalls)]).toContain('өдрийн тайлангийн тоо хугацааны дунд эхэлсэн тул тоо нь доод хязгаар (7786 Оператор)');
         expect(mixed.notes[mixed.text.indexOf(mixedMeetings)]).toContain('уулзалтын бүртгэл хугацааны дунд эхэлсэн тул тоо нь доод хязгаар (Шинэ уулзалт)');
+    });
+
+    it('activity weeks are whole 7-day weeks across the month end, each with the month plan ÷ 4 (deck of 2026-11-18)', async () => {
+        const cell = (report_date: string, value: number) => ({ report_date, manager_name: 'Хонгорзул', metric: 'call.l1.total', value });
+        const report = buildSalesActivity({
+            meetingDate: '2026-11-18', config: DEFAULT_DAILY_REPORT_CONFIG, configSaved: true, configInvalid: false,
+            counts: [cell('2026-10-29', 30), cell('2026-11-02', 37), cell('2026-11-12', 17)],
+            confirmedDates: [], meetings: [], meetingsSince: '2026-09-01', countsSince: '2026-10-08', targets: { hotline: 500 }, targetsAvailable: true,
+        });
+        const { text, notes } = await render(teamInput({ meetingDate: '2026-11-18', range: report.range, activity: report }));
+        const calls = at(text, 'Дуудлага · сарын эхнээс 2026.11.01 – 2026.11.17 · 7 хоног = Лхагва–Мягмар');
+        // 10/28–11/03 нэг мөр (өмнө нь 10/28–10/31, 11/01–11/03 гэж хуваагддаг байсан); мөр бүрийн төлөвлөгөө 500 ÷ 4 = 125.
+        expect(calls).toContain('10/14–10/20 125 — — 10/21–10/27 125 — — 10/28–11/03 125 67 54% 11/04–11/10 125 — — 11/11–11/17 125 17 14%');
+        expect(calls).not.toMatch(/10\/31|11\/01–/);
+        expect(notes[text.indexOf(calls)]).toContain('сарын хилээр тасалдаггүй');
+    });
+
+    it('a period chosen on the meeting page drives the cover, the week days and the meeting tables', async () => {
+        const chosen = { from: '2026-11-03', to: '2026-11-16' };
+        const report = buildSalesActivity({
+            meetingDate: '2026-11-18', range: chosen, config: DEFAULT_DAILY_REPORT_CONFIG, configSaved: true, configInvalid: false,
+            counts: [], confirmedDates: [], meetings: [], meetingsSince: '2026-09-01', countsSince: '2026-10-08', targets: null, targetsAvailable: true,
+        });
+        const meetingsReport = { ...teamInput().meetings!, range: chosen };
+        const { text, notes } = await render(teamInput({ meetingDate: '2026-11-18', range: chosen, activity: report, meetings: meetingsReport }));
+        expect(text[0]).toContain('2026 оны 11.03-11.16 хүртэлх тайлан');
+        expect(notes[0]).toContain('Тайлант хугацаа (хурлын хуудсан дээр сонгосон): 2026.11.03 – 2026.11.16; хурлын анхдагч 7 хоног 2026.11.11 – 2026.11.17.');
+        const calls = at(text, 'Дуудлага · сарын эхнээс 2026.11.01 – 2026.11.16 · 7 хоног = Мягмар–Даваа');
+        expect(calls).toContain('11/10–11/16');
+        const meetingSlide = at(text, 'НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ');
+        expect(meetingSlide).toContain('сэжим ба төлбөрийн нөхцөл — тайлант хугацаа (2026.11.03 – 2026.11.16)');
+        const meetingNotes = notes[text.indexOf(meetingSlide)];
+        expect(meetingNotes).toContain('«Сэжим» — тайлант хугацааны (2026.11.03 – 2026.11.16)');
+        expect(meetingNotes).toContain('7 хоног = Мягмар–Даваа');
+        // Анхдагч хугацаанд нүүрний тэмдэглэл хэвээр.
+        expect((await render(teamInput())).notes[0]).toContain('Тайлант 7 хоног (Лхагва–Мягмар): 2026.10.14 – 2026.10.20.');
     });
 
     it('meetings: interest by area band per week, the referral and both payment-term tables', async () => {

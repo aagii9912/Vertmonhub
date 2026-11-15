@@ -20,6 +20,7 @@ import { UNIT_STATUS_LABEL } from '@/lib/inventory/labels';
 import { contractPlanScope, countsTowardPlan } from '@/lib/sales/plan-performance';
 import type { ReportInventorySourceKind } from '@/lib/inventory/report-inventory';
 import { knownPeriodAmount, undatedContractsHint } from './contract-dates';
+import { previousReportRange } from './report-range';
 
 const DAY = 86_400_000;
 const shift = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
@@ -156,7 +157,8 @@ export function buildWeeklySales(input: WeeklySalesInput) {
     const weekLines = allLines.filter(line => within(line.date, range.from, range.to)).sort(byDate);
     // Сарын эхнээс тайлант өдөр (range.to) хүртэл — хурлын өдрийн snapshot-д орсон дараагийн гэрээг тоолохгүй.
     const monthLines = allLines.filter(line => within(line.date, `${month}-01`, range.to));
-    const previousWeek = { from: shift(range.from, -7), to: shift(range.to, -7) };
+    // Харьцуулах хугацаа = өмнөх ижил урттай хугацаа (7 хоногт өмнөх хурлын 7 хоног; `report-range.ts`).
+    const previousWeek = previousReportRange(range);
     const undated = input.sales ? allLines.filter(line => !line.date).length : input.crmUndated ?? 0;
     // Төлөвлөгөөтэй харьцуулахдаа зөвхөн төлөвлөгөөнд хамаарах гэрээ («Төлөвлөгөөний биелэлт»-тэй нэг дүрэм) —
     // огноогүй гэрээнээс ч төлөвлөгөөнд хамаарахыг л «+»-д тооцно.

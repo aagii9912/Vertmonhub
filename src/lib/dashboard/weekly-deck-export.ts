@@ -170,6 +170,7 @@ async function saveDeck(pres: PptxGenJS, fileName: string) {
 export interface TeamDeckExportInput {
     projectName: string;
     meetingDate: string;
+    /** Тайлант хугацаа: хурлын Лхагва–Мягмар эсвэл хуудсан дээр сонгосон (`resolveReportRange`). */
     range: { from: string; to: string };
     weeklySales?: WeeklySalesReport;
     /** Хуудсанд долоо хоногийн тайланг ачаалж чадаагүй шалтгаан (слайдын тэмдэглэлд). */
@@ -203,12 +204,13 @@ async function loadBranding(): Promise<{ branding: ReportBranding | null; cover:
  */
 export async function exportTeamDeck(input: TeamDeckExportInput): Promise<{ fileName: string; failedImages: number; failedSources: number }> {
     const year = input.range.to.slice(0, 4);
-    const meeting = encodeURIComponent(input.meetingDate);
+    // Хурлын өдөр + сонгосон тайлант хугацаа (`report-range.ts`): тоон мэдээлэл, уулзалтын дэлгэрэнгүй тэр хугацаагаар.
+    const period = new URLSearchParams({ meeting: input.meetingDate, from: input.range.from, to: input.range.to });
     const slides = input.slides.filter(slide => slide.part === 'sales');
     const [plan, activity, meetings, negotiations, workPlan, branding, media, { default: PptxGenJS }] = await Promise.all([
         settle(dashboardJson<TeamPlanReport>(`/api/dashboard/reports/plan-performance?year=${year}&through=${input.range.to}&hubAsOf=${input.meetingDate}`)),
-        settle(dashboardJson<SalesActivityReport>(`/api/dashboard/reports/sales-activity?meeting=${meeting}`)),
-        settle(dashboardJson<MeetingDetailsReport>(`/api/dashboard/reports/meeting-details?meeting=${meeting}`)),
+        settle(dashboardJson<SalesActivityReport>(`/api/dashboard/reports/sales-activity?${period}`)),
+        settle(dashboardJson<MeetingDetailsReport>(`/api/dashboard/reports/meeting-details?${period}`)),
         settle(dashboardJson<NegotiationsReport>('/api/dashboard/reports/negotiations')),
         settle(dashboardJson<WorkPlanData>(`/api/dashboard/work-plan?month=${workPlanMonth(input.range.to)}`)),
         loadBranding(),

@@ -11,6 +11,7 @@ import type { NegotiationsReport, NegotiationSum } from './negotiations';
 import { hasReportBranding, type ReportBranding } from './report-branding';
 import { undatedContractsHint } from './contract-dates';
 import { WEEKLY_LOWER_BOUND_MARK, weeklyMark, weeklyPlanValue } from './weekly-mark';
+import { meetingWeekRange, reportPeriodName, sameRange, weekSpanLabel } from './report-range';
 import { PRODUCT_KIND_LABEL } from '@/lib/erp/records';
 import { MONTHLY_SALES_BLOCK_LABELS, MONTHLY_SALES_BLOCKS } from '@/lib/sales/monthly';
 import {
@@ -26,7 +27,9 @@ import { assigneeInitialsText, workPlanProgress, type WorkPlanData } from '@/lib
  * давхрын зураглал, бусад ажлын төлөвлөгөө, төгсгөл — хурлын хуудсанд гараар нэмсэн слайд зөвхөн нэмсэн үед; загвар нь Hub-ийнх (Arial, Hub-ийн өнгө,
  * LAYOUT_WIDE) — `weekly-deck.ts`-ийн туслахуудыг хуваалцана. Цэвэр функц: хөтөч (`weekly-deck-export.ts`) ба тест.
  *
- * Дүрэм (W1–W17): 7 хоног = Лхагва→Мягмар; дүн бүтэн оронтой (`formatMNT`), хувь бүхэл, доод хязгаар «+»,
+ * Дүрэм (W1–W17): тайлант хугацаа анхдагчаар Лхагва→Мягмар 7 хоног, хурлын хуудсан дээр өөр хугацаа сонгож болно
+ * (`report-range.ts`); 7 хоногийн хүснэгтийн мөр = тайлант хугацааны сүүлийн өдрөөр дуусах бүтэн 7 хоног (сарын хилээр
+ * тасалдаггүй); дүн бүтэн оронтой (`formatMNT`), хувь бүхэл, доод хязгаар «+»,
  * тодорхойгүй «—» (хэзээ ч 0₮ биш). Сарын гэрээний «Урьдчилгаа» багана = санхүүгийн эрхтэйд ERP-ийн «Нийт төлсөн дүн»
  * (эзэмшигчийн шийдвэр 2026-11-13), эс бөгөөс нөхцлөөр төлөх урьдчилгаа — орсон мөнгө биш (W6/W7); мөнгөн урсгалд нэмэхгүй. Мөнгөн урсгалыг зөвхөн санхүүгийн эрхтэйд (`cashHidden` бол тоо огт гаргахгүй). Ачаалж чадаагүй
  * эх сурвалжийн слайд «мэдээлэл ачаалж чадсангүй» гэж бичиж, шалтгааныг тэмдэглэлд — бусад слайд хэвээр.
@@ -53,7 +56,7 @@ export type TeamPlanReport = PlanPerformance & { cashHidden?: boolean };
 export interface TeamDeckInput {
     projectName: string;
     meetingDate: string;
-    /** Тайлант 7 хоног (Лхагва→Мягмар, W1). */
+    /** Тайлант хугацаа: анхдагч нь хурлын Лхагва→Мягмар 7 хоног (W1), хуудсан дээр сонгосон бол тэр (`report-range.ts`). */
     range: { from: string; to: string };
     /** «2026.10.21 14:05» — хэзээ бэлтгэсэн. */
     generatedAt: string;
@@ -131,9 +134,17 @@ function placeImage(slide: Slide, image: DeckImage, box: { x: number; y: number;
 }
 const slideOrder = (a: WeeklySlide, b: WeeklySlide) => a.position - b.position;
 
-/** «2026 оны 10.14-10.20 хүртэлх тайлан» — Лхагва→Мягмар тайлант 7 хоног (W1). */
+/** «2026 оны 10.14-10.20 хүртэлх тайлан» — тайлант хугацаа (анхдагч нь Лхагва→Мягмар 7 хоног, W1). */
 export function teamDeckPeriod(range: { from: string; to: string }): string {
     return `${range.to.slice(0, 4)} оны ${md(range.from)}-${md(range.to)} хүртэлх тайлан`;
+}
+
+/** Нүүрний тэмдэглэл: тайлант хугацаа, хурлын анхдагч 7 хоногоос өөр бол түүнийг ч нэрлэнэ (сонгосон хугацаа). */
+function periodNote(range: { from: string; to: string }, meetingDate: string): string {
+    const week = meetingWeekRange(meetingDate);
+    return sameRange(range, week)
+        ? `Тайлант 7 хоног (Лхагва–Мягмар): ${dot(range.from)} – ${dot(range.to)}.`
+        : `Тайлант хугацаа (хурлын хуудсан дээр сонгосон): ${dot(range.from)} – ${dot(range.to)}; хурлын анхдагч 7 хоног ${dot(week.from)} – ${dot(week.to)}.`;
 }
 
 // 1. Нүүр: брэндийн зураг (бүтэн, тайрч багтаана) + лого, эс бөгөөс хар хөх дэвсгэр дээр төслийн нэр.
@@ -157,7 +168,7 @@ function coverSlide(pres: PptxGenJS, ctx: Ctx) {
     if (input.logo) placeImage(slide, input.logo, { x: M + 0.2, y: 0.5, w: 2.8, h: 1.1 }, 'left', 'Лого');
     note(slide, [
         `Vertmon Hub-аас бэлтгэв · ${input.generatedAt} · Улаанбаатарын цагаар · Хурал: ${dot(input.meetingDate)}.`,
-        `Тайлант 7 хоног (Лхагва–Мягмар): ${dot(input.range.from)} – ${dot(input.range.to)}.`,
+        periodNote(input.range, input.meetingDate),
         hasReportBranding(input.branding) ? null : 'Илтгэлийн брэнд (нүүрний зураг, лого, хөл бичвэр) тохируулаагүй эсвэл уншиж чадаагүй — анхдагч загвар.',
     ]);
 }
@@ -179,7 +190,7 @@ function negotiationSlides(pres: PptxGenJS, ctx: Ctx) {
         const asOfText = late ? ` · ${dot(report.asOf)}-ний төлөв, үнээр — хурлын (${dot(ctx.input.meetingDate)}) дараа татсан` : '';
         const notes = [
             'Эх сурвалж: CRM — «Хэлэлцэж байна» / «Санал тавьсан» төлөвтэй, амьд гэрээгүй лид; блок, давхар, талбай, урьдчилгааны хувь = сүүлийн болсон уулзалтын сонирхол.',
-            late ? `Ярилцаж буй гэрээний жагсаалт түүхгүй: хурлын өдрийн (${dot(ctx.input.meetingDate)}) биш, татсан өдрийн (${dot(report.asOf)}) төлөв, үнээр — бусад слайд тайлант 7 хоногийнх.` : null,
+            late ? `Ярилцаж буй гэрээний жагсаалт түүхгүй: хурлын өдрийн (${dot(ctx.input.meetingDate)}) биш, татсан өдрийн (${dot(report.asOf)}) төлөв, үнээр — бусад слайд тайлант ${reportPeriodName(ctx.input.range).of}.` : null,
             report.pricing
                 ? `Мкв үнэ, нийт үнэ, урьдчилгаа — өнөөдрийн үнээр (${dot(report.asOf)}, баталсан үнийн тохиргоо v${report.pricing.version}).`
                 : `Мкв үнэ, нийт үнэ, урьдчилгаа — өнөөдрийн үнээр (${dot(report.asOf)}); идэвхтэй үнийн тохиргоо алга бол «—».`,
@@ -525,8 +536,8 @@ const lowerBoundSources = (metrics: readonly ActivityMetric[]) =>
 /** Сарын төлөвлөгөөг 7 хоногт хуваах тоо (багийн дүрэм: сарын ÷ 4). */
 export const WEEKLY_PLAN_PARTS = 4;
 /**
- * 7 хоногийн төлөвлөгөө = сарын төлөвлөгөө ÷ 4. Сарын хилээр тасарсан богино хэсэгт өдрөөр нь (өдөр / 7) хувь
- * тэнцүүлнэ — 3 өдрийн хэсгийг бүтэн 7 хоногийн төлөвлөгөөтэй харьцуулахгүй. Төлөвлөгөөгүй бол null.
+ * 7 хоногийн төлөвлөгөө = сарын төлөвлөгөө ÷ 4. Мөр бүр бүтэн 7 хоног (сарын хилээр тасалдаггүй) тул ердөө ÷ 4;
+ * 7-оос цөөн өдрийн хэсэг ирвэл өдрөөр нь (өдөр / 7) хувь тэнцүүлнэ. Төлөвлөгөөгүй бол null.
  */
 export function weeklyPlan(monthly: number | null, days: number): number | null {
     return monthly === null ? null : Math.round(monthly / WEEKLY_PLAN_PARTS * Math.min(Math.max(days, 0), 7) / 7);
@@ -596,7 +607,7 @@ function activitySlides(pres: PptxGenJS, ctx: Ctx) {
     const hotline = report.lines.hotline?.trim() || ACTIVITY_METRIC_LABEL.hotline;
     const managerLine = report.lines.managerLine?.trim() || ACTIVITY_METRIC_LABEL.managerLine;
     const labels: Record<ActivityMetric, string> = { hotline, managerLine, newMeetings: 'Шинэ уулзалт', repeatMeetings: 'Давтан уулзалт', chats: 'Чат' };
-    const period = `сарын эхнээс ${dot(report.month.from)} – ${dot(report.month.to)} · 7 хоног = Лхагва–Мягмар`;
+    const period = `сарын эхнээс ${dot(report.month.from)} – ${dot(report.month.to)} · 7 хоног = ${weekSpanLabel(report.range.to)}`;
     const groups: Array<{ name: string; metrics: ActivityMetric[]; source: string }> = [
         // Багийн загварт чатын карт алга (2026-11-13): чатын сарын тоо тэмдэглэлд.
         { name: 'Дуудлага', metrics: ['hotline', 'managerLine'], source: 'Эх сурвалж: менежерүүдийн өдрийн тайланд гараар оруулсан дуудлагын тоо.' },
@@ -613,7 +624,7 @@ function activitySlides(pres: PptxGenJS, ctx: Ctx) {
             group.metrics.includes('hotline') ? `Шугам: «${hotline}» = өдрийн тайлангийн загварын эхний шугам, «${managerLine}» = хоёр дахь шугам.` : null,
             group.metrics.includes('hotline') ? chatNote(report) : null,
             `«${report.month.to.slice(5, 7)}/${report.month.to.slice(8, 10)} хүртэл» = сарын төлөвлөгөө × min(өдөр, 30) / 30; «Гүйцэтгэл хувь» = гүйцэтгэл / тэр хүртэлх төлөвлөгөө (сарын бүтэн төлөвлөгөөтэй биш).`,
-            `7 хоногийн төлөвлөгөө = сарын төлөвлөгөө ÷ ${WEEKLY_PLAN_PARTS}; сарын хилээр тасарсан богино хэсэгт өдрөөр нь (өдөр / 7). Өмнөх сарын хэсэг ч энэ сарын төлөвлөгөөгөөр.`,
+            `7 хоногийн төлөвлөгөө = сарын төлөвлөгөө ÷ ${WEEKLY_PLAN_PARTS}. Мөр бүр тайлант өдрөөр (${dot(report.range.to)}) дуусах бүтэн 7 хоног — сарын хилээр тасалдаггүй; сар дамнасан болон өмнөх сарын 7 хоног ч тайлант сарын төлөвлөгөөгөөр.`,
             'Хувийн нүдний өнгөн дүүргэлт: 100%-д нүд дүүрнэ. «—» = тодорхойгүй (тоо оруулаагүй эсвэл төлөвлөгөөгүй), 0 биш.',
             group.metrics.includes('hotline') ? `Өдрийн тайлангийн хамрах хүрээ (тоо оруулсан өдөр / нийт өдөр): ${report.buckets.map(bucket => `${bucket.label} ${bucket.knownDays}/${bucket.days}`).join(', ')}.` : null,
             partial.length ? `${lowerBoundSources(partial)} хугацааны дунд эхэлсэн тул тоо нь доод хязгаар (${partial.map(metric => labels[metric]).join(', ')}).` : null,
@@ -644,7 +655,8 @@ function meetingSlide(pres: PptxGenJS, ctx: Ctx) {
     const title = 'НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ';
     const report = ctx.input.meetings;
     if (!report) return unavailable(content(pres, ctx.name, title), ctx, 'meetings', TOP - 0.2);
-    const slide = content(pres, ctx.name, title, `Сонирхож буй байр м²-ээр, 7 хоногоор · сэжим ба төлбөрийн нөхцөл — тайлант 7 хоног (${dot(report.range.from)} – ${dot(report.range.to)})`);
+    const period = reportPeriodName(report.range);
+    const slide = content(pres, ctx.name, title, `Сонирхож буй байр м²-ээр, 7 хоногоор · сэжим ба төлбөрийн нөхцөл — тайлант ${period.name} (${dot(report.range.from)} – ${dot(report.range.to)})`);
 
     // Дээд хүснэгт: мөр = 7 хоног, багана = м²-ийн бүлэг (блок хамаарахгүй). Тоогүй нүд хоосон; бүртгэлгүй 7 хоног «—».
     const anyWithout = report.weeks.some(week => week.withoutInterest > 0);
@@ -684,11 +696,11 @@ function meetingSlide(pres: PptxGenJS, ctx: Ctx) {
     countTable(slide, { x: M + (w + gap) * 2, y, w }, 'Үлдэгдэл төлбөрийн нөхцөл', ['Нөхцөл', 'Уулзалт'], terms.remainder.rows, terms.remainder.unknown, terms.total);
 
     note(slide, [
-        'Эх сурвалж: CRM-ийн болсон уулзалт (ирээгүй, цуцалсан биш); 7 хоног = Лхагва–Мягмар.',
+        `Эх сурвалж: CRM-ийн болсон уулзалт (ирээгүй, цуцалсан биш); 7 хоног = ${weekSpanLabel(report.range.to)}, тайлант өдрөөр дуусна (сарын хилээр тасалдаггүй).`,
         `м²-ийн хүснэгт: уулзалтын эхний сонирхсон байр, блок хамаарахгүй — орон сууц талбайгаараа (${MEETING_AREA_BANDS.map(band => band.label).join(', ')}), бусад төрөл ангиллаараа. Уулзалт бүр нэг баганад; «Нийт» = тухайн 7 хоногийн уулзалт.`,
         anyWithout ? `«${NO_INTEREST}» — сонирхсон байр бүртгээгүй уулзалт.` : null,
-        `«Сэжим» — тайлант 7 хоногийн (${dot(report.range.from)} – ${dot(report.range.to)}) шинэ харилцагчтай уулзалт хаанаас ирснээр; «Нийт» = шинэ уулзалтын тоо.`,
-        `Төлбөрийн нөхцөл — тайлант 7 хоногийн бүх болсон уулзалт (шинэ, давтан, худалдан авагч); уулзалт бүрт төрөл тус бүрээс нэг сонголт. «Тодорхойгүй» = сонгоогүй (0 биш). Сонирхол — мөнгө биш.`,
+        `«Сэжим» — тайлант ${period.of} (${dot(report.range.from)} – ${dot(report.range.to)}) шинэ харилцагчтай уулзалт хаанаас ирснээр; «Нийт» = шинэ уулзалтын тоо.`,
+        `Төлбөрийн нөхцөл — тайлант ${period.of} бүх болсон уулзалт (шинэ, давтан, худалдан авагч); уулзалт бүрт төрөл тус бүрээс нэг сонголт. «Тодорхойгүй» = сонгоогүй (0 биш). Сонирхол — мөнгө биш.`,
         referral.available ? null : '«Сэжим (хаанаас ирсэн)» жагсаалт/талбар хараахан бэлэн биш (шинэчлэл суулгаагүй) — шинэ уулзалт бүгд «Тодорхойгүй».',
         ...report.notes,
     ]);
@@ -781,7 +793,7 @@ function yearTableSlide(pres: PptxGenJS, ctx: Ctx) {
     note(slide, [
         `Эх сурвалж: «Төлөвлөгөөний биелэлт» — ${ctx.year} он, тайлант өдөр (${ctx.input.range.to}) хүртэл; гэрээ захиалга өгсөн огноогоор, цуцлагдсаныг хассан.`,
         `«${ctx.year} он»-ы гүйцэтгэл = 1–${ytdMonth} сарын гүйцэтгэл; хувь = бүтэн жилийн төлөвлөгөөнөөс. Аль нэг сард төлөвлөгөө оруулаагүй бол нийт төлөвлөгөө «—».`,
-        ytdMonth !== ctx.month ? `Тайлант 7 хоног дуусаагүй тул он эхнээсх гүйцэтгэл ${ytdMonth}-р сар хүртэл (татсан өдрөөр); ${ctx.month}-р сарын гүйцэтгэл «—».` : null,
+        ytdMonth !== ctx.month ? `Тайлант ${reportPeriodName(ctx.input.range).name} дуусаагүй тул он эхнээсх гүйцэтгэл ${ytdMonth}-р сар хүртэл (татсан өдрөөр); ${ctx.month}-р сарын гүйцэтгэл «—».` : null,
         'Хувийн нүдний өнгөн дүүргэлт: 100%-д нүд дүүрнэ; «—» нүд дүүргэлтгүй.',
         ctx.cashVisible ? cashSource(plan, row.total.metrics.cashflow) : 'Мөнгөн урсгалын мөрийг санхүүгийн эрхтэй хүн харна.',
         row.total.undated ? `Гэрээний тоо, дүн — огноогүй ${row.total.undated} гэрээтэй тул доод хязгаар. ${undatedContractsHint(row.total.undated)}` : null,

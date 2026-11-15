@@ -3,6 +3,7 @@ import { erpNumber, PRODUCT_KIND_LABEL } from '@/lib/erp/records';
 import { customerShortName } from '@/lib/contracts/list-format';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { weeklyReviewRange } from './weekly-review';
+import type { ReportRange } from './report-range';
 import { crmKind } from './weekly-sales-load';
 import { WEEKLY_MANUAL_LIST_LIMIT, type WeeklyManual, type WeeklyManualContract } from './weekly-manual';
 
@@ -21,10 +22,11 @@ const entered = (value: unknown) => value !== null && value !== undefined && val
 /**
  * «Гараар нөхөх» алхмын өгөгдөл (нэг shop = нэг төсөл): менежергүй ба огноогүй амьд гэрээ, тайлант сарын төлөвлөгөө,
  * гараар оруулсан гүйцэтгэл байгаа эсэх. Уншилтын алдаа шидэгдэнэ — «нөхөх зүйлгүй» гэж харуулахгүй.
+ * `range` — сонгосон тайлант хугацаа (өгөөгүй бол хурлын Лхагва–Мягмар): «энэ хугацааных» тэмдэг, тайлант сар.
  */
-export async function loadWeeklyManual(db: SupabaseClient, options: { shopId: string; meetingDate: string; canSeeCustomers: boolean; canSeeCash: boolean }): Promise<WeeklyManual> {
+export async function loadWeeklyManual(db: SupabaseClient, options: { shopId: string; meetingDate: string; range?: ReportRange; canSeeCustomers: boolean; canSeeCash: boolean }): Promise<WeeklyManual> {
     const { shopId, meetingDate } = options;
-    const range = weeklyReviewRange(meetingDate);
+    const range = options.range ?? weeklyReviewRange(meetingDate);
     const month = range.to.slice(0, 7);
 
     const [managerlessRows, undatedRows, target] = await Promise.all([
@@ -51,6 +53,7 @@ export async function loadWeeklyManual(db: SupabaseClient, options: { shopId: st
 
     return {
         month,
+        range,
         managerless: {
             count: managerless.length,
             contracts: managerless.slice(0, WEEKLY_MANUAL_LIST_LIMIT).map(line),

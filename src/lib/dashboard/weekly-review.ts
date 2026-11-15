@@ -8,6 +8,7 @@ import { budgetSpendCell, budgetSpendNote, periodSpendStatus } from '@/lib/marke
 import { formatOperationsReportText, type OperationsReport } from './operations-report';
 import type { WeeklySalesReport } from './weekly-sales';
 import { weeklyContractAmount, weeklyContractCount } from './weekly-mark';
+import { meetingWeekRange, previousReportRange, reportPeriodName, sameRange, type ReportRange } from './report-range';
 
 export const meetingDateSchema = dateSchema.refine(
     value => new Date(`${value}T00:00:00Z`).getUTCDay() === 3,
@@ -50,9 +51,12 @@ export function nextMeetingDate(now = new Date()): string {
     return shiftReviewDate(today, (3 - weekday + 7) % 7);
 }
 
-/** Өмнөх Лхагвагаас Мягмар дуустал, хоёр захын өдрийг оруулна. */
-export function weeklyReviewRange(meetingDate: string) {
-    return { from: shiftReviewDate(meetingDate, -7), to: shiftReviewDate(meetingDate, -1) };
+/**
+ * Хурлын анхдагч тайлант 7 хоног: өмнөх Лхагвагаас Мягмар дуустал, хоёр захын өдрийг оруулна. Хуудсан дээр
+ * өөр хугацаа сонгож болно (`report-range.ts`, `resolveReportRange`).
+ */
+export function weeklyReviewRange(meetingDate: string): ReportRange {
+    return meetingWeekRange(meetingDate);
 }
 
 /** Хамгийн сүүлд бүрэн дууссан хурлын долоо хоног (Лхагва–Мягмар, УБ): Лхагва гарагт өчигдөр дууссан долоо хоног. */
@@ -97,7 +101,11 @@ export function previousContentText(previous: ContentPlanSummary): string {
  * Хадгалсан саад болон одоогийн ажлын дарааллаас хурлын асуудлыг гаргана (борлуулалт, маркетинг тусдаа).
  * Маркетингийн холболтын асуудал (Meta зарын данс, синк, токен, ханш) — `connectionDiscussionItems`.
  */
-export function weeklyDiscussionItems(input: { sales?: OperationsReport; marketing?: MarketingPerformance; contentPlan?: WeeklyContentPlan; updates?: WeeklyUpdate[]; connections?: MarketingConnections | null }) {
+/**
+ * `marketing` — борлуулалтын тайлант хугацааны лидийн эх сурвалж (шилжүүлсэн огноогүй лид); `marketingWeek` — маркетингийн
+ * хэсгийн (хурлын 7 хоногийн) гүйцэтгэл, ханшгүй зардал; өгөөгүй бол `marketing` (хугацаа анхдагч үед хоёр нь ижил).
+ */
+export function weeklyDiscussionItems(input: { sales?: OperationsReport; marketing?: MarketingPerformance; marketingWeek?: MarketingPerformance; contentPlan?: WeeklyContentPlan; updates?: WeeklyUpdate[]; connections?: MarketingConnections | null }) {
     const items: { title: string; detail: string; href?: string; part: 'sales' | 'marketing' }[] = [];
     const health = input.sales?.leads.health;
     if (health?.ownerless) items.push({ title: `Эзэнгүй ${health.ownerless} лид`, detail: 'Хариуцах менежер, дараагийн алхмыг тогтоох.', href: '/dashboard/leads?queue=unassigned', part: 'sales' });
@@ -106,7 +114,8 @@ export function weeklyDiscussionItems(input: { sales?: OperationsReport; marketi
     if (undated) items.push({ title: `Огноогүй ${undated} гэрээ`, detail: 'Гэрээний дэлгэрэнгүйд «Захиалга өгсөн огноо»-г оруулах (эсвэл HUB «Excel импорт»). Тэр хүртэл гэрээний тоо тодорхойгүй.', href: '/dashboard/contracts?filter=undated', part: 'sales' });
     if (input.marketing?.quality.unknownHandoff) items.push({ title: `Шилжүүлсэн огноогүй ${input.marketing.quality.unknownHandoff} лид`, detail: 'Бодит шилжүүлсэн огноог шалгах; хөрвөлтөд таамгаар оруулахгүй.', part: 'sales' });
     if (input.contentPlan?.week.overdue) items.push({ title: `Хоцорсон ${input.contentPlan.week.overdue} контент`, detail: 'Төлөвлөсөн огноо өнгөрсөн, нийтлээгүй контентын шинэ огноо эсвэл цуцлах шийдвэр.', href: '/marketing/calendar', part: 'marketing' });
-    if (input.marketing?.spendQuality.current.missingFx) items.push({ title: `Ханшгүй ${input.marketing.spendQuality.current.missingFx} зардал`, detail: 'Ханшаа нөхөж байж маркетингийн нийт зардал, төсвийн гүйцэтгэлийг үнэлэх.', part: 'marketing' });
+    const spend = input.marketingWeek ?? input.marketing;
+    if (spend?.spendQuality.current.missingFx) items.push({ title: `Ханшгүй ${spend.spendQuality.current.missingFx} зардал`, detail: 'Ханшаа нөхөж байж маркетингийн нийт зардал, төсвийн гүйцэтгэлийг үнэлэх.', part: 'marketing' });
     if (input.connections) items.push(...connectionDiscussionItems(input.connections).map(item => ({ ...item, part: 'marketing' as const })));
     for (const update of input.updates || []) {
         if (update.blockers.trim()) items.push({ title: update.author_name, detail: update.blockers, part: updatePart(update) });
@@ -132,17 +141,25 @@ export function formatContentPlanText(plan: WeeklyContentPlan): string[] {
 export function formatWeeklyReview(input: {
     shopName: string;
     meetingDate: string;
+    /** Борлуулалтын тайлант хугацаа (өгөөгүй бол хурлын 7 хоног) ба харьцуулах хугацаа (өгөөгүй бол өмнөх ижил урттай). */
+    range?: ReportRange;
+    previousRange?: ReportRange;
     sales?: OperationsReport;
     previousSales?: OperationsReport;
     weeklySales?: WeeklySalesReport;
     marketing?: MarketingPerformance;
+    /** Маркетингийн хэсгийн (хурлын 7 хоногийн) гүйцэтгэл; өгөөгүй бол `marketing`. */
+    marketingWeek?: MarketingPerformance;
     contentPlan?: WeeklyContentPlan;
     updates?: WeeklyUpdate[];
     connections?: MarketingConnections | null;
     notices: string[];
 }): string {
-    const range = weeklyReviewRange(input.meetingDate);
-    const priorRange = weeklyReviewRange(shiftReviewDate(input.meetingDate, -7));
+    const range = input.range ?? weeklyReviewRange(input.meetingDate);
+    const priorRange = input.previousRange ?? previousReportRange(range);
+    // Маркетингийн хэсэг хурлын 7 хоногоор (`report-range.ts`): хугацааг өөрчилсөн бол тусад нь нэрлэнэ.
+    const meetingWeek = weeklyReviewRange(input.meetingDate);
+    const marketingWeek = input.marketingWeek ?? input.marketing;
     const discussions = weeklyDiscussionItems(input);
     const money = (value: number | null) => value === null ? 'тооцох боломжгүй' : formatMNT(value);
     const percent = (value: number | null) => value === null ? 'тооцох суурь алга' : `${value}%`;
@@ -180,13 +197,14 @@ export function formatWeeklyReview(input: {
             `Огноогүй ${input.marketing.quality.unknownHandoff} шилжүүлэлтийг тооцоогүй.`,
         ] : []),
         '', '2. Маркетинг — контент төлөвлөгөө ба гүйцэтгэл',
+        ...(sameRange(range, meetingWeek) ? [] : [`Маркетинг хурлын 7 хоногоор: ${meetingWeek.from} – ${meetingWeek.to}`]),
         ...(input.contentPlan ? formatContentPlanText(input.contentPlan) : ['Контент төлөвлөгөөний мэдээлэл энэ тайланд байхгүй.']),
-        ...(input.marketing ? [
-            `Дууссан кампанит ажил: ${formatReviewChange(input.marketing.totals.campaigns, input.marketing.previous.campaigns)}`,
-            `Дууссан контент: ${formatReviewChange(input.marketing.totals.content, input.marketing.previous.content)}`,
+        ...(marketingWeek ? [
+            `Дууссан кампанит ажил: ${formatReviewChange(marketingWeek.totals.campaigns, marketingWeek.previous.campaigns)}`,
+            `Дууссан контент: ${formatReviewChange(marketingWeek.totals.content, marketingWeek.previous.content)}`,
             // Слайд, картын дүрэм (`budgetSpendCell`): бүртгэлгүй эсвэл зөвхөн ханшгүй зардалтай бол ₮ биш «—» + эх валют.
-            weekSpendLine(input.marketing),
-            ...(input.marketing.spendQuality.current.missingFx ? [`Ханшгүй ${input.marketing.spendQuality.current.missingFx} зардал нийтэд ороогүй.`] : []),
+            weekSpendLine(marketingWeek),
+            ...(marketingWeek.spendQuality.current.missingFx ? [`Ханшгүй ${marketingWeek.spendQuality.current.missingFx} зардал нийтэд ороогүй.`] : []),
         ] : []),
         '', '3. Ажлын явц, хэлэлцэх зүйл',
         ...(input.updates?.length ? input.updates.flatMap(update => [
@@ -216,17 +234,20 @@ function plannedMonthText(report: WeeklySalesReport, money: (value: number) => s
 /** Хурлын текстэд орох гэрээ, мөнгөн орлого, үлдэгдлийн товч. */
 export function formatWeeklySalesText(report: WeeklySalesReport): string[] {
     const money = (value: number) => formatMNT(value);
+    // Тайлант хугацаа 7 хоногоос өөр бол «Энэ долоо хоног» биш «Тайлант хугацаа» (`report-range.ts`).
+    const week = reportPeriodName(report.range).name === '7 хоног';
+    const period = week ? 'Энэ долоо хоног' : `Тайлант хугацаа (${report.range.from} – ${report.range.to})`;
     return [
         '', 'Гэрээ, үлдэгдэл',
         `Эх сурвалж: ${report.sources.contracts === 'erp' && report.sources.sales ? `ERP «${report.sources.sales.source}» ${report.sources.sales.date}` : report.sources.contracts === 'crm' ? 'CRM-ийн гэрээ' : 'гэрээний мэдээлэл алга'}`,
         report.sources.undatedContracts
-            ? `Энэ долоо хоног: ${weeklyContractCount(report.week.count, report.sources.undatedContracts)} гэрээ · ${weeklyContractAmount(report.week.total, report.week.count, report.sources.undatedContracts, money)} (огноогүй ${report.sources.undatedContracts} гэрээ ороогүй)`
-            : `Энэ долоо хоног: ${report.week.count} гэрээ · ${money(report.week.total)} (өмнөх ${report.previousWeek.count} · ${money(report.previousWeek.total)})`,
+            ? `${period}: ${weeklyContractCount(report.week.count, report.sources.undatedContracts)} гэрээ · ${weeklyContractAmount(report.week.total, report.week.count, report.sources.undatedContracts, money)} (огноогүй ${report.sources.undatedContracts} гэрээ ороогүй)`
+            : `${period}: ${report.week.count} гэрээ · ${money(report.week.total)} (өмнөх ${report.previousWeek.count} · ${money(report.previousWeek.total)})`,
         ...report.week.byKind.map(kind => `  ${kind.label}: ${kind.count} · ${money(kind.total)}`),
         `${report.month.month} сар: ${weeklyContractCount(report.month.count, report.sources.undatedContracts)} гэрээ · ${weeklyContractAmount(report.month.total, report.month.count, report.sources.undatedContracts, money)}${report.month.target ? `${plannedMonthText(report, money)} / төлөвлөгөө ${money(report.month.target)} (${report.month.attainmentPct === null ? '—' : `${report.month.attainmentPct}%${report.sources.undatedPlanContracts ? '+' : ''}`})` : ' · сарын төлөвлөгөө тохируулаагүй'}`,
         report.cash ? `Мөнгөн орлого (ERP ${report.cash.from} → ${report.cash.to}): ${money(report.cash.delta)}` : 'Мөнгөн орлого: хоёр долоо хоногийн ERP экспорт хэрэгтэй',
         ...(report.receivables ? [`Төлбөрийн хоцролт: ${money(report.receivables.overdue)} · ${report.receivables.overdueContracts} гэрээ · нийт үлдэгдэл ${money(report.receivables.balance)}`] : []),
-        ...report.byManager.map(row => `  ${row.manager}: 7 хоногт ${row.weekCount} (${money(row.weekTotal)}), сард ${row.monthCount} (${money(row.monthTotal)})${row.cash !== null ? `, мөнгө ${money(row.cash)}` : ''}`),
+        ...report.byManager.map(row => `  ${row.manager}: ${week ? '7 хоногт' : 'хугацаанд'} ${row.weekCount} (${money(row.weekTotal)}), сард ${row.monthCount} (${money(row.monthTotal)})${row.cash !== null ? `, мөнгө ${money(row.cash)}` : ''}`),
         ...(report.inventory ? report.inventory.floorMaps.map(map => `${map.block} блок орон сууц: гэрээтэй ${map.totals.sold}, худалдаанд ${map.totals.available}, бартер ${map.totals.barter}`) : []),
         ...report.notes,
     ];

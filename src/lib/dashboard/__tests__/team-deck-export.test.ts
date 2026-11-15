@@ -61,8 +61,8 @@ describe('exportTeamDeck (browser export)', () => {
         expect(downloads).toEqual([result.fileName]);
         expect(requested).toEqual(expect.arrayContaining([
             '/api/dashboard/reports/plan-performance?year=2026&through=2026-10-20&hubAsOf=2026-10-21',
-            '/api/dashboard/reports/sales-activity?meeting=2026-10-21',
-            '/api/dashboard/reports/meeting-details?meeting=2026-10-21',
+            '/api/dashboard/reports/sales-activity?meeting=2026-10-21&from=2026-10-14&to=2026-10-20',
+            '/api/dashboard/reports/meeting-details?meeting=2026-10-21&from=2026-10-14&to=2026-10-20',
             '/api/dashboard/reports/negotiations',
             '/api/dashboard/work-plan?month=2026-10',
             '/api/dashboard/report-branding',

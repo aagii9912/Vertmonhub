@@ -11,13 +11,15 @@ const units = [
 const none = { available: true, byViewing: new Map<string, string | null>() };
 
 describe('meeting detail weeks', () => {
-    it('returns the last four Wednesday→Tuesday weeks ending at the report end', () => {
-        expect(meetingDetailWeeks('2026-10-21')).toEqual([
+    it('returns the last four whole weeks ending on the report day (Wednesday→Tuesday by default)', () => {
+        expect(meetingDetailWeeks('2026-10-20')).toEqual([
             { label: '09/23–09/29', from: '2026-09-23', to: '2026-09-29' },
             { label: '09/30–10/06', from: '2026-09-30', to: '2026-10-06' },
             { label: '10/07–10/13', from: '2026-10-07', to: '2026-10-13' },
             { label: '10/14–10/20', from: '2026-10-14', to: '2026-10-20' },
         ]);
+        // Сонгосон хугацаа Даваа гарагт дуусвал Мягмар→Даваа (9-р слайдтай нэг дүрэм).
+        expect(meetingDetailWeeks('2026-11-16').map(week => week.label)).toEqual(['10/20–10/26', '10/27–11/02', '11/03–11/09', '11/10–11/16']);
     });
 });
 
@@ -191,5 +193,27 @@ describe('buildMeetingDetails', () => {
         const missing = buildMeetingDetails({ meetingDate: '2026-10-21', units, meetings, referrals: none });
         expect(missing.paymentTerms).toMatchObject({ advance: { unknown: 4 }, remainder: { unknown: 4 }, total: 4, available: false });
         expect(missing.paymentTerms.advance.rows.every(row => row.count === 0)).toBe(true);
+    });
+
+    it('a chosen period: weeks end on its last day, referral and payment terms cover the whole period', () => {
+        const held = (id: string, day: string, type: string, advanceTerm: string | null): MeetingDetailRow => ({ ...meeting(id, day, type), advanceTerm, remainderTerm: null });
+        const meetings = [
+            held('a', '2026-10-31', 'new_customer', 'cash'), held('b', '2026-11-05', 'repeat_customer', 'barter'),
+            held('c', '2026-11-16', 'new_customer', null),
+            // Хугацаанаас гадуур (өмнөх ба хурлын өмнөх Мягмар) — тоологдохгүй.
+            held('d', '2026-10-30', 'new_customer', 'cash'), held('e', '2026-11-17', 'new_customer', 'cash'),
+        ];
+        const byViewing = new Map<string, string | null>([['a', 'Facebook'], ['c', 'Танил'], ['d', 'Facebook'], ['e', 'Facebook']]);
+        const report = buildMeetingDetails({
+            meetingDate: '2026-11-18', range: { from: '2026-10-31', to: '2026-11-16' }, units, meetings,
+            referrals: { available: true, byViewing }, paymentTermsAvailable: true,
+        });
+        expect(report.range).toEqual({ from: '2026-10-31', to: '2026-11-16' });
+        expect(report.weeks.map(week => [week.label, week.total])).toEqual([['10/20–10/26', 0], ['10/27–11/02', 2], ['11/03–11/09', 1], ['11/10–11/16', 1]]);
+        expect(report.referral).toMatchObject({ unknown: 0, total: 2 });
+        expect(report.referral.rows).toHaveLength(2);
+        expect(report.referral.rows).toEqual(expect.arrayContaining([{ label: 'Facebook', count: 1 }, { label: 'Танил', count: 1 }]));
+        expect(report.paymentTerms).toMatchObject({ total: 3, advance: { rows: [{ label: 'Бэлэн', count: 1 }, { label: 'Бартер', count: 1 }, { label: 'Урьдчилгаа хуваах', count: 0 }], unknown: 1 } });
+        expect(report.notes).toContain('Тайлант хугацааны 3 уулзалтаас урьдчилгааны нөхцөл сонгоогүй 1, үлдэгдлийн нөхцөл сонгоогүй 3.');
     });
 });

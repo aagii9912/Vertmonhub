@@ -77,6 +77,22 @@ describe('Wednesday deck report APIs', () => {
         expect(state.calls.find(call => call.loader === 'activity')!.options.shopName).toBe('Elysium Residence');
     });
 
+    it('passes the period chosen on the meeting page (or the meeting\'s Wednesday→Tuesday) and rejects a bad one', async () => {
+        for (const name of ['sales-activity', 'meeting-details'] as const) {
+            expect((await get(name, '?meeting=2026-11-18')).status).toBe(200);
+            expect(state.calls.at(-1)!.options.range).toEqual({ from: '2026-11-11', to: '2026-11-17' });
+            expect((await get(name, '?meeting=2026-11-18&from=2026-11-03&to=2026-11-16')).status).toBe(200);
+            expect(state.calls.at(-1)!.options).toMatchObject({ meetingDate: '2026-11-18', range: { from: '2026-11-03', to: '2026-11-16' } });
+            state.calls = [];
+            for (const bad of ['&from=2026-11-03', '&from=2026-11-16&to=2026-11-03', '&from=2026-11-12&to=2026-11-19', '&from=2026-08-01&to=2026-11-16', '&from=2026-11-31&to=2026-12-01']) {
+                const response = await get(name, `?meeting=2026-11-18${bad}`);
+                expect(response.status, `${name} ${bad}`).toBe(400);
+                expect((await response.json()).error).toMatch(/Тайлант хугацаа|Эхлэх өдөр/);
+            }
+            expect(state.calls).toHaveLength(0);
+        }
+    });
+
     it('answers a missing daily report schema with 503', async () => {
         state.failure = new DailyReportUnavailableError();
         const response = await get('sales-activity');

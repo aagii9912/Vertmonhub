@@ -23,7 +23,7 @@ export interface WeeklyManualContract {
     /** Зөвхөн гэрээ харах эрхтэй хүнд. */
     customer: string | null;
     total: number | null;
-    /** Тайлант долоо хоногийн гэрээ. */
+    /** Тайлант хугацааны (анхдагч нь 7 хоног) гэрээ. */
     inWeek: boolean;
 }
 
@@ -34,8 +34,10 @@ export interface WeeklyManualUndatedContract extends WeeklyManualContract { mana
 export interface WeeklyManualEntered { contractAmount: boolean; contractCount: boolean; cashflow: boolean | null }
 
 export interface WeeklyManual {
-    /** Тайлант долоо хоногийн сүүлийн өдрийн сар (YYYY-MM) — төлөвлөгөө энэ сарынх. */
+    /** Тайлант хугацааны сүүлийн өдрийн сар (YYYY-MM) — төлөвлөгөө энэ сарынх. */
     month: string;
+    /** Тайлант хугацаа (хуучин хариунд байхгүй байж болно) — `inWeek` үүгээр. */
+    range?: { from: string; to: string };
     /** Менежергүй амьд гэрээ: нийт тоо ба эхний `WEEKLY_MANUAL_LIST_LIMIT` (шинэ нь эхэндээ). */
     managerless: { count: number; contracts: WeeklyManualContract[] };
     /** Огноогүй амьд гэрээний тоо. */

@@ -82,7 +82,7 @@ const flags = (over: Partial<Record<ActivityMetric, boolean>> = {}) =>
 export function activity(): SalesActivityReport {
     const buckets = activityBuckets(range.to);
     const filled: Record<string, { values: Record<ActivityMetric, number | null>; partial?: Record<ActivityMetric, boolean>; known: number }> = {
-        '10/01–10/06': { values: values({ newMeetings: 2 }), partial: flags({ newMeetings: true }), known: 0 },
+        '09/30–10/06': { values: values({ newMeetings: 2 }), partial: flags({ newMeetings: true }), known: 0 },
         '10/07–10/13': { values: values({ hotline: 40, managerLine: null, newMeetings: 10, repeatMeetings: 1, chats: 33 }), known: 5 },
         '10/14–10/20': { values: values({ hotline: 53, managerLine: 65, newMeetings: 12, repeatMeetings: 3, chats: 45 }), known: 7 },
     };
@@ -106,7 +106,7 @@ export function activity(): SalesActivityReport {
 }
 
 export function meetings(): MeetingDetailsReport {
-    const weeks = meetingDetailWeeks(meetingDate);
+    const weeks = meetingDetailWeeks(range.to);
     const e7 = { key: 'B1|E7', label: 'Б1 E7 · 89.73 м² · 3 өрөө' };
     const a = { key: 'B2|A', label: 'Б2 A · 57.87 м² · 2 өрөө' };
     return {

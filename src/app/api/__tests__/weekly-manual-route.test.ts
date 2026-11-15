@@ -39,9 +39,18 @@ describe('GET /api/dashboard/reports/weekly-manual', () => {
         expect(state.calls).toHaveLength(0);
     });
 
+    it('reads the period chosen on the meeting page and rejects one that ends after the meeting', async () => {
+        expect((await get('?meetingDate=2026-11-11&from=2026-10-28&to=2026-11-10')).status).toBe(200);
+        expect(state.calls[0]).toMatchObject({ meetingDate: '2026-11-11', range: { from: '2026-10-28', to: '2026-11-10' } });
+        const late = await get('?meetingDate=2026-11-11&from=2026-11-05&to=2026-11-12');
+        expect(late.status).toBe(400);
+        expect((await late.json()).error).toBe('Тайлант хугацаа хурлын өдрөөс хойш дуусах боломжгүй.');
+        expect(state.calls).toHaveLength(1);
+    });
+
     it('shows customer names only with contracts and the cash rows only with finance', async () => {
         await get();
-        expect(state.calls[0]).toEqual({ shopId: 'shop-1', meetingDate: '2026-11-11', canSeeCustomers: false, canSeeCash: false });
+        expect(state.calls[0]).toEqual({ shopId: 'shop-1', meetingDate: '2026-11-11', range: { from: '2026-11-04', to: '2026-11-10' }, canSeeCustomers: false, canSeeCash: false });
         state.modules = ['reports', 'contracts', 'finance'];
         await get();
         expect(state.calls[1]).toMatchObject({ canSeeCustomers: true, canSeeCash: true });

@@ -8,7 +8,8 @@ import { fetchAllRows } from '@/lib/utils/pagination';
 import { isMissingReferralSchema, loadReferralNames } from '@/lib/sales/referral-sources-store';
 import { hasBlockPlan } from '@/lib/sales/plan-performance';
 import { buildWeeklySales, type ContractLine } from './weekly-sales';
-import { shiftReviewDate, weeklyReviewRange } from './weekly-review';
+import { weeklyReviewRange } from './weekly-review';
+import { previousReportRange, type ReportRange } from './report-range';
 import { buildWeeklyFiles } from './weekly-files';
 
 type CrmContract = {
@@ -29,10 +30,13 @@ export const crmKind = (productType: string | null): ProductKind => productKind(
  * Хурлын долоо хоногийн борлуулалтын тайлангийн эх өгөгдлийг уншина (нэг shop = нэг төсөл).
  * ERP snapshot-ыг багануудаар нь танина: гэрээ (`property.sale`) ба бүтээгдэхүүн. Уншилтын алдаа
  * тайланг бүхэлд нь унагаана — хоосон өгөгдлийг 0 гэж харуулахгүй.
+ * `range` — хуудсан дээр сонгосон тайлант хугацаа (`resolveReportRange`); өгөөгүй бол хурлын Лхагва–Мягмар.
+ * Snapshot, үлдэгдэл, HUB импорт хурлын өдрийн байдлаар хэвээр.
  */
-export async function loadWeeklySales(db: SupabaseClient, options: { shopId: string; meetingDate: string; canSeeCustomers: boolean }) {
+export async function loadWeeklySales(db: SupabaseClient, options: { shopId: string; meetingDate: string; range?: ReportRange; canSeeCustomers: boolean }) {
     const { shopId, meetingDate } = options;
-    const range = weeklyReviewRange(meetingDate);
+    const range = options.range ?? weeklyReviewRange(meetingDate);
+    const previous = previousReportRange(range);
     const month = range.to.slice(0, 7);
     const year = Number(month.slice(0, 4));
     const monthNumber = Number(month.slice(5, 7));
@@ -40,8 +44,9 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
     // Хурлын өдөр хүртэлх сүүлийн snapshot-ууд (эхний sheet-ийн баганаар төрлийг танина).
     const metas = await listErpSnapshots(db, shopId, meetingDate);
     const salesMeta = metas.find(meta => meta.kind === 'sales') ?? null;
+    // Мөнгөн орлогын зөрүүний өмнөх snapshot: тайлант хугацааны эхнээс хойшгүй (анхдагч 7 хоногт хурлаас 7 хоногийн өмнөх).
     const previousMeta = salesMeta
-        ? metas.find(meta => meta.kind === 'sales' && meta.report_date < salesMeta.report_date && meta.report_date <= shiftReviewDate(meetingDate, -7)) ?? null
+        ? metas.find(meta => meta.kind === 'sales' && meta.report_date < salesMeta.report_date && meta.report_date <= range.from) ?? null
         : null;
     const [datasets, inventory, hub] = await Promise.all([
         loadErpDatasets(db, shopId, [salesMeta, previousMeta].flatMap(meta => meta ? [meta.id] : [])),
@@ -66,7 +71,7 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
             .order('id').range(from, to));
         crmUndated = undatedRows.length;
         crmUndatedLines = undatedRows.map(row => ({ kind: crmKind(row.product_type), block: row.block_name }));
-        const earliest = [`${month}-01`, shiftReviewDate(range.from, -7)].sort()[0];
+        const earliest = [`${month}-01`, previous.from].sort()[0];
         const contractFields = 'id, contract_number, contract_date, product_type, block_name, floor, unit_label, unit_number, contracted_area, price_per_sqm, prepayment_condition, total_price, prepayment_due, paid_amount, sales_manager, sales_channel, contract_status, customer_name, customer_first_name, customer_last_name, rooms';
         type ContractPage = PromiseLike<{ data: CrmContract[] | null; error: { message: string } | null }>;
         const readContracts = (withReferral: boolean) => fetchAllRows<CrmContract>((from, to) => db.from('property_contracts')

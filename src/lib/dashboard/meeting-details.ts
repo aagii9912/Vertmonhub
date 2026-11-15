@@ -1,24 +1,26 @@
 /**
  * Лхагвын илтгэлийн «НИЙТ УУЛЗАЛТЫН ДЭЛГЭРЭНГҮЙ» (багийн загварын 10-р слайд). Client-safe, pure:
  * сервер `meeting-details-load.ts`.
- *  • Сонирхсон загвар 7 хоногоор: сүүлийн 4 Лхагва→Мягмар 7 хоног (range.to-оор дуусна), `completed`
+ *  • Сонирхсон загвар 7 хоногоор: тайлант хугацааны сүүлийн өдрөөр (range.to) дуусах сүүлийн 4 бүтэн 7 хоног (анхдагч
+ *    хугацаанд Лхагва→Мягмар; сарын хилээр тасалдаггүй), `completed`
  *    (ирээгүй, цуцалсан биш), устгаагүй бүх төрлийн уулзалт, уулзалтын ЭХНИЙ сонирхлын блок + загвараар
  *    (`pricingKey`-ээр: «Б1»/«B1», «E7»/«e7» нэг загвар; нэр нь байрны бүртгэлийнх, эс бөгөөс эхэлж бичигдсэн нь).
  *    Өрөө = байрны бүртгэлийн блок + загвар (нэг утгатай бол), талбай = 4 долоо хоногийн хамгийн олон
  *    давтагдсан `area_sqm` — загварын нэр (`label`) долоо хоног бүрт ижил. Сонирхолгүй уулзалт тусдаа
  *    (`withoutInterest`) — хасахгүй.
- *  • «Сэжим» (хаанаас ирсэн): тайлант 7 хоногийн ШИНЭ (`new_customer`) уулзалт сэжмийн нэрээр;
+ *  • «Сэжим» (хаанаас ирсэн): тайлант хугацааны (анхдагч нь 7 хоног) ШИНЭ (`new_customer`) уулзалт сэжмийн нэрээр;
  *    сонгоогүй эсвэл талбар хараахан алга бол «Тодорхойгүй» (`unknown`), 0 гэж хасахгүй.
  *  • м²-ийн бүлэг (борлуулалтын багийн хүснэгт, 2026-11-12): ижил 4 долоо хоног, уулзалтын ЭХНИЙ сонирхол, БЛОК
  *    ХАМААРАХГҮЙ — орон сууц талбайгаараа (`MEETING_AREA_BANDS`), бусад төрөл (Үйлчилгээ, Зогсоол, Агуулах) байрны
  *    бүртгэлийн ангиллаараа. Уулзалт бүр нэг бүлэгт (эсвэл «Сонголтгүй») — мөрийн нийлбэр = уулзалтын тоо.
- *  • Төлбөрийн нөхцөл: тайлант 7 хоногийн БҮХ төрлийн болсон уулзалт урьдчилгаа / үлдэгдэл төлбөрийн нөхцөлөөр
+ *  • Төлбөрийн нөхцөл: тайлант хугацааны БҮХ төрлийн болсон уулзалт урьдчилгаа / үлдэгдэл төлбөрийн нөхцөлөөр
  *    (`lib/viewings/payment-terms.ts`-ийн дарааллаар); сонгоогүй бол «Тодорхойгүй», 0 гэж хасахгүй.
  */
 import { periodCoverage, type PeriodCoverage } from './data-since';
 import { pricingKey } from '@/lib/sales/pricing';
 import { activityRangeLabel } from './sales-activity';
-import { shiftReviewDate, weeklyReviewRange } from './weekly-review';
+import { weeklyReviewRange } from './weekly-review';
+import { reportPeriodName, trailingWeeks, type ReportRange } from './report-range';
 import { UNIT_CATEGORY_LABEL, type InventoryCategory } from '@/lib/inventory/labels';
 import { PAYMENT_TERM_OPTIONS, paymentTermLabel, type PaymentTermKind } from '@/lib/viewings/payment-terms';
 
@@ -58,7 +60,7 @@ export interface MeetingDetailsReport {
     referral: { rows: Array<{ label: string; count: number }>; unknown: number; total: number; /** Сэжмийн талбар DB-д бий эсэх. */ available: boolean };
     /** м²-ийн бүлгийн баганууд (дарааллаар): «Үйлчилгээ», орон сууцны бүлгүүд, тоотой бол Зогсоол / Агуулах / Бусад. */
     bands: MeetingBand[];
-    /** Тайлант 7 хоногийн болсон уулзалт (бүх төрөл) төлбөрийн нөхцөлөөр; `available: false` = талбар DB-д алга. */
+    /** Тайлант хугацааны болсон уулзалт (бүх төрөл) төлбөрийн нөхцөлөөр; `available: false` = талбар DB-д алга. */
     paymentTerms: { advance: MeetingTermCount; remainder: MeetingTermCount; total: number; available: boolean };
     notes: string[];
 }
@@ -75,6 +77,8 @@ export interface MeetingDetailRow {
 }
 export interface MeetingDetailsInput {
     meetingDate: string;
+    /** Сонгосон тайлант хугацаа (`resolveReportRange`); өгөөгүй бол хурлын Лхагва→Мягмар. */
+    range?: ReportRange;
     meetings: readonly MeetingDetailRow[];
     /** Байрны бүртгэл (орон сууц): блок, загвар, өрөө. */
     units: ReadonlyArray<{ block: string | null; model: string | null; rooms: number | string | null; /** Байрны ангилал; өгөөгүй бол орон сууц гэж үзнэ. */ category?: string | null }>;
@@ -89,15 +93,9 @@ export interface MeetingDetailsInput {
     meetingsSince?: string | null;
 }
 
-/** Тайлант 7 хоногоор дуусах сүүлийн `count` Лхагва→Мягмар 7 хоног (эрт → хожуу). */
-export function meetingDetailWeeks(meetingDate: string, count = MEETING_DETAIL_WEEKS): Array<{ label: string; from: string; to: string }> {
-    const range = weeklyReviewRange(meetingDate);
-    return Array.from({ length: count }, (_, index) => {
-        const offset = (count - 1 - index) * -7;
-        const from = shiftReviewDate(range.from, offset);
-        const to = shiftReviewDate(range.to, offset);
-        return { label: activityRangeLabel(from, to), from, to };
-    });
+/** Тайлант хугацааны сүүлийн өдрөөр (`to`) дуусах сүүлийн `count` бүтэн 7 хоног (эрт → хожуу; 9-р слайдтай нэг дүрэм). */
+export function meetingDetailWeeks(to: string, count = MEETING_DETAIL_WEEKS): Array<{ label: string; from: string; to: string }> {
+    return trailingWeeks(to, count).map(week => ({ label: activityRangeLabel(week.from, week.to), ...week }));
 }
 
 /** Уулзалтын эхний сонирхол (блок, загвар, талбай); бүтэцгүй бол null. */
@@ -178,14 +176,14 @@ function termCount(kind: PaymentTermKind, codes: Array<string | null | undefined
 }
 
 export function buildMeetingDetails(input: MeetingDetailsInput): MeetingDetailsReport {
-    const range = weeklyReviewRange(input.meetingDate);
+    const range = input.range ?? weeklyReviewRange(input.meetingDate);
     const residential = input.units.filter(unit => !unit.category || unit.category === 'residential');
     const rooms = modelRooms(residential);
     const categories = modelCategories(input.units);
     const registerNames = registerModelNames(input.units);
     const notes: string[] = [];
 
-    const windowWeeks = meetingDetailWeeks(input.meetingDate);
+    const windowWeeks = meetingDetailWeeks(range.to);
     const inWindow = input.meetings.filter(meeting => meeting.day >= windowWeeks[0].from && meeting.day <= windowWeeks[windowWeeks.length - 1].to);
     // Загварын нэр 4 долоо хоногт нэг (слайдын тайлбар, график бүрт ижил): долоо хоног бүр өөрийн талбайгаар нэрлэвэл
     // нэг загвар (нэг өнгө) хоёр нэртэй болно.
@@ -229,7 +227,7 @@ export function buildMeetingDetails(input: MeetingDetailsInput): MeetingDetailsR
     const missing = weeks.reduce((sum, week) => sum + week.withoutInterest, 0);
     if (missing) notes.push(`${missing} уулзалтад сонирхсон загвар бүртгэгдээгүй («Сонголтгүй»).`);
 
-    // Сэжим: тайлант 7 хоногийн шинэ уулзалт.
+    // Сэжим: тайлант хугацааны шинэ уулзалт.
     const fresh = input.meetings.filter(meeting => meeting.type === 'new_customer' && meeting.day >= range.from && meeting.day <= range.to);
     const counts = new Map<string, number>();
     let unknown = 0;
@@ -252,14 +250,14 @@ export function buildMeetingDetails(input: MeetingDetailsInput): MeetingDetailsR
         ...(used.has(MEETING_BAND_OTHER) ? [{ key: MEETING_BAND_OTHER, label: 'Бусад' }] : []),
     ];
 
-    // Төлбөрийн нөхцөл: тайлант 7 хоногийн болсон уулзалт, бүх төрөл.
+    // Төлбөрийн нөхцөл: тайлант хугацааны болсон уулзалт, бүх төрөл.
     const held = input.meetings.filter(meeting => meeting.day >= range.from && meeting.day <= range.to);
     const termsAvailable = input.paymentTermsAvailable ?? false;
     const advance = termCount('advance', held.map(meeting => termsAvailable ? meeting.advanceTerm : null));
     const remainder = termCount('remainder', held.map(meeting => termsAvailable ? meeting.remainderTerm : null));
     if (!termsAvailable) notes.push('Төлбөрийн нөхцөлийн талбар хараахан нэмэгдээгүй тул уулзалт бүгд «Тодорхойгүй».');
     else if (held.length && (advance.unknown || remainder.unknown)) {
-        notes.push(`Тайлант 7 хоногийн ${held.length} уулзалтаас урьдчилгааны нөхцөл сонгоогүй ${advance.unknown}, үлдэгдлийн нөхцөл сонгоогүй ${remainder.unknown}.`);
+        notes.push(`Тайлант ${reportPeriodName(range).of} ${held.length} уулзалтаас урьдчилгааны нөхцөл сонгоогүй ${advance.unknown}, үлдэгдлийн нөхцөл сонгоогүй ${remainder.unknown}.`);
     }
 
     return {

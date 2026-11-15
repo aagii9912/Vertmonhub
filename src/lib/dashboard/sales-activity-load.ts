@@ -6,6 +6,8 @@ import { fetchAllRows } from '@/lib/utils/pagination';
 import { DAILY_RANGE_MAX_DAYS } from './daily-report';
 import { loadDailyReportConfig } from './daily-report-load';
 import { buildSalesActivity, salesActivityWindow, type SalesActivityCountRow, type SalesActivityReport } from './sales-activity';
+import { weeklyReviewRange } from './weekly-review';
+import type { ReportRange } from './report-range';
 
 /** Багана/хүснэгт алга (migration ороогүй): уншилт «тодорхойгүй» болно. */
 export function isMissingSchemaError(error: { code?: string; message?: string } | null | undefined): boolean {
@@ -19,10 +21,12 @@ export function isMissingSchemaError(error: { code?: string; message?: string } 
  * баталгаажуулалт, `completed` уулзалт, уулзалтын бүртгэл эхэлсэн өдөр, сарын идэвхжлийн төлөвлөгөө.
  * Уншилтын алдааг хоосон тайлан болгож нуухгүй (throw); өдрийн тайлангийн хүснэгт алга бол
  * `DailyReportUnavailableError`. Төлөвлөгөөний багана алга бол төлөвлөгөө «—».
+ * `range` — сонгосон тайлант хугацаа (`resolveReportRange`); өгөөгүй бол хурлын Лхагва→Мягмар.
  */
-export async function loadSalesActivity(db: SupabaseClient, options: { shopId: string; shopName: string; meetingDate: string }): Promise<SalesActivityReport> {
+export async function loadSalesActivity(db: SupabaseClient, options: { shopId: string; shopName: string; meetingDate: string; range?: ReportRange }): Promise<SalesActivityReport> {
     const { shopId, meetingDate } = options;
-    const window = salesActivityWindow(meetingDate);
+    const range = options.range ?? weeklyReviewRange(meetingDate);
+    const window = salesActivityWindow(range);
     if (daySpan(window.from, window.to) > DAILY_RANGE_MAX_DAYS) throw new Error(`sales-activity window exceeds ${DAILY_RANGE_MAX_DAYS} days`);
     const start = ubDateStart(window.from).toISOString();
     const end = ubDateStart(shiftDate(window.to, 1)).toISOString();
@@ -52,6 +56,7 @@ export async function loadSalesActivity(db: SupabaseClient, options: { shopId: s
 
     return buildSalesActivity({
         meetingDate,
+        range,
         config: settings.config,
         configSaved: settings.saved,
         configInvalid: settings.invalid,

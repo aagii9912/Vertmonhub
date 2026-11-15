@@ -50,6 +50,15 @@ describe('get_weekly_sales_report', () => {
         await run('get_weekly_sales_report', { meeting_date: '2026-10-07' }, false, { ...manager, modules: ['reports', 'contracts'] });
         expect(mocks.load).toHaveBeenCalledWith(expect.anything(), { shopId: 'shop-1', meetingDate: '2026-10-07', canSeeCustomers: true });
     });
+
+    it('reads a chosen period with the meeting page rule (from + to, ≤ 92 days, not after the meeting)', async () => {
+        await run('get_weekly_sales_report', { meeting_date: '2026-10-07', from: '2026-09-23', to: '2026-10-06' });
+        expect(mocks.load).toHaveBeenLastCalledWith(expect.anything(), { shopId: 'shop-1', meetingDate: '2026-10-07', range: { from: '2026-09-23', to: '2026-10-06' }, canSeeCustomers: false });
+        mocks.load.mockClear();
+        expect(await run('get_weekly_sales_report', { meeting_date: '2026-10-07', from: '2026-09-23' })).toHaveProperty('error', expect.stringContaining('хоёуланг'));
+        expect(await run('get_weekly_sales_report', { meeting_date: '2026-10-07', from: '2026-10-01', to: '2026-10-08' })).toHaveProperty('error', expect.stringContaining('хурлын өдрөөс хойш'));
+        expect(mocks.load).not.toHaveBeenCalled();
+    });
 });
 
 describe('weekly updates', () => {

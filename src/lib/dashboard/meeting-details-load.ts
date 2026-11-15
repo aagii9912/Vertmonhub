@@ -5,6 +5,8 @@ import { ubDateStr } from '@/lib/utils/date';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { buildMeetingDetails, meetingDetailWeeks, type MeetingDetailsReport } from './meeting-details';
 import { isMissingSchemaError } from './sales-activity-load';
+import { weeklyReviewRange } from './weekly-review';
+import type { ReportRange } from './report-range';
 
 const ID_CHUNK = 100;
 
@@ -58,9 +60,9 @@ export async function loadViewingReferrals(db: SupabaseClient, shopId: string, v
 }
 
 /**
- * Хурлын «уулзалтын дэлгэрэнгүй»-н эх өгөгдөл (нэг shop = нэг төсөл): сүүлийн 4 долоо хоногийн
- * `completed`, устгаагүй уулзалт (сонирхол, төрөл), байрны бүртгэлийн өрөө, тайлант 7 хоногийн шинэ
- * уулзалтын сэжим. Уншилтын алдааг хоосон тайлан болгож нуухгүй.
+ * Хурлын «уулзалтын дэлгэрэнгүй»-н эх өгөгдөл (нэг shop = нэг төсөл): тайлант хугацааны сүүлийн өдрөөр дуусах 4 долоо
+ * хоног ба тайлант хугацааны `completed`, устгаагүй уулзалт (сонирхол, төрөл, нөхцөл), байрны бүртгэлийн өрөө, тайлант
+ * хугацааны шинэ уулзалтын сэжим. `range` өгөөгүй бол хурлын Лхагва→Мягмар. Уншилтын алдааг хоосон тайлан болгож нуухгүй.
  */
 /** Уулзалтын бүртгэл эхэлсэн УБ өдөр: устгаагүй, ямар ч төлөвтэй хамгийн эртний уулзалт (алга бол null). 9, 10-р слайдын нэг эх. */
 export async function loadMeetingsSince(db: SupabaseClient, shopId: string): Promise<string | null> {
@@ -70,11 +72,13 @@ export async function loadMeetingsSince(db: SupabaseClient, shopId: string): Pro
     return data?.scheduled_at ? ubDateStr(new Date(data.scheduled_at as string)) : null;
 }
 
-export async function loadMeetingDetails(db: SupabaseClient, options: { shopId: string; meetingDate: string }): Promise<MeetingDetailsReport> {
+export async function loadMeetingDetails(db: SupabaseClient, options: { shopId: string; meetingDate: string; range?: ReportRange }): Promise<MeetingDetailsReport> {
     const { shopId, meetingDate } = options;
-    const weeks = meetingDetailWeeks(meetingDate);
-    const start = ubDateStart(weeks[0].from).toISOString();
-    const end = ubDateStart(shiftDate(weeks.at(-1)!.to, 1)).toISOString();
+    const range = options.range ?? weeklyReviewRange(meetingDate);
+    const weeks = meetingDetailWeeks(range.to);
+    // 4 долоо хоногоос урт тайлант хугацаанд сэжим, нөхцөлийн хүснэгт хугацааны эхнээс уншина.
+    const start = ubDateStart([weeks[0].from, range.from].sort()[0]).toISOString();
+    const end = ubDateStart(shiftDate(range.to, 1)).toISOString();
     // Төлбөрийн нөхцөлийн баганууд (migration 20261113120000) алга орчинд тэдгээргүйгээр дахин уншина — тайланг унагахгүй.
     let termsAvailable = true;
     type ViewingRow = { id: string; scheduled_at: string; meeting_type: string | null; interests: unknown; advance_payment_term?: string | null; remainder_payment_term?: string | null };
@@ -98,8 +102,7 @@ export async function loadMeetingDetails(db: SupabaseClient, options: { shopId: 
         id: row.id, day: ubDateStr(new Date(row.scheduled_at)), type: row.meeting_type, interests: row.interests,
         advanceTerm: row.advance_payment_term ?? null, remainderTerm: row.remainder_payment_term ?? null,
     }));
-    const last = weeks.at(-1)!;
-    const fresh = meetings.filter(meeting => meeting.type === 'new_customer' && meeting.day >= last.from && meeting.day <= last.to).map(meeting => meeting.id);
+    const fresh = meetings.filter(meeting => meeting.type === 'new_customer' && meeting.day >= range.from && meeting.day <= range.to).map(meeting => meeting.id);
     const referrals = await loadViewingReferrals(db, shopId, fresh);
-    return buildMeetingDetails({ meetingDate, meetings, units, referrals, meetingsSince, paymentTermsAvailable: termsAvailable });
+    return buildMeetingDetails({ meetingDate, range, meetings, units, referrals, meetingsSince, paymentTermsAvailable: termsAvailable });
 }

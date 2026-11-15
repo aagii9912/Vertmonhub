@@ -12,6 +12,7 @@ import type { WeeklySalesReport } from '@/lib/dashboard/weekly-sales';
 import type { WeeklyFile } from '@/lib/dashboard/weekly-files';
 import { undatedContractsHint, undatedContractsShort } from '@/lib/dashboard/contract-dates';
 import { weeklyContractAmount, weeklyContractCount, weeklyMark } from '@/lib/dashboard/weekly-mark';
+import { reportPeriodName } from '@/lib/dashboard/report-range';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
 import { FloorMap, FloorMapLegend } from './FloorMap';
 
@@ -21,11 +22,12 @@ export type WeeklySalesResponse = WeeklySalesReport & { meetingDate: string; pro
 const area = (value: number | null) => value === null ? '—' : `${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 const money = (value: number | null) => value === null ? '—' : formatMNT(value);
 
-export function useWeeklySales(meetingDate: string, enabled: boolean) {
+/** `range` — тайлант хугацаа (хурлын Лхагва–Мягмар эсвэл хуудсан дээр сонгосон, `resolveReportRange`). */
+export function useWeeklySales(meetingDate: string, range: { from: string; to: string }, enabled: boolean) {
     const { shop, user } = useAuth();
     return useQuery<WeeklySalesResponse>({
-        queryKey: ['weekly-sales', shop?.id, user?.id, meetingDate],
-        queryFn: ({ signal }) => dashboardJson(`/api/dashboard/reports/weekly-sales?meetingDate=${meetingDate}`, { signal, shopId: shop?.id }),
+        queryKey: ['weekly-sales', shop?.id, user?.id, meetingDate, range.from, range.to],
+        queryFn: ({ signal }) => dashboardJson(`/api/dashboard/reports/weekly-sales?${new URLSearchParams({ meetingDate, ...range })}`, { signal, shopId: shop?.id }),
         enabled: !!shop?.id && enabled, staleTime: 60_000, retry: 1,
     });
 }
@@ -46,13 +48,16 @@ export function WeeklySalesDetails({ query, canOpenErp }: { query: ReturnType<ty
     // Хувь нь зөвхөн төлөвлөгөөнд хамаарах гэрээгээр — хажууд нь тэр дүнг (Агуулах г.м.-ийг хассан) харуулна.
     const outsidePlan = report.month.outsidePlanCount ?? 0;
     const plannedTotal = weeklyContractAmount(report.month.planTotal, report.month.planCount, undatedPlan, formatMNTShort);
+    // Хуудсан дээр 7 хоногоос өөр тайлант хугацаа сонгосон бол «7 хоног» биш «тайлант хугацаа» (`report-range.ts`).
+    const weekly = reportPeriodName(report.range).name === '7 хоног';
+    const periodTitle = weekly ? 'Энэ долоо хоногийн гэрээ' : `Тайлант хугацааны гэрээ (${report.range.from} – ${report.range.to})`;
 
     return (
         <div className="space-y-6">
             <SourceLine report={report} canOpenErp={canOpenErp} />
 
             <div className="grid grid-cols-2 gap-5 rounded-2xl border border-border p-5 lg:grid-cols-4">
-                <Figure label="Энэ 7 хоногийн гэрээ" value={weeklyContractCount(report.week.count, undated)}
+                <Figure label={weekly ? 'Энэ 7 хоногийн гэрээ' : 'Тайлант хугацааны гэрээ'} value={weeklyContractCount(report.week.count, undated)}
                     helper={undated ? undatedContractsShort(undated) : `${formatMNTShort(report.week.total)} · өмнөх ${report.previousWeek.count} (${formatMNTShort(report.previousWeek.total)})`} />
                 <Figure label={`${Number(report.month.month.slice(5))}-р сарын гэрээ`} value={weeklyContractCount(report.month.count, undated)}
                     helper={report.month.target ? `${plannedTotal} / төлөвлөгөө ${formatMNTShort(report.month.target)} · ${monthPct}${outsidePlan ? ` · төлөвлөгөөгүй ${outsidePlan} гэрээ хассан` : ''}` : `${monthTotal} · сарын төлөвлөгөө тохируулаагүй`} />
@@ -64,8 +69,8 @@ export function WeeklySalesDetails({ query, canOpenErp }: { query: ReturnType<ty
             {report.cash && <p className="text-xs leading-relaxed text-muted-foreground">{report.cash.basis}{report.cash.unknown ? ` Төлсөн дүн хоосон ${report.cash.unknown} мөр тооцоонд ороогүй.` : ''}</p>}
 
             <section className="break-inside-avoid space-y-2">
-                <h3 className="text-sm font-medium">Энэ долоо хоногийн гэрээ</h3>
-                {report.week.lines.length ? <Table label="Энэ долоо хоногийн гэрээ" head={['Огноо', 'Бүтээгдэхүүн', 'Блок', 'Тоот', 'Захиалагч', 'м²', 'Нийт үнэ', 'Урьдчилгаа', 'Төлсөн', 'Менежер', 'Суваг']}>
+                <h3 className="text-sm font-medium">{periodTitle}</h3>
+                {report.week.lines.length ? <Table label={periodTitle} head={['Огноо', 'Бүтээгдэхүүн', 'Блок', 'Тоот', 'Захиалагч', 'м²', 'Нийт үнэ', 'Урьдчилгаа', 'Төлсөн', 'Менежер', 'Суваг']}>
                     {report.week.lines.map(line => <tr key={line.key} className="border-t border-border">
                         <td className="num whitespace-nowrap px-2 py-2">{line.date?.slice(5) ?? '—'}</td>
                         <td className="px-2">{line.kindLabel}</td>
@@ -79,7 +84,7 @@ export function WeeklySalesDetails({ query, canOpenErp }: { query: ReturnType<ty
                         <td className="whitespace-nowrap px-2" title={line.manager ?? undefined}>{line.manager?.split('.')[0] ?? '—'}</td>
                         <td className="px-2">{line.channel ?? '—'}</td>
                     </tr>)}
-                </Table> : <Empty>{undated ? 'Гэрээний тоо тодорхойгүй — огноогүй гэрээ байна.' : 'Тайлант долоо хоногт гэрээ бүртгэгдээгүй.'}</Empty>}
+                </Table> : <Empty>{undated ? 'Гэрээний тоо тодорхойгүй — огноогүй гэрээ байна.' : weekly ? 'Тайлант долоо хоногт гэрээ бүртгэгдээгүй.' : 'Тайлант хугацаанд гэрээ бүртгэгдээгүй.'}</Empty>}
                 {report.week.byKind.length > 0 && <p className="text-xs text-muted-foreground">{report.week.byKind.map(kind => `${kind.label} ${kind.count} · ${formatMNTShort(kind.total)}`).join(' · ')}{report.week.barter ? ` · бартер ${report.week.barter}` : ''}</p>}
             </section>
 

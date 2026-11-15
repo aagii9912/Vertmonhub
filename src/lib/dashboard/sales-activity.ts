@@ -13,16 +13,17 @@
  *    (`new_customer` / `repeat_customer`), уулзалтын УБ өдрөөр. Өөр төслийн худалдан авагчийг «Шинэ»-ээр
  *    бүртгэдэг (W10) тул тусгай дүрэмгүй. Уулзалтын бүртгэл эхэлсэн өдрөөс (`dataSince`) өмнө null; бүртгэл
  *    хугацааны дунд эхэлсэн бол тоо нь доод хязгаар («N+», `partial`), олдоогүй бол null, хувь нь null.
- *  • 7 хоног = Лхагва→Мягмар (W1), сарын хилээр тасална (`monthWeeks`), сар дамжина; сүүлийн 5 хэсэг.
+ *  • 7 хоног = тайлант хугацааны сүүлийн өдрөөр дуусах бүтэн 7 хоног (анхдагч хугацаанд Лхагва→Мягмар, W1), сарын
+ *    хилээр тасалдаггүй, сар дамжина (борлуулалтын алба, 2026-11-15; `trailingWeeks`); сүүлийн 5 нь.
  *  • Төлөвлөгөө = төслийн багийн сарын төлөвлөгөө (`team_sales_targets.activity_targets`). Хувь тэнцүүлсэн
  *    төлөвлөгөө = round(сарын × min(тайлант өдөр, 30) / 30), хувь = round(гүйцэтгэл / хувь тэнцүүлсэн × 100) (W11).
  */
 import { readActivityTargets as readMonthActivityTargets, type ActivityTargetKey } from '@/lib/sales/monthly';
 import { daySpan, shiftDate } from '@/lib/sales/activity';
 import { CALL_CATEGORIES, callMetric, chatMetric, configMetrics, foldLegacyCounts, type DailyReportConfig, type DailyReportLine } from './daily-report';
-import { monthWeeks } from './weekly-sales';
 import { boundedCount, periodCoverage } from './data-since';
 import { weeklyReviewRange } from './weekly-review';
+import { reportPeriodName, trailingWeeks, type ReportRange } from './report-range';
 
 export const ACTIVITY_METRICS = ['hotline', 'managerLine', 'newMeetings', 'repeatMeetings', 'chats'] as const;
 export type ActivityMetric = (typeof ACTIVITY_METRICS)[number];
@@ -56,8 +57,9 @@ export interface ActivityBucket {
 export interface ActivityMonthMetric { actual: number | null; plan: number | null; planToDate: number | null; pct: number | null; partial: boolean }
 export interface SalesActivityReport {
     meetingDate: string;
+    /** Тайлант хугацаа (хуудсан дээр сонгосон, анхдагч нь хурлын Лхагва→Мягмар). */
     range: { from: string; to: string };
-    /** Сүүлийн ≤ 5 Лхагва→Мягмар хэсэг (сарын хилээр тасалсан), range.to-оор дуусна, эрт → хожуу. */
+    /** range.to-оор дуусах сүүлийн 5 бүтэн 7 хоног (сарын хилээр тасалдаггүй), эрт → хожуу. */
     buckets: ActivityBucket[];
     month: { month: string; from: string; to: string; metrics: Record<ActivityMetric, ActivityMonthMetric> };
     /** Хадгалсан загварын нэр: эхний шугам, хоёр дахь шугам, чатын сувгууд. */
@@ -72,6 +74,8 @@ export interface SalesActivityMeeting { /** Уулзалтын УБ өдөр. */
 
 export interface SalesActivityInput {
     meetingDate: string;
+    /** Сонгосон тайлант хугацаа (`resolveReportRange`); өгөөгүй бол хурлын Лхагва→Мягмар. */
+    range?: ReportRange;
     config: DailyReportConfig;
     /** Загвар хадгалсан эсэх, хадгалсан нь уншигдсан эсэх (`readDailyReportConfig`). */
     configSaved: boolean;
@@ -121,21 +125,15 @@ export function activityRangeLabel(from: string, to: string): string {
 }
 
 /**
- * range.to-оор дуусах сүүлийн `count` хэсэг: сар бүрийн Лхагва→Мягмар 7 хоног (`monthWeeks`, 1 өдрийн
- * эхний хэсгийг нийлүүлнэ), сар дамжина; range.to-оос хойшхийг тасална.
+ * range.to-оор дуусах сүүлийн `count` бүтэн 7 хоног (`trailingWeeks`): сарын хилээр тасалдаггүй, сар дамжина —
+ * «10/28–11/03» нэг мөр (өмнө нь 10/28–10/31 ба 11/01–11/03 гэж хуваагддаг байсан). Анхдагч хугацаанд Лхагва→Мягмар.
  */
 export function activityBuckets(to: string, count = SALES_ACTIVITY_BUCKETS): Array<{ label: string; from: string; to: string }> {
-    const segments: Array<{ from: string; to: string }> = [];
-    for (let month = to.slice(0, 7); segments.length < count; month = shiftDate(`${month}-01`, -1).slice(0, 7)) {
-        const weeks = monthWeeks(month).filter(week => week.from <= to).map(week => ({ from: week.from, to: week.to < to ? week.to : to }));
-        segments.unshift(...weeks);
-    }
-    return segments.slice(-count).map(segment => ({ ...segment, label: activityRangeLabel(segment.from, segment.to) }));
+    return trailingWeeks(to, count).map(week => ({ ...week, label: activityRangeLabel(week.from, week.to) }));
 }
 
-/** Хурлын тайлангийн цонх: хэсгүүд, сар (сарын эхнээс тайлант өдөр хүртэл), уншиж буй муж. */
-export function salesActivityWindow(meetingDate: string) {
-    const range = weeklyReviewRange(meetingDate);
+/** Хурлын тайлангийн цонх: 7 хоногууд, сар (сарын эхнээс тайлант өдөр хүртэл), уншиж буй муж. */
+export function salesActivityWindow(range: ReportRange) {
     const buckets = activityBuckets(range.to);
     const month = range.to.slice(0, 7);
     const end = monthEnd(month);
@@ -151,7 +149,7 @@ const completeValues = (): Record<ActivityMetric, boolean> =>
 
 export function buildSalesActivity(input: SalesActivityInput): SalesActivityReport {
     const { config } = input;
-    const window = salesActivityWindow(input.meetingDate);
+    const window = salesActivityWindow(input.range ?? weeklyReviewRange(input.meetingDate));
     const notes: string[] = [];
 
     // Шугам: эхний = төслийн утас, хоёр дахь = менежерийн дугаар (W10); чат = бүх суваг. Загвар өөрчлөгдөхөөс өмнөх
@@ -220,7 +218,7 @@ export function buildSalesActivity(input: SalesActivityInput): SalesActivityRepo
     if (countsSince && countsSince > window.month.from && countsSince <= window.month.to) {
         notes.push(`${window.month.month} сарын дуудлага, чатын тоо ${countsSince}-нээс хойшхи бүртгэлээр тул биелэлтийн хувь «—».`);
     }
-    if (input.today && window.range.to > input.today) notes.push(`Тайлант 7 хоног (${window.range.from} – ${window.range.to}) хараахан дуусаагүй байна.`);
+    if (input.today && window.range.to > input.today) notes.push(`Тайлант ${reportPeriodName(window.range).name} (${window.range.from} – ${window.range.to}) хараахан дуусаагүй байна.`);
 
     const countDates = new Set(input.counts.map(row => row.report_date));
     const buckets: ActivityBucket[] = window.buckets.map(bucket => {

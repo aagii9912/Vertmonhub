@@ -17,6 +17,7 @@ import { formatKpiReportText } from '@/lib/dashboard/kpi-report';
 import { getManagerPerformance } from '@/lib/reports/manager-performance';
 import { loadWeeklySales } from '@/lib/dashboard/weekly-sales-load';
 import { formatWeeklySalesText, meetingDateSchema, nextMeetingDate } from '@/lib/dashboard/weekly-review';
+import { resolveReportRange } from '@/lib/dashboard/report-range';
 import { listWeeklyUpdates, saveWeeklyUpdate } from '@/lib/dashboard/weekly-updates';
 import { DAILY_RANGE_MAX_DAYS, DailyReportDateSchema, formatDailyReportText, NEW_LEADS_SECTION_ENABLED, PHONE_LEAD_CHECK_ENABLED, phoneLeadChecks } from '@/lib/dashboard/daily-report';
 import { DailyReportUnavailableError, loadDailyReport, resolveDailyReportViewer } from '@/lib/dashboard/daily-report-load';
@@ -211,10 +212,14 @@ function meetingDateArg(value: unknown): { date: string } | { error: string } {
 export async function getWeeklySalesReportTool(shopId: string, args: Args, perms: AssistantPerms) {
     const meeting = meetingDateArg(args.meeting_date);
     if ('error' in meeting) return meeting;
+    // Тайлант хугацаа (хурлын хуудастай нэг дүрэм): өгөөгүй бол хурлын Лхагва–Мягмар.
+    const text = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : null;
+    const period = resolveReportRange(meeting.date, text(args.from), text(args.to));
+    if (!period.ok) return { error: period.error };
     // Захиалагчийн нэрийг зөвхөн гэрээ харах эрхтэй хүнд (route-тэй ижил).
     const canSeeCustomers = perms.role === 'super_admin' || !!perms.modules?.includes('contracts');
     try {
-        const report = await loadWeeklySales(db(), { shopId, meetingDate: meeting.date, canSeeCustomers });
+        const report = await loadWeeklySales(db(), { shopId, meetingDate: meeting.date, ...(period.custom ? { range: period.range } : {}), canSeeCustomers });
         const { inventory, week, month, ...rest } = report;
         return {
             ...rest,

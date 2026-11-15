@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { type OperationsReport } from '@/lib/dashboard/operations-report';
 import { type MarketingPerformance } from '@/lib/marketing/performance';
 import { formatReviewChange, formatWeeklyReview, meetingDateSchema, nextMeetingDate, shiftReviewDate, updatePart, weeklyDiscussionItems, weeklyReviewRange, type WeeklyUpdate, type WeeklyUpdatesData } from '@/lib/dashboard/weekly-review';
+import { previousReportRange, resolveReportRange, type ReportRange } from '@/lib/dashboard/report-range';
 import { PerformanceKpis, PerformanceChannelTable } from '@/components/marketing/PerformanceKpis';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
@@ -31,6 +32,7 @@ import { useMarketingConnections, WeeklyMarketingConnections } from '@/component
 import { WeeklySocialPage } from '@/components/weekly/WeeklySocialPage';
 import { WeeklyInstagram } from '@/components/weekly/WeeklyInstagram';
 import { useWeeklySlides, WeeklySlides } from '@/components/weekly/WeeklySlides';
+import { ReportPeriodPicker } from '@/components/weekly/ReportPeriodPicker';
 import { WeeklyWorkPlan } from '@/components/weekly/WeeklyWorkPlan';
 import { workPlanMonth, workPlanMonthLabel } from '@/lib/sales/work-plan';
 import { contentPlanWindow, useContentPlan, WeeklyContentPlan } from '@/components/weekly/WeeklyContentPlan';
@@ -44,6 +46,15 @@ import { weeklyManualStatus } from '@/lib/dashboard/weekly-manual';
 
 type View = 'steps' | 'full';
 type DiscussionItem = ReturnType<typeof weeklyDiscussionItems>[number];
+/** Хаягаас уншсан эхний төлөв: `?view=full`, `?track=&step=`, `?meeting=&from=&to=` (сонгосон тайлант хугацаа). */
+interface Initial { view: View; track: string | null; step: string | null; meeting: string | null; from: string | null; to: string | null }
+
+/** Хаягийн хурлын өдөр (Лхагва биш бол дараагийн хурал) ба тайлант хугацаа (буруу эсвэл анхдагч бол null). */
+function initialPeriod(initial: Initial): { meeting: string; custom: ReportRange | null } {
+    const meeting = initial.meeting && meetingDateSchema.safeParse(initial.meeting).success ? initial.meeting : nextMeetingDate();
+    const period = resolveReportRange(meeting, initial.from, initial.to);
+    return { meeting, custom: period.ok && period.custom ? period.range : null };
+}
 /** Тайлан бэлдэх нэг алхам: юу хийхийг `hint` хэлнэ, `body` нь тайлангийн тухайн хэсэг. `warn` — анхаарах цэг (`warnText` нь шалтгаан). */
 interface Step { id: string; title: string; hint: string; href?: string; warn?: boolean; warnText?: string; done?: boolean; body: ReactNode }
 interface Track { id: 'sales' | 'marketing' | 'self'; label: string; steps: Step[] }
@@ -55,15 +66,22 @@ export default function WeeklyReviewPage() {
 function WeeklyReviewRoute() {
     const { shop, user } = useAuth();
     const search = useSearchParams();
-    // `?track=marketing&step=channels` — тухайн алхмаас; `?view=full` — бүх хэсэг нэг хуудсанд (танилцуулах, хэвлэх).
-    const initial = { view: (search.get('view') === 'full' ? 'full' : 'steps') as View, track: search.get('track'), step: search.get('step') };
+    // `?track=marketing&step=channels` — тухайн алхмаас; `?view=full` — бүх хэсэг нэг хуудсанд (танилцуулах, хэвлэх);
+    // `?meeting=&from=&to=` — хурал ба сонгосон тайлант хугацаа (дахин ачаалах, хуваалцах).
+    const initial: Initial = {
+        view: search.get('view') === 'full' ? 'full' : 'steps', track: search.get('track'), step: search.get('step'),
+        meeting: search.get('meeting'), from: search.get('from'), to: search.get('to'),
+    };
     // Байгууллага/хэрэглэгч солиход өмнөх бичвэр, тайланг авч үлдэхгүй.
     return <WeeklyReview key={`${shop?.id}:${user?.id}`} initial={initial} />;
 }
 
-function WeeklyReview({ initial }: { initial: { view: View; track: string | null; step: string | null } }) {
+function WeeklyReview({ initial }: { initial: Initial }) {
     const { shop, user } = useAuth();
-    const [meetingDate, setMeetingDate] = useState(() => nextMeetingDate());
+    const [start] = useState(() => initialPeriod(initial));
+    const [meetingDate, setMeetingDate] = useState(start.meeting);
+    // Сонгосон тайлант хугацаа (`report-range.ts`); null = хурлын өмнөх Лхагва–Мягмар. Хурал солиход анхдагч руу буцна.
+    const [customRange, setCustomRange] = useState<ReportRange | null>(start.custom);
     // Хадгалаагүй зүйл: «Миний шинэчлэл»-ийн бичвэр эсвэл «Гараар нөхөх» алхмын төлөвлөгөөний засвар.
     const [updateDirty, setDirty] = useState(false);
     const [planDirty, setPlanDirty] = useState(false);
@@ -76,8 +94,12 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
     const stepperRef = useRef<HTMLElement>(null);
     const stepHeadingRef = useRef<HTMLHeadingElement>(null);
     const navigated = useRef(false);
-    const range = weeklyReviewRange(meetingDate);
-    const previousRange = weeklyReviewRange(shiftReviewDate(meetingDate, -7));
+    // Борлуулалтын тайлан, хоёр борлуулалтын илтгэл, хуулах текст — сонгосон хугацаагаар (`range`); маркетингийн хэсэг
+    // (контент, сошиал, Meta, төсөв, маркетингийн илтгэл) хурлын 7 хоногоор (`meetingWeek`).
+    const meetingWeek = weeklyReviewRange(meetingDate);
+    const range = customRange ?? meetingWeek;
+    const previousRange = previousReportRange(range);
+    const previousMeetingWeek = previousReportRange(meetingWeek);
     const can = (module: string) => !!user && (user.role === 'super_admin' || user.permissions.modules.includes(module));
     const canWrite = user?.role === 'super_admin' || !!user?.permissions.canWrite;
     const canEditSlides = (part: WeeklySlidePart) => user?.role === 'super_admin' || (!!user?.permissions.canWrite && can(WEEKLY_SLIDE_PART_MODULE[part]));
@@ -99,9 +121,16 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
         queryFn: ({ signal }) => dashboardJson(`/api/dashboard/reports/operations?${new URLSearchParams(previousRange)}`, { signal, shopId: shop?.id }),
         enabled: !!shop?.id && can('reports'), staleTime: 60_000, retry: 1,
     });
+    // Лидийн эх сурвалж (борлуулалтын алхам) — тайлант хугацаагаар; маркетингийн хэсгийн зардал, кампанит ажил — хурлын
+    // 7 хоногоор. Хугацаа анхдагч үед хоёр нь нэг хүсэлт (түлхүүр ижил).
     const marketingQuery = useQuery<MarketingPerformance>({
         queryKey: ['marketing-performance', 'weekly', shop?.id, user?.id, range.from, range.to],
         queryFn: async ({ signal }) => (await dashboardJson<{ report: MarketingPerformance }>(`/api/marketing/performance?${params}`, { signal, shopId: shop?.id })).report,
+        enabled: !!shop?.id && can('marketing-roi'), staleTime: 60_000, retry: 1,
+    });
+    const marketingWeekQuery = useQuery<MarketingPerformance>({
+        queryKey: ['marketing-performance', 'weekly', shop?.id, user?.id, meetingWeek.from, meetingWeek.to],
+        queryFn: async ({ signal }) => (await dashboardJson<{ report: MarketingPerformance }>(`/api/marketing/performance?${new URLSearchParams(meetingWeek)}`, { signal, shopId: shop?.id })).report,
         enabled: !!shop?.id && can('marketing-roi'), staleTime: 60_000, retry: 1,
     });
     const updatesQuery = useQuery<WeeklyUpdatesData>({
@@ -109,42 +138,44 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
         queryFn: ({ signal }) => dashboardJson(`/api/dashboard/weekly-updates?meetingDate=${meetingDate}`, { signal, shopId: shop?.id }),
         enabled: !!shop?.id, staleTime: 30_000, retry: 1,
     });
-    const weeklySalesQuery = useWeeklySales(meetingDate, can('reports'));
-    const manualQuery = useWeeklyManual(meetingDate, can('reports'));
+    const weeklySalesQuery = useWeeklySales(meetingDate, range, can('reports'));
+    const manualQuery = useWeeklyManual(meetingDate, range, can('reports'));
     const slidesQuery = useWeeklySlides(meetingDate, can('reports') || can('marketing-roi'));
-    const contentQuery = useContentPlan(meetingDate, range, can('marketing-roi'));
+    const contentQuery = useContentPlan(meetingDate, meetingWeek, can('marketing-roi'));
     const connectionsQuery = useMarketingConnections(can('marketing-roi'));
     const tasksQuery = useMyTasks();
     const sales = can('reports') && !salesQuery.isError ? salesQuery.data : undefined;
     const previousSales = can('reports') && !previousSalesQuery.isError ? previousSalesQuery.data : undefined;
     const marketing = can('marketing-roi') && !marketingQuery.isError ? marketingQuery.data : undefined;
+    const marketingWeek = can('marketing-roi') && !marketingWeekQuery.isError ? marketingWeekQuery.data : undefined;
     const updates = updatesQuery.isError ? undefined : updatesQuery.data;
     const completedTasks = (tasksQuery.data?.tasks || []).filter(task => task.status === 'done' && task.completed_at && ubDateStr(new Date(task.completed_at)) >= range.from && ubDateStr(new Date(task.completed_at)) <= range.to);
     const weeklySales = can('reports') && !weeklySalesQuery.isError ? weeklySalesQuery.data : undefined;
-    const contentWindow = contentPlanWindow(meetingDate, range);
+    const contentWindow = contentPlanWindow(meetingDate, meetingWeek);
     const contentPlan = can('marketing-roi') && contentQuery.data ? {
-        week: summarizeContentPlan(contentQuery.data.items, range, ubDateStr()),
+        week: summarizeContentPlan(contentQuery.data.items, meetingWeek, ubDateStr()),
         next: summarizeContentPlan(contentQuery.data.items, contentWindow.next, ubDateStr()),
         previous: summarizeContentPlan(contentQuery.data.items, contentWindow.previous, ubDateStr()),
     } : undefined;
     const connections = can('marketing-roi') ? connectionsQuery.data ?? null : null;
-    const loading = salesQuery.isFetching || previousSalesQuery.isFetching || marketingQuery.isFetching || updatesQuery.isFetching || weeklySalesQuery.isFetching || slidesQuery.isFetching || contentQuery.isFetching || connectionsQuery.isFetching;
+    const loading = salesQuery.isFetching || previousSalesQuery.isFetching || marketingQuery.isFetching || marketingWeekQuery.isFetching || updatesQuery.isFetching || weeklySalesQuery.isFetching || slidesQuery.isFetching || contentQuery.isFetching || connectionsQuery.isFetching;
+    const marketingError = marketingQuery.error ?? marketingWeekQuery.error;
     const notices = [
         ...(range.to >= ubDateStr() ? ['Тайлант хугацаа дуусаагүй. Одоогоор бүртгэсэн мэдээллийг харуулж байна.'] : []),
         ...(!can('reports') ? ['Борлуулалтын нэгдсэн тоонд тайлангийн эрх шаардлагатай.'] : salesQuery.error ? [`Борлуулалт: ${salesQuery.error.message}`] : []),
         ...(can('reports') && previousSalesQuery.error ? [`Өмнөх борлуулалтын харьцуулалт боломжгүй: ${previousSalesQuery.error.message}`] : []),
         ...(can('reports') && weeklySalesQuery.error ? [`Гэрээ, үлдэгдлийн дэлгэрэнгүй: ${weeklySalesQuery.error.message}`] : []),
-        ...(!can('marketing-roi') ? ['Маркетингийн үзүүлэлтэд маркетингийн эрх шаардлагатай.'] : marketingQuery.error ? [`Маркетинг: ${marketingQuery.error.message}`] : []),
+        ...(!can('marketing-roi') ? ['Маркетингийн үзүүлэлтэд маркетингийн эрх шаардлагатай.'] : marketingError ? [`Маркетинг: ${marketingError.message}`] : []),
         ...(can('marketing-roi') && contentQuery.error ? [`Контент төлөвлөгөө: ${contentQuery.error.message}`] : []),
         ...(updatesQuery.error ? [`Ажлын шинэчлэл: ${updatesQuery.error.message}`] : []),
         ...(!updatesQuery.data?.canViewTeam ? ['Ажлын шинэчлэл: зөвхөн миний оруулсан мэдээлэл.'] : []),
     ];
-    const discussionItems = weeklyDiscussionItems({ sales, marketing, contentPlan, updates: updates?.updates, connections });
-    const text = formatWeeklyReview({ shopName: shop?.name || 'Vertmon Hub', meetingDate, sales, previousSales, weeklySales, marketing, contentPlan, updates: updates?.updates, connections, notices });
+    const discussionItems = weeklyDiscussionItems({ sales, marketing, marketingWeek, contentPlan, updates: updates?.updates, connections });
+    const text = formatWeeklyReview({ shopName: shop?.name || 'Vertmon Hub', meetingDate, range, previousRange, sales, previousSales, weeklySales, marketing, marketingWeek, contentPlan, updates: updates?.updates, connections, notices });
     const exportable = !loading && !dirty && !!(sales || marketing || updates);
     const refresh = () => {
         if (can('reports')) { void salesQuery.refetch(); void previousSalesQuery.refetch(); void weeklySalesQuery.refetch(); void manualQuery.refetch(); }
-        if (can('marketing-roi')) void marketingQuery.refetch();
+        if (can('marketing-roi')) { void marketingQuery.refetch(); void marketingWeekQuery.refetch(); }
         if (can('reports') || can('marketing-roi')) void slidesQuery.refetch();
         if (can('marketing-roi')) { void contentQuery.refetch(); void connectionsQuery.refetch(); }
         void updatesQuery.refetch();
@@ -157,12 +188,15 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
             const { exportTeamDeck, exportWeeklyDeck } = await import('@/lib/dashboard/weekly-deck-export');
             const projectName = weeklySales?.projectName || shop?.name || 'Vertmon Hub';
             const slides = slidesQuery.data?.slides ?? [];
+            // Маркетингийн илтгэл хурлын 7 хоногоор; борлуулалтын хоёр илтгэл сонгосон тайлант хугацаагаар.
+            const marketingDeck = kind === 'marketing';
             const result = kind === 'sales-team'
                 ? await exportTeamDeck({ projectName, meetingDate, range, weeklySales, weeklySalesError: weeklySalesQuery.error?.message, slides })
                 : await exportWeeklyDeck({
-                    kind, projectName, meetingDate, range, previousRange,
+                    kind, projectName, meetingDate,
+                    range: marketingDeck ? meetingWeek : range, previousRange: marketingDeck ? previousMeetingWeek : previousRange,
                     discussion: discussionItems.map(({ title, detail, part }) => ({ title, detail, part })), notices,
-                    sales, previousSales, weeklySales, marketing, contentPlan, updates: updates?.updates,
+                    sales, previousSales, weeklySales, marketing: marketingDeck ? marketingWeek : marketing, contentPlan, updates: updates?.updates,
                     slides, canReports: can('reports'), canMarketing: can('marketing-roi'),
                 });
             const label = kind === 'marketing' ? 'Маркетингийн' : kind === 'sales-team' ? 'Борлуулалтын албаны загварын' : 'Борлуулалтын';
@@ -247,15 +281,15 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
     </> : <Unavailable>Лидийн эх сурвалжийн мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.</Unavailable>;
     const salesSlides = <WeeklySlides part="sales" meetingDate={meetingDate} query={slidesQuery} canWrite={canEditSlides('sales')} canDelete={canDeleteSlides('sales')} />;
     const contentPlanBody = can('marketing-roi')
-        ? <WeeklyContentPlan meetingDate={meetingDate} range={range} query={contentQuery} canWrite={canEditSlides('marketing')} canDelete={canDeleteSlides('marketing')} />
+        ? <WeeklyContentPlan meetingDate={meetingDate} range={meetingWeek} query={contentQuery} canWrite={canEditSlides('marketing')} canDelete={canDeleteSlides('marketing')} />
         : <Unavailable>Маркетингийн хэсэг харах эрх шаардлагатай.</Unavailable>;
     const channels = <>
         <WeeklyMarketingConnections query={connectionsQuery} />
         <WeeklySocialPage meetingDate={meetingDate} />
         <WeeklyInstagram meetingDate={meetingDate} />
-        <WeeklyMarketingChannels from={range.from} to={range.to} pageConnected={!!connections?.page.connected} />
-        <WeeklyMarketingBudget to={range.to} />
-        {marketing && marketing.spendQuality.current.missingFx > 0 && <Alert variant="warning">Ханшгүй {marketing.spendQuality.current.missingFx} зардал нийтэд ороогүй.</Alert>}
+        <WeeklyMarketingChannels from={meetingWeek.from} to={meetingWeek.to} pageConnected={!!connections?.page.connected} />
+        <WeeklyMarketingBudget to={meetingWeek.to} />
+        {marketingWeek && marketingWeek.spendQuality.current.missingFx > 0 && <Alert variant="warning">Ханшгүй {marketingWeek.spendQuality.current.missingFx} зардал нийтэд ороогүй.</Alert>}
     </>;
     const marketingSlides = <WeeklySlides part="marketing" meetingDate={meetingDate} query={slidesQuery} canWrite={canEditSlides('marketing')} canDelete={canDeleteSlides('marketing')} />;
     const updateForm = <>
@@ -353,11 +387,14 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
     const step = track.steps[stepIndex];
     const nextStep = track.steps[stepIndex + 1];
 
-    // Хаяг нь одоогийн алхмыг заана (дахин ачаалах, хуваалцах).
+    // Хаяг нь одоогийн алхам, хурал, сонгосон тайлант хугацааг заана (дахин ачаалах, хуваалцах).
     useEffect(() => {
-        const query = view === 'full' ? '?view=full' : `?track=${track.id}&step=${step.id}`;
+        const address = new URLSearchParams(view === 'full' ? { view: 'full' } : { track: track.id, step: step.id });
+        if (customRange || meetingDate !== nextMeetingDate()) address.set('meeting', meetingDate);
+        if (customRange) { address.set('from', customRange.from); address.set('to', customRange.to); }
+        const query = `?${address}`;
         if (window.location.search !== query) window.history.replaceState(window.history.state, '', `${window.location.pathname}${query}`);
-    }, [view, track.id, step.id]);
+    }, [view, track.id, step.id, meetingDate, customRange]);
     useEffect(() => {
         if (!navigated.current) return;
         navigated.current = false;
@@ -388,6 +425,11 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
         navigated.current = next === 'steps';
         setView(next);
     }
+    /** Өөр хурал: тайлант хугацаа тэр хурлын Лхагва–Мягмар руу буцна (сонгосон хугацаа тухайн хурлынх). */
+    function changeMeeting(date: string) {
+        setMeetingDate(date);
+        setCustomRange(null);
+    }
 
     return (
         <div className="mx-auto max-w-[1240px] space-y-7">
@@ -407,17 +449,21 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
             </header>
 
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5 print:hidden">
-                <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="icon" aria-label="Өмнөх хурал" disabled={dirty} onClick={() => setMeetingDate(shiftReviewDate(meetingDate, -7))}><ChevronLeft /></Button>
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="ghost" size="icon" aria-label="Өмнөх хурал" disabled={dirty} onClick={() => changeMeeting(shiftReviewDate(meetingDate, -7))}><ChevronLeft /></Button>
                     <label className="text-xs text-muted-foreground">Хурлын өдөр
                         <input type="date" value={meetingDate} disabled={dirty} aria-label="Хурлын өдөр" onChange={event => {
                             const parsed = meetingDateSchema.safeParse(event.target.value);
-                            if (parsed.success) setMeetingDate(parsed.data);
+                            if (parsed.success) changeMeeting(parsed.data);
                             else toast.error('Лхагва гарагийн огноо сонгоно уу.');
-                        }} className="mt-1 block rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground focus-ring" />
+                        }} className="mt-1 block rounded-md border border-control bg-surface px-3 py-2 text-sm text-foreground focus-ring" />
                     </label>
-                    <Button variant="ghost" size="icon" aria-label="Дараагийн хурал" disabled={dirty} onClick={() => setMeetingDate(shiftReviewDate(meetingDate, 7))}><ChevronRight /></Button>
-                    {view === 'steps' && <p className="ml-2 text-xs text-muted-foreground tabular-nums">Тайлант хугацаа<span className="mt-1 block text-sm text-foreground">{range.from} — {range.to}</span></p>}
+                    <Button variant="ghost" size="icon" aria-label="Дараагийн хурал" disabled={dirty} onClick={() => changeMeeting(shiftReviewDate(meetingDate, 7))}><ChevronRight /></Button>
+                    {/* Борлуулалтын тайлангийн хугацааг календараас сонгоно; маркетинг хурлын 7 хоногоор (`report-range.ts`). */}
+                    {can('reports')
+                        ? <div className="ml-2"><ReportPeriodPicker meetingDate={meetingDate} range={range} custom={!!customRange} disabled={dirty} onChange={setCustomRange}
+                            note={customRange && can('marketing-roi') ? `Маркетингийн хэсэг хурлын 7 хоногоор (${meetingWeek.from} — ${meetingWeek.to}).` : null} /></div>
+                        : view === 'steps' && <p className="ml-2 text-xs text-muted-foreground tabular-nums">Тайлант хугацаа<span className="mt-1 block text-sm text-foreground">{range.from} — {range.to}</span></p>}
                 </div>
                 {view === 'full' ? <div className="flex flex-wrap gap-2">
                     <Button variant="ghost" disabled={!exportable} onClick={copy}><ClipboardCopy />Хуулах</Button>
@@ -481,8 +527,9 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
                             <div>
                                 <p className="text-xs font-medium text-muted-foreground">{shop?.name} · Хурлын тайлан</p>
                                 <h2 className="mt-1 text-xl font-semibold tracking-tight">{range.from} — {range.to}</h2>
-                                <p className="mt-1 text-xs text-muted-foreground">Улаанбаатарын цагаар · Хурал: {meetingDate}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">Улаанбаатарын цагаар · Хурал: {meetingDate}{customRange ? ' · сонгосон хугацаа' : ''}</p>
                                 <p className="mt-1 text-xs text-muted-foreground">Харьцуулалт: {previousRange.from} — {previousRange.to}</p>
+                                {customRange && can('marketing-roi') && <p className="mt-1 text-xs text-muted-foreground">Маркетинг: хурлын 7 хоног {meetingWeek.from} — {meetingWeek.to}</p>}
                             </div>
                             <Button variant="ghost" size="icon" className="fullscreen-exit" aria-label="Танилцуулгыг хаах" onClick={() => void document.exitFullscreen()}><X /></Button>
                         </header>
@@ -516,6 +563,7 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
 
                         <section className="break-inside-avoid space-y-4">
                             <ReportHeading number="02" title="Маркетинг — контент төлөвлөгөө ба гүйцэтгэл" href={can('marketing-roi') ? '/marketing/calendar' : undefined} />
+                            {customRange && can('marketing-roi') && <p className="text-xs text-muted-foreground tabular-nums">Маркетингийн хэсэг хурлын 7 хоногоор: {meetingWeek.from} — {meetingWeek.to} (сонгосон тайлант хугацаа борлуулалтын хэсэгт).</p>}
                             {contentPlanBody}
                         </section>
 

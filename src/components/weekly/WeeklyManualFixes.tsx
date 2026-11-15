@@ -17,13 +17,15 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
 import { weeklyManualMetricNames, weeklyManualStatus, type WeeklyManual, type WeeklyManualContract, type WeeklyManualItem, type WeeklyManualUndatedContract } from '@/lib/dashboard/weekly-manual';
+import { reportRangeDays } from '@/lib/dashboard/report-range';
 import { WeeklyPlanEditor } from './WeeklyPlanEditor';
 
-export function useWeeklyManual(meetingDate: string, enabled: boolean) {
+/** `range` — тайлант хугацаа (хурлын Лхагва–Мягмар эсвэл хуудсан дээр сонгосон, `resolveReportRange`). */
+export function useWeeklyManual(meetingDate: string, range: { from: string; to: string }, enabled: boolean) {
     const { shop, user } = useAuth();
     return useQuery<WeeklyManual>({
-        queryKey: ['weekly-manual', shop?.id, user?.id, meetingDate],
-        queryFn: ({ signal }) => dashboardJson(`/api/dashboard/reports/weekly-manual?meetingDate=${meetingDate}`, { signal, shopId: shop?.id }),
+        queryKey: ['weekly-manual', shop?.id, user?.id, meetingDate, range.from, range.to],
+        queryFn: ({ signal }) => dashboardJson(`/api/dashboard/reports/weekly-manual?${new URLSearchParams({ meetingDate, ...range })}`, { signal, shopId: shop?.id }),
         enabled: !!shop?.id && enabled, staleTime: 60_000, retry: 1,
     });
 }
@@ -66,6 +68,8 @@ export function WeeklyManualFixes({ query, contractsFromErp, canEditContracts, c
     const planEntered = weeklyManualMetricNames(manual.plan, true);
     const planMissing = weeklyManualMetricNames(manual.plan, false);
     const actualsEntered = weeklyManualMetricNames(manual.manualActuals, true);
+    // 7 хоногоос өөр тайлант хугацаа сонгосон бол «Энэ долоо хоног» биш (`report-range.ts`).
+    const periodBadge = !manual.range || reportRangeDays(manual.range) === 7 ? 'Энэ долоо хоног' : 'Тайлант хугацаанд';
 
     return (
         <div className="space-y-5">
@@ -84,7 +88,7 @@ export function WeeklyManualFixes({ query, contractsFromErp, canEditContracts, c
                         {options.isError && <p className="text-xs text-status-danger">Менежерийн нэрсийг уншиж чадсангүй. Шинэчлэх товчоор дахин оролдоно уу.</p>}
                         <ul className="divide-y divide-border rounded-xl border border-border" aria-label="Менежергүй гэрээ">
                             {managerless.contracts.map(contract => <ManagerRow key={contract.id} contract={contract} options={options.data} loading={options.isLoading}
-                                canEdit={canEditContracts} canOpen={canOpenContracts} />)}
+                                canEdit={canEditContracts} canOpen={canOpenContracts} periodBadge={periodBadge} />)}
                         </ul>
                         {managerless.count > managerless.contracts.length && <p className="text-xs text-muted-foreground">Эхний {managerless.contracts.length}-ийг харуулав — хадгалах тусам дараагийнх нь гарна.</p>}
                     </>}
@@ -143,11 +147,11 @@ function Item({ title, badge, note, action, children }: { title: string; badge: 
 }
 
 /** Гэрээний мөрийн зүүн тал: тоот (гэрээ рүү холбоос) ба товч мэдээлэл. */
-function ContractLine({ contract, label, details, canOpen }: { contract: WeeklyManualContract; label: string; details: Array<string | null | false>; canOpen: boolean }) {
+function ContractLine({ contract, label, details, canOpen, periodBadge = 'Энэ долоо хоног' }: { contract: WeeklyManualContract; label: string; details: Array<string | null | false>; canOpen: boolean; periodBadge?: string }) {
     return <div className="min-w-[220px] flex-1">
         <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
             {canOpen ? <Link href={`/dashboard/contracts/${contract.id}`} className="hover:underline focus-ring">{label}</Link> : label}
-            {contract.inWeek && <Badge variant="brand">Энэ долоо хоног</Badge>}
+            {contract.inWeek && <Badge variant="brand">{periodBadge}</Badge>}
         </p>
         <p className="num mt-0.5 text-xs text-muted-foreground">{details.filter(Boolean).join(' · ')}</p>
     </div>;
@@ -192,7 +196,7 @@ function DateRow({ contract, canEdit, canOpen }: { contract: WeeklyManualUndated
 }
 
 /** Менежергүй нэг гэрээ: нэрсээс сонгоод хадгална (гэрээний хуудасны «Менежер оруулах»-тай ижил PATCH, аудиттай). */
-function ManagerRow({ contract, options, loading, canEdit, canOpen }: { contract: WeeklyManualContract; options?: ContractManagerOption[]; loading: boolean; canEdit: boolean; canOpen: boolean }) {
+function ManagerRow({ contract, options, loading, canEdit, canOpen, periodBadge }: { contract: WeeklyManualContract; options?: ContractManagerOption[]; loading: boolean; canEdit: boolean; canOpen: boolean; periodBadge: string }) {
     const [value, setValue] = useState('');
     const setManager = useSetContractManager(contract.id);
     const label = contractLabel(contract);
@@ -201,7 +205,7 @@ function ManagerRow({ contract, options, loading, canEdit, canOpen }: { contract
         onError: error => toast.error(error instanceof Error ? error.message : 'Хадгалж чадсангүй'),
     });
     return <li className="flex flex-wrap items-center gap-3 px-4 py-3">
-        <ContractLine contract={contract} label={label} canOpen={canOpen}
+        <ContractLine contract={contract} label={label} canOpen={canOpen} periodBadge={periodBadge}
             details={[contract.kindLabel, contract.block && `${contract.block} блок`, contract.date ?? 'огноогүй', contract.customer, contract.total !== null && formatMNTShort(contract.total)]} />
         {setManager.isSuccess
             ? <p className="inline-flex items-center gap-1.5 text-sm text-status-success"><Check className="size-4" aria-hidden />{setManager.variables}</p>

@@ -105,6 +105,29 @@ describe('Лхагва гарагийн тайлангийн хугацаа', ()
         // Ханшгүй мөргүй бол «Ханшгүй 0 зардал» гэж бичихгүй.
         expect(formatWeeklyReview({ ...base, marketing: synced })).not.toContain('Ханшгүй 0 зардал');
     });
+    it('сонгосон тайлант хугацаа: борлуулалт тэр хугацаагаар, маркетинг хурлын 7 хоногоор (тусад нь нэрлэнэ)', () => {
+        const range = { from: '2026-09-16', to: '2026-09-29' };
+        const lines: ContractLine[] = [
+            { key: 'a', contractNumber: 'a', date: '2026-09-17', kind: 'residential', kindLabel: 'Орон сууц', block: 'Б1', unit: '1', customer: null, area: null, pricePerSqm: null, advanceCondition: null, total: 100, advance: null, paid: null, manager: 'Номин', channel: null, status: 'active' },
+            { key: 'b', contractNumber: 'b', date: '2026-09-25', kind: 'residential', kindLabel: 'Орон сууц', block: 'Б1', unit: '2', customer: null, area: null, pricePerSqm: null, advanceCondition: null, total: 200, advance: null, paid: null, manager: 'Номин', channel: null, status: 'active' },
+            { key: 'c', contractNumber: 'c', date: '2026-09-10', kind: 'residential', kindLabel: 'Орон сууц', block: 'Б1', unit: '3', customer: null, area: null, pricePerSqm: null, advanceCondition: null, total: 50, advance: null, paid: null, manager: 'Номин', channel: null, status: 'active' },
+        ];
+        const weeklySales = { meetingDate: '2026-09-30', ...buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: lines, inventory: null, monthTarget: null }) };
+        // Харьцуулах хугацаа = өмнөх 14 хоног (09/02–09/15).
+        expect(weeklySales.previousWeek).toMatchObject({ from: '2026-09-02', to: '2026-09-15', count: 1, total: 50 });
+        const marketingWeek = marketingReport([{ id: 'fx', spent_at: '2026-09-25', channel: 'meta_ads', amount: 0, exclusion: 'missing_fx', native_amount: 20, currency: 'USD', project_id: null, marketing_owner_name: null, marketing_campaign_id: null, note: null }]);
+        const text = formatWeeklyReview({ shopName: 'Тест', meetingDate: '2026-09-30', range, weeklySales, marketingWeek, notices: [] });
+        expect(text).toContain('Тайлант хугацаа: 2026-09-16 – 2026-09-29 (Улаанбаатар)');
+        expect(text).toContain('Харьцуулах хугацаа: 2026-09-02 – 2026-09-15');
+        expect(text).toContain('Тайлант хугацаа (2026-09-16 – 2026-09-29): 2 гэрээ · 300₮ (өмнөх 1 · 50₮)');
+        expect(text).toContain('  Номин: хугацаанд 2 (300₮)');
+        expect(text).toContain('Маркетинг хурлын 7 хоногоор: 2026-09-23 – 2026-09-29');
+        // Маркетингийн зардал хурлын 7 хоногийн тайлангаас; ханшгүй зардал маркетингийн асуудал.
+        expect(text).toContain('Ханшгүй 1 зардал нийтэд ороогүй.');
+        expect(weeklyDiscussionItems({ marketingWeek })).toEqual([expect.objectContaining({ title: 'Ханшгүй 1 зардал', part: 'marketing' })]);
+        // Анхдагч хугацаанд маркетингийн тусдаа мөргүй.
+        expect(formatWeeklyReview({ shopName: 'Тест', meetingDate: '2026-09-30', notices: [] })).not.toContain('Маркетинг хурлын 7 хоногоор');
+    });
 });
 
 function marketingReport(spend: MarketingSpend[], metaSyncedDays: string[] = []) {

@@ -4,6 +4,7 @@ import {
     activityBuckets, attainmentPct, buildSalesActivity, proratedPlan, readActivityTargets, salesActivityWindow,
     type SalesActivityCountRow, type SalesActivityInput,
 } from '../sales-activity';
+import { weeklyReviewRange } from '../weekly-review';
 
 // Elysium-ийн хадгалсан загвар (2026-10-17): l1 «7786-2222», l2 «8888/9008» ангиллаар; Пэйж FB + Хувь чат.
 const elysium: DailyReportConfig = {
@@ -21,28 +22,38 @@ const input = (overrides: Partial<SalesActivityInput> = {}): SalesActivityInput 
     counts: [], confirmedDates: [], meetings: [], meetingsSince: null, targets: null, targetsAvailable: true, ...overrides,
 });
 
-describe('activity buckets (Wednesday→Tuesday, split at month ends)', () => {
-    it('returns the last five segments ending at the report end, across the month boundary', () => {
+describe('activity buckets (whole 7-day weeks ending on the report day, never split at month ends)', () => {
+    it('returns the last five whole Wednesday→Tuesday weeks ending at the report end, across the month boundary', () => {
         expect(activityBuckets('2026-10-20')).toEqual([
+            { label: '09/16–09/22', from: '2026-09-16', to: '2026-09-22' },
             { label: '09/23–09/29', from: '2026-09-23', to: '2026-09-29' },
-            { label: '09/30', from: '2026-09-30', to: '2026-09-30' },
-            { label: '10/01–10/06', from: '2026-10-01', to: '2026-10-06' },
+            { label: '09/30–10/06', from: '2026-09-30', to: '2026-10-06' },
             { label: '10/07–10/13', from: '2026-10-07', to: '2026-10-13' },
             { label: '10/14–10/20', from: '2026-10-14', to: '2026-10-20' },
         ]);
     });
 
-    it('cuts a merged first-of-month week at the report end', () => {
-        // 2026-09-01 is a Tuesday: monthWeeks merges it into 09-01..09-08, the report ends on 09-01.
-        expect(activityBuckets('2026-09-01').map(bucket => [bucket.from, bucket.to])).toEqual([
-            ['2026-08-05', '2026-08-11'], ['2026-08-12', '2026-08-18'], ['2026-08-19', '2026-08-25'], ['2026-08-26', '2026-08-31'], ['2026-09-01', '2026-09-01'],
+    it('keeps a week that crosses the month end as one row (the team deck of 2026-11-18)', () => {
+        // Өмнө нь 10/28–10/31 ба 11/01–11/03 гэж хоёр хуваагддаг байсан (борлуулалтын алба, 2026-11-15).
+        expect(activityBuckets('2026-11-17').map(bucket => bucket.label)).toEqual(['10/14–10/20', '10/21–10/27', '10/28–11/03', '11/04–11/10', '11/11–11/17']);
+        // Сонгосон хугацаа Даваа гарагт дуусвал 7 хоног Мягмар→Даваа.
+        expect(activityBuckets('2026-11-16').map(bucket => bucket.label)).toEqual(['10/13–10/19', '10/20–10/26', '10/27–11/02', '11/03–11/09', '11/10–11/16']);
+        // Он дамжина.
+        expect(activityBuckets('2026-01-06', 2)).toEqual([
+            { label: '12/24–12/30', from: '2025-12-24', to: '2025-12-30' },
+            { label: '12/31–01/06', from: '2025-12-31', to: '2026-01-06' },
         ]);
     });
 
-    it('reads one window from the first bucket or the month start to the report end', () => {
-        expect(salesActivityWindow('2026-10-21')).toMatchObject({
-            range: { from: '2026-10-14', to: '2026-10-20' }, from: '2026-09-23', to: '2026-10-20',
+    it('reads one window from the first week or the month start to the report end', () => {
+        expect(salesActivityWindow(weeklyReviewRange('2026-10-21'))).toMatchObject({
+            range: { from: '2026-10-14', to: '2026-10-20' }, from: '2026-09-16', to: '2026-10-20',
             month: { month: '2026-10', from: '2026-10-01', to: '2026-10-20' },
+        });
+        // Сонгосон 14 хоногийн хугацаа: 7 хоногууд ба сар нь дуусах өдрөөрөө.
+        expect(salesActivityWindow({ from: '2026-11-03', to: '2026-11-16' })).toMatchObject({
+            range: { from: '2026-11-03', to: '2026-11-16' }, from: '2026-10-13', to: '2026-11-16',
+            month: { month: '2026-11', from: '2026-11-01', to: '2026-11-16' },
         });
     });
 });
@@ -88,15 +99,17 @@ describe('buildSalesActivity', () => {
             confirmedDates: ['2026-10-08', '2026-10-16'],
         }));
         expect(report.buckets.map(bucket => [bucket.label, bucket.values.hotline, bucket.values.managerLine, bucket.values.chats])).toEqual([
+            ['09/16–09/22', null, null, null],
             ['09/23–09/29', null, null, null],
-            ['09/30', null, null, null],
-            ['10/01–10/06', null, null, null],
+            ['09/30–10/06', null, null, null],
             ['10/07–10/13', 2, 2, 3],
             ['10/14–10/20', 9, 4, 6],
         ]);
         expect(report.buckets[4]).toMatchObject({ confirmedDays: 1, knownDays: 2, days: 7 });
         expect(report.buckets[3]).toMatchObject({ confirmedDays: 1, knownDays: 1, days: 7 });
-        expect(report.buckets[1]).toMatchObject({ confirmedDays: 0, knownDays: 0, days: 1 });
+        // Мөр бүр бүтэн 7 хоног (сарын хилээр тасардаггүй).
+        expect(report.buckets.every(bucket => bucket.days === 7)).toBe(true);
+        expect(report.buckets[2]).toMatchObject({ from: '2026-09-30', to: '2026-10-06', confirmedDays: 0, knownDays: 0 });
         expect(report.month.metrics.hotline.actual).toBe(11);
         expect(report.month.metrics.chats.actual).toBe(9);
         expect(report.lines).toEqual({ hotline: '7786-2222', managerLine: '8888/9008', chats: ['Пэйж FB', 'Хувь чат'] });
@@ -188,7 +201,7 @@ describe('buildSalesActivity', () => {
         // Хэсгийн дунд эхэлсэн: олдсон бол «N+», олдоогүй бол null (0 биш); бүртгэлээс өмнө дууссан хэсэг null.
         const midBucket = buildSalesActivity(input({ meetings: [{ day: '2026-10-04', type: 'new_customer' }, ...meetings], meetingsSince: '2026-10-03' }));
         expect(midBucket.buckets[2]).toMatchObject({
-            from: '2026-10-01', to: '2026-10-06',
+            from: '2026-09-30', to: '2026-10-06',
             values: { newMeetings: 1, repeatMeetings: null }, partial: { newMeetings: true, repeatMeetings: false, hotline: false },
         });
         expect(midBucket.buckets[1].values.newMeetings).toBeNull();
@@ -237,5 +250,22 @@ describe('buildSalesActivity', () => {
     it('notes an unfinished report week', () => {
         expect(buildSalesActivity(input({ today: '2026-10-17' })).notes).toEqual(expect.arrayContaining([expect.stringContaining('хараахан дуусаагүй')]));
         expect(buildSalesActivity(input({ today: '2026-10-21' })).notes.join(' ')).not.toContain('дуусаагүй');
+    });
+
+    it('reports the chosen period: weeks end on its last day, the month card is that month and the range is returned', () => {
+        // Хурал 11/18, сонгосон хугацаа 11/03 (Мягмар) – 11/16 (Даваа): 7 хоног Мягмар→Даваа, 10-р сарын 7 хоног ч бүтнээрээ.
+        const report = buildSalesActivity(input({
+            meetingDate: '2026-11-18', range: { from: '2026-11-03', to: '2026-11-16' }, today: '2026-11-15',
+            counts: [cell('2026-10-28', 'call.l1.new', 4), cell('2026-11-02', 'call.l1.new', 6), cell('2026-11-16', 'call.l1.new', 3), cell('2026-11-17', 'call.l1.new', 50)],
+            targets: { hotline: 500 },
+        }));
+        expect(report.range).toEqual({ from: '2026-11-03', to: '2026-11-16' });
+        expect(report.buckets.map(bucket => [bucket.label, bucket.values.hotline])).toEqual([
+            ['10/13–10/19', null], ['10/20–10/26', null], ['10/27–11/02', 10], ['11/03–11/09', null], ['11/10–11/16', 3],
+        ]);
+        // Сар = дуусах өдрийн сар, 11/16 хүртэл (11/17-ны 50 орохгүй): 6 + 3; төлөвлөгөө 500 × 16 / 30.
+        expect(report.month).toMatchObject({ month: '2026-11', from: '2026-11-01', to: '2026-11-16' });
+        expect(report.month.metrics.hotline).toMatchObject({ actual: 9, plan: 500, planToDate: 267 });
+        expect(report.notes).toEqual(expect.arrayContaining(['Тайлант хугацаа (2026-11-03 – 2026-11-16) хараахан дуусаагүй байна.']));
     });
 });
