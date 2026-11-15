@@ -56,7 +56,8 @@ const weeklySalesFixture = () => {
 };
 
 async function setup(page: Page, restricted = false) {
-    const state = { updates: [] as Record<string, unknown>[], failure: false, failSave: false, missingFx: false, requests: [] as string[], errors: [] as string[], writes: 0,
+    // `urls` — хүсэлтийн зам + query (тайлант хугацааны `from`/`to`-г шалгана).
+    const state = { updates: [] as Record<string, unknown>[], failure: false, failSave: false, missingFx: false, requests: [] as string[], urls: [] as string[], errors: [] as string[], writes: 0,
         kpiWrites: [] as Record<string, unknown>[], slides: [] as Record<string, unknown>[], media: new Map<string, Buffer>(), content: [] as Record<string, unknown>[],
         // «Гараар нөхөх» алхам: `office` — хязгааргүй (удирдлагын) хэрэглэгч; `hubContracts` — гэрээг CRM-ээс (HUB жагсаалт) уншдаг төсөл.
         office: false, hubContracts: false, managerWrites: [] as Record<string, unknown>[], planWrites: [] as Record<string, unknown>[],
@@ -76,6 +77,7 @@ async function setup(page: Page, restricted = false) {
         const path = url.pathname;
         if (path.startsWith('/api/auth/')) return route.continue();
         state.requests.push(path);
+        state.urls.push(`${path}${url.search}`);
         const reply = (json: unknown, status = 200) => route.fulfill({ status, json });
         // `office` — супер админ (төлөвлөгөө оруулах эрхтэй); эс бөгөөс борлуулалтын менежер.
         if (path === '/api/me') return reply({ user: { fullName: 'Номин' }, role: state.office ? 'super_admin' : 'sales_manager', permissions: { ...ROLE_PERMISSIONS.sales_manager, modules: restricted ? ['dashboard'] : [...ROLE_PERMISSIONS.sales_manager.modules, 'reports', 'marketing-roi', 'ai-assistant'] }, shops: [{ id: shopId, name: 'Vertmon · Туршилтын өгөгдөл', is_active: true, setup_completed: true }] });
@@ -758,6 +760,62 @@ test('борлуулалтын албаны загварын слайд: алб�
         '/api/dashboard/reports/negotiations', '/api/dashboard/report-branding', '/api/dashboard/report-branding/media']) expect(state.requests).toContain(path);
     expect(state.errors).toEqual([]);
     expect(consoleErrors).toEqual([]);
+});
+
+test('тайлант хугацааг календараас сонгоно: борлуулалт, албаны загварын илтгэл тэр хугацаагаар, маркетинг хурлын 7 хоногоор', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    const state = await setup(page);
+    await page.goto('/dashboard/weekly?view=full');
+    const picker = page.getByRole('group', { name: 'Тайлант хугацаа' });
+    const start = picker.getByLabel('Эхлэх өдөр', { exact: true });
+    const end = picker.getByLabel('Дуусах өдөр', { exact: true });
+    await expect(start).toHaveValue(range.from);
+    await expect(end).toHaveValue(range.to);
+    await expect(page.getByText('Анхдагч: хурлын өмнөх Лхагва–Мягмар.')).toBeVisible();
+
+    // Мягмар → Даваа, 14 хоног (хурал хоёр хоногийн дараа).
+    const from = shiftReviewDate(meetingDate, -15);
+    const to = shiftReviewDate(meetingDate, -2);
+    await end.fill(to);
+    await start.fill(from);
+    await expect(page.getByText('Сонгосон хугацаа · 14 хоног.', { exact: false })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`\\?view=full&meeting=${meetingDate}&from=${from}&to=${to}$`));
+    await expect(page.getByRole('heading', { name: `${from} — ${to}` })).toBeVisible();
+    await expect(page.getByText(`Маркетинг: хурлын 7 хоног ${range.from} — ${range.to}`)).toBeVisible();
+    await page.screenshot({ path: 'output/workday/desktop-weekly-period.png' });
+    // Борлуулалтын эх сурвалж сонгосон хугацаагаар; маркетингийн суваг хурлын 7 хоногоор.
+    await expect.poll(() => state.urls).toContain(`/api/dashboard/reports/weekly-sales?meetingDate=${meetingDate}&from=${from}&to=${to}`);
+    await expect.poll(() => state.urls).toContain(`/api/dashboard/reports/operations?from=${from}&to=${to}`);
+    await expect.poll(() => state.urls).toContain(`/api/dashboard/reports/weekly-manual?meetingDate=${meetingDate}&from=${from}&to=${to}`);
+    expect(state.urls).toContain(`/api/marketing/channel-reports?from=${range.from}&to=${range.to}`);
+
+    // Илтгэлийн нүүр сонгосон хугацаагаар; тоон мэдээлэл, уулзалтын дэлгэрэнгүйд хугацаа дамжина.
+    const button = page.getByRole('button', { name: 'Борлуулалт (албаны загвар)', exact: true });
+    await expect(button).toBeEnabled();
+    const download = page.waitForEvent('download');
+    await button.click();
+    mkdirSync('output/workday', { recursive: true });
+    await (await download).saveAs('output/workday/weekly-sales-team-period.pptx');
+    const deck = await pptxText('output/workday/weekly-sales-team-period.pptx');
+    expect(deck.text).toContain(`${to.slice(0, 4)} оны ${from.slice(5).replace('-', '.')}-${to.slice(5).replace('-', '.')} хүртэлх тайлан`);
+    expect(state.urls).toContain(`/api/dashboard/reports/sales-activity?meeting=${meetingDate}&from=${from}&to=${to}`);
+    expect(state.urls).toContain(`/api/dashboard/reports/meeting-details?meeting=${meetingDate}&from=${from}&to=${to}`);
+
+    // Буруу хугацаа: тайлан өмнөх хугацаагаараа үлдэж, шалтгааныг бичнэ.
+    await start.fill(shiftReviewDate(to, 1));
+    await expect(page.getByText(`Эхлэх өдөр дуусах өдрөөс хойш байж болохгүй. Тайлан ${from} — ${to} хугацаагаар хэвээр.`)).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`from=${from}&to=${to}$`));
+    // Анхдагч руу буцна.
+    await page.getByRole('button', { name: 'Лхагва–Мягмар болгох' }).click();
+    await expect(page).toHaveURL(/\?view=full$/);
+    await expect(start).toHaveValue(range.from);
+    await expect(page.getByText('Анхдагч: хурлын өмнөх Лхагва–Мягмар.')).toBeVisible();
+    // Хаягаар нээвэл сонгосон хугацаа сэргэнэ.
+    await page.goto(`/dashboard/weekly?track=sales&step=overview&meeting=${meetingDate}&from=${from}&to=${to}`);
+    await expect(page.getByRole('group', { name: 'Тайлант хугацаа' }).getByLabel('Эхлэх өдөр', { exact: true })).toHaveValue(from);
+    await expect(page.getByText(`Маркетингийн хэсэг хурлын 7 хоногоор: ${range.from} — ${range.to}.`)).toBeVisible();
+    await page.screenshot({ path: 'output/workday/desktop-weekly-period-steps.png' });
+    expect(state.errors).toEqual([]);
 });
 
 test('хувийн эрхтэй хэрэглэгч нэгдсэн тайлан дуудахгүй', async ({ page }) => {

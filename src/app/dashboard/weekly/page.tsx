@@ -449,21 +449,23 @@ function WeeklyReview({ initial }: { initial: Initial }) {
             </header>
 
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5 print:hidden">
-                <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="ghost" size="icon" aria-label="Өмнөх хурал" disabled={dirty} onClick={() => changeMeeting(shiftReviewDate(meetingDate, -7))}><ChevronLeft /></Button>
-                    <label className="text-xs text-muted-foreground">Хурлын өдөр
-                        <input type="date" value={meetingDate} disabled={dirty} aria-label="Хурлын өдөр" onChange={event => {
-                            const parsed = meetingDateSchema.safeParse(event.target.value);
-                            if (parsed.success) changeMeeting(parsed.data);
-                            else toast.error('Лхагва гарагийн огноо сонгоно уу.');
-                        }} className="mt-1 block rounded-md border border-control bg-surface px-3 py-2 text-sm text-foreground focus-ring" />
-                    </label>
-                    <Button variant="ghost" size="icon" aria-label="Дараагийн хурал" disabled={dirty} onClick={() => changeMeeting(shiftReviewDate(meetingDate, 7))}><ChevronRight /></Button>
+                <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+                    <div className="flex items-end gap-2">
+                        <Button variant="ghost" size="icon" aria-label="Өмнөх хурал" disabled={dirty} onClick={() => changeMeeting(shiftReviewDate(meetingDate, -7))}><ChevronLeft /></Button>
+                        <label className="text-xs text-muted-foreground">Хурлын өдөр
+                            <input type="date" value={meetingDate} disabled={dirty} aria-label="Хурлын өдөр" onChange={event => {
+                                const parsed = meetingDateSchema.safeParse(event.target.value);
+                                if (parsed.success) changeMeeting(parsed.data);
+                                else toast.error('Лхагва гарагийн огноо сонгоно уу.');
+                            }} className="mt-1 block rounded-md border border-control bg-surface px-3 py-2 text-sm text-foreground focus-ring" />
+                        </label>
+                        <Button variant="ghost" size="icon" aria-label="Дараагийн хурал" disabled={dirty} onClick={() => changeMeeting(shiftReviewDate(meetingDate, 7))}><ChevronRight /></Button>
+                    </div>
                     {/* Борлуулалтын тайлангийн хугацааг календараас сонгоно; маркетинг хурлын 7 хоногоор (`report-range.ts`). */}
                     {can('reports')
-                        ? <div className="ml-2"><ReportPeriodPicker meetingDate={meetingDate} range={range} custom={!!customRange} disabled={dirty} onChange={setCustomRange}
-                            note={customRange && can('marketing-roi') ? `Маркетингийн хэсэг хурлын 7 хоногоор (${meetingWeek.from} — ${meetingWeek.to}).` : null} /></div>
-                        : view === 'steps' && <p className="ml-2 text-xs text-muted-foreground tabular-nums">Тайлант хугацаа<span className="mt-1 block text-sm text-foreground">{range.from} — {range.to}</span></p>}
+                        ? <ReportPeriodPicker meetingDate={meetingDate} range={range} custom={!!customRange} disabled={dirty} onChange={setCustomRange}
+                            note={customRange && can('marketing-roi') ? `Маркетингийн хэсэг хурлын 7 хоногоор: ${meetingWeek.from} — ${meetingWeek.to}.` : null} />
+                        : view === 'steps' && <p className="text-xs text-muted-foreground tabular-nums">Тайлант хугацаа<span className="mt-1 block text-sm text-foreground">{range.from} — {range.to}</span></p>}
                 </div>
                 {view === 'full' ? <div className="flex flex-wrap gap-2">
                     <Button variant="ghost" disabled={!exportable} onClick={copy}><ClipboardCopy />Хуулах</Button>

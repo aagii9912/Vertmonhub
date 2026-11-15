@@ -3,7 +3,6 @@
 import { useId, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { cn } from '@/lib/utils';
 import { reportRangeDays, resolveReportRange, type ReportRange } from '@/lib/dashboard/report-range';
 
 /**
@@ -22,10 +21,11 @@ export function ReportPeriodPicker({ meetingDate, range, custom, disabled, note,
     note?: string | null;
     onChange: (range: ReportRange | null) => void;
 }) {
+    const labelId = useId();
     const statusId = useId();
     const [draft, setDraft] = useState(range);
     const [applied, setApplied] = useState(range);
-    // Хурал солих, «Лхагва–Мягмар» товч зэргээр гаднаас өөрчлөгдвөл ноорог дагана (render үеийн тохируулга).
+    // Хурал солих, «Лхагва–Мягмар болгох» зэргээр гаднаас өөрчлөгдвөл ноорог дагана (render үеийн тохируулга).
     if (applied.from !== range.from || applied.to !== range.to) {
         setApplied(range);
         setDraft(range);
@@ -39,24 +39,31 @@ export function ReportPeriodPicker({ meetingDate, range, custom, disabled, note,
         if (result.ok && (result.range.from !== range.from || result.range.to !== range.to)) onChange(result.custom ? result.range : null);
     }
 
-    const input = 'mt-1 block rounded-md border border-control bg-surface px-3 py-2 text-sm text-foreground tabular-nums focus-ring disabled:opacity-60';
+    const input = 'block rounded-md border border-control bg-surface px-3 py-2 text-sm text-foreground tabular-nums focus-ring disabled:opacity-60';
     const status = error
         ? `${error} Тайлан ${range.from} — ${range.to} хугацаагаар хэвээр.`
-        : custom ? `Сонгосон хугацаа · ${reportRangeDays(range)} хоног` : 'Анхдагч: хурлын өмнөх Лхагва–Мягмар';
+        : custom ? `Сонгосон хугацаа · ${reportRangeDays(range)} хоног.` : 'Анхдагч: хурлын өмнөх Лхагва–Мягмар.';
     return <div className="min-w-0">
-        <div role="group" aria-label="Тайлант хугацаа" aria-describedby={statusId} className="flex flex-wrap items-end gap-2">
-            <label className="text-xs text-muted-foreground">Тайлант хугацаа: эхлэх
-                <input type="date" value={draft.from} max={meetingDate} disabled={disabled} aria-invalid={!!error || undefined}
-                    onChange={event => change({ ...draft, from: event.target.value })} className={input} />
-            </label>
-            <label className="text-xs text-muted-foreground">дуусах
-                <input type="date" value={draft.to} max={meetingDate} disabled={disabled} aria-invalid={!!error || undefined}
-                    onChange={event => change({ ...draft, to: event.target.value })} className={input} />
-            </label>
-            {custom && <Button variant="ghost" size="sm" disabled={disabled} onClick={() => onChange(null)}><RotateCcw />Лхагва–Мягмар болгох</Button>}
+        <div role="group" aria-labelledby={labelId} aria-describedby={statusId} className="text-xs text-muted-foreground">
+            <span id={labelId}>Тайлант хугацаа</span>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+                <label>
+                    <span className="sr-only">Эхлэх өдөр</span>
+                    <input type="date" value={draft.from} max={meetingDate} disabled={disabled} aria-invalid={!!error || undefined}
+                        onChange={event => change({ ...draft, from: event.target.value })} className={input} />
+                </label>
+                <span aria-hidden className="text-sm">—</span>
+                <label>
+                    <span className="sr-only">Дуусах өдөр</span>
+                    <input type="date" value={draft.to} max={meetingDate} disabled={disabled} aria-invalid={!!error || undefined}
+                        onChange={event => change({ ...draft, to: event.target.value })} className={input} />
+                </label>
+                {custom && <Button variant="ghost" size="sm" disabled={disabled} onClick={() => onChange(null)}><RotateCcw />Лхагва–Мягмар болгох</Button>}
+            </div>
         </div>
-        <p id={statusId} aria-live="polite" className={cn('mt-1 text-xs', error ? 'text-status-danger' : 'text-muted-foreground')}>
-            {status}{note && !error ? ` ${note}` : ''}
-        </p>
+        <div id={statusId} aria-live="polite" className="mt-1 max-w-[80ch] text-xs tabular-nums">
+            <p className={error ? 'text-status-danger' : 'text-muted-foreground'}>{status}</p>
+            {note && !error && <p className="text-muted-foreground">{note}</p>}
+        </div>
     </div>;
 }
