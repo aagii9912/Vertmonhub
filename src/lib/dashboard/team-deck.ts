@@ -10,10 +10,11 @@ import { MEETING_AREA_BANDS, type MeetingDetailsReport } from './meeting-details
 import type { NegotiationsReport, NegotiationSum } from './negotiations';
 import { hasReportBranding, type ReportBranding } from './report-branding';
 import { undatedContractsHint } from './contract-dates';
+import { WEEKLY_LOWER_BOUND_MARK, weeklyMark, weeklyPlanValue } from './weekly-mark';
 import { PRODUCT_KIND_LABEL } from '@/lib/erp/records';
 import { MONTHLY_SALES_BLOCK_LABELS, MONTHLY_SALES_BLOCKS } from '@/lib/sales/monthly';
 import {
-    planValueText, type PlanCell, type PlanMetricKey, type PlanMonthRow, type PlanPerformance, type PlanScopeCells, type PlanYearScope,
+    type PlanCell, type PlanMetricKey, type PlanMonthRow, type PlanPerformance, type PlanScopeCells, type PlanYearScope,
 } from '@/lib/sales/plan-performance';
 import { formatMNT } from '@/lib/utils/currency';
 import { assigneeInitialsText, workPlanProgress, type WorkPlanData } from '@/lib/sales/work-plan';
@@ -93,18 +94,18 @@ const digits = (value: number) => Math.round(value).toLocaleString('en-US');
 /** Бүхэл хувь: гүйцэтгэл / төлөвлөгөө; аль нэг нь тодорхойгүй эсвэл төлөвлөгөө 0 бол «—», доод хязгаартай бол «+». */
 export function wholePct(actual: number | null | undefined, plan: number | null | undefined, lowerBound = false): string {
     return actual === null || actual === undefined || plan === null || plan === undefined || plan <= 0
-        ? '—' : `${Math.round(actual / plan * 100)}%${lowerBound ? '+' : ''}`;
+        ? '—' : `${Math.round(actual / plan * 100)}%${weeklyMark(lowerBound)}`;
 }
 /** Нийлбэр: бүгд тодорхойгүй бол «—», зарим нь бол мэдэгдэхийн нийлбэр «+». */
 function sumText(values: Array<number | null>, format: (value: number) => string): string {
     const known = values.filter((value): value is number => value !== null);
     if (!known.length) return '—';
     const total = format(Math.round(known.reduce((sum, value) => sum + value, 0) * 100) / 100);
-    return known.length < values.length ? `${total}+` : total;
+    return known.length < values.length ? `${total}${WEEKLY_LOWER_BOUND_MARK}` : total;
 }
 /** Ярилцаж буй гэрээний нийлбэр: бүрэн бол дүн, зарим нь тодорхойгүй бол «N+», бүгд тодорхойгүй бол «—». */
 const negotiationSumText = (sum: NegotiationSum, format: (value: number) => string) =>
-    sum.sum !== null ? format(sum.sum) : sum.partial ? `${format(sum.known)}+` : '—';
+    sum.sum !== null ? format(sum.sum) : sum.partial ? `${format(sum.known)}${WEEKLY_LOWER_BOUND_MARK}` : '—';
 
 function muted(slide: Slide, text: string, y: number, h = 0.6, fontSize = 16) {
     slide.addText(text, { x: M, y, w: CW, h, fontFace: FONT, fontSize, color: C.muted, margin: 0, valign: 'top', isTextBox: true });
@@ -362,7 +363,7 @@ function contractSource(cell: PlanCell | undefined): string | null {
  * «Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй)» — мэдээлэл, мөнгөн урсгал биш (W6). Урьдчилгааны дүнгүй гэрээ
  * эсвэл тухайн хүрээнд огноогүй гэрээ (энэ сарынх байж болох) байвал доод хязгаар «+» (`prepaymentLowerBound`).
  */
-const prepaymentText = (cells: PlanScopeCells) => planValueText(cells.prepaymentDue, cells.prepaymentLowerBound, value => formatMNT(value));
+const prepaymentText = (cells: PlanScopeCells) => weeklyPlanValue(cells.prepaymentDue, cells.prepaymentLowerBound, value => formatMNT(value));
 /** Урьдчилгааны «+»-ийн шалтгаан (тэмдэглэлд). */
 function prepaymentNote(cells: PlanScopeCells): string | null {
     if (cells.prepaymentDue === null || !cells.prepaymentLowerBound) return null;
@@ -370,7 +371,7 @@ function prepaymentNote(cells: PlanScopeCells): string | null {
         cells.prepaymentMissing ? `урьдчилгааны дүнгүй ${cells.prepaymentMissing} гэрээ` : null,
         cells.undated ? `энэ сарынх байж болох огноогүй ${cells.undated} гэрээ` : null,
     ].filter(Boolean);
-    return `Энэ сарын урьдчилгаа доод хязгаар («+»): ${reasons.join(', ')}.`;
+    return `Энэ сарын урьдчилгаа доод хязгаар: ${reasons.join(', ')}.`;
 }
 /** Мөнгөн урсгалд гараар ч, системд ч дүнгүй блокууд (нийт хүрээ: эдгээрээс «+» үүснэ). */
 function missingCashBlocks(row: PlanMonthRow, scope: PlanScopeCells): string[] {
@@ -399,7 +400,7 @@ function cashLowerBoundNote(plan: TeamPlanReport, row: PlanMonthRow, scope: Plan
         ? MONTHLY_SALES_BLOCKS.filter(block => row.blocks[block].metrics.cashflow?.source !== 'manual').reduce((sum, block) => sum + row.blocks[block].undated, 0)
         : scope.undated;
     const causes = [...(missing.length ? [`гүйцэтгэл оруулаагүй, системд ч дүнгүй блок — ${missing.join(', ')}`] : []), ...systemCashCauses(plan, undated)];
-    const head = shown ? 'Мөнгөн урсгалын «+» — доод хязгаар' : 'Мөнгөн урсгал «—» — тодорхойгүй';
+    const head = shown ? 'Мөнгөн урсгал доод хязгаар' : 'Мөнгөн урсгал «—» — тодорхойгүй';
     return `${head}: ${causes.length ? causes.join('; ') : 'системийн дүн бүрэн биш'}.${missing.length ? ' Мөнгө ороогүй блокт /admin/sales-targets-д 0 гэж оруулна.' : ''}`;
 }
 
@@ -411,7 +412,7 @@ function planNotes(ctx: Ctx, plan: TeamPlanReport, row: PlanMonthRow, cells: Pla
         contractSource(contract),
         ctx.cashVisible ? cashSource(plan, cells.metrics.cashflow) : 'Мөнгөн урсгалын төлөвлөгөө, гүйцэтгэлийг санхүүгийн эрхтэй хүн харна.',
         contract?.lowerBound
-            ? `«+» — доод хязгаар: ${cells.undated ? `огноогүй ${cells.undated} гэрээ` : 'дүн нь тодорхойгүй гэрээ'} байна; тухайн сард мэдэгдэх дүнгүй бол «—».` : null,
+            ? `Гэрээний тоо, дүн доод хязгаар: ${cells.undated ? `огноогүй ${cells.undated} гэрээ` : 'дүн нь тодорхойгүй гэрээ'} байна; тухайн сард мэдэгдэх дүнгүй бол «—».` : null,
         ctx.cashVisible && cells.metrics.cashflow?.lowerBound ? cashLowerBoundNote(plan, row, cells, cells.metrics.cashflow.actual !== null) : null,
         'Хувь = гүйцэтгэл / төлөвлөгөө, бүхэл тоогоор.',
         '«Энэ сарын гэрээний урьдчилгаа» = тухайн сард захиалсан амьд гэрээний нөхцлөөр төлөх урьдчилгаа (орсон + хүлээгдэж буй) — мөнгөн урсгал биш, мөнгөн урсгалд нэмэхгүй (W6).',
@@ -456,8 +457,8 @@ function monthPlanSlide(pres: PptxGenJS, ctx: Ctx) {
         return [
             ...(index === 0 ? [bodyCell(scope.label, 'left', { bold: true, rowspan: metrics.length, valign: 'middle' })] : []),
             bodyCell(metric.label, 'left', extra),
-            bodyCell(planValueText(cell?.plan ?? null, false, metric.format), 'right', extra),
-            bodyCell(planValueText(cell?.actual ?? null, !!cell?.lowerBound, metric.format), 'right', extra),
+            bodyCell(weeklyPlanValue(cell?.plan ?? null, false, metric.format), 'right', extra),
+            bodyCell(weeklyPlanValue(cell?.actual ?? null, !!cell?.lowerBound, metric.format), 'right', extra),
             bodyCell(wholePct(cell?.actual, cell?.plan, cell?.lowerBound), 'center', extra),
         ];
     }));
@@ -546,7 +547,7 @@ const ACTIVITY_HEAD_H = 0.32;
 const ACTIVITY_ROW_H = 0.3;
 function activityCard(slide: Slide, report: SalesActivityReport, metric: ActivityMetric, label: string, box: { x: number; y: number; w: number }) {
     const month = report.month.metrics[metric];
-    const known = (value: number | null, plus = false) => value === null ? '—' : `${value.toLocaleString('en-US')}${plus ? '+' : ''}`;
+    const known = (value: number | null, plus = false) => value === null ? '—' : `${value.toLocaleString('en-US')}${weeklyMark(plus)}`;
     slide.addText(label, { x: box.x, y: box.y, w: box.w, h: 0.36, fontFace: FONT, fontSize: 16, bold: true, color: C.ink, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
     const lines: Array<[string, string]> = [
         ['Сарын төлөвлөгөө', month.plan === null ? 'оруулаагүй' : known(month.plan)],
@@ -571,7 +572,7 @@ function activityCard(slide: Slide, report: SalesActivityReport, metric: Activit
         pctBar(slide, { x: pctX, y: tableY + ACTIVITY_HEAD_H + index * ACTIVITY_ROW_H, w: colW[3], h: ACTIVITY_ROW_H }, pct);
         return [
             bodyCell(bucket.label), bodyCell(known(plan), 'right'), bodyCell(known(actual, bucket.partial[metric]), 'right', { bold: true }),
-            bodyCell(pct === null ? '—' : `${pct}%${bucket.partial[metric] ? '+' : ''}`, 'center'),
+            bodyCell(pct === null ? '—' : `${pct}%${weeklyMark(bucket.partial[metric])}`, 'center'),
         ];
     });
     slide.addTable([[headCell('7 хоног'), headCell('Төлөвлөгөө', 'right'), headCell('Гүйцэтгэл', 'right'), headCell('Хувь', 'center')], ...rows], {
@@ -583,7 +584,7 @@ function activityCard(slide: Slide, report: SalesActivityReport, metric: Activit
 /** Чат слайдад гарахгүй (багийн загвар) — сарын тоо, төлөвлөгөө, биелэлтийг тэмдэглэлд үлдээнэ. */
 function chatNote(report: SalesActivityReport): string {
     const chat = report.month.metrics.chats;
-    const actual = chat.actual === null ? '—' : `${chat.actual.toLocaleString('en-US')}${chat.partial ? '+' : ''}`;
+    const actual = chat.actual === null ? '—' : `${chat.actual.toLocaleString('en-US')}${weeklyMark(chat.partial)}`;
     const plan = chat.plan === null ? 'төлөвлөгөө оруулаагүй' : `төлөвлөгөө ${count(chat.planToDate)}/${count(chat.plan)}, биелэлт ${chat.pct === null ? '—' : `${chat.pct}%`}`;
     return `Чат (${report.lines.chats.join(', ') || 'суваггүй'}) — слайдад гарахгүй: сарын эхнээс ${actual}, ${plan}.`;
 }
@@ -615,7 +616,7 @@ function activitySlides(pres: PptxGenJS, ctx: Ctx) {
             `7 хоногийн төлөвлөгөө = сарын төлөвлөгөө ÷ ${WEEKLY_PLAN_PARTS}; сарын хилээр тасарсан богино хэсэгт өдрөөр нь (өдөр / 7). Өмнөх сарын хэсэг ч энэ сарын төлөвлөгөөгөөр.`,
             'Хувийн нүдний өнгөн дүүргэлт: 100%-д нүд дүүрнэ. «—» = тодорхойгүй (тоо оруулаагүй эсвэл төлөвлөгөөгүй), 0 биш.',
             group.metrics.includes('hotline') ? `Өдрийн тайлангийн хамрах хүрээ (тоо оруулсан өдөр / нийт өдөр): ${report.buckets.map(bucket => `${bucket.label} ${bucket.knownDays}/${bucket.days}`).join(', ')}.` : null,
-            partial.length ? `«N+» — ${lowerBoundSources(partial)} хугацааны дунд эхэлсэн тул доод хязгаар (${partial.map(metric => labels[metric]).join(', ')}).` : null,
+            partial.length ? `${lowerBoundSources(partial)} хугацааны дунд эхэлсэн тул тоо нь доод хязгаар (${partial.map(metric => labels[metric]).join(', ')}).` : null,
             ...report.notes,
         ]);
     }
@@ -658,7 +659,7 @@ function meetingSlide(pres: PptxGenJS, ctx: Ctx) {
         return [
             bodyCell(week.label, 'left', { bold: true, color: C.ink2 }),
             ...columns.map(column => bodyCell(unknown ? '—' : valueOf(week, column.key) ? String(valueOf(week, column.key)) : '', 'center')),
-            bodyCell(unknown ? '—' : `${week.total}${week.coverage === 'partial' ? '+' : ''}`, 'center', { bold: true }),
+            bodyCell(unknown ? '—' : `${week.total}${weeklyMark(week.coverage === 'partial')}`, 'center', { bold: true }),
         ];
     });
     slide.addTable([
@@ -749,7 +750,7 @@ function yearTableSlide(pres: PptxGenJS, ctx: Ctx) {
     const body: Cell[][] = scopes.flatMap(scope => metrics.map((metric, index) => {
         const month = scope.month.metrics[metric.key];
         const ytd = scope.ytd.metrics[metric.key];
-        const fmt = (value: number | null | undefined, lowerBound = false) => planValueText(value ?? null, lowerBound, metric.format);
+        const fmt = (value: number | null | undefined, lowerBound = false) => weeklyPlanValue(value ?? null, lowerBound, metric.format);
         const extra = scope.total ? { bold: true } : {};
         return [
             ...(index === 0 ? [bodyCell(scope.label, 'left', { bold: true, rowspan: metrics.length, valign: 'middle' })] : []),
@@ -783,10 +784,10 @@ function yearTableSlide(pres: PptxGenJS, ctx: Ctx) {
         ytdMonth !== ctx.month ? `Тайлант 7 хоног дуусаагүй тул он эхнээсх гүйцэтгэл ${ytdMonth}-р сар хүртэл (татсан өдрөөр); ${ctx.month}-р сарын гүйцэтгэл «—».` : null,
         'Хувийн нүдний өнгөн дүүргэлт: 100%-д нүд дүүрнэ; «—» нүд дүүргэлтгүй.',
         ctx.cashVisible ? cashSource(plan, row.total.metrics.cashflow) : 'Мөнгөн урсгалын мөрийг санхүүгийн эрхтэй хүн харна.',
-        row.total.undated ? `Гэрээний тоо, дүнгийн «+» — огноогүй ${row.total.undated} гэрээтэй тул доод хязгаар. ${undatedContractsHint(row.total.undated)}` : null,
+        row.total.undated ? `Гэрээний тоо, дүн — огноогүй ${row.total.undated} гэрээтэй тул доод хязгаар. ${undatedContractsHint(row.total.undated)}` : null,
         ctx.cashVisible && plan.throughMonth !== null ? yearCashGapNote(plan, plan.throughMonth) : null,
         ctx.cashVisible && plan.ytd.total.metrics.cashflow?.lowerBound && systemCashCauses(plan, row.total.undated).length
-            ? `Мөнгөн урсгалын «1–${ytdMonth} сар», «он»-ы «+» — ${systemCashCauses(plan, row.total.undated).join('; ')}.` : null,
+            ? `Мөнгөн урсгалын «1–${ytdMonth} сар», «он» доод хязгаар — ${systemCashCauses(plan, row.total.undated).join('; ')}.` : null,
     ]);
 }
 
@@ -799,7 +800,7 @@ function yearCashGapNote(plan: TeamPlanReport, throughMonth: number): string | n
         .filter(row => MONTHLY_SALES_BLOCKS.some(block => row.blocks[block].metrics.cashflow?.actual == null))
         .map(row => row.month);
     if (!months.length) return null;
-    return `Мөнгөн урсгалын «1–${throughMonth} сар», «он»-ы «+»/«—» — ${monthSpans(months)}-р сарын зарим блокийн гүйцэтгэл оруулаагүй, системд ч дүнгүй. Сар бүрийг блокоор /admin/sales-targets-д оруулна (мөнгө ороогүй бол 0).`;
+    return `Мөнгөн урсгалын «1–${throughMonth} сар», «он» бүрэн биш (доод хязгаар эсвэл «—») — ${monthSpans(months)}-р сарын зарим блокийн гүйцэтгэл оруулаагүй, системд ч дүнгүй. Сар бүрийг блокоор /admin/sales-targets-д оруулна (мөнгө ороогүй бол 0).`;
 }
 
 /** [1,2,3,5,7,8] → «1–3, 5, 7–8». */

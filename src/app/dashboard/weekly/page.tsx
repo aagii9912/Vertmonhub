@@ -37,7 +37,8 @@ import { contentPlanWindow, useContentPlan, WeeklyContentPlan } from '@/componen
 import { WEEKLY_SLIDE_PART_MODULE, type WeeklySlidePart } from '@/lib/dashboard/weekly-slides';
 import { summarizeContentPlan } from '@/lib/marketing/content-plan';
 import type { WeeklyDeckFileKind } from '@/lib/dashboard/weekly-deck';
-import { periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from '@/lib/dashboard/contract-dates';
+import { undatedContractsHint, undatedContractsShort } from '@/lib/dashboard/contract-dates';
+import { weeklyContractAmount, weeklyContractCount } from '@/lib/dashboard/weekly-mark';
 import { weeklyFilesStatus } from '@/lib/dashboard/weekly-files';
 import { weeklyManualStatus } from '@/lib/dashboard/weekly-manual';
 
@@ -187,9 +188,9 @@ function WeeklyReview({ initial }: { initial: { view: View; track: string | null
     const salesOverview = salesQuery.isPending && can('reports') ? <Skeleton className="h-32" /> : sales ? <>
         <div className="grid grid-cols-2 gap-5 rounded-2xl border border-border p-5">
             <Metric label="Шинэ лид" value={sales.leads.newCount} helper={formatReviewChange(sales.leads.newCount, previousSales?.leads.newCount)} />
-            <Metric label="Байгуулсан гэрээ" value={periodContractCount(sales.contracts.count, sales.contracts.undatedCount)}
+            <Metric label="Байгуулсан гэрээ" value={weeklyContractCount(sales.contracts.count, sales.contracts.undatedCount)}
                 helper={sales.contracts.undatedCount ? undatedContractsShort(sales.contracts.undatedCount) : formatReviewChange(sales.contracts.count, previousSales?.contracts.count)} />
-            <Metric label="Гэрээний бүртгэлтэй дүн" value={periodContractAmount(sales.contracts.value, sales.contracts.count, sales.contracts.undatedCount, formatMNTShort)}
+            <Metric label="Гэрээний бүртгэлтэй дүн" value={weeklyContractAmount(sales.contracts.value, sales.contracts.count, sales.contracts.undatedCount, formatMNTShort)}
                 helper={sales.contracts.undatedCount ? 'Огноогүй гэрээ дүнд ороогүй' : previousSales ? `Өмнөх ${formatMNTShort(previousSales.contracts.value)}${previousSales.contracts.missingAmounts ? ' · дүн дутуу' : ''}` : 'Өмнөх хугацааны мэдээлэл байхгүй'} />
             <Metric label="Болсон уулзалт" value={sales.meetings?.completed ?? '—'} helper={sales.meetings ? formatReviewChange(sales.meetings.completed, previousSales?.meetings?.completed) : 'Уулзалтын мэдээлэл байхгүй'} />
         </div>

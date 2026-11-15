@@ -93,7 +93,7 @@ export function WeeklyManualFixes({ query, contractsFromErp, canEditContracts, c
                 <Item title="Гэрээний огноо"
                     badge={contractsFromErp ? <Badge variant="neutral">Хамаарахгүй</Badge> : undated ? <Badge variant="warning">{undated} гэрээ</Badge> : <Badge variant="success">Бүрэн</Badge>}
                     note={contractsFromErp ? 'Энэ төсөлд гэрээний огноо ERP-ийн гэрээний экспортоос ирдэг.'
-                        : undated ? `Огноогүй гэрээ долоо хоног, сарын тоонд орохгүй (тоо «N+» гэж гарна). ${canEditContracts ? 'Доорх мөр бүрт захиалга өгсөн огноог сонгоод «Хадгалах» дарна — огноог нэг удаа л оруулдаг, дараа нь солихгүй.' : 'Огноог удирдлага (гэрээ засах эрхтэй хүн) оруулна.'}`
+                        : undated ? `Огноогүй гэрээ долоо хоног, сарын тоонд орохгүй (тоо бүрэн биш гарна). ${canEditContracts ? 'Доорх мөр бүрт захиалга өгсөн огноог сонгоод «Хадгалах» дарна — огноог нэг удаа л оруулдаг, дараа нь солихгүй.' : 'Огноог удирдлага (гэрээ засах эрхтэй хүн) оруулна.'}`
                         : 'Огноогүй амьд гэрээ алга.'}
                     action={!contractsFromErp && undated > 0 && canOpenContracts && <Button href="/dashboard/contracts?filter=undated" size="sm" variant="secondary">Огноогүй гэрээ<ArrowUpRight /></Button>}>
                     {!contractsFromErp && undatedContracts.length > 0 && <>

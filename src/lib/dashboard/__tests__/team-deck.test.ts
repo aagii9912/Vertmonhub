@@ -85,9 +85,9 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(month).toContain('Б2 блок Тоо хэмжээ 4 4 100% Гэрээний дүн 2,245,776,000 2,195,395,000 98% Мөнгөн урсгал 673,732,800 161,844,800 24%');
         expect(wholePct(2_195_395_000, 2_245_776_000)).toBe('98%');
         // Б1-ийн мөнгөн урсгал тодорхойгүй → нийт нь доод хязгаар.
-        expect(month).toContain('Нийт Тоо хэмжээ 14 7 50% Гэрээний дүн 5,352,996,000 3,410,026,000 64% Мөнгөн урсгал 1,605,898,800 187,824,800+ 12%+');
+        expect(month).toContain('Нийт Тоо хэмжээ 14 7 50% Гэрээний дүн 5,352,996,000 3,410,026,000 64% Мөнгөн урсгал 1,605,898,800 187,824,800 12%');
         expect(month).toContain('Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй): 966,606,250₮ (Б1 блок 282,007,750₮, Б2 блок 658,618,500₮, Зогсоол 25,980,000₮)');
-        expect(month).toContain('Нэмэлт төлөвлөгөө: гэрээ 7,152,996,000₮ — биелэлт 48%; мөнгөн урсгал 2,145,898,800₮ — биелэлт 9%+');
+        expect(month).toContain('Нэмэлт төлөвлөгөө: гэрээ 7,152,996,000₮ — биелэлт 48%; мөнгөн урсгал 2,145,898,800₮ — биелэлт 9%');
         // Хувь мэдэгдэх нүд бүрт өнгөн дүүргэлт («—» нүдэнд байхгүй): 12 мөрөөс Б1-ийн мөнгөн урсгал тодорхойгүй.
         expect(bars(xml[text.indexOf(month)])).toHaveLength(11);
         const year = at(text, '2026 ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ');
@@ -111,11 +111,11 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const { text, notes } = await render(teamInput({ plan: plan({ undated: true }) }));
         const month = at(text, '10-Р САРЫН БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ');
         // Б2-ийн дүн гараар оруулсан ч урьдчилгаа системийн гэрээнээс — огноогүй Б2 гэрээ энэ сарынх байж болно.
-        expect(month).toContain('Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй): 966,606,250₮+ (Б1 блок 282,007,750₮+, Б2 блок 658,618,500₮+, Зогсоол 25,980,000₮)');
+        expect(month).toContain('Энэ сарын гэрээний урьдчилгаа (орсон + хүлээгдэж буй): 966,606,250₮ (Б1 блок 282,007,750₮, Б2 блок 658,618,500₮, Зогсоол 25,980,000₮)');
         const note = notes[text.indexOf(month)];
-        expect(note).toMatch(/Б2 блок: (?:(?!Зогсоол:).)*Энэ сарын урьдчилгаа доод хязгаар \(«\+»\): энэ сарынх байж болох огноогүй 1 гэрээ\./);
+        expect(note).toMatch(/Б2 блок: (?:(?!Зогсоол:).)*Энэ сарын урьдчилгаа доод хязгаар: энэ сарынх байж болох огноогүй 1 гэрээ\./);
         expect(note).toContain('энэ сарынх байж болох огноогүй 2 гэрээ');
-        expect(note.slice(note.indexOf('Зогсоол:'))).not.toContain('доод хязгаар («+»)');
+        expect(note.slice(note.indexOf('Зогсоол:'))).not.toContain('Энэ сарын урьдчилгаа доод хязгаар');
         // Огноогүй гэрээгүй бол бүрэн дүн.
         const dated = await render(teamInput());
         expect(at(dated.text, '10-Р САРЫН БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ')).toContain('(орсон + хүлээгдэж буй): 966,606,250₮ (Б1 блок 282,007,750₮, Б2 блок 658,618,500₮,');
@@ -133,7 +133,7 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(month).toContain('Б1 блок Тоо хэмжээ 5 2 40% Гэрээний дүн 2,807,220,000 1,128,031,000 40% Мөнгөн урсгал 842,166,000 — —');
         const activity = text.filter(slide => slide.includes('БОРЛУУЛАЛТЫН АЛБА-ТООН МЭДЭЭЛЭЛ')).join(' ');
         expect(activity).toMatch(/7786 Оператор Сарын төлөвлөгөө –\s+550 10\/20 хүртэл –\s+367 Гүйцэтгэл –\s+145 Гүйцэтгэл хувь –\s+40%/);
-        expect(activity).toMatch(/Шинэ уулзалт Сарын төлөвлөгөө –\s+110 10\/20 хүртэл –\s+73 Гүйцэтгэл –\s+24\+ Гүйцэтгэл хувь –\s+—/);
+        expect(activity).toMatch(/Шинэ уулзалт Сарын төлөвлөгөө –\s+110 10\/20 хүртэл –\s+73 Гүйцэтгэл –\s+24 Гүйцэтгэл хувь –\s+—/);
         // Чат багийн загварт слайдгүй — тоо нь дуудлагын слайдын тэмдэглэлд, тодорхойгүй бол «—».
         expect(activity).not.toContain('Чат');
         expect(notes.join(' ')).toContain('Чат (Пэйж FB, Хувь чат) — слайдад гарахгүй: сарын эхнээс —, төлөвлөгөө оруулаагүй.');
@@ -186,7 +186,7 @@ describe('team-format Wednesday deck (.pptx)', () => {
         for (const head of ['Д/д', 'Блок', 'Өрөөний тоо', 'Давхар', 'м.кв', 'Урьдчилгаа хувь', 'Мкв үнэ', 'Нийт үнэ', 'Урьдчилгаа', 'Урьдчилгаа нөхцөл', 'Сэжим']) expect(slide).toContain(head);
         expect(slide).toMatch(/1 Б2 2 12 57\.87 10-30% 5,400,000₮ 312,498,000₮ 93,749,400₮ — Инстаграм/);
         expect(slide).toMatch(/2 Б1 3 7 89\.73 10-30% — — — — —/);
-        expect(slide).toMatch(/Нийт \(2\) 147\.6 312,498,000₮\+ 93,749,400₮\+/);
+        expect(slide).toMatch(/Нийт \(2\) 147\.6 312,498,000₮ 93,749,400₮/);
         const note = notes[text.indexOf(slide)];
         expect(note).toContain('өнөөдрийн үнээр');
         expect(note).toContain('«Урьдчилгаа нөхцөл» тодорхойлогдоогүй');
@@ -201,7 +201,7 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(slide).toMatch(/1 Хонгорзул 2 өрөө Б2 12 57\.87 Б\.Мэндбаяр 30% 5,400,000₮ 312,498,000₮ 93,749,400₮ Инстаграм/);
         // Захиалагчийн нэргүй мөр «—», урьдчилгаагүй мөрийн нийлбэр доод хязгаар.
         expect(slide).toMatch(/3 өрөө Б2 14 89\.73 — 10-30%/);
-        expect(slide).toMatch(/Нийт 205\.47 1,109,538,000₮ 239,112,000₮\+/);
+        expect(slide).toMatch(/Нийт 205\.47 1,109,538,000₮ 239,112,000₮/);
         expect(slide).not.toContain('Агуулах');
         const note = notes[text.indexOf(slide)];
         expect(note).toContain('Нөхцлөөр төлөх урьдчилгаа — орсон мөнгө биш');
@@ -219,7 +219,7 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(slide).not.toContain('93,749,400₮');
         // Б2-1402 файлын мөрөнд дүн хоосон, Б1-0703 файлд тулгагдаагүй — «—»; нийлбэр доод хязгаар.
         expect(slide).toMatch(/3 өрөө Б2 14 89\.73 — 10-30% [\d,]+₮ 484,542,000₮ — Ойрхон амьдардаг/);
-        expect(slide).toMatch(/Нийт 205\.47 1,109,538,000₮ 0₮\+/);
+        expect(slide).toMatch(/Нийт 205\.47 1,109,538,000₮ 0₮/);
         const note = notes[text.indexOf(slide)];
         expect(note).toContain('«Урьдчилгаа» — ERP-ийн төлсөн дүн («Бэлэн төлөлт», бартер ороогүй; HUB гэрээний жагсаалт, 2026-10-20-ний файлаар)');
         expect(note).not.toContain('орсон мөнгө биш');
@@ -289,7 +289,7 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(calls).toContain('10/14–10/20 75 0 0%');
         expect(calls).toContain('10/14–10/20 138 400 290%');
         // 10/01–10/06-ны шинэ уулзалт (бүртгэл 10/05-нд эхэлсэн) доод хязгаар.
-        expect(meetings).toContain('10/01–10/06 28 2+ 7%+');
+        expect(meetings).toContain('10/01–10/06 28 2 7%');
         // 0%-д дүүргэлтгүй; 290% нь 100%-ийн өргөнөөр (29%-ийн мөртэй харьцуулахад 100 : 29).
         const callBars = bars(xml[text.indexOf(calls)]);
         expect(callBars).toHaveLength(2);
@@ -310,22 +310,22 @@ describe('team-format Wednesday deck (.pptx)', () => {
         });
         const { text, notes } = await render(teamInput({ activity: report }));
         const [calls, meetings] = text.filter(slide => slide.includes('ТООН МЭДЭЭЛЭЛ'));
-        expect(calls).toContain('10/07–10/13 — 12+ —');
+        expect(calls).toContain('10/07–10/13 — 12 —');
         const note = notes[text.indexOf(calls)];
-        expect(note).toContain('«N+» — өдрийн тайлангийн тоо хугацааны дунд эхэлсэн тул доод хязгаар (Төслийн утас, Менежерийн дуудлага)');
+        expect(note).toContain('өдрийн тайлангийн тоо хугацааны дунд эхэлсэн тул тоо нь доод хязгаар (Төслийн утас, Менежерийн дуудлага)');
         expect(note).not.toContain('уулзалтын бүртгэл хугацааны дунд');
         // Эхэлсэн өдрийг тайлангийн өөрийн тэмдэглэл нэрлэнэ.
         expect(note).toContain('Өдрийн тайлангийн тоо 2026-10-08-нээс эхэлсэн');
-        expect(notes[text.indexOf(meetings)]).not.toContain('«N+» —');
+        expect(notes[text.indexOf(meetings)]).not.toContain('тоо нь доод хязгаар');
 
         // Хоёулаа дунд нь эхэлсэн бол слайд тус бүр өөрийн эх сурвалжийг нэрлэнэ.
         const both = activity();
         both.buckets = both.buckets.map(bucket => bucket.label === '10/07–10/13' ? { ...bucket, partial: { ...bucket.partial, hotline: true } } : bucket);
         const mixed = await render(teamInput({ activity: both }));
         const [mixedCalls, mixedMeetings] = mixed.text.filter(slide => slide.includes('ТООН МЭДЭЭЛЭЛ'));
-        expect(mixedCalls).toContain('10/07–10/13 138 40+ 29%+');
-        expect(mixed.notes[mixed.text.indexOf(mixedCalls)]).toContain('«N+» — өдрийн тайлангийн тоо хугацааны дунд эхэлсэн тул доод хязгаар (7786 Оператор)');
-        expect(mixed.notes[mixed.text.indexOf(mixedMeetings)]).toContain('«N+» — уулзалтын бүртгэл хугацааны дунд эхэлсэн тул доод хязгаар (Шинэ уулзалт)');
+        expect(mixedCalls).toContain('10/07–10/13 138 40 29%');
+        expect(mixed.notes[mixed.text.indexOf(mixedCalls)]).toContain('өдрийн тайлангийн тоо хугацааны дунд эхэлсэн тул тоо нь доод хязгаар (7786 Оператор)');
+        expect(mixed.notes[mixed.text.indexOf(mixedMeetings)]).toContain('уулзалтын бүртгэл хугацааны дунд эхэлсэн тул тоо нь доод хязгаар (Шинэ уулзалт)');
     });
 
     it('meetings: interest by area band per week, the referral and both payment-term tables', async () => {
@@ -354,7 +354,7 @@ describe('team-format Wednesday deck (.pptx)', () => {
         expect(meetings).toContain('102/138 м² Зогсоол Сонголтгүй Нийт');
         // Бүрэн бүртгэлтэй, уулзалтгүй 7 хоног: нүд хоосон, нийт 0.
         expect(meetings).toContain('09/23–09/29 0 09/30–10/06');
-        expect(meetings).toContain(`${weeks[1].label} 2 4 1 1 ${weeks[1].total}+`);
+        expect(meetings).toContain(`${weeks[1].label} 2 4 1 1 ${weeks[1].total}`);
     });
 
     it('year plan table: a bar behind every known percentage, none behind «—»', async () => {
@@ -484,7 +484,7 @@ describe('team-format Wednesday deck (.pptx)', () => {
         }
         const { xml, text } = await render(teamInput({ plan: year, negotiations: talks }));
         const yearSlide = xml[text.indexOf(at(text, 'ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ'))];
-        expect(yearSlide).toContain('19,717,922,500+');
+        expect(yearSlide).toContain('19,717,922,500');
         // Дүн нэг мөрөнд (хувийн багана «Гүйцэтгэл»-ийг тасалдаггүй өргөнтэй).
         const [yearTable] = slideTables(yearSlide);
         expect(lineOverflows(yearTable, col => col >= 2 && (col - 2) % 3 !== 2).filter(line => /^"[^"]*\d/.test(line))).toEqual([]);
@@ -527,17 +527,17 @@ describe('team-format Wednesday deck (.pptx)', () => {
         // Fixture: 10-р сард Б2, зогсоолд гараар мөнгөн урсгал, Б1 хоосон; 1–9 сард мөнгөн урсгал огт алга.
         const { notes, text } = await render(teamInput({ plan: plan({ undated: true }) }));
         const total = notes[text.findIndex(slide => slide.includes('10-Р САРЫН БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ'))];
-        expect(total).toContain('Мөнгөн урсгалын «+» — доод хязгаар: гүйцэтгэл оруулаагүй, системд ч дүнгүй блок — Б1 блок.');
+        expect(total).toContain('Мөнгөн урсгал доод хязгаар: гүйцэтгэл оруулаагүй, системд ч дүнгүй блок — Б1 блок.');
         // Гэрээний гүйцэтгэл гараар (доод хязгааргүй) — мөнгөн урсгалын «+»-ийг огноогүй гэрээнд тохохгүй.
         expect(total).not.toContain('огноогүй 2 гэрээ байна');
         expect(total).not.toContain('дүн нь тодорхойгүй гэрээ');
         // Б2 гараар оруулсан — блокийн мөрөнд мөнгөн урсгалын «+» тайлбар байхгүй.
         const b2 = total.slice(total.indexOf('Б2 блок:'), total.indexOf('Зогсоол:'));
         expect(b2).toContain('Мөнгөн урсгалын гүйцэтгэл: удирдлагын гараар оруулсан дүн.');
-        expect(b2).not.toContain('Мөнгөн урсгалын «+»');
+        expect(b2).not.toContain('Мөнгөн урсгал доод хязгаар');
         const year = notes[text.findIndex(slide => slide.includes('ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ'))];
-        expect(year).toContain('Гэрээний тоо, дүнгийн «+» — огноогүй 2 гэрээтэй тул доод хязгаар.');
-        expect(year).toContain('Мөнгөн урсгалын «1–10 сар», «он»-ы «+»/«—» — 1–10-р сарын зарим блокийн гүйцэтгэл оруулаагүй');
+        expect(year).toContain('Гэрээний тоо, дүн — огноогүй 2 гэрээтэй тул доод хязгаар.');
+        expect(year).toContain('Мөнгөн урсгалын «1–10 сар», «он» бүрэн биш (доод хязгаар эсвэл «—») — 1–10-р сарын зарим блокийн гүйцэтгэл оруулаагүй');
     });
 
     it('adds no cash «+» note where the cell shows «—» (no cash anywhere, prod 10-28 state)', async () => {
@@ -545,9 +545,9 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const unknown = (cells: typeof report.months[number]['total']) => ({ ...cells, metrics: { ...cells.metrics, cashflow: { ...cells.metrics.cashflow!, actual: null, lowerBound: true, source: null } } });
         const months = report.months.map(row => ({ ...row, total: unknown(row.total), blocks: { b1: unknown(row.blocks.b1), b2: unknown(row.blocks.b2), parking: unknown(row.blocks.parking) } }));
         const { notes } = await render(teamInput({ plan: { ...report, months } }));
-        expect(notes.join(' ')).not.toContain('Мөнгөн урсгалын «+»');
+        expect(notes.join(' ')).not.toContain('Мөнгөн урсгал доод хязгаар');
         // Жилийн хүснэгт «—»-ийн шалтгааныг сараар хэлнэ.
-        expect(notes.join(' ')).toContain('Мөнгөн урсгалын «1–10 сар», «он»-ы «+»/«—» — 1–10-р сарын');
+        expect(notes.join(' ')).toContain('Мөнгөн урсгалын «1–10 сар», «он» бүрэн биш (доод хязгаар эсвэл «—») — 1–10-р сарын');
     });
 
     it('in HUB paid mode names undated contracts as the cash «+» cause, never «unknown paid» while every paid amount is known', async () => {
@@ -558,10 +558,10 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const noteOf = (title: string) => notes[text.findIndex(slide => slide.includes(title))];
         const month = noteOf('10-Р САРЫН БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ');
         // Нийт хүрээний мөр ба Б1 блокийн мөр хоёулаа шалтгааныг нэрлэнэ.
-        expect(month.match(/Мөнгөн урсгалын «\+» — доод хязгаар: огноогүй 1 гэрээний HUB-ийн төлсөн дүн аль сард орохыг мэдэхгүй\./g)).toHaveLength(2);
+        expect(month.match(/Мөнгөн урсгал доод хязгаар: огноогүй 1 гэрээний HUB-ийн төлсөн дүн аль сард орохыг мэдэхгүй\./g)).toHaveLength(2);
         expect(month.slice(month.indexOf('Б1 блок:'), month.indexOf('Б2 блок:'))).toContain('огноогүй 1 гэрээний HUB-ийн төлсөн дүн аль сард орохыг мэдэхгүй.');
         expect(month).not.toContain('зарим гэрээний төлсөн дүн тодорхойгүй');
-        expect(noteOf('ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ')).toContain('Мөнгөн урсгалын «1–10 сар», «он»-ы «+» — огноогүй 2 гэрээний HUB-ийн төлсөн дүн аль сард орохыг мэдэхгүй.');
+        expect(noteOf('ОНЫ БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ')).toContain('Мөнгөн урсгалын «1–10 сар», «он» доод хязгаар — огноогүй 2 гэрээний HUB-ийн төлсөн дүн аль сард орохыг мэдэхгүй.');
     });
 
     it('names both an empty block and a block that is itself a lower bound', async () => {
@@ -577,7 +577,7 @@ describe('team-format Wednesday deck (.pptx)', () => {
         };
         const { notes, text } = await render(teamInput({ plan: { ...report, months, cash: { ...report.cash!, availability: 'partial' } } }));
         expect(notes[text.findIndex(slide => slide.includes('10-Р САРЫН БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ'))])
-            .toContain('Мөнгөн урсгалын «+» — доод хязгаар: гүйцэтгэл оруулаагүй, системд ч дүнгүй блок — Б1 блок; зарим гэрээний төлсөн дүн тодорхойгүй. Мөнгө ороогүй блокт /admin/sales-targets-д 0 гэж оруулна.');
+            .toContain('Мөнгөн урсгал доод хязгаар: гүйцэтгэл оруулаагүй, системд ч дүнгүй блок — Б1 блок; зарим гэрээний төлсөн дүн тодорхойгүй. Мөнгө ороогүй блокт /admin/sales-targets-д 0 гэж оруулна.');
     });
 
     it('keeps the cash «+» note with the month table even when the stretch plan has no cash part', async () => {
@@ -585,7 +585,7 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const months = [...report.months];
         months[9] = { ...months[9], stretch: { ...months[9].stretch, cashflow: null } };
         const { notes, text } = await render(teamInput({ plan: { ...report, months } }));
-        expect(notes[text.findIndex(slide => slide.includes('10-Р САРЫН БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ'))]).toContain('Мөнгөн урсгалын «+»');
+        expect(notes[text.findIndex(slide => slide.includes('10-Р САРЫН БОРЛУУЛАЛТЫН ТӨЛӨВЛӨГӨӨ, ГҮЙЦЭТГЭЛ'))]).toContain('Мөнгөн урсгал доод хязгаар');
     });
 
     it('lists no missing cash months while the report covers none (plan year not started)', async () => {
@@ -598,7 +598,7 @@ describe('team-format Wednesday deck (.pptx)', () => {
         const filled = (cells: typeof report.months[number]['total']) => ({ ...cells, metrics: { ...cells.metrics, cashflow: { ...cells.metrics.cashflow!, actual: 1, lowerBound: false } } });
         const months = report.months.map(row => ({ ...row, total: filled(row.total), blocks: { b1: filled(row.blocks.b1), b2: filled(row.blocks.b2), parking: filled(row.blocks.parking) } }));
         const { notes } = await render(teamInput({ plan: { ...report, months } }));
-        expect(notes.join(' ')).not.toContain('Мөнгөн урсгалын «+»');
+        expect(notes.join(' ')).not.toContain('Мөнгөн урсгал доод хязгаар');
         expect(notes.join(' ')).not.toContain('Мөнгөн урсгалын «1–');
     });
 

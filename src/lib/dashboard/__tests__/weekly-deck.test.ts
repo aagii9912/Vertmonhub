@@ -752,7 +752,7 @@ describe('weekly meeting deck (.pptx)', () => {
         const monthSales = { ...operations(month.from, month.to), monthlyPerformance: buildMonthlyPerformance([M1_TARGET], month, true, M1_CONTRACTS) };
         const { text } = await render(input({ monthSales }));
         const plan = text.find(slideText => slideText.includes('сарын төлөвлөгөө ба гүйцэтгэл'))!;
-        expect(plan).toMatch(/Гэрээний гүйцэтгэл 2\.09 тэрбум ₮\+ Холимог: гар \+ CRM Гүйцэтгэлийн хувь 39%\+/);
+        expect(plan).toMatch(/Гэрээний гүйцэтгэл 2\.09 тэрбум ₮ Холимог: гар \+ CRM Гүйцэтгэлийн хувь 39%/);
         expect(plan).not.toMatch(/Гэрээний гүйцэтгэл 2 тэрбум ₮ Удирдлагын баталгаажуулсан/);
     });
 
@@ -767,7 +767,7 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(partial.months[0].resolvedCash).toEqual({ value: 187_824_800, lowerBound: true, source: 'mixed' });
         const { text } = await render(input({ monthSales: { ...operations(month.from, month.to), monthlyPerformance: partial } }));
         const plan = text.find(slideText => slideText.includes('сарын төлөвлөгөө ба гүйцэтгэл'))!;
-        expect(plan).toMatch(/Орсон мөнгөний гүйцэтгэл 188 сая ₮\+ Удирдлагын оруулсан блокууд — бусад блок оруулаагүй Гүйцэтгэлийн хувь 12%\+/);
+        expect(plan).toMatch(/Орсон мөнгөний гүйцэтгэл 188 сая ₮ Удирдлагын оруулсан блокууд — бусад блок оруулаагүй Гүйцэтгэлийн хувь 12%/);
         // Бүх блок (Б1-д тодорхой 0) оруулсан бол бүрэн.
         const full = buildMonthlyPerformance([{ ...target, block_amounts: { ...target.block_amounts, b1: { ...target.block_amounts.b1, manual_cashflow_actual_amount: 0 } } }], month, true, M1_CONTRACTS);
         expect(full.months[0].resolvedCash).toMatchObject({ value: 187_824_800, lowerBound: false });
@@ -781,7 +781,7 @@ describe('weekly meeting deck (.pptx)', () => {
         const { text } = await render(input({ monthSales }));
         const contracts = text.filter(slideText => slideText.includes('Энэ долоо хоногийн гэрээ')).join(' ');
         // 14 гэрээний 5-ынх нь төлсөн дүн хоосон: 9 × 60 сая = 540 сая «+», хэзээ ч 0 биш; урьдчилгаа бүгд мэдэгдэнэ.
-        expect(contracts).toContain('540,000,000₮+');
+        expect(contracts).toContain('540,000,000₮');
         expect(contracts).toContain('1,680,000,000₮');
         const plan = text.find(slideText => slideText.includes('сарын төлөвлөгөө ба гүйцэтгэл'))!;
         // 540 сая ₮ нь хоёр snapshot-ын хоорондох ERP зөрүү — сарын 750 сая ₮-ийн төлөвлөгөөтэй хувь гаргахгүй (72% биш).

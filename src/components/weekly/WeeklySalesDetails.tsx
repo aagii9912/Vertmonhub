@@ -10,7 +10,8 @@ import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
 import { cn } from '@/lib/utils';
 import type { WeeklySalesReport } from '@/lib/dashboard/weekly-sales';
 import type { WeeklyFile } from '@/lib/dashboard/weekly-files';
-import { periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from '@/lib/dashboard/contract-dates';
+import { undatedContractsHint, undatedContractsShort } from '@/lib/dashboard/contract-dates';
+import { weeklyContractAmount, weeklyContractCount, weeklyMark } from '@/lib/dashboard/weekly-mark';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
 import { FloorMap, FloorMapLegend } from './FloorMap';
 
@@ -40,20 +41,20 @@ export function WeeklySalesDetails({ query, canOpenErp }: { query: ReturnType<ty
     const undated = report.sources.undatedContracts;
     // Төлөвлөгөөтэй харьцуулах дүн, хувь — зөвхөн төлөвлөгөөнд хамаарах огноогүй гэрээ «+» болгоно.
     const undatedPlan = report.sources.undatedPlanContracts;
-    const monthTotal = periodContractAmount(report.month.total, report.month.count, undated, formatMNTShort);
-    const monthPct = report.month.attainmentPct === null ? '—' : `${report.month.attainmentPct}%${undatedPlan ? '+' : ''}`;
+    const monthTotal = weeklyContractAmount(report.month.total, report.month.count, undated, formatMNTShort);
+    const monthPct = report.month.attainmentPct === null ? '—' : `${report.month.attainmentPct}%${weeklyMark(undatedPlan)}`;
     // Хувь нь зөвхөн төлөвлөгөөнд хамаарах гэрээгээр — хажууд нь тэр дүнг (Агуулах г.м.-ийг хассан) харуулна.
     const outsidePlan = report.month.outsidePlanCount ?? 0;
-    const plannedTotal = periodContractAmount(report.month.planTotal, report.month.planCount, undatedPlan, formatMNTShort);
+    const plannedTotal = weeklyContractAmount(report.month.planTotal, report.month.planCount, undatedPlan, formatMNTShort);
 
     return (
         <div className="space-y-6">
             <SourceLine report={report} canOpenErp={canOpenErp} />
 
             <div className="grid grid-cols-2 gap-5 rounded-2xl border border-border p-5 lg:grid-cols-4">
-                <Figure label="Энэ 7 хоногийн гэрээ" value={periodContractCount(report.week.count, undated)}
+                <Figure label="Энэ 7 хоногийн гэрээ" value={weeklyContractCount(report.week.count, undated)}
                     helper={undated ? undatedContractsShort(undated) : `${formatMNTShort(report.week.total)} · өмнөх ${report.previousWeek.count} (${formatMNTShort(report.previousWeek.total)})`} />
-                <Figure label={`${Number(report.month.month.slice(5))}-р сарын гэрээ`} value={periodContractCount(report.month.count, undated)}
+                <Figure label={`${Number(report.month.month.slice(5))}-р сарын гэрээ`} value={weeklyContractCount(report.month.count, undated)}
                     helper={report.month.target ? `${plannedTotal} / төлөвлөгөө ${formatMNTShort(report.month.target)} · ${monthPct}${outsidePlan ? ` · төлөвлөгөөгүй ${outsidePlan} гэрээ хассан` : ''}` : `${monthTotal} · сарын төлөвлөгөө тохируулаагүй`} />
                 <Figure label="Мөнгөн орлого (ERP)" value={report.cash ? formatMNTShort(report.cash.delta) : '—'} helper={report.cash ? `${report.cash.from} → ${report.cash.to}` : 'Хоёр долоо хоногийн ERP экспорт хэрэгтэй'} />
                 <Figure label="Төлбөрийн хоцролт" value={report.receivables ? formatMNTShort(report.receivables.overdue) : '—'}
