@@ -15,7 +15,7 @@ import {
 import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { CONTRACT_STATUS_META, CONTRACT_TRANSFER_KIND_META, PAYMENT_STATUS_META, PAYMENT_METHOD_LABEL } from '@/lib/contracts/labels';
 import { isTransferableContract, latestTransferDate, summarizeContractTransfers } from '@/lib/contracts/transfer';
-import { contractUnitNumber } from '@/lib/contracts/list-format';
+import { HUB_STATUS_LABEL, contractUnitNumber } from '@/lib/contracts/list-format';
 import { useAuth } from '@/contexts/AuthContext';
 import { ContractTransferDialog } from '@/components/contracts/ContractTransferDialog';
 import { ContractStatusDialog, canCancelContract, type ContractStatusChange } from '@/components/contracts/ContractStatusDialog';
@@ -132,6 +132,9 @@ export function ContractDetail({ id }: { id: string }) {
                         <F label="Утас"><span className="mono-label">{phone || '—'}</span>{phone && <a href={`tel:${phone.replace(/\D/g, '')}`} className="ml-1 inline-flex text-brand-strong" aria-label="Залгах"><Phone className="h-3.5 w-3.5" /></a>}</F>
                         <F label="Регистр"><span className="mono-label">{c.customer_registration || '—'}</span></F>
                         <F label="Блок / Тоот"><span className="mono-label">{[c.block_name, contractUnitNumber(c)].filter(Boolean).join(' / ') || '—'}</span></F>
+                        {/* ERP-ийн файлд шарлуулсан «Төлөв», «Тоот», «Загвар» жагсаалтад гарахгүй — зөвхөн энд (эзэмшигчийн шийдвэр 2026-11-15). */}
+                        <F label="Загвар">{c.model || <span className="text-muted-foreground">—</span>}</F>
+                        <F label="Төлөв (ERP)">{c.contract_status && Object.hasOwn(HUB_STATUS_LABEL, c.contract_status) ? HUB_STATUS_LABEL[c.contract_status as keyof typeof HUB_STATUS_LABEL] : st.label}</F>
                         <F label="Байр">{[c.unit_type || (c.rooms ? `${c.rooms} өрөө` : null), c.contracted_area ? `${c.contracted_area} м²` : null, c.floor ? `${c.floor}-р давхар` : null].filter(Boolean).join(' · ') || '—'}</F>
                         <F label="Менежер" wrap><ManagerField contract={c} canEdit={canEditManager} /></F>
                         <F label={REFERRAL_FIELD_LABEL} wrap><ReferralField contract={c} canEdit={canWrite} /></F>

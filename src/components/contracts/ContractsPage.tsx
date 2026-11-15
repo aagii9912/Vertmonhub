@@ -8,13 +8,13 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
 import { formatShortDate } from '@/lib/utils/date';
-import { useContractsList, type ContractRow, type ContractStats } from '@/hooks/useContracts';
+import { useContractsList, type ContractRow, type ContractStats, type ContractsListResult } from '@/hooks/useContracts';
 import { useModuleAccess } from '@/hooks/useModuleAccess';
 import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { CONTRACT_STATUS_META } from '@/lib/contracts/labels';
 import {
-    CONTRACT_LIST_COLUMNS, HUB_STATUS_LABEL, HUB_TYPE_LABEL, contractListNames, contractListPricePerSqm, contractUnitNumber, hubFloor,
-    isDerivedPricePerSqm, type ContractListColumn,
+    CONTRACT_LIST_VIEW_COLUMNS, HUB_STATUS_LABEL, HUB_TYPE_LABEL, contractListNames, contractListPricePerSqm, contractListRemainder, contractUnitNumber, hubFloor,
+    isDerivedPricePerSqm, type ContractListViewColumn,
 } from '@/lib/contracts/list-format';
 import { useManagers } from '@/hooks/useLeads';
 import { Avatar, Pill, Progress, Skeleton } from '@/components/dashboard/v2/primitives';
@@ -39,26 +39,31 @@ const DEFAULT_SORT = 'contract_date';
 /** Текст баганыг А→Я, тоо/огноог их → бага эхэлж эрэмбэлнэ. */
 const ASC_FIRST = new Set(['customer_name', 'customer_first_name', 'customer_last_name', 'product_type', 'block_name', 'unit_label', 'floor', 'model', 'prepayment_condition', 'payment_condition', 'contract_status']);
 
-/** HUB баганын өргөн (px, 13px текстэд 16 багана ≈ 1536px), эрэмбийн багана, тоо эсэх. Сүүлийн багана үлдсэн өргөнийг авна. */
-const HUB_COLUMN_META: Record<ContractListColumn, { width?: number; sort: string; numeric?: boolean; sticky?: number; title?: string }> = {
-    'Төрөл': { width: 88, sort: 'product_type', sticky: 0 },
-    'Блок': { width: 56, sort: 'block_name', sticky: 88 },
-    'Тоот': { width: 64, sort: 'unit_label', sticky: 144 },
-    'Давхар': { width: 60, sort: 'floor' },
-    'Загвар': { width: 96, sort: 'model' },
-    'Гэрээлсэн талбай': { width: 76, sort: 'contracted_area', numeric: true, title: 'м²' },
+/**
+ * Жагсаалтын баганууд — ERP-ийн экспортын 16 багана, тэр дарааллаар (`CONTRACT_LIST_VIEW_COLUMNS`): өргөн (px), эрэмбийн
+ * багана (хоосон = эрэмбэлэхгүй: DB багана биш), тоо эсэх. Сүүлийн багана үлдсэн өргөнийг авна.
+ */
+const HUB_COLUMN_META: Record<ContractListViewColumn, { width?: number; sort?: string; numeric?: boolean; sticky?: number; title?: string }> = {
+    'Блок': { width: 56, sort: 'block_name', sticky: 0 },
+    'Төрөл': { width: 88, sort: 'product_type', sticky: 56 },
+    'Давхар': { width: 64, sort: 'floor', sticky: 144 },
+    'Захиалгын нөхцөл': { width: 112, sort: 'payment_condition' },
     'Урьдчилгааны нөхцөл': { width: 104, sort: 'prepayment_condition' },
     'М.кв үнэ': { width: 96, sort: 'price_per_sqm', numeric: true },
     'Нийт дүн': { width: 112, sort: 'total_price', numeric: true },
     'Урьдчилгааны дүн': { width: 112, sort: 'prepayment_due', numeric: true, title: 'Нөхцлөөр төлөх ёстой дүн — орсон мөнгө биш' },
+    'Бартер': { width: 104, numeric: true },
+    'Бэлэн төлөлт': { width: 112, numeric: true },
+    'Нийт үлдэгдэл': { width: 112, numeric: true, title: 'Нийт дүн − Урьдчилгааны дүн (ERP-ийн файлын томьёо) — төлбөрийн үлдэгдэл биш' },
     'Төлбөр хоцролт': { width: 112, sort: 'overdue_amount', numeric: true, title: 'HUB файлын огноогоор' },
     'Захиалга өгсөн огноо': { width: 104, sort: 'contract_date' },
-    'Төлөв': { width: 112, sort: 'contract_status' },
     'Нэр': { width: 128, sort: 'customer_first_name' },
     'Овог': { width: 128, sort: 'customer_last_name' },
-    'Захиалгын нөхцөл': { sort: 'payment_condition' },
+    'РД': { sort: 'customer_registration' },
 };
-const HUB_TABLE_MIN_WIDTH = 1536;
+/** Наалттай багануудын сүүлийнх (хажуу тийш гүйлгэхэд зүүн талд үлдэнэ). */
+const HUB_LAST_STICKY: ContractListViewColumn = 'Давхар';
+const HUB_TABLE_MIN_WIDTH = 1664;
 const OVERDUE_DAYS_RULE = 'Системийн тооцоо: гэрээний огнооноос 90 хоногийн дараа үлдэгдэлтэй бол хоцорсон хоног тоологдоно. ₮ дүн HUB файлаас орно.';
 
 const toNumber = (value: unknown): number | null => {
@@ -231,7 +236,7 @@ function ContractsWorkspace({ initialFilter }: { initialFilter: string | null })
                         </button>
                     ))}
                 </div>
-                <p className="ml-auto text-xs text-muted-foreground">{view === 'hub' ? 'Дүн ₮-өөр, талбай м²-ээр. ' : ''}Хөлийн нийлбэрт цуцалсан гэрээ орохгүй.</p>
+                <p className="ml-auto text-xs text-muted-foreground">{view === 'hub' ? 'Дүн ₮-өөр. Төлөв, тоот, загвар — гэрээг нээхэд. ' : ''}Хөлийн нийлбэрт цуцалсан гэрээ орохгүй.</p>
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-border bg-surface">
@@ -241,7 +246,7 @@ function ContractsWorkspace({ initialFilter }: { initialFilter: string | null })
                 </div> : (
                     <div className="max-h-[calc(100dvh-20rem)] overflow-auto">
                         {view === 'hub'
-                            ? <HubTable rows={rows} footer={footer} total={total} latestImportDate={latestImport?.report_date ?? null} loading={isLoading} fetching={isFetching} sortBy={sortBy} sortOrder={sortOrder} onSort={toggleSort} onOpen={open} />
+                            ? <HubTable rows={rows} footer={footer} total={total} latestImportDate={latestImport?.report_date ?? null} hubPaid={error ? null : data?.hubPaid ?? null} loading={isLoading} fetching={isFetching} sortBy={sortBy} sortOrder={sortOrder} onSort={toggleSort} onOpen={open} />
                             : <PaymentsTable rows={rows} footer={footer} total={total} loading={isLoading} fetching={isFetching} sortBy={sortBy} sortOrder={sortOrder} onSort={toggleSort} onOpen={open} />}
                     </div>
                 )}
@@ -322,14 +327,14 @@ interface TableProps {
 }
 
 /** Мөр бүр дэлгэрэнгүй рүү (гар, хулганаар). Наалттай нүд тунгалаг биш тул hover-ыг нүд бүрт өгнө. */
-function RowLink({ id, onOpen, fetching, children }: { id: string; onOpen: (id: string) => void; fetching: boolean; children: React.ReactNode }) {
+function RowLink({ id, onOpen, fetching, muted, title, children }: { id: string; onOpen: (id: string) => void; fetching: boolean; muted?: boolean; title?: string; children: React.ReactNode }) {
     return (
-        <tr role="button" tabIndex={0} onClick={() => onOpen(id)}
+        <tr role="button" tabIndex={0} onClick={() => onOpen(id)} title={title}
             onKeyDown={(e) => {
                 if (e.target !== e.currentTarget) return;
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(id); }
             }}
-            className={cn('h-10 cursor-pointer focus-ring [&>td]:border-b [&>td]:border-border [&>td]:bg-surface [&>td]:transition-colors hover:[&>td]:bg-surface-2', fetching && 'opacity-90')}>
+            className={cn('h-10 cursor-pointer focus-ring [&>td]:border-b [&>td]:border-border [&>td]:bg-surface [&>td]:transition-colors hover:[&>td]:bg-surface-2', fetching && 'opacity-90', muted && '[&>td]:text-muted-foreground')}>
             {children}
         </tr>
     );
@@ -350,21 +355,37 @@ function SortHeader({ label, sortKey, sortBy, sortOrder, onSort, right, title }:
 
 const stickyStyle = (left: number | undefined) => (left === undefined ? undefined : { left });
 
-/** HUB загвар: яг 16 багана, наалттай толгой/хөл, зүүн талын Төрөл · Блок · Тоот. */
-function HubTable({ rows, footer, total, latestImportDate, loading, fetching, sortBy, sortOrder, onSort, onOpen }: TableProps & { latestImportDate: string | null }) {
-    const columns = CONTRACT_LIST_COLUMNS.map((label) => ({ label, ...HUB_COLUMN_META[label] }));
+/** Сүүлийн HUB файлын дүн («Бэлэн төлөлт», «Бартер»): тулгагдаагүй / хоосон бол «—», 0 бүдэг. Гэрээнд бичигдэхгүй. */
+function HubAmountCell({ value, asOf }: { value: number | null | undefined; asOf: string | null }) {
+    if (value === undefined) return <Muted title={asOf ? `${asOf}-ны файлд энэ гэрээ тулгагдаагүй` : 'Ийм баганатай HUB файл ороогүй'} />;
+    if (value === null) return <Muted title="Файлд хоосон" />;
+    if (value === 0) return <Muted>0</Muted>;
+    return <span title={asOf ? `${asOf}-ны HUB файлаар` : undefined}>{money(value)}</span>;
+}
+
+/**
+ * HUB загвар: ERP-ийн экспортын 16 багана тэр дарааллаар, наалттай толгой/хөл, зүүн талын Блок · Төрөл · Давхар.
+ * «Төлөв», «Тоот», «Загвар» энд гарахгүй (гэрээг нээхэд дэлгэрэнгүйд); цуцлагдсан гэрээний мөр бүдэг.
+ */
+function HubTable({ rows, footer, total, latestImportDate, hubPaid, loading, fetching, sortBy, sortOrder, onSort, onOpen }: TableProps & { latestImportDate: string | null; hubPaid: ContractsListResult['hubPaid'] }) {
+    const asOf = hubPaid?.asOf ?? null;
+    const fileTitle = asOf ? `${asOf}-ны HUB файлаар — гэрээний төлсөн дүнд бичигдэхгүй` : 'Ийм баганатай HUB файл ороогүй';
+    const columns = CONTRACT_LIST_VIEW_COLUMNS.map((label) => ({ label, ...HUB_COLUMN_META[label], ...(label === 'Бартер' || label === 'Бэлэн төлөлт' ? { title: fileTitle } : {}) }));
     const stickyCell = (left: number | undefined, last: boolean) => cn(left !== undefined && 'sticky z-10', last && 'border-r border-border');
+    const remainderTotal = footer && footer.prepayment_due !== undefined ? footer.total_sales - footer.prepayment_due : null;
     return (
         <table className="w-full table-fixed border-separate border-spacing-0 text-[13px]" style={{ minWidth: HUB_TABLE_MIN_WIDTH }}>
             <colgroup>{columns.map((c) => <col key={c.label} style={c.width ? { width: c.width } : undefined} />)}</colgroup>
             <thead>
                 <tr className="text-xs font-medium text-muted-foreground">
                     {columns.map((c) => {
-                        const active = sortBy === c.sort;
+                        const active = !!c.sort && sortBy === c.sort;
                         return (
-                            <th key={c.label} scope="col" aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} style={stickyStyle(c.sticky)}
-                                className={cn('sticky top-0 h-12 border-b border-border bg-surface-2 px-2 pb-2 align-bottom font-medium', c.sticky !== undefined ? 'z-30' : 'z-20', c.numeric ? 'text-right' : 'text-left', c.label === 'Тоот' && 'border-r')}>
-                                <SortHeader label={c.label} sortKey={c.sort} sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} right={c.numeric} title={c.title} />
+                            <th key={c.label} scope="col" aria-sort={c.sort ? (active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none') : undefined} style={stickyStyle(c.sticky)}
+                                className={cn('sticky top-0 h-12 border-b border-border bg-surface-2 px-2 pb-2 align-bottom font-medium', c.sticky !== undefined ? 'z-30' : 'z-20', c.numeric ? 'text-right' : 'text-left', c.label === HUB_LAST_STICKY && 'border-r')}>
+                                {c.sort
+                                    ? <SortHeader label={c.label} sortKey={c.sort} sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} right={c.numeric} title={c.title} />
+                                    : <span title={c.title} className={cn('line-clamp-2 leading-tight', c.title && 'cursor-help')}>{c.label}</span>}
                             </th>
                         );
                     })}
@@ -375,39 +396,40 @@ function HubTable({ rows, footer, total, latestImportDate, loading, fetching, so
                 {!loading && rows.length === 0 && <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-[13px] text-muted-foreground">Гэрээ олдсонгүй</td></tr>}
                 {rows.map((c) => {
                     const names = contractListNames(c);
-                    const unitNumber = contractUnitNumber(c);
                     const pricePerSqm = contractListPricePerSqm(c);
                     const derivedPrice = isDerivedPricePerSqm(c);
                     const date = c.order_date ?? c.contract_date;
                     const type = c.product_type ? HUB_TYPE_LABEL[c.product_type] ?? c.product_type : null;
-                    const cell = (column: ContractListColumn) => {
+                    const remainder = contractListRemainder(c);
+                    const cancelled = c.contract_status === 'cancelled';
+                    const cell = (column: ContractListViewColumn) => {
                         const meta = HUB_COLUMN_META[column];
-                        return cn('whitespace-nowrap px-2', meta.numeric && 'num text-right', stickyCell(meta.sticky, column === 'Тоот'));
+                        return cn('whitespace-nowrap px-2', meta.numeric && 'num text-right', stickyCell(meta.sticky, column === HUB_LAST_STICKY));
                     };
                     return (
-                        <RowLink key={c.id} id={c.id} onOpen={onOpen} fetching={fetching}>
-                            <td className={cell('Төрөл')} style={stickyStyle(0)}>{type ?? <Muted />}</td>
-                            <td className={cell('Блок')} style={stickyStyle(88)}>{c.block_name ?? <Muted />}</td>
-                            <td className={cn(cell('Тоот'), 'num font-medium text-foreground')} style={stickyStyle(144)}>{unitNumber ?? <Muted />}</td>
-                            <td className={cn(cell('Давхар'), 'num')}>{hubFloor(c.floor) ?? <Muted />}</td>
-                            <td className={cn(cell('Загвар'), 'truncate')} title={c.model ?? undefined}>{c.model ?? <Muted />}</td>
-                            <td className={cell('Гэрээлсэн талбай')}>{area(c.contracted_area) ?? <Muted />}</td>
+                        <RowLink key={c.id} id={c.id} onOpen={onOpen} fetching={fetching} muted={cancelled} title={cancelled ? 'Цуцлагдсан гэрээ' : undefined}>
+                            <td className={cn(cell('Блок'), 'font-medium text-foreground')} style={stickyStyle(0)}>{c.block_name ?? <Muted />}</td>
+                            <td className={cell('Төрөл')} style={stickyStyle(56)}>{type ?? <Muted />}</td>
+                            <td className={cn(cell('Давхар'), 'num')} style={stickyStyle(144)}>{hubFloor(c.floor) ?? <Muted />}</td>
+                            <td className={cn(cell('Захиалгын нөхцөл'), 'truncate')} title={c.payment_condition ?? undefined}>{c.payment_condition ?? <Muted />}</td>
                             <td className={cn(cell('Урьдчилгааны нөхцөл'), 'truncate')} title={c.prepayment_condition ?? undefined}>{c.prepayment_condition ?? <Muted />}</td>
                             <td className={cell('М.кв үнэ')}>
                                 {pricePerSqm === null ? <Muted /> : derivedPrice
                                     ? <span title="Нэгжийн үнэ (ERP-ийн загвараар)" className="cursor-help underline decoration-dotted underline-offset-2">{money(pricePerSqm)}</span>
                                     : money(pricePerSqm)}
                             </td>
-                            <td className={cn(cell('Нийт дүн'), 'text-foreground')}>{money(c.total_price) ?? <Muted />}</td>
+                            <td className={cn(cell('Нийт дүн'), !cancelled && 'text-foreground')}>{money(c.total_price) ?? <Muted />}</td>
                             <td className={cell('Урьдчилгааны дүн')}>{money(c.prepayment_due) ?? <Muted />}</td>
+                            <td className={cell('Бартер')}><HubAmountCell value={c.hub_barter} asOf={asOf} /></td>
+                            <td className={cell('Бэлэн төлөлт')}><HubAmountCell value={c.hub_cash_paid} asOf={asOf} /></td>
+                            <td className={cell('Нийт үлдэгдэл')}>{remainder === null ? <Muted /> : money(remainder)}</td>
                             <td className={cell('Төлбөр хоцролт')}><OverdueCell contract={c} latestImportDate={latestImportDate} /></td>
                             <td className={cn(cell('Захиалга өгсөн огноо'), 'num')}>{date ? formatShortDate(date) : <Muted />}</td>
-                            <td className={cell('Төлөв')}><Pill tone={statusTone(c.contract_status)} className="text-xs">{hubStatusLabel(c.contract_status)}</Pill></td>
                             <td className={cn(cell('Нэр'), 'truncate')} title={names.first ?? undefined}>
                                 {names.first === null ? <Muted /> : names.fallback ? <Muted title="Нэр, овог салгаагүй — бүтэн нэр">{names.first}</Muted> : names.first}
                             </td>
                             <td className={cn(cell('Овог'), 'truncate')} title={names.last ?? undefined}>{names.last ?? <Muted />}</td>
-                            <td className={cn(cell('Захиалгын нөхцөл'), 'truncate')}>{c.payment_condition ?? <Muted />}</td>
+                            <td className={cn(cell('РД'), 'mono-label truncate')}>{c.customer_registration || <Muted />}</td>
                         </RowLink>
                     );
                 })}
@@ -416,13 +438,14 @@ function HubTable({ rows, footer, total, latestImportDate, loading, fetching, so
                 <tfoot>
                     <tr className="h-10 text-[13px] font-medium text-foreground [&>td]:sticky [&>td]:bottom-0 [&>td]:z-20 [&>td]:border-t [&>td]:border-border [&>td]:bg-surface-2 [&>td]:px-2 [&>td]:whitespace-nowrap">
                         <td colSpan={3} className="left-0 z-30! border-r" style={stickyStyle(0)}>Нийт · <span className="num">{total}</span> гэрээ</td>
-                        <td colSpan={2} />
-                        <td className="num text-right">{area(footer.area) ?? '—'}</td>
-                        <td colSpan={2} />
+                        <td colSpan={3} />
                         <td className="num text-right">{money(footer.total_sales)}</td>
                         <td className="num text-right">{money(footer.prepayment_due) ?? '—'}</td>
+                        <td className="num text-right">{money(hubPaid?.totals?.barter) ?? '—'}</td>
+                        <td className="num text-right">{money(hubPaid?.totals?.cash) ?? '—'}</td>
+                        <td className="num text-right">{money(remainderTotal) ?? '—'}</td>
                         <td className={cn('num text-right', (footer.overdue_amount ?? 0) > 0 && 'text-status-danger')}>{money(footer.overdue_amount) ?? '—'}</td>
-                        <td colSpan={5} />
+                        <td colSpan={4} />
                     </tr>
                 </tfoot>
             )}

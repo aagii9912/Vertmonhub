@@ -277,6 +277,9 @@ export interface PropertyContract {
     customer_first_name: string | null;
     customer_last_name: string | null;
     customer_registration: string | null;
+    /** Жагсаалтын API-аас: сүүлийн HUB файлын «Бэлэн төлөлт» / «Бартер» (талбар байхгүй = файлд тулгагдаагүй, null = файлд хоосон). DB багана биш. */
+    hub_cash_paid?: number | null;
+    hub_barter?: number | null;
     customer_phone: string | null;
     customer_mobile: string | null;
 

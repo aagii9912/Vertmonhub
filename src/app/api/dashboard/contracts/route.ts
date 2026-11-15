@@ -5,6 +5,7 @@ import { fetchAllRows } from '@/lib/utils/pagination';
 import { contractIdsByPreviousHolder } from '@/lib/services/ContractService';
 import { summarizeContracts, type ContractSummaryRow } from '@/lib/contracts/summary';
 import { loadLatestContractListImport } from '@/lib/contracts/live';
+import { loadHubListAmounts, sumHubAmounts, type HubListAmounts } from '@/lib/contracts/hub-amounts-load';
 import { loadReferralNames } from '@/lib/sales/referral-sources-store';
 
 /** `?sortBy=` — зөвхөн эдгээр багана (өмнө нь дурын нэр `.order()`-т орж 500 өгдөг байв). */
@@ -14,7 +15,7 @@ const SORTABLE = new Set([
     'block_name', 'unit_number', 'unit_label', 'sales_channel', 'product_type',
     // HUB загварын баганууд
     'order_date', 'contracted_area', 'price_per_sqm', 'prepayment_due', 'overdue_amount', 'floor', 'model',
-    'prepayment_condition', 'payment_condition', 'customer_first_name', 'customer_last_name',
+    'prepayment_condition', 'payment_condition', 'customer_first_name', 'customer_last_name', 'customer_registration',
 ]);
 
 /** Статистик, хөлийн нийлбэр, шүүлтийн сонголтод хэрэгтэй багана (бүх баганыг 1600+ мөрөөр татахгүй — review M16). */
@@ -75,10 +76,19 @@ export const GET = withRoute({ module: 'contracts', error: 'Гэрээ тата�
     const withStats = sp.get('stats') !== '0';
 
     // Шилжүүлсэн гэрээ өмнөх эзэмшигчийн нэр, утас, регистрээр ч олдоно.
-    const [previousHolderIds, latestImport] = await Promise.all([
+    const [previousHolderIds, latestImport, hubAmounts] = await Promise.all([
         search ? contractIdsByPreviousHolder(supabase, shopId, search) : Promise.resolve([] as string[]),
         withStats || notInLatest ? loadLatestContractListImport(supabase, shopId) : Promise.resolve(null),
+        // Жагсаалтын «Бэлэн төлөлт», «Бартер» (сүүлийн HUB файлаас, гэрээнд бичигдэхгүй) — ⌘K хайлтад хэрэггүй.
+        withStats ? loadHubListAmounts(supabase, shopId) : Promise.resolve(null),
     ]);
+    const hubInfo = (amounts: HubListAmounts | null, footerIds?: string[]) => amounts
+        ? { asOf: amounts.asOf, ...(footerIds ? { totals: sumHubAmounts(amounts, footerIds) } : {}) } : null;
+    /** Мөр бүрт файлын дүнг нэмнэ: тулгагдаагүй гэрээнд талбар байхгүй (тодорхойгүй), файлд хоосон бол null. */
+    const withHubAmounts = (rows: Row[]): Row[] => hubAmounts ? rows.map(row => {
+        const amounts = hubAmounts.byContract.get(row.id as string);
+        return amounts ? { ...row, hub_cash_paid: amounts.cash, hub_barter: amounts.barter } : row;
+    }) : rows;
     const latestDate = latestImport?.report_date ?? null;
     const filtered = !!(search || status || manager || channel || productType || block || paymentCondition || overdueOnly || undatedOnly
         || (notInLatest && latestDate) || dateFrom || dateTo);
@@ -138,7 +148,10 @@ export const GET = withRoute({ module: 'contracts', error: 'Гэрээ тата�
         if (!withStats) return null;
         const [projectRows, filteredRows] = await Promise.all([fetchProject(), filtered ? fetchFiltered(SUMMARY_COLUMNS) : Promise.resolve(null)]);
         const options = { latestImportDate: latestDate };
+        // Хөлийн «Бэлэн төлөлт», «Бартер»: шүүсэн амьд гэрээний файлын дүнгийн нийлбэр.
+        const footerIds = (filteredRows ?? projectRows).filter(row => row.contract_status !== 'cancelled').map(row => row.id as string);
         return {
+            hubPaid: hubInfo(hubAmounts, footerIds),
             stats: summarizeContracts(projectRows as ContractSummaryRow[], options),
             footer: summarizeContracts((filteredRows ?? projectRows) as ContractSummaryRow[], options),
             facets: contractFacets(projectRows),
@@ -163,7 +176,7 @@ export const GET = withRoute({ module: 'contracts', error: 'Гэрээ тата�
         if (pageErr) throw pageErr;
         const total = count ?? 0;
         return NextResponse.json({
-            contracts: await withReferralNames(supabase, shopId, (slice || []) as unknown as Row[]),
+            contracts: withHubAmounts(await withReferralNames(supabase, shopId, (slice || []) as unknown as Row[])),
             ...summaries,
             latestImport: summaries?.latestImport ?? latestImport,
             pagination: { total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), hasMore: page * pageSize < total },

@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContractRow, ContractsListParams, ContractsListResult, ContractStats } from '@/hooks/useContracts';
-import { CONTRACT_LIST_COLUMNS } from '@/lib/contracts/list-format';
+import { CONTRACT_DETAIL_ONLY_COLUMNS, CONTRACT_LIST_VIEW_COLUMNS } from '@/lib/contracts/list-format';
 
 type TestUser = { role: string; permissions: { canWrite: boolean; modules: string[] } };
 const state = vi.hoisted(() => ({
@@ -36,7 +36,7 @@ const contract = (id: string, extra: Partial<ContractRow> & Record<string, unkno
     unit_label: `Б1-${id}`, block_name: 'Б1', floor: '01', unit_number: '0', legacy_unit_number: id, model: 'A-2', contracted_area: 64.33,
     prepayment_condition: '30%', price_per_sqm: 7_000_000, total_price: 450_310_000, prepayment_due: 135_093_000, overdue_amount: 0,
     overdue_as_of: '2026-10-22', overdue_days: 0, customer_name: 'Болд.Батаа', customer_first_name: 'Болд', customer_last_name: 'Батаа',
-    payment_condition: 'Тусгай', paid_amount: null, balance: null, sales_manager: 'Хонгорзул.Мөнхгэрэл',
+    payment_condition: 'Тусгай', paid_amount: null, balance: null, sales_manager: 'Хонгорзул.Мөнхгэрэл', customer_registration: `РД${id}`,
     ...extra,
 }) as unknown as ContractRow;
 
@@ -47,7 +47,7 @@ const stats = (extra: Partial<ContractStats> = {}): ContractStats => ({
 });
 
 const rows = [
-    contract('19', { unit_label: 'Б1-19 (B1)', floor: 'B1', overdue_amount: 397_977_420 }),
+    contract('19', { unit_label: 'Б1-19 (B1)', floor: 'B1', overdue_amount: 397_977_420, hub_barter: 0, hub_cash_paid: 120_000_000 }),
     contract('110', { product_type: 'parking', unit_label: 'Б1-110 (B1)', floor: 'B1', model: null, contracted_area: 13.25, price_per_sqm: null, total_price: 35_000_000, prepayment_due: null, overdue_amount: null, customer_first_name: null, customer_last_name: null, customer_name: 'Сарангэрэл.Сайнбаяр', contract_status: 'closed' }),
     contract('7', { overdue_amount: 0 }),
     contract('8', { overdue_amount: null, overdue_days: 12, order_date: null, contract_date: null }),
@@ -59,6 +59,7 @@ function setData(extra: Partial<ContractsListResult> = {}) {
         stats: stats(),
         footer: stats({ total: 4, total_sales: 520_310_000, prepayment_due: 135_093_000, area: 77.58, overdue_amount: 397_977_420 }),
         latestImport: { report_date: '2026-10-22', file_name: 'HUB data 1.xlsx', row_count: 83, not_in_file: 10 },
+        hubPaid: { asOf: '2026-10-22', totals: { cash: 120_000_000, barter: 0 } },
         facets: { blocks: ['Б1', 'Б2'], paymentConditions: ['Тусгай', 'Энгийн'], productTypes: ['parking', 'residential'] },
         pagination: { total: 4, page: 1, pageSize: 25, totalPages: 1, hasMore: false },
         ...extra,
@@ -85,52 +86,76 @@ beforeEach(() => {
 });
 
 describe('ContractsPage — HUB view', () => {
-    it('shows exactly the 16 HUB columns in the file\'s order by default', () => {
+    it('shows the 16 columns of ERP\'s export in the file\'s order; «Төлөв», «Тоот», «Загвар» are not list columns', () => {
         render(<ContractsPage />);
         expect(screen.getByText('Гэрээнүүд', { selector: 'h1' })).toBeInTheDocument();
         expect(screen.getByText('ERP-ийн HUB загвараар')).toBeInTheDocument();
-        expect(headers()).toEqual([...CONTRACT_LIST_COLUMNS]);
+        expect(headers()).toEqual(['Блок', 'Төрөл', 'Давхар', 'Захиалгын нөхцөл', 'Урьдчилгааны нөхцөл', 'М.кв үнэ', 'Нийт дүн', 'Урьдчилгааны дүн',
+            'Бартер', 'Бэлэн төлөлт', 'Нийт үлдэгдэл', 'Төлбөр хоцролт', 'Захиалга өгсөн огноо', 'Нэр', 'Овог', 'РД']);
+        expect(headers()).toEqual([...CONTRACT_LIST_VIEW_COLUMNS]);
+        for (const hidden of CONTRACT_DETAIL_ONLY_COLUMNS) expect(headers()).not.toContain(hidden);
         expect(button('HUB загвар')).toHaveAttribute('aria-pressed', 'true');
     });
 
-    it('renders HUB cells: type, block, unit, floor, money without ₮, HUB status words and the name fallback', () => {
+    it('renders the file\'s cells: money without ₮, the file\'s barter and cash, the remainder formula and the registration', () => {
         render(<ContractsPage />);
-        const flat = cellsOf(rowOf('397,977,420'));
+        const flat = cellsOf(rowOf('РД19'));
         expect(flat.map((cell) => cell.textContent)).toEqual([
-            'Орон сууц', 'Б1', '19', 'B1', 'A-2', '64.33', '30%', '7,000,000', '450,310,000', '135,093,000', '397,977,420', '2026-10-05', 'Гэрээ үүссэн', 'Болд', 'Батаа', 'Тусгай',
+            'Б1', 'Орон сууц', 'B1', 'Тусгай', '30%', '7,000,000', '450,310,000', '135,093,000', '0', '120,000,000', '315,217,000', '397,977,420', '2026-10-05', 'Болд', 'Батаа', 'РД19',
         ]);
-        expect(flat[10].querySelector('span')).toHaveClass('text-status-danger');
+        expect(flat[11].querySelector('span')).toHaveClass('text-status-danger');
+        // Бэлэн төлөлт: файлын огноотой, гэрээний төлсөн дүн биш.
+        expect(within(flat[9]).getByTitle('2026-10-22-ны HUB файлаар')).toHaveTextContent('120,000,000');
+        // Жагсаалтад тоот, загвар, төлөвийн үг гарахгүй (гэрээг нээхэд).
+        expect(screen.queryByText('A-2')).not.toBeInTheDocument();
+        expect(screen.queryByText('Гэрээ үүссэн', { selector: 'td, td *' })).not.toBeInTheDocument();
 
-        const parking = cellsOf(rowOf('110'));
-        expect(parking[0]).toHaveTextContent('Зогсоол');
+        const parking = cellsOf(rowOf('РД110'));
+        expect(parking[1]).toHaveTextContent('Зогсоол');
         // ERP нэгжийн үнэ (₮/м² хоосон) — тайлбартай.
-        expect(within(parking[7]).getByTitle('Нэгжийн үнэ (ERP-ийн загвараар)')).toHaveTextContent('35,000,000');
+        expect(within(parking[5]).getByTitle('Нэгжийн үнэ (ERP-ийн загвараар)')).toHaveTextContent('35,000,000');
+        expect(parking[7]).toHaveTextContent('—');
+        // Файлд тулгагдаагүй гэрээний бартер, бэлэн төлөлт «—» (0 биш); урьдчилгааны дүнгүй бол үлдэгдэл ч «—».
+        expect(within(parking[8]).getByTitle('2026-10-22-ны файлд энэ гэрээ тулгагдаагүй')).toHaveTextContent('—');
         expect(parking[9]).toHaveTextContent('—');
         expect(parking[10]).toHaveTextContent('—');
-        expect(parking[12]).toHaveTextContent('Гэрээ хаасан');
+        expect(parking[11]).toHaveTextContent('—');
         expect(within(parking[13]).getByTitle('Нэр, овог салгаагүй — бүтэн нэр')).toHaveTextContent('Сарангэрэл.Сайнбаяр');
         expect(parking[14]).toHaveTextContent('—');
         expect(screen.queryByText(/₮/, { selector: 'td, td *' })).not.toBeInTheDocument();
     });
 
-    it('tells a known zero overdue («0») from an unknown one and shows system overdue days separately', () => {
+    it('dims a cancelled contract instead of showing a status column', () => {
+        setData({ contracts: [contract('5', { contract_status: 'cancelled' }), contract('6')] });
         render(<ContractsPage />);
-        const zero = cellsOf(rowOf('7'))[10];
-        expect(zero).toHaveTextContent(/^0$/);
-        expect(zero.querySelector('span')).toHaveClass('text-muted-foreground');
-        const days = cellsOf(rowOf('8'));
-        expect(days[10]).toHaveTextContent('12 хоног*');
-        expect(days[11]).toHaveTextContent('—');
+        expect(rowOf('РД5')).toHaveAttribute('title', 'Цуцлагдсан гэрээ');
+        expect(rowOf('РД5').className).toContain('text-muted-foreground');
+        expect(rowOf('РД6')).not.toHaveAttribute('title');
     });
 
-    it('sums the filtered set in a sticky footer', () => {
+    it('tells a known zero overdue («0») from an unknown one and shows system overdue days separately', () => {
         render(<ContractsPage />);
-        const footer = footerRow();
-        expect(footer).toHaveTextContent('Нийт · 4 гэрээ');
-        expect(footer).toHaveTextContent('77.58');
-        expect(footer).toHaveTextContent('520,310,000');
-        expect(footer).toHaveTextContent('135,093,000');
-        expect(footer).toHaveTextContent('397,977,420');
+        const zero = cellsOf(rowOf('РД7'))[11];
+        expect(zero).toHaveTextContent(/^0$/);
+        expect(zero.querySelector('span')).toHaveClass('text-muted-foreground');
+        const days = cellsOf(rowOf('РД8'));
+        expect(days[11]).toHaveTextContent('12 хоног*');
+        expect(days[12]).toHaveTextContent('—');
+    });
+
+    it('sums the filtered set in a sticky footer, with the file\'s barter and cash and the remainder', () => {
+        render(<ContractsPage />);
+        const footer = cellsOf(footerRow()).map(cell => cell.textContent);
+        // Нийт · … | (3 хоосон) | Нийт дүн | Урьдчилгааны дүн | Бартер | Бэлэн төлөлт | Нийт үлдэгдэл | Төлбөр хоцролт | …
+        expect(footer).toEqual(['Нийт · 4 гэрээ', '', '520,310,000', '135,093,000', '0', '120,000,000', '385,217,000', '397,977,420', '']);
+    });
+
+    it('shows «—» in the barter and cash columns and footer when no imported file carries them', () => {
+        setData({ hubPaid: null });
+        render(<ContractsPage />);
+        const footer = cellsOf(footerRow()).map(cell => cell.textContent);
+        expect(footer.slice(4, 6)).toEqual(['—', '—']);
+        expect(within(cellsOf(rowOf('РД7'))[9]).getByTitle('Ийм баганатай HUB файл ороогүй')).toHaveTextContent('—');
     });
 
     it('opens the contract detail from a row', () => {

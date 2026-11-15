@@ -77,6 +77,8 @@ export interface ContractsListResult {
     /** Шүүсэн гэрээний нийлбэр (хүснэгтийн хөл). */
     footer?: ContractStats;
     latestImport?: ContractListImportInfo | null;
+    /** «Бэлэн төлөлт», «Бартер»-ын эх файл (огноо) ба шүүсэн амьд гэрээний нийлбэр; ийм баганатай импортгүй бол null. */
+    hubPaid?: { asOf: string; totals?: { cash: number | null; barter: number | null } } | null;
     facets?: ContractFacets;
     pagination: { total: number; page: number; pageSize: number; totalPages: number; hasMore: boolean };
 }

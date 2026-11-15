@@ -1023,7 +1023,11 @@ export function summarizeFileTotals(rows: readonly HubRow[]): ContractListFileTo
 // ---------------------------------------------------------------- Орсон мөнгө (W5/W6)
 
 /** Хадгалсан мөрийн (contract_list_imports.rows) «Нийт төлсөн дүн»-д хэрэгтэй хэсэг. row = файлын мөрийн дугаар (ижил огнооны дараалал). */
-export interface HubPaidRow { row: number; productType: string; unitLabel: string; orderDate: string; status: ContractListStatus; paidTotal: number | null }
+export interface HubPaidRow {
+    row: number; productType: string; unitLabel: string; orderDate: string; status: ContractListStatus; paidTotal: number | null;
+    /** «Бартер» (ERP-ийн 2026-11-13-ны экспорт) — бэлэн төлөлтөөс тусдаа; багана байхгүй файлд undefined/null. */
+    barterTotal?: number | null;
+}
 
 /** Хадгалсан мөрүүдийг (JSON) шалгаж уншина; байр тулгагдаагүй, хэлбэр буруу мөрийг алгасна. Сөрөг дүн = хоосон. */
 export function storedHubPaidRows(rows: unknown): HubPaidRow[] {
@@ -1036,9 +1040,11 @@ export function storedHubPaidRows(rows: unknown): HubPaidRow[] {
         const orderDate = dateOf(row.orderDate);
         const status = row.status === 'active' || row.status === 'closed' || row.status === 'cancelled' ? row.status : null;
         if (!productType || !unitLabel || !orderDate || !status) return [];
-        const paid = typeof row.paidTotal === 'number' && Number.isFinite(row.paidTotal) && row.paidTotal >= 0 ? roundMoney(row.paidTotal) : null;
+        const amount = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? roundMoney(value) : null;
+        const paid = amount(row.paidTotal);
         const rowNumber = typeof row.row === 'number' && Number.isInteger(row.row) ? row.row : 0;
-        return [{ row: rowNumber, productType, unitLabel, orderDate, status, paidTotal: paid }];
+        // «Бартер» багана хадгалагдсан мөрд л (2026-11-13-наас хойших импорт) — хуучин мөрд талбар үүсгэхгүй.
+        return [{ row: rowNumber, productType, unitLabel, orderDate, status, paidTotal: paid, ...(Object.hasOwn(row, 'barterTotal') ? { barterTotal: amount(row.barterTotal) } : {}) }];
     });
 }
 
@@ -1091,6 +1097,14 @@ export interface HubPaidContract {
  * амьд гэрээний хосод; файлд цуцлагдсан (цуцалсан мөртэй тулгагдсан) амьд гэрээ тодорхойгүй хэвээр.
  */
 export function hubPaidByContract(rows: readonly HubPaidRow[], contracts: readonly HubPaidContract[], asOf: string): Map<string, number | null> {
+    return new Map([...hubRowsByContract(rows, contracts, asOf)].map(([id, row]) => [id, row.paidTotal]));
+}
+
+/**
+ * `hubPaidByContract`-ын тулгалт, бүтэн мөрөөр: гэрээ → түүнтэй хосолсон файлын амьд мөр (бэлэн төлөлт, бартер).
+ * Гэрээний жагсаалтын «Бэлэн төлөлт», «Бартер» багана үүгээр — гэрээнд хэзээ ч бичигдэхгүй.
+ */
+export function hubRowsByContract(rows: readonly HubPaidRow[], contracts: readonly HubPaidContract[], asOf: string): Map<string, HubPaidRow> {
     const rowsByUnit = new Map<string, HubPaidRow[]>();
     for (const row of rows) {
         const key = unitKeyOf(row.productType, row.unitLabel);
@@ -1107,12 +1121,12 @@ export function hubPaidByContract(rows: readonly HubPaidRow[], contracts: readon
         const list = contractsByUnit.get(key);
         if (list) list.push(contract); else contractsByUnit.set(key, [contract]);
     }
-    const paid = new Map<string, number | null>();
+    const paired = new Map<string, HubPaidRow>();
     for (const [key, unitRows] of rowsByUnit) {
         const { pairs } = pairUnitRows(unitRows, contractsByUnit.get(key) ?? []);
         for (const { row, contract } of pairs) {
-            if (row.status !== 'cancelled' && isLive(contract.contract_status)) paid.set(contract.id, row.paidTotal);
+            if (row.status !== 'cancelled' && isLive(contract.contract_status)) paired.set(contract.id, row);
         }
     }
-    return paid;
+    return paired;
 }

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
-import { CONTRACT_LIST_COLUMNS } from '../src/lib/contracts/list-format';
+import { CONTRACT_LIST_VIEW_COLUMNS } from '../src/lib/contracts/list-format';
 import { summarizeContracts, type ContractSummaryRow } from '../src/lib/contracts/summary';
 import {
     contractListHasWork, parseContractList, planContractListImport, type ContractListContract, type ContractListCounts, type ContractListImportPlan, type ContractListUnit,
@@ -216,7 +216,10 @@ async function setup(page: Page, { role = 'super_admin', finance = true }: Optio
             const distinct = (key: 'block_name' | 'payment_condition' | 'product_type') => [...new Set(CONTRACTS.map(c => c[key]).filter((v): v is string => !!v))].sort();
             const options = { latestImportDate: LATEST };
             return reply({
-                contracts: sorted, stats: summarizeContracts(CONTRACTS as ContractSummaryRow[], options), footer: summarizeContracts(rows as ContractSummaryRow[], options),
+                // «Бэлэн төлөлт», «Бартер»: сүүлийн файлын дүн — эхний амьд гэрээнд л (бусад нь файлд тулгагдаагүй).
+                contracts: sorted.map(c => c.overdue_amount && Number(c.overdue_amount) === 12_500_000 ? { ...c, hub_cash_paid: 96_384_000, hub_barter: 0 } : c),
+                hubPaid: { asOf: LATEST, totals: { cash: 96_384_000, barter: 0 } },
+                stats: summarizeContracts(CONTRACTS as ContractSummaryRow[], options), footer: summarizeContracts(rows as ContractSummaryRow[], options),
                 facets: { blocks: distinct('block_name'), paymentConditions: distinct('payment_condition'), productTypes: distinct('product_type') },
                 latestImport: { report_date: LATEST, file_name: 'HUB data.xlsx', row_count: 7, not_in_file: CONTRACTS.filter(c => c.overdue_as_of !== LATEST).length },
                 pagination: { page: 1, pageSize: 25, total: rows.length, totalPages: 1, hasMore: false },
@@ -302,7 +305,8 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 1366, height: 80
         await expect(page.getByRole('heading', { name: 'Гэрээнүүд', exact: true })).toBeVisible();
         const workspace = page.locator('#workspace-content');
         const table = workspace.locator('table');
-        await expect(table.getByRole('columnheader')).toHaveText([...CONTRACT_LIST_COLUMNS]);
+        // ERP-ийн экспортын 16 багана тэр дарааллаар; «Төлөв», «Тоот», «Загвар» жагсаалтад гарахгүй (гэрээг нээхэд).
+        await expect(table.getByRole('columnheader')).toHaveText([...CONTRACT_LIST_VIEW_COLUMNS]);
         await expect(table.locator('tbody tr')).toHaveCount(CONTRACTS.length);
         await expect(workspace.getByText('Сүүлийн HUB файл:')).toContainText(`${LATEST} · 7 мөр · 2 гэрээ файлд байхгүй`);
         await expect(workspace.getByRole('link', { name: 'Excel импорт' })).toBeVisible();
@@ -324,28 +328,35 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 1366, height: 80
         await expect(overdueTile.locator('.text-status-danger').first()).toBeVisible();
         await expect(page.getByText('Гэрээнд бүртгэсэн төлөлт', { exact: true })).toHaveCount(0);
 
-        // Мөрүүд: дагавартай зогсоолын «Тоот» = 10, давхар «1» / «B1», нэгжийн үнэ tooltip-тэй, огноогүйд «—».
+        // Мөрүүд: давхар «1» / «B1», нэгжийн үнэ tooltip-тэй, огноогүйд «—»; тоот, төлөвийн багана байхгүй.
         const parking = table.locator('tbody tr').filter({ hasText: '79,700,000' });
-        await expect(parking.locator('td').nth(0)).toHaveText('Зогсоол');
-        await expect(parking.locator('td').nth(2)).toHaveText('10');
-        await expect(parking.locator('td').nth(3)).toHaveText('1');
-        await expect(parking.locator('td').nth(7).locator('span[title="Нэгжийн үнэ (ERP-ийн загвараар)"]')).toHaveText('79,700,000');
-        await expect(parking.locator('td').nth(12)).toHaveText('Гэрээ хаасан');
+        await expect(parking.locator('td').nth(1)).toHaveText('Зогсоол');
+        await expect(parking.locator('td').nth(2)).toHaveText('1');
+        await expect(parking.locator('td').nth(5).locator('span[title="Нэгжийн үнэ (ERP-ийн загвараар)"]')).toHaveText('79,700,000');
         await expect(parking.locator('td').nth(13).locator('span[title="Нэр, овог салгаагүй — бүтэн нэр"]')).toHaveText('Тест.Хэрэглэгч');
         const undated = table.locator('tbody tr').filter({ hasText: 'Тест.Эзэн' });
-        await expect(undated.locator('td').nth(11)).toHaveText('—');
-        await expect(undated.locator('td').nth(10).locator('span[title$="сүүлийн файлд байхгүй"]')).toHaveText('3,000,000');
+        await expect(undated.locator('td').nth(12)).toHaveText('—');
+        await expect(undated.locator('td').nth(11).locator('span[title$="сүүлийн файлд байхгүй"]')).toHaveText('3,000,000');
         const overdue = table.locator('tbody tr').filter({ hasText: 'Дорж' });
-        await expect(overdue.locator('td').nth(10).locator('.text-status-danger')).toHaveText('12,500,000');
-        await expect(table.locator('tbody tr').filter({ hasText: 'Болор' }).locator('td').nth(12)).toHaveText('Цуцлагдсан');
+        await expect(overdue.locator('td').nth(11).locator('.text-status-danger')).toHaveText('12,500,000');
+        // Сүүлийн файлын «Бартер» 0, «Бэлэн төлөлт»; «Нийт үлдэгдэл» = Нийт дүн − Урьдчилгааны дүн.
+        await expect(overdue.locator('td').nth(8)).toHaveText('0');
+        await expect(overdue.locator('td').nth(9)).toHaveText('96,384,000');
+        await expect(overdue.locator('td').nth(10)).toHaveText('224,896,000');
+        // Файлд тулгагдаагүй гэрээнд «—» (0 биш).
+        await expect(parking.locator('td').nth(9)).toHaveText('—');
+        // Цуцлагдсан гэрээ: төлөвийн багана биш, бүдэг мөр.
+        await expect(table.locator('tbody tr').filter({ hasText: 'Болор' })).toHaveAttribute('title', 'Цуцлагдсан гэрээ');
 
-        // Хөл: шүүсэн гэрээний нийлбэр (талбай, Нийт дүн, Урьдчилгааны дүн, Төлбөр хоцролт).
+        // Хөл: шүүсэн гэрээний нийлбэр (Нийт дүн, Урьдчилгааны дүн, Бартер, Бэлэн төлөлт, Нийт үлдэгдэл, Төлбөр хоцролт).
         const footer = table.locator('tfoot tr td');
         await expect(footer.nth(0)).toHaveText('Нийт · 8 гэрээ');
-        await expect(footer.nth(2)).toHaveText('289.05');
-        await expect(footer.nth(4)).toHaveText('1,421,770,000');
-        await expect(footer.nth(5)).toHaveText('468,983,000');
-        await expect(footer.nth(6)).toHaveText('32,510,000');
+        await expect(footer.nth(2)).toHaveText('1,421,770,000');
+        await expect(footer.nth(3)).toHaveText('468,983,000');
+        await expect(footer.nth(4)).toHaveText('0');
+        await expect(footer.nth(5)).toHaveText('96,384,000');
+        await expect(footer.nth(6)).toHaveText('952,787,000');
+        await expect(footer.nth(7)).toHaveText('32,510,000');
 
         // Хэвтээ гүйлт зөвхөн хүснэгтийн хайрцган дотор.
         expect(await noPageOverflow(page)).toBe(true);
@@ -376,7 +387,7 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 1366, height: 80
         await expect.poll(() => state.requests.some(r => r.path === '/api/dashboard/contracts' && r.search.includes('overdue=1'))).toBe(true);
         await expect(table.locator('tbody tr')).toHaveCount(3);
         await expect(table.locator('tfoot tr td').nth(0)).toHaveText('Нийт · 3 гэрээ');
-        await expect(table.locator('tfoot tr td').nth(6)).toHaveText('32,510,000');
+        await expect(table.locator('tfoot tr td').nth(7)).toHaveText('32,510,000');
         await expect(table.getByText('Тэмүүлэн', { exact: true })).toHaveCount(0);
         // Хавтан шүүлтгүй хэвээр.
         await expect(tile(page, 'Нийт гэрээ')).toContainText('6 идэвхтэй · 1 хаагдсан · 1 цуцалсан');

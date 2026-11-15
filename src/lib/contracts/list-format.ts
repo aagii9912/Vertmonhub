@@ -17,6 +17,23 @@ export const CONTRACT_LIST_COLUMNS = [
 ] as const;
 export type ContractListColumn = typeof CONTRACT_LIST_COLUMNS[number];
 
+/**
+ * Гэрээний жагсаалтын ДЭЛГЭЦИЙН баганууд — ERP-ийн 2026-11-13-ны экспортын 16 багана, яг тэр дарааллаар (эзэмшигчийн
+ * шийдвэр 2026-11-15: «оруулсан баганууд харагдаж байх»). Файлд шараар тэмдэглэсэн «Төлөв», «Тоот», «Загвар»
+ * (`CONTRACT_DETAIL_ONLY_COLUMNS`) жагсаалтад гарахгүй — зөвхөн гэрээг нээхэд дэлгэрэнгүйд. Excel экспорт, импорт
+ * `CONTRACT_LIST_COLUMNS`-оор хэвээр (импортод «Тоот», «Төлөв» хэрэгтэй).
+ *
+ * «Бартер», «Бэлэн төлөлт» — сүүлийн HUB файлын дүн (`hub-amounts-load.ts`), гэрээнд бичигдэхгүй. «Нийт үлдэгдэл» —
+ * файлын томьёо: Нийт дүн − Урьдчилгааны дүн (`contractListRemainder`), төлбөрийн үлдэгдэл биш. «РД» — гэрээний регистр.
+ */
+export const CONTRACT_LIST_VIEW_COLUMNS = [
+    'Блок', 'Төрөл', 'Давхар', 'Захиалгын нөхцөл', 'Урьдчилгааны нөхцөл', 'М.кв үнэ', 'Нийт дүн', 'Урьдчилгааны дүн',
+    'Бартер', 'Бэлэн төлөлт', 'Нийт үлдэгдэл', 'Төлбөр хоцролт', 'Захиалга өгсөн огноо', 'Нэр', 'Овог', 'РД',
+] as const;
+export type ContractListViewColumn = typeof CONTRACT_LIST_VIEW_COLUMNS[number];
+/** Жагсаалтад гарахгүй, гэрээний дэлгэрэнгүйд л харагдах баганууд (ERP-ийн файлд гараар нэмж шарлуулсан). */
+export const CONTRACT_DETAIL_ONLY_COLUMNS = ['Төлөв', 'Тоот', 'Загвар'] as const;
+
 /** product_type ↔ «Төрөл» (байрны нөөцийн ангиллын нэртэй ижил). Мэдэгдэхгүй төрөлд түлхүүр байхгүй. */
 export const HUB_TYPE_LABEL: Readonly<Record<string, string>> = UNIT_CATEGORY_LABEL;
 
@@ -127,6 +144,13 @@ export function contractListPricePerSqm(contract: Pick<ContractListSource, 'pric
     const price = numberOrNull(contract.price_per_sqm);
     if (price !== null) return price;
     return isDerivedPricePerSqm(contract) ? numberOrNull(contract.total_price) : null;
+}
+
+/** «Нийт үлдэгдэл» ERP-ийн файлын томьёогоор: Нийт дүн − Урьдчилгааны дүн. Аль нэг нь хоосон бол null (таамаглахгүй). */
+export function contractListRemainder(contract: Pick<ContractListSource, 'total_price' | 'prepayment_due'>): number | null {
+    const total = numberOrNull(contract.total_price);
+    const advance = numberOrNull(contract.prepayment_due);
+    return total === null || advance === null ? null : Math.round((total - advance) * 100) / 100;
 }
 
 /**
