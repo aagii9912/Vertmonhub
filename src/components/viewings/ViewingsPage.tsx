@@ -420,7 +420,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                     </>
                 )}
 
-                <Field label="Тэмдэглэл"><textarea aria-label="Тэмдэглэл" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="12-р давхраас дээш сонирхож байна, хүүхэдтэй…" className={cn(inputCls, 'h-auto resize-none py-2')} /></Field>
+                <Field label="Тэмдэглэл"><textarea aria-label="Тэмдэглэл" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Хаанаас мэдсэн (Facebook, ойрхон амьдардаг, танил…), юу сонирхсон…" className={cn(inputCls, 'h-auto resize-none py-2')} /></Field>
             </div>
             <footer className="flex shrink-0 items-center gap-2 border-t border-border p-4">
                 <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring sm:h-[34px]">Болих</button>

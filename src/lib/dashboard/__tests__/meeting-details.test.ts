@@ -63,7 +63,9 @@ describe('buildMeetingDetails', () => {
             byModel: [{ key: 'B1|E7', label: 'Б1 E7 · 89.73 м² · 3 өрөө', count: 3 }, { key: 'B2|A', label: 'Б2 A · 57.87 м² · 2 өрөө', count: 1 }],
         });
         expect(report.weeks[2].byModel).toEqual([{ key: 'B2|X', label: 'Б2 X · 60 м²', count: 1 }]);
-        expect(report.notes).toEqual(['1 уулзалтад сонирхсон загвар бүртгэгдээгүй («Сонголтгүй»).', '2 шинэ уулзалтад «Сэжим» сонгоогүй.',
+        expect(report.notes).toEqual(['1 уулзалтад сонирхсон загвар бүртгэгдээгүй («Сонголтгүй»).',
+            '«Сэжим» — уулзалтад сонгосон сэжим, сонгоогүй бол уулзалтын «Тэмдэглэл»-д бичсэн үгээр (Facebook, ойрхон амьдардаг, танил …); таних үггүй тэмдэглэл «Бусад»-д.',
+            '2 шинэ уулзалтад сэжим сонгоогүй, тэмдэглэл ч хоосон («Тодорхойгүй»).',
             'Төлбөрийн нөхцөлийн талбар хараахан нэмэгдээгүй тул уулзалт бүгд «Тодорхойгүй».']);
     });
 
@@ -115,7 +117,7 @@ describe('buildMeetingDetails', () => {
         ]);
     });
 
-    it('counts this week\'s new meetings by «Сэжим» and keeps unselected ones as unknown', () => {
+    it('counts this week\'s new meetings by «Сэжим» (chosen or recognised from the note) and keeps the rest unknown', () => {
         const meetings = [
             meeting('a', '2026-10-14', 'new_customer'), meeting('b', '2026-10-15', 'new_customer'), meeting('c', '2026-10-16', 'new_customer'),
             meeting('d', '2026-10-17', 'new_customer'), meeting('e', '2026-10-17', 'repeat_customer'), meeting('f', '2026-10-10', 'new_customer'),
@@ -124,9 +126,12 @@ describe('buildMeetingDetails', () => {
         const report = buildMeetingDetails({ meetingDate: '2026-10-21', units, meetings, referrals: { available: true, byViewing } });
         expect(report.referral).toEqual({ rows: [{ label: 'Ойрхон амьдардаг', count: 2 }, { label: 'Facebook', count: 1 }], unknown: 1, total: 4, available: true });
 
-        const missing = buildMeetingDetails({ meetingDate: '2026-10-21', units, meetings, referrals: { available: false, byViewing } });
-        expect(missing.referral).toEqual({ rows: [], unknown: 4, total: 4, available: false });
-        expect(missing.notes.join(' ')).toContain('хараахан нэмэгдээгүй');
+        expect(report.notes).toContain('«Сэжим» — уулзалтад сонгосон сэжим, сонгоогүй бол уулзалтын «Тэмдэглэл»-д бичсэн үгээр (Facebook, ойрхон амьдардаг, танил …); таних үггүй тэмдэглэл «Бусад»-д.');
+        expect(report.notes).toContain('1 шинэ уулзалтад сэжим сонгоогүй, тэмдэглэл ч хоосон («Тодорхойгүй»).');
+
+        // Сэжим сонгох багана алга (migration ороогүй) ч тэмдэглэлээс таньсан нэрс тоологдоно — «Тодорхойгүй» болгохгүй.
+        const missing = buildMeetingDetails({ meetingDate: '2026-10-21', units, meetings, referrals: { available: false, byViewing, fromNotes: 3 } });
+        expect(missing.referral).toEqual({ rows: [{ label: 'Ойрхон амьдардаг', count: 2 }, { label: 'Facebook', count: 1 }], unknown: 1, total: 4, available: false });
     });
 
     // Борлуулалтын багийн хүснэгт (2026-11-12): сонирхсон байр м²-ийн бүлгээр, блок хамаарахгүй.

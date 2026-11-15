@@ -80,8 +80,11 @@ export interface MeetingDetailsInput {
     units: ReadonlyArray<{ block: string | null; model: string | null; rooms: number | string | null; /** Байрны ангилал; өгөөгүй бол орон сууц гэж үзнэ. */ category?: string | null }>;
     /** Төлбөрийн нөхцөлийн баганууд DB-д бий эсэх (хуучин дуудагчид: байхгүй гэж үзнэ). */
     paymentTermsAvailable?: boolean;
-    /** Сэжим: `available: false` = багана/хүснэгт алга; `byViewing` = уулзалт → сэжмийн нэр (сонгоогүй бол null). */
-    referrals: { available: boolean; byViewing: ReadonlyMap<string, string | null> };
+    /**
+     * Сэжим: `byViewing` = уулзалт → сэжмийн нэр (сонгосон, эс бөгөөс уулзалтын тэмдэглэлээс таньсан; аль нь ч үгүй бол null);
+     * `fromNotes` = тэмдэглэлээс таньсан тоо; `available: false` = сэжим сонгох багана/хүснэгт алга (тэмдэглэлээс таних хэвээр).
+     */
+    referrals: { available: boolean; byViewing: ReadonlyMap<string, string | null>; fromNotes?: number };
     /** Уулзалтын бүртгэл эхэлсэн УБ өдөр (устгаагүй, ямар ч төлөвтэй хамгийн эртний уулзалт); алга бол null. Хуучин дуудагчид заавал биш. */
     meetingsSince?: string | null;
 }
@@ -231,12 +234,13 @@ export function buildMeetingDetails(input: MeetingDetailsInput): MeetingDetailsR
     const counts = new Map<string, number>();
     let unknown = 0;
     for (const meeting of fresh) {
-        const name = input.referrals.available ? input.referrals.byViewing.get(meeting.id)?.trim() || null : null;
+        const name = input.referrals.byViewing.get(meeting.id)?.trim() || null;
         if (!name) { unknown++; continue; }
         counts.set(name, (counts.get(name) ?? 0) + 1);
     }
-    if (!input.referrals.available) notes.push('«Сэжим (хаанаас ирсэн)» талбар хараахан нэмэгдээгүй тул шинэ уулзалт бүгд «Тодорхойгүй».');
-    else if (unknown) notes.push(`${unknown} шинэ уулзалтад «Сэжим» сонгоогүй.`);
+    // Сэжим сонгоогүй уулзалтынхыг «Тэмдэглэл»-ээс таньдаг (эзэмшигчийн шийдвэр 2026-11-15) — юунаас гарсныг тэмдэглэлд хэлнэ.
+    if (fresh.length) notes.push('«Сэжим» — уулзалтад сонгосон сэжим, сонгоогүй бол уулзалтын «Тэмдэглэл»-д бичсэн үгээр (Facebook, ойрхон амьдардаг, танил …); таних үггүй тэмдэглэл «Бусад»-д.');
+    if (unknown) notes.push(`${unknown} шинэ уулзалтад сэжим сонгоогүй, тэмдэглэл ч хоосон («Тодорхойгүй»).`);
     const rows = [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'mn'));
 
     // м²-ийн бүлгийн баганууд: «Үйлчилгээ» + орон сууцны бүлгүүд үргэлж; Зогсоол, Агуулах, Бусад зөвхөн тоотой үед.

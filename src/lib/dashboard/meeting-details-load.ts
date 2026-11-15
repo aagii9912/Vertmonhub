@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { referralFromNote } from '@/lib/sales/referral-from-notes';
 import { shiftDate, ubDateStart } from '@/lib/sales/activity';
 import { ubDateStr } from '@/lib/utils/date';
 import { fetchAllRows } from '@/lib/utils/pagination';
@@ -8,37 +9,52 @@ import { isMissingSchemaError } from './sales-activity-load';
 const ID_CHUNK = 100;
 
 /**
- * Уулзалт бүрийн «Сэжим (хаанаас ирсэн)» нэр: `property_viewings.referral_source_id` →
- * `sales_referral_sources.name` (архивласан ч нэрээ хадгална). Багана эсвэл хүснэгт хараахан алга
- * (migration ороогүй) бол `available: false` — бүгд «Тодорхойгүй». Бусад алдааг дамжуулна.
+ * Уулзалт бүрийн «Сэжим (хаанаас ирсэн)» нэр. Сонгосон сэжим (`property_viewings.referral_source_id` →
+ * `sales_referral_sources.name`, архивласан ч нэрээ хадгална) давамгайлна; сонгоогүй бол уулзалтын «Тэмдэглэл»-ээс
+ * (`agent_notes`) түлхүүр үгээр танина (`referralFromNote`, эзэмшигчийн шийдвэр 2026-11-15) — өмнөх уулзалтууд ч мөн адил.
+ * Сэжмийн багана эсвэл хүснэгт хараахан алга (migration ороогүй) бол `available: false`, гэхдээ тэмдэглэлээс таних
+ * хэвээр. `fromNotes` = тэмдэглэлээс таньсан уулзалтын тоо. Бусад алдааг дамжуулна.
  */
-export async function loadViewingReferrals(db: SupabaseClient, shopId: string, viewingIds: readonly string[]): Promise<{ available: boolean; byViewing: Map<string, string | null> }> {
+export async function loadViewingReferrals(db: SupabaseClient, shopId: string, viewingIds: readonly string[]): Promise<{ available: boolean; byViewing: Map<string, string | null>; fromNotes: number }> {
     const byViewing = new Map<string, string | null>();
     const ids = [...new Set(viewingIds)];
-    const sourceOf = new Map<string, string | null>();
+    type Row = { id: string; referral_source_id?: string | null; agent_notes: string | null };
+    const rows: Row[] = [];
+    let available = true;
     // Хоосон жагсаалтад ч нэг удаа асууна — багана байгаа эсэхийг (`available`) үнэн зөв мэдэхийн тулд.
     for (let index = 0; index === 0 || index < ids.length; index += ID_CHUNK) {
-        const { data, error } = await db.from('property_viewings').select('id, referral_source_id')
-            .eq('shop_id', shopId).in('id', ids.slice(index, index + ID_CHUNK));
-        if (error) {
-            if (isMissingSchemaError(error)) return { available: false, byViewing };
-            throw new Error(error.message);
+        const read = (columns: string) => db.from('property_viewings').select(columns).eq('shop_id', shopId).in('id', ids.slice(index, index + ID_CHUNK));
+        let result = await read(available ? 'id, referral_source_id, agent_notes' : 'id, agent_notes');
+        if (result.error && available && isMissingSchemaError(result.error)) {
+            available = false;
+            result = await read('id, agent_notes');
         }
-        for (const row of (data ?? []) as Array<{ id: string; referral_source_id: string | null }>) sourceOf.set(row.id, row.referral_source_id ?? null);
+        if (result.error) throw new Error(result.error.message);
+        rows.push(...((result.data ?? []) as unknown as Row[]));
     }
-    const sourceIds = [...new Set([...sourceOf.values()].filter((id): id is string => !!id))];
+    // Төслийн сэжмийн жагсаалт: сонгосон id → нэр (архивласан орно), идэвхтэй нэрс тэмдэглэлд тулгахад.
     const names = new Map<string, string>();
-    for (let index = 0; index < sourceIds.length; index += ID_CHUNK) {
-        const { data, error } = await db.from('sales_referral_sources').select('id, name')
-            .eq('shop_id', shopId).in('id', sourceIds.slice(index, index + ID_CHUNK));
+    const activeNames: string[] = [];
+    if (available) {
+        const { data, error } = await db.from('sales_referral_sources').select('id, name, archived_at').eq('shop_id', shopId);
         if (error) {
-            if (isMissingSchemaError(error)) return { available: false, byViewing };
-            throw new Error(error.message);
+            if (!isMissingSchemaError(error)) throw new Error(error.message);
+            available = false;
         }
-        for (const row of (data ?? []) as Array<{ id: string; name: string | null }>) if (row.name) names.set(row.id, row.name);
+        for (const row of (data ?? []) as Array<{ id: string; name: string | null; archived_at: string | null }>) {
+            if (!row.name) continue;
+            names.set(row.id, row.name);
+            if (!row.archived_at) activeNames.push(row.name);
+        }
     }
-    for (const [id, source] of sourceOf) byViewing.set(id, source ? names.get(source) ?? null : null);
-    return { available: true, byViewing };
+    let fromNotes = 0;
+    for (const row of rows) {
+        const chosen = row.referral_source_id ? names.get(row.referral_source_id) ?? null : null;
+        const derived = chosen ? null : referralFromNote(row.agent_notes, activeNames);
+        if (derived) fromNotes++;
+        byViewing.set(row.id, chosen ?? derived);
+    }
+    return { available, byViewing, fromNotes };
 }
 
 /**

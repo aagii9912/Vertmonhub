@@ -115,7 +115,8 @@ describe('loadViewingReferrals', () => {
         const calls: string[] = [];
         const missing = await loadViewingReferrals(fakeDb(base(), { columnErrors: { referral_source_id: { code: '42703', message: 'missing' } } }, calls), 's', []);
         expect(missing.available).toBe(false);
-        expect(calls).toEqual(['property_viewings:id, referral_source_id']);
+        // Сэжмийн багана алга бол тэмдэглэлийг ганцаар нь дахин уншина (тэмдэглэлээс таних хэвээр).
+        expect(calls).toEqual(['property_viewings:id, referral_source_id, agent_notes', 'property_viewings:id, agent_notes']);
         expect((await loadViewingReferrals(fakeDb(base()), 's', [])).available).toBe(true);
     });
 
@@ -124,6 +125,33 @@ describe('loadViewingReferrals', () => {
         tables.property_viewings[0].referral_source_id = 'r-other';
         const result = await loadViewingReferrals(fakeDb(tables), 's', ['v1']);
         expect(result.byViewing.get('v1')).toBeNull();
+    });
+
+    // Эзэмшигчийн шийдвэр 2026-11-15: сэжим сонгоогүй уулзалтынхыг «Тэмдэглэл»-ээс танина (өмнөх уулзалтууд ч мөн).
+    it('takes «Сэжим» from the meeting note when none is chosen; a chosen source wins and an empty note stays unknown', async () => {
+        const tables = base();
+        tables.property_viewings = tables.property_viewings.map(row => ({ ...row, agent_notes: ({
+            v1: 'facebook-ээс харсан', // сонгосон «Ойрхон амьдардаг» давамгайлна
+            v2: null, v3: 'Фэйсбүүкээс мэдээлэл аваад ирсэн, ойрхон амьдардаг', v6: 'ойрхон амьдардаг',
+        } as Record<string, string | null>)[row.id as string] ?? null }));
+        const result = await loadViewingReferrals(fakeDb(tables), 's', ['v1', 'v2', 'v3', 'v6']);
+        expect(Object.fromEntries(result.byViewing)).toEqual({ v1: 'Ойрхон амьдардаг', v2: 'Бармаш түрээслэгч', v3: 'Facebook', v6: 'Ойрхон амьдардаг' });
+        expect(result).toMatchObject({ available: true, fromNotes: 2 });
+
+        const report = await loadMeetingDetails(fakeDb(tables), { shopId: 's', meetingDate: '2026-10-21' });
+        expect(report.referral).toEqual({ rows: [{ label: 'Бармаш түрээслэгч', count: 1 }, { label: 'Ойрхон амьдардаг', count: 1 }, { label: 'Facebook', count: 1 }], unknown: 0, total: 3, available: true });
+    });
+
+    it('recognises the note with the project\'s own active source names, and still reads notes when the referral column is missing', async () => {
+        const tables = base();
+        tables.sales_referral_sources.push({ id: 'r2', shop_id: 's', name: 'Өдөрлөг', archived_at: null });
+        tables.property_viewings = tables.property_viewings.map(row => row.id === 'v3' ? { ...row, agent_notes: 'Хаан тауэрийн өдөрлөгөөс мэдээлэл авсан' } : row);
+        expect((await loadViewingReferrals(fakeDb(tables), 's', ['v3'])).byViewing.get('v3')).toBe('Өдөрлөг');
+
+        const noColumn = await loadMeetingDetails(fakeDb(tables, { columnErrors: { referral_source_id: { code: '42703', message: 'column property_viewings.referral_source_id does not exist' } } }),
+            { shopId: 's', meetingDate: '2026-10-21' });
+        // Сонгосон сэжим уншигдахгүй (багана алга) ч тэмдэглэлтэй уулзалт «Бусад»-д (төслийн нэрс уншаагүй), бусад нь «Тодорхойгүй».
+        expect(noColumn.referral).toEqual({ rows: [{ label: 'Бусад', count: 1 }], unknown: 2, total: 3, available: false });
     });
 
     // Урьдчилгаа / үлдэгдэл төлбөрийн нөхцөл (migration 20261113120000) ба м²-ийн бүлэг.
