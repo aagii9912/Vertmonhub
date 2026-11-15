@@ -294,6 +294,17 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(index('Банкны зээлийн хариу')).toBe(xml.length - 2);
     });
 
+    it('sales deck: a period chosen on the meeting page is named «хугацаа», not «7 хоног», and compared with the previous period of the same length', async () => {
+        const period = { from: '2026-09-30', to: '2026-10-13' };
+        const sales = { ...weeklySales(), ...buildWeeklySales({ range: period, sales: { info: { date: range.to, source: 'Elysium гэрээ' }, rows: [sale('EL-1|Б1-1', {})] }, previousSales: null, crmContracts: null, inventory: null, monthTarget: null }) };
+        const { text } = await render(input({ range: period, previousRange: { from: '2026-09-16', to: '2026-09-29' }, weeklySales: sales }));
+        const all = text.join('\n');
+        expect(all).toContain('2026.09.30 – 2026.10.13 · өмнөх ижил урттай хугацаатай харьцуулав');
+        expect(all).toContain('Тайлант хугацааны гэрээ');
+        expect(all).not.toContain('Энэ долоо хоногийн гэрээ');
+        expect(all).toContain('Менежер Хугацаа Хугацааны дүн Сар');
+    });
+
     it('marketing deck: own content plan, published content with posters, channels and budget — no leads or contracts', async () => {
         const { zip, xml, text } = await render(input({ kind: 'marketing' }));
         await validXml(zip);

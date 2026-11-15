@@ -464,7 +464,9 @@ test('удирдлага менежер, огноо, сарын төлөвлөг
     const steps = page.getByRole('navigation', { name: 'Борлуулалтын тайлан: алхмууд' });
     await expect(steps.getByRole('button', { name: /Гараар нөхөх/ })).toContainText('гараар нөхөх зүйл байна');
     const manual = page.getByRole('region', { name: 'Гараар нөхөх' });
-    await expect(manual.getByRole('status')).toContainText('Нөхөх зүйл: менежергүй 2 гэрээ, огноогүй 1 гэрээ.');
+    // Хадгалах товчны ачааллын дүрс ч `role="status"` — нөхөх зүйлийн мэдэгдлийг текстээр нь сонгоно.
+    const manualStatus = manual.getByRole('status').filter({ hasText: 'Нөхөх зүйл' });
+    await expect(manualStatus).toContainText('Нөхөх зүйл: менежергүй 2 гэрээ, огноогүй 1 гэрээ.');
     await expect(manual.getByRole('link', { name: 'Огноогүй гэрээ' })).toHaveAttribute('href', '/dashboard/contracts?filter=undated');
     const rows = manual.getByRole('list', { name: 'Менежергүй гэрээ' }).getByRole('listitem');
     await expect(rows).toHaveCount(2);
@@ -476,7 +478,7 @@ test('удирдлага менежер, огноо, сарын төлөвлөг
     await manual.getByRole('combobox', { name: 'Б1-53, E2: менежер' }).selectOption('Номин.Менежер');
     await manual.getByRole('button', { name: 'Б1-53, E2: менежер хадгалах' }).click();
     // Хадгалсан гэрээ жагсаалтаас гарч, үлдсэн тоо шинэчлэгдэнэ.
-    await expect(manual.getByRole('status')).toContainText('Нөхөх зүйл: менежергүй 1 гэрээ, огноогүй 1 гэрээ.');
+    await expect(manualStatus).toContainText('Нөхөх зүйл: менежергүй 1 гэрээ, огноогүй 1 гэрээ.');
     await expect(rows).toHaveCount(1);
     expect(state.managerWrites).toEqual([{ id: 'c-53', sales_manager: 'Номин.Менежер' }]);
 
@@ -509,7 +511,7 @@ test('удирдлага менежер, огноо, сарын төлөвлөг
     expect(state.planWrites).toEqual([{ shopId, year: Number(range.to.slice(0, 4)), months: [{ month: Number(range.to.slice(5, 7)), expectedRevision: 2,
         block_amounts: { b1: { contract_count_target: 4 }, b2: { target_amount: 600000000 } } }] }]);
     // Бүгд нөхөгдсөн: менежергүй нэг гэрээ л үлдсэн.
-    await expect(manual.getByRole('status')).toContainText('Нөхөх зүйл: менежергүй 1 гэрээ.');
+    await expect(manualStatus).toContainText('Нөхөх зүйл: менежергүй 1 гэрээ.');
     await expect(manual.getByText(/Төлөвлөгөө орсон: гэрээний тоо, гэрээний дүн\./)).toBeVisible();
     await page.getByRole('button', { name: 'Дараах: Тоон тойм', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Тоон тойм', exact: true })).toBeFocused();

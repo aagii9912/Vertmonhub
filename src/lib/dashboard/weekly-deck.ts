@@ -4,6 +4,7 @@ import { floorSoldLabel, floorTone, type FloorCell, type FloorTone, type WeeklyS
 import { arialWidth } from './arial-metrics';
 import type { WeeklyContentPlan, WeeklyUpdate } from './weekly-review';
 import { formatReviewChange, previousContentText, shiftReviewDate, updatePart } from './weekly-review';
+import { reportPeriodName } from './report-range';
 import { knownPeriodAmount, undatedContractsHint, undatedContractsShort } from './contract-dates';
 import { WEEKLY_LOWER_BOUND_MARK, weeklyContractAmount, weeklyContractCount, weeklyMark, weeklyPlanValue } from './weekly-mark';
 import { WEEKLY_SLIDE_PART_LABEL, WEEKLY_SLIDE_SECTION_LABEL, type WeeklySlide } from './weekly-slides';
@@ -307,7 +308,9 @@ function salesOverviewSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const sales = input.sales;
     if (!sales) return;
     const prev = input.previousSales;
-    const slide = content(pres, 'Борлуулалт', 'Борлуулалтын тойм', `${span(input.range)} · өмнөх 7 хоногтой харьцуулав`);
+    // Хуудсан дээр 7 хоногоос өөр тайлант хугацаа сонгосон бол өмнөх ижил урттай хугацаатай (`report-range.ts`).
+    const against = reportPeriodName(input.range).name === '7 хоног' ? 'өмнөх 7 хоногтой' : 'өмнөх ижил урттай хугацаатай';
+    const slide = content(pres, 'Борлуулалт', 'Борлуулалтын тойм', `${span(input.range)} · ${against} харьцуулав`);
     const undated = sales.contracts.undatedCount;
     statRow(slide, TOP, [
         { label: 'Шинэ лид', value: count(sales.leads.newCount), helper: formatReviewChange(sales.leads.newCount, prev?.leads.newCount) },
@@ -435,13 +438,15 @@ function contractSlides(pres: PptxGenJS, report: WeeklySalesReport) {
         bodyCell(footerSum(report.week.lines.map(line => line.advance)), 'right', { bold: true }),
         bodyCell(footerSum(report.week.lines.map(line => line.paid)), 'right', { bold: true }), bodyCell(''), bodyCell('')];
     const undated = report.sources.undatedContracts;
+    const weekly = reportPeriodName(report.range).name === '7 хоног';
+    const title = weekly ? 'Энэ долоо хоногийн гэрээ' : 'Тайлант хугацааны гэрээ';
     if (!rows.length) {
-        const slide = content(pres, 'Борлуулалт', 'Энэ долоо хоногийн гэрээ', span(report.range));
-        slide.addText(undated ? `Гэрээний тоо тодорхойгүй. ${undatedContractsHint(undated)}` : 'Тайлант долоо хоногт гэрээ бүртгэгдээгүй.', { x: M, y: TOP, w: CW, h: 0.9, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, valign: 'top', isTextBox: true });
+        const slide = content(pres, 'Борлуулалт', title, span(report.range));
+        slide.addText(undated ? `Гэрээний тоо тодорхойгүй. ${undatedContractsHint(undated)}` : `Тайлант ${weekly ? 'долоо хоногт' : 'хугацаанд'} гэрээ бүртгэгдээгүй.`, { x: M, y: TOP, w: CW, h: 0.9, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, valign: 'top', isTextBox: true });
         return;
     }
     tableSlides(pres, {
-        kicker: 'Борлуулалт', title: 'Энэ долоо хоногийн гэрээ',
+        kicker: 'Борлуулалт', title,
         subtitle: `${span(report.range)} · ${report.week.byKind.map(kind => `${kind.label} ${kind.count}`).join(' · ')}${report.week.barter ? ` · бартер ${report.week.barter}` : ''}`,
         head, rows, footer, colW: [0.7, 1.15, 0.8, 0.75, 2.0, 0.65, 1.45, 1.4, 1.35, 1.0, 0.88], perSlide: 11, fontSize: 10,
         notes: ['Захиалагчийн нэрийг зөвхөн гэрээний эрхтэй хэрэглэгч харна; регистрийн дугаар гаргахгүй.', 'Хоосон дүнг 0 гэж тооцоогүй («—»).', undated ? undatedContractsHint(undated) : ''].filter(Boolean),
@@ -471,9 +476,10 @@ function monthSlide(pres: PptxGenJS, report: WeeklySalesReport) {
 
 function managerSlide(pres: PptxGenJS, report: WeeklySalesReport) {
     if (!report.byManager.length) return;
+    const weekly = reportPeriodName(report.range).name === '7 хоног';
     tableSlides(pres, {
         kicker: 'Борлуулалт', title: 'Менежерээр', subtitle: `${span(report.range)} · ${Number(report.month.month.slice(5))}-р сар`,
-        head: [headCell('Менежер'), headCell('7 хоног', 'right'), headCell('7 хоногийн дүн', 'right'), headCell('Сар', 'right'), headCell('Сарын дүн', 'right'), headCell('Мөнгөн орлого', 'right')],
+        head: [headCell('Менежер'), headCell(weekly ? '7 хоног' : 'Хугацаа', 'right'), headCell(weekly ? '7 хоногийн дүн' : 'Хугацааны дүн', 'right'), headCell('Сар', 'right'), headCell('Сарын дүн', 'right'), headCell('Мөнгөн орлого', 'right')],
         rows: report.byManager.map(row => [bodyCell(row.manager, 'left', { bold: true }), bodyCell(String(row.weekCount), 'right'), bodyCell(short(row.weekTotal), 'right'), bodyCell(String(row.monthCount), 'right'), bodyCell(short(row.monthTotal), 'right'), bodyCell(row.cash === null ? '—' : short(row.cash), 'right')]),
         colW: [3.6, 1.4, 2.0, 1.2, 2.0, 1.93], perSlide: 12, fontSize: 13,
         notes: [report.cash?.basis ?? 'Мөнгөн орлогыг тооцоход хоёр долоо хоногийн ERP гэрээний экспорт хэрэгтэй.'],
