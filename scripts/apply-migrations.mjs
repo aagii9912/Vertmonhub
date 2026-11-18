@@ -119,6 +119,9 @@ const VERIFY = {
         AND NOT has_table_privilege('anon', 'public.sales_work_plan_items', 'SELECT,INSERT,UPDATE,DELETE')
         AND has_table_privilege('service_role', 'public.sales_work_plan_items', 'SELECT,INSERT,UPDATE')
         AND NOT has_table_privilege('service_role', 'public.sales_work_plan_items', 'DELETE') AS ok`,
+    '20261118120000': `SELECT has_function_privilege('service_role', 'public.merge_sales_managers(uuid,text,text,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.merge_sales_managers(uuid,text,text,uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.merge_sales_managers(uuid,text,text,uuid)', 'EXECUTE') AS ok`,
 };
 
 function databaseUrl() {

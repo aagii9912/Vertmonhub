@@ -20,6 +20,10 @@ let extrasAvailable: boolean | undefined;
 let managers: Array<{ name: string; is_active: boolean; user_id: string | null; year_actual: number; project_ids: string[] }>;
 let renames: Array<{ shopId: string; oldName: string; newName: string }>;
 let renameFailure: { status: number; error: string } | null;
+let teamMembers: Array<{ id: string; full_name: string; email: string | null; role: string | null }>;
+let merges: Array<{ shopId: string; source: string; target: string }>;
+let mergeFailure: { status: number; error: string } | null;
+let rosterPuts: Array<{ shopId: string; managers: Array<{ name: string; is_active: boolean; user_id: string | null; project_ids: string[] }> }>;
 const none = { value: null, lowerBound: false };
 const metrics = (count: number | null, amount: number | null, lowerBound = false) => ({
     contract_count: { value: count, lowerBound }, contract: { value: amount, lowerBound }, cashflow: none,
@@ -43,6 +47,7 @@ const saveButton = () => screen.getByRole('button', { name: 'Төлөвлөгө�
 
 beforeEach(() => {
     months = emptyMonthlySales(); posts = []; failureStatus = 0; extrasAvailable = undefined; managers = []; renames = []; renameFailure = null;
+    teamMembers = []; merges = []; mergeFailure = null; rosterPuts = [];
     vi.mocked(toast.success).mockClear(); vi.mocked(toast.error).mockClear();
     vi.mocked(fetch).mockImplementation(async (url, init) => {
         if (String(url) === '/api/admin/shops') return Response.json({ shops: [{ id: shopId, name: 'Elysium' }] });
@@ -51,6 +56,19 @@ beforeEach(() => {
             if (renameFailure) return Response.json({ error: renameFailure.error }, { status: renameFailure.status });
             managers = managers.map(manager => manager.name === body.oldName ? { ...manager, name: body.newName } : manager);
             return Response.json({ success: true, oldName: body.oldName, newName: body.newName, counts: { leads: 57 }, summary: '57 лид' });
+        }
+        if (String(url) === '/api/admin/sales-targets/merge') {
+            const body = JSON.parse(String(init!.body)); merges.push(body);
+            if (mergeFailure) return Response.json({ error: mergeFailure.error }, { status: mergeFailure.status });
+            const source = managers.find(manager => manager.name === body.source)!;
+            managers = managers.filter(manager => manager.name !== body.source)
+                .map(manager => manager.name === body.target ? { ...manager, user_id: manager.user_id ?? source.user_id, is_active: manager.is_active || source.is_active } : manager);
+            return Response.json({ success: true, source: body.source, target: body.target, counts: { leads: 4 }, summary: '4 лид' });
+        }
+        if (init?.method === 'PUT') {
+            const body = JSON.parse(String(init.body)); rosterPuts.push(body);
+            for (const row of body.managers) managers = managers.map(manager => manager.name === row.name ? { ...manager, ...row } : manager);
+            return Response.json({ success: true });
         }
         if (init?.method === 'POST') {
             const body = JSON.parse(String(init.body)); posts.push(body);
@@ -70,7 +88,7 @@ beforeEach(() => {
             }
             return Response.json({ success: true, months: body.months.map((patch: MonthlySalesPatch) => months[patch.month - 1]) });
         }
-        return Response.json({ months, system, managers, teamMembers: [], projects: [], ...(extrasAvailable === undefined ? {} : { extrasAvailable }) });
+        return Response.json({ months, system, managers, teamMembers, projects: [], ...(extrasAvailable === undefined ? {} : { extrasAvailable }) });
     });
 });
 
@@ -255,5 +273,64 @@ describe('roster rename', () => {
         await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Бүртгэлд «Ариунбилэг» нэртэй менежер аль хэдийн байна'));
         expect(screen.getByLabelText('«Khongoroo» — шинэ нэр')).toHaveValue('Ариунбилэг');
         expect(screen.getByText('Khongoroo')).toBeInTheDocument();
+    });
+});
+
+describe('duplicate roster entries (one person under the account name and the contract name)', () => {
+    const nominId = '10000000-0000-4000-8000-000000000002';
+    const adminNominId = '10000000-0000-4000-8000-000000000003';
+    beforeEach(() => {
+        managers = [
+            { name: 'Nomin', is_active: true, user_id: null, year_actual: 0, project_ids: [] },
+            { name: 'Номин.Одончимэг', is_active: true, user_id: null, year_actual: 5_000_000, project_ids: [] },
+        ];
+        teamMembers = [
+            { id: nominId, full_name: 'Nomin', email: 'nomin.o@example.mn', role: 'sales_manager' },
+            { id: adminNominId, full_name: 'Nomin', email: 'nomin-erdene@example.mn', role: 'admin' },
+        ];
+    });
+
+    it('links an account to the existing contract-name entry instead of creating a new one, telling same-named staff apart by email', async () => {
+        open();
+        const select = await screen.findByLabelText('Акаунт холбох', { selector: '#link-Номин\\.Одончимэг' });
+        expect([...select.querySelectorAll('option')].map(option => option.textContent))
+            .toEqual(['Ажилтан сонгох…', 'Nomin · nomin.o@example.mn', 'Nomin · nomin-erdene@example.mn']);
+        fireEvent.change(select, { target: { value: nominId } });
+        expect(await screen.findByText('Хадгалаагүй өөрчлөлт байна')).toBeInTheDocument();
+        expect(screen.getByText(/акаунт: Nomin · nomin\.o@example\.mn/)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Менежерийн бүртгэл хадгалах' }));
+        await waitFor(() => expect(rosterPuts).toEqual([{ shopId, managers: [{ name: 'Номин.Одончимэг', is_active: true, user_id: nominId, project_ids: [] }] }]));
+        await waitFor(() => expect(screen.queryByText('Хадгалаагүй өөрчлөлт байна')).not.toBeInTheDocument());
+        // Холбогдсон акаунт өөр мөрийн сонголтод дахин гарахгүй.
+        const remaining = screen.getByLabelText('Акаунт холбох', { selector: '#link-Nomin' });
+        expect([...remaining.querySelectorAll('option')].map(option => option.textContent)).toEqual(['Ажилтан сонгох…', 'Nomin · nomin-erdene@example.mn']);
+    });
+
+    it('merges the account-name entry into the contract-name entry through the audited endpoint', async () => {
+        managers[0].user_id = nominId;
+        open();
+        const mergeButtons = await screen.findAllByRole('button', { name: 'Нэгтгэх' });
+        fireEvent.click(mergeButtons[0]);
+        const target = screen.getByLabelText('«Nomin»-ийг аль менежертэй нэгтгэх вэ?');
+        expect([...target.querySelectorAll('option')].map(option => option.textContent)).toEqual(['Менежер сонгох…', 'Номин.Одончимэг']);
+        const submit = screen.getAllByRole('button', { name: 'Нэгтгэх' }).find(button => button.getAttribute('type') === 'submit')!;
+        expect(submit).toBeDisabled();
+        fireEvent.change(target, { target: { value: 'Номин.Одончимэг' } });
+        fireEvent.click(submit);
+        await waitFor(() => expect(merges).toEqual([{ shopId, source: 'Nomin', target: 'Номин.Одончимэг' }]));
+        await waitFor(() => expect(toast.success).toHaveBeenCalledWith('«Nomin» → «Номин.Одончимэг» нэгтгэгдлээ: 4 лид'));
+        await waitFor(() => expect(screen.queryByText('Nomin', { selector: 'p' })).not.toBeInTheDocument());
+        expect(screen.getByText(/акаунт: Nomin · nomin\.o@example\.mn/)).toBeInTheDocument();
+    });
+
+    it('keeps the merge form open and reports a refusal without changing the roster', async () => {
+        mergeFailure = { status: 409, error: 'Өдрийн тайланд «Nomin» ба «Номин.Одончимэг» нэг өдөр, нэг мөрөнд тоотой байна (2026-11-18).' };
+        open();
+        fireEvent.click((await screen.findAllByRole('button', { name: 'Нэгтгэх' }))[0]);
+        fireEvent.change(screen.getByLabelText('«Nomin»-ийг аль менежертэй нэгтгэх вэ?'), { target: { value: 'Номин.Одончимэг' } });
+        fireEvent.click(screen.getAllByRole('button', { name: 'Нэгтгэх' }).find(button => button.getAttribute('type') === 'submit')!);
+        await waitFor(() => expect(toast.error).toHaveBeenCalledWith(mergeFailure!.error));
+        expect(screen.getByLabelText('«Nomin»-ийг аль менежертэй нэгтгэх вэ?')).toHaveValue('Номин.Одончимэг');
+        expect(screen.getByText('Nomin', { selector: 'p' })).toBeInTheDocument();
     });
 });

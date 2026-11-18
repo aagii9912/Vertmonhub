@@ -21,6 +21,7 @@ export const RENAME_COUNT_LABELS: Record<string, string> = {
     leads: 'лид', property_viewings: 'уулзалт', property_contracts: 'гэрээ', customers: 'харилцагч',
     service_logs: 'санал гомдол', daily_report_counts: 'өдрийн тайлангийн нүд', daily_report_settings: 'тайлангийн загвар',
     sales_kpi_months: 'KPI сар', sales_manager_projects: 'төслийн харьяалал', property_units: 'байр', sales_targets: 'хуучин төлөвлөгөө',
+    sales_work_plan_items: 'ажлын төлөвлөгөөний ажил',
 };
 
 /** «12 лид, 9 уулзалт, 3 гэрээ» — тэгээс их тоотой хүснэгтүүд. */

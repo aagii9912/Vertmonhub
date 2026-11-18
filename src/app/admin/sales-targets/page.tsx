@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2, Save, TrendingUp, Users, Check, Plus, Pencil } from 'lucide-react';
+import { Loader2, Save, TrendingUp, Users, Check, Plus, Pencil, Merge } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/dashboard/PageHeader';
@@ -54,7 +54,7 @@ interface SalesTargetsData {
     system: SystemActuals | null;
     computedActualSource: string;
     managers: ManagerRow[];
-    teamMembers: Array<{ id: string; full_name: string; role?: string | null }>;
+    teamMembers: Array<{ id: string; full_name: string; email?: string | null; role?: string | null }>;
     projects: Array<{ id: string; name: string }>;
 }
 
@@ -129,7 +129,10 @@ export default function SalesTargetsAdminPage() {
     // Менежерийн бүртгэлийн нэр солих (бүх лавлагаатай нь, RPC).
     const [renaming, setRenaming] = useState<{ name: string; value: string } | null>(null);
     const [savingRename, setSavingRename] = useState(false);
-    const saving = savingTarget || savingRoster || savingRename;
+    // Ижил хүний давхар бүртгэлийг нэгтгэх (source мөр хасагдана, бүх лавлагаа target руу, RPC).
+    const [merging, setMerging] = useState<{ name: string; target: string } | null>(null);
+    const [savingMerge, setSavingMerge] = useState(false);
+    const saving = savingTarget || savingRoster || savingRename || savingMerge;
 
     const nowYear = new Date().getFullYear();
     const yearOptions = [nowYear - 1, nowYear, nowYear + 1];
@@ -294,6 +297,12 @@ export default function SalesTargetsAdminPage() {
         setManagersDraft((prev) => (prev ?? managers).map((m) => (m.name === name ? { ...m, user_id: null } : m)));
     }
 
+    /** Бүртгэлтэй мөрөнд (жишээ нь гэрээний «Нэр.Овог») ажилтны акаунтыг ил тод холбоно — шинэ мөр үүсгэхгүй. */
+    function linkManager(name: string, userId: string) {
+        if (!scopeReady || saving || !userId) return;
+        setManagersDraft((prev) => (prev ?? managers).map((m) => (m.name === name ? { ...m, user_id: userId } : m)));
+    }
+
     /** Зөвхөн өөрчлөгдсөн мөрийг илгээнэ — хуучирсан цонх бусдын холбоос, төлөвийг дарахгүй. */
     async function persistRoster(list: ManagerRow[]) {
         const saved = new Map((data?.managers ?? []).map((m) => [m.name, m]));
@@ -388,7 +397,7 @@ export default function SalesTargetsAdminPage() {
             return;
         }
         if (managers.some((m) => m.name === newName)) {
-            toast.error(`«${newName}» нэртэй менежер бүртгэлд аль хэдийн байна`);
+            toast.error(`«${newName}» нэртэй менежер бүртгэлд аль хэдийн байна. Ижил хүн бол «Нэгтгэх»-ийг ашиглана уу.`);
             return;
         }
         setSavingRename(true);
@@ -411,6 +420,34 @@ export default function SalesTargetsAdminPage() {
         }
     }
 
+    /** Ижил хүний хоёр бүртгэл: source-ийн бүх лавлагаа (лид, уулзалт, гэрээ, өдрийн тайлан…) target руу, source хасагдана. */
+    async function mergeManager() {
+        if (!merging?.target || !scopeReady || saving) return;
+        const { name: source, target } = merging;
+        if (managersDraft) {
+            toast.error('Хадгалаагүй өөрчлөлт байна. Эхлээд «Менежерийн бүртгэл хадгалах» дарна уу.');
+            return;
+        }
+        setSavingMerge(true);
+        try {
+            const res = await fetch('/api/admin/sales-targets/merge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ shopId, source, target }),
+            });
+            const result = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(result.error || 'Менежерийн бүртгэл нэгтгэгдсэнгүй');
+            setMerging(null);
+            // Нэр лид, уулзалт, тайлан бүрт гардаг тул бүх кэшийг шинэчилнэ.
+            await queryClient.invalidateQueries();
+            toast.success(`«${source}» → «${target}» нэгтгэгдлээ${result.summary ? `: ${result.summary}` : ''}`);
+        } catch (cause) {
+            toast.error(cause instanceof Error ? cause.message : 'Менежерийн бүртгэл нэгтгэгдсэнгүй');
+        } finally {
+            setSavingMerge(false);
+        }
+    }
+
     const activeCount = managers.filter((m) => m.is_active).length;
     const visibleManagers = showInactive ? managers : managers.filter((m) => m.is_active);
     const inactiveCount = managers.length - activeCount;
@@ -419,6 +456,10 @@ export default function SalesTargetsAdminPage() {
     const unlistedMembers = teamMembers.filter(
         (t) => !managers.some((m) => m.name === t.full_name || (m.user_id && m.user_id === t.id)),
     );
+    // Бүртгэлийн аль ч мөрөнд холбогдоогүй акаунтууд — бүртгэлтэй мөрөнд «Акаунт холбох».
+    const linkableMembers = teamMembers.filter((t) => !managers.some((m) => m.user_id === t.id));
+    const memberById = new Map(teamMembers.map((t) => [t.id, t]));
+    const memberLabel = (t: SalesTargetsData['teamMembers'][number]) => (t.email && t.email !== t.full_name ? `${t.full_name} · ${t.email}` : t.full_name);
 
     return (
         <div className="space-y-6">
@@ -717,7 +758,7 @@ export default function SalesTargetsAdminPage() {
                                                     <p className="truncate text-sm font-medium text-foreground">{m.name}</p>
                                                     <p className="text-2xs text-muted-foreground">
                                                         {year} борлуулалт: {m.year_actual > 0 ? formatMNT(m.year_actual, { compact: true }) : '—'}
-                                                        {m.user_id && ' · акаунттай'}
+                                                        {m.user_id && (memberById.has(m.user_id) ? ` · акаунт: ${memberLabel(memberById.get(m.user_id)!)}` : ' · акаунттай')}
                                                     </p>
                                                 </div>
                                             </div>
@@ -731,11 +772,56 @@ export default function SalesTargetsAdminPage() {
                                                 className="inline-flex items-center gap-1 text-2xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50">
                                                 <Pencil className="h-3 w-3" aria-hidden /> Нэр солих
                                             </button>
+                                            {managers.length > 1 && <button type="button" onClick={() => setMerging({ name: m.name, target: '' })} disabled={!scopeReady || saving}
+                                                aria-expanded={merging?.name === m.name}
+                                                className="inline-flex items-center gap-1 text-2xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50">
+                                                <Merge className="h-3 w-3" aria-hidden /> Нэгтгэх
+                                            </button>}
                                             {m.user_id && <button type="button" onClick={() => unlinkManager(m.name)} disabled={!scopeReady || saving}
                                                 className="text-2xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50">
                                                 Акаунтын холбоос салгах
                                             </button>}
                                         </div>
+                                        {!m.user_id && linkableMembers.length > 0 && (
+                                            <div className="flex flex-wrap items-center justify-end gap-2 px-3 pt-2">
+                                                <label htmlFor={`link-${m.name}`} className="text-2xs font-medium text-muted-foreground">Акаунт холбох</label>
+                                                <select
+                                                    id={`link-${m.name}`} value="" disabled={!scopeReady || saving}
+                                                    onChange={(event) => linkManager(m.name, event.target.value)}
+                                                    className="min-h-8 max-w-full rounded-md border border-control bg-surface-2 px-2 text-xs text-foreground"
+                                                >
+                                                    <option value="">Ажилтан сонгох…</option>
+                                                    {linkableMembers.map((t) => <option key={t.id} value={t.id}>{memberLabel(t)}</option>)}
+                                                </select>
+                                            </div>
+                                        )}
+                                        {merging?.name === m.name && (
+                                            <form className="space-y-2 px-3 pb-3 pt-2" onSubmit={(event) => { event.preventDefault(); void mergeManager(); }}>
+                                                <label htmlFor="merge-target" className="block text-xs font-medium text-foreground">«{m.name}»-ийг аль менежертэй нэгтгэх вэ?</label>
+                                                <select
+                                                    id="merge-target" value={merging.target} disabled={savingMerge}
+                                                    onChange={(event) => setMerging({ name: m.name, target: event.target.value })}
+                                                    className="min-h-9 w-full rounded-md border border-control bg-surface-2 px-3 text-sm text-foreground"
+                                                >
+                                                    <option value="">Менежер сонгох…</option>
+                                                    {managers.filter((o) => o.name !== m.name).map((o) => (
+                                                        <option key={o.name} value={o.name}>{o.name}{o.is_active ? '' : ' (идэвхгүй)'}{o.user_id ? ' · акаунттай' : ''}</option>
+                                                    ))}
+                                                </select>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Ижил хүн хоёр нэрээр бүртгэгдсэн үед: «{m.name}»-ийн лид, уулзалт, гэрээ, өдрийн тайлан, KPI, төслийн харьяалал бүгд
+                                                    сонгосон нэр рүү шилжиж, «{m.name}» бүртгэлээс хасагдана. Сонгосон мөр акаунтгүй бол «{m.name}»-ийн акаунт түүнд холбогдоно.
+                                                    Буцаах боломжгүй.
+                                                </p>
+                                                <div className="flex justify-end gap-2">
+                                                    <Button type="button" variant="secondary" size="sm" disabled={savingMerge} onClick={() => setMerging(null)}>Болих</Button>
+                                                    <Button type="submit" variant="primary" size="sm" isLoading={savingMerge}
+                                                        disabled={!scopeReady || saving || !merging.target}>
+                                                        Нэгтгэх
+                                                    </Button>
+                                                </div>
+                                            </form>
+                                        )}
                                         {renaming?.name === m.name && (
                                             <form className="space-y-2 px-3 pb-3 pt-2" onSubmit={(event) => { event.preventDefault(); void renameManager(); }}>
                                                 <label htmlFor="rename-manager" className="block text-xs font-medium text-foreground">«{m.name}» — шинэ нэр</label>
@@ -799,12 +885,14 @@ export default function SalesTargetsAdminPage() {
                             {/* Шинэ борлуулалтын менежер нэмэх */}
                             <div className="space-y-2 rounded-lg border border-dashed border-border p-3">
                                 <p className="text-xs font-medium text-muted-foreground">Шинэ менежер нэмэх</p>
-                                <p className="text-2xs text-muted-foreground">Акаунттай ажилтныг товчоор сонговол түүний акаунт холбогдоно. Энэ жагсаалтад гарахын тулд ажилтан энэ төсөлд гишүүн байх ёстой («Хэрэглэгчид» → төсөл нэмэх).</p>
+                                <p className="text-2xs text-muted-foreground">Акаунттай ажилтныг товчоор сонговол түүний нэрээр шинэ менежер үүсч акаунт холбогдоно. Энэ жагсаалтад гарахын тулд ажилтан энэ төсөлд гишүүн байх ёстой («Хэрэглэгчид» → төсөл нэмэх).</p>
+                                <p className="text-2xs text-muted-foreground">Ажилтан бүртгэлд өөр нэрээр (жишээ нь гэрээний «Нэр.Овог») аль хэдийн байвал энд нэмэлгүй, тэр мөрийн «Акаунт холбох»-оор холбоно уу. Давхар үүссэн бол «Нэгтгэх».</p>
                                 {unlistedMembers.length > 0 && (
                                     <div className="flex flex-wrap gap-1.5">
                                         {unlistedMembers.map((t) => (
                                             <button
                                                 key={t.id}
+                                                title={t.email || undefined}
                                                 onClick={() => addManager(t.full_name, t.id)}
                                                 disabled={!scopeReady || saving}
                                                 className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-xs text-foreground hover:border-brand hover:text-brand-strong disabled:opacity-50"
@@ -838,7 +926,8 @@ export default function SalesTargetsAdminPage() {
                             </div>
 
                             {managers.length > 0 && (
-                                <div className="flex justify-end">
+                                <div className="flex items-center justify-end gap-3">
+                                    {managersDraft && <p className="text-xs text-status-pending">Хадгалаагүй өөрчлөлт байна</p>}
                                     <Button onClick={saveRoster} disabled={!scopeReady || saving} isLoading={savingRoster} variant="secondary" size="sm">
                                         {!savingRoster && <Save className="h-4 w-4" />} Менежерийн бүртгэл хадгалах
                                     </Button>

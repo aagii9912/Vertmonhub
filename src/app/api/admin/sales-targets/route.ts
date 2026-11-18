@@ -79,7 +79,7 @@ async function loadMembers(supabase: ReturnType<typeof supabaseAdmin>, shopId: s
         .eq('shop_id', shopId);
     if (memberError) throw memberError;
     const ids = (memberRows || []).map((m) => m.user_id);
-    if (!ids.length) return [] as Array<{ id: string; full_name: string; role: string | null }>;
+    if (!ids.length) return [] as Array<{ id: string; full_name: string; email: string | null; role: string | null }>;
     const [{ data: profiles, error: profileError }, { data: roles, error: roleError }] = await Promise.all([
         supabase.from('user_profiles').select('id, full_name, email').in('id', ids),
         supabase.from('user_roles').select('user_id, role').in('user_id', ids),
@@ -87,7 +87,8 @@ async function loadMembers(supabase: ReturnType<typeof supabaseAdmin>, shopId: s
     if (profileError) throw profileError;
     if (roleError) throw roleError;
     const roleById = new Map((roles || []).map((row) => [row.user_id, row.role as string]));
-    return (profiles || []).map((p) => ({ id: p.id, full_name: p.full_name || p.email || 'Нэргүй', role: roleById.get(p.id) ?? null }));
+    // Имэйл нь ижил нэртэй ажилтнуудыг ялгахад (жишээ нь хоёр «Nomin») — зөвхөн энэ super_admin хуудсанд.
+    return (profiles || []).map((p) => ({ id: p.id, full_name: p.full_name || p.email || 'Нэргүй', email: p.email || null, role: roleById.get(p.id) ?? null }));
 }
 
 export async function GET(request: NextRequest) {
