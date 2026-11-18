@@ -271,6 +271,27 @@ describe('manual and system precedence (M1)', () => {
         expect(september.total.metrics.contract_count).toMatchObject({ actual: 9, source: 'manual', lowerBound: false, plan: 12, pct: 75 });
         expect(september.blocks.parking.metrics.contract_count).toMatchObject({ actual: 0, source: 'manual' });
     });
+
+    it('keeps a month manual (no «*») when the blocks left blank have a definite system zero', () => {
+        // Elysium 2026-01: зөвхөн Б1-ийг гараар оруулсан, Б2 ба зогсоолд тэр сард гэрээ алга, огноогүй гэрээ алга.
+        const months = elysiumPlan();
+        months[0] = { ...months[0], block_amounts: { ...months[0].block_amounts,
+            b1: { ...months[0].block_amounts!.b1, manual_contract_actual_amount: 3_012_074_000, manual_contract_count_actual: 6 } } };
+        const contracts = [contract({ contract_date: '2026-01-10', total_price: 3_023_530_556.2 })];
+        const january = buildPlanPerformance(base({ months, contracts })).months[0];
+        expect(january.blocks.parking.metrics.contract).toMatchObject({ actual: 0, source: 'auto', lowerBound: false });
+        expect(january.total.metrics.contract).toMatchObject({ actual: 3_012_074_000, source: 'manual', lowerBound: false, auto: { value: 3_023_530_556.2, lowerBound: false } });
+        expect(january.total.metrics.contract_count).toMatchObject({ actual: 6, source: 'manual', lowerBound: false });
+
+        // Бөглөөгүй блокт системийн гэрээ байвал нийт нь холимог хэвээр.
+        const parking = contract({ bucket: 'parking', contract_date: '2026-01-12', total_price: 60_000_000 });
+        expect(buildPlanPerformance(base({ months, contracts: [...contracts, parking] })).months[0].total.metrics.contract)
+            .toMatchObject({ actual: 3_072_074_000, source: 'mixed', lowerBound: false });
+        // Бөглөөгүй блокт огноогүй гэрээ байвал тэр блок тодорхойгүй — нийт доод хязгаар, холимог.
+        const undated = contract({ bucket: 'b2', contract_date: null });
+        expect(buildPlanPerformance(base({ months, contracts: [...contracts, undated] })).months[0].total.metrics.contract)
+            .toMatchObject({ actual: 3_012_074_000, source: 'mixed', lowerBound: true });
+    });
 });
 
 describe('projects without a block plan and cash receipts', () => {

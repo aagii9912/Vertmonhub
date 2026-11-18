@@ -9,7 +9,8 @@
  *    «Төлөвлөгөөнд хамаарахгүй» мөрөнд; задаргаагүй (зөвхөн нийт) төлөвлөгөөтэй сард бусад блокийн орон сууц нийтэд орно.
  *  • Гар ба системийн дүнг нэг хүрээнд хэзээ ч нэмэхгүй: блокийн нүд = гараар оруулсан тоо, эс бөгөөс систем;
  *    задаргаатай үзүүлэлтийн нийт = блокуудын нийлбэр (row[f]-ийг уншихгүй); задаргаагүй гар нийт байвал түүнийг;
- *    эс бөгөөс системийн блокуудын нийлбэр.
+ *    эс бөгөөс системийн блокуудын нийлбэр. Гар блоктой сарын нийт «холимог» (*) нь бөглөөгүй блокийн систем дүн юм
+ *    нэмсэн үед л (тэгээс өөр, тодорхойгүй эсвэл «+»); бөглөөгүй блокууд системээр тодорхой 0 бол нийт «гараар».
  *  • Огноогүй амьд гэрээтэй блокийн системийн дүн доод хязгаар: тухайн сард гэрээгүй бол «—», байвал «N+».
  *    Гараар оруулсан нүд хэзээ ч «+» биш.
  *  • Ирээдүйн сарын гүйцэтгэл null, энэ сар «явцын» (хувааж таамаглахгүй).
@@ -252,9 +253,13 @@ const metricNumber = (row: MonthlySalesMonth, block: MonthlySalesBlock, field: M
     return typeof value === 'number' ? value : null;
 };
 
+/** Системийн хэсэг нийтэд юм нэмэх эсэх: тодорхой 0 нэмэхгүй; тэгээс өөр, тодорхойгүй (null) эсвэл доод хязгаар («+») нэмнэ. */
+const addsToTotal = (value: PlanValue) => value.value !== 0 || value.lowerBound;
+
 /**
  * M1 давамгайлал: блокийн нүд = гар тоо ?? систем; задаргаатай бол нийт = блокуудын нийлбэр (+ нийтэд л хамаарах
  * системийн нэмэлт, аль нэг блок системийнх бол); задаргаагүй гар нийт байвал түүнийг; эс бөгөөс системийн нийлбэр.
+ * Эх сурвалж: гар блок дээр системийн хэсэг юм нэмсэн үед л «холимог»; бөглөөгүй блокууд системээр тодорхой 0 бол «гараар».
  */
 function resolveMetric(
     row: MonthlySalesMonth, metric: MonthlySalesMetric, autoBlocks: Record<MonthlySalesBlock, PlanValue>, extra: PlanValue | null, future: boolean,
@@ -274,10 +279,13 @@ function resolveMetric(
     let total: PlanValue;
     let source: PlanSource;
     if (hasMonthlySalesBreakdown(row, field)) {
-        const anyAuto = MONTHLY_SALES_BLOCKS.some(block => blockResolved[block].source === 'auto');
-        const anyManual = MONTHLY_SALES_BLOCKS.some(block => blockResolved[block].source === 'manual');
+        const autoParts = MONTHLY_SALES_BLOCKS.filter(block => blockResolved[block].source === 'auto').map(block => blockResolved[block].value);
+        const anyAuto = autoParts.length > 0;
+        const anyManual = autoParts.length < MONTHLY_SALES_BLOCKS.length;
         total = combine([...MONTHLY_SALES_BLOCKS.map(block => blockResolved[block].value), ...(anyAuto && extra ? [extra] : [])]);
-        source = anyAuto ? (anyManual ? 'mixed' : 'auto') : 'manual';
+        // Бөглөөгүй блокийн системийн дүн тодорхой 0 бол нийт нь бүхэлдээ гар дүн — «холимог» (*) гэж тэмдэглэхгүй.
+        const systemAdds = [...autoParts, ...(anyAuto && extra ? [extra] : [])].some(addsToTotal);
+        source = !anyManual ? 'auto' : systemAdds ? 'mixed' : 'manual';
     } else if (row[field] !== null) {
         total = { value: row[field], lowerBound: false };
         source = 'manual';

@@ -472,7 +472,7 @@ export default function SalesTargetsAdminPage() {
                                 <TrendingUp className="h-4 w-4 text-brand-strong" />
                             </div>
 
-                            <p className="text-xs text-muted-foreground">Мөнгөн урсгал нь тухайн сард хүлээн авсан урьдчилгаа, төлбөрийн дүн. Гүйцэтгэлийг гараар оруулна; хувь = гүйцэтгэл ÷ төлөвлөгөө.</p>
+                            <p className="text-xs text-muted-foreground">Мөнгөн урсгал нь тухайн сард хүлээн авсан урьдчилгаа, төлбөрийн дүн. Гараар оруулсан гүйцэтгэл тайланд тэр чигээрээ орно; хоосон блокийн оронд системийн дүн орно. Нүдний доорх «Систем» нь зөвхөн харьцуулалт. Хувь = гүйцэтгэл ÷ төлөвлөгөө.</p>
                             <div className="max-h-[65vh] overflow-auto rounded-lg border border-border">
                                 <table className="w-full min-w-[1280px] border-separate border-spacing-0 text-sm">
                                     <caption className="sr-only">{year} оны блок тус бүрийн гэрээний тоо, дүн, мөнгөн урсгалын төлөвлөгөө, гүйцэтгэл ба хувь</caption>
