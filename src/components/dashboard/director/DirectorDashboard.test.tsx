@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import type { DirectorPayload } from '@/lib/dashboard/director';
 
@@ -25,7 +25,17 @@ function payload(sales: Partial<DirectorPayload['sales']>, missing: string[] = [
 // jsdom-д ResizeObserver байхгүй (12 сарын графикийн өргөн).
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
 
-afterEach(cleanup);
+// Хуудас «одоо»-гийн сарыг сонгодог: жишээ өгөгдөл 2026 оны 10-р сарынх тул цагийг тэнд тогтооно
+// (үгүй бол тест зөвхөн 10-р сард давна). Зөвхөн Date — таймерууд жинхэнээрээ.
+beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-15T04:00:00Z'));
+});
+
+afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+});
 
 describe('director sales vs plan card', () => {
     it('shows a lower bound with its percentage and never a guessed 0', () => {
