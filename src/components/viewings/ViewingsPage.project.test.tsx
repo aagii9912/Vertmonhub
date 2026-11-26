@@ -4,6 +4,7 @@ import { ViewingsPage } from './ViewingsPage';
 import { ANONYMOUS_LEAD_LABEL, ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS } from '@/lib/leads/labels';
 import { REFERRAL_LIST_LOADING } from '@/lib/sales/referral-sources';
 import type { ViewingRow } from '@/hooks/useViewings';
+import { DashboardApiError } from '@/lib/api/dashboardFetch';
 import type { ViewingUnitOption, ViewingCondition } from '@/lib/viewings/interests';
 import { elysiumViewingConditions } from '@/lib/sales/viewing-conditions';
 
@@ -95,6 +96,42 @@ describe('viewing project selection', () => {
         await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
             project_id: 'elysium', customer_name: null, customer_phone: '9909 1122', anonymous: true,
         })));
+    });
+
+    it('offers «Хариуцаж аваад бүртгэх» when a walk-in phone matches an unassigned lead, and drops the offer when the phone changes', async () => {
+        const unassigned = 'Энэ утастай лид хариуцагчгүй байна. «Хариуцагчгүй» жагсаалтаас хариуцаж аваад уулзалтаа бүртгэнэ үү.';
+        mocks.create.mockRejectedValueOnce(new DashboardApiError(unassigned, 409, { error: unassigned, claimable: { name: 'Бат' } }));
+        render(<ViewingsPage />);
+        fireEvent.click(screen.getAllByRole('button', { name: 'Уулзалт товлох' })[0]);
+        const dialog = within(screen.getByRole('dialog'));
+        fireEvent.click(dialog.getByRole('switch'));
+        fireEvent.change(dialog.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'elysium' } });
+        fireEvent.change(dialog.getByPlaceholderText('Б. Болд'), { target: { value: 'Бат' } });
+        fireEvent.change(dialog.getByPlaceholderText('9909 1122'), { target: { value: '9911 2233' } });
+        fireEvent.click(dialog.getByRole('button', { name: 'Бүртгэх' }));
+        // Алдааны toast биш: маягт бөглөсөн хэвээр, дараагийн алхам нь товч.
+        expect(await dialog.findByRole('alert')).toHaveTextContent('Энэ утастай лид (Бат) хариуцагчгүй байна');
+        expect(mocks.error).not.toHaveBeenCalled();
+        expect(mocks.create.mock.calls[0][0]).not.toHaveProperty('claim_unassigned');
+
+        fireEvent.click(dialog.getByRole('button', { name: 'Хариуцаж аваад бүртгэх' }));
+        await waitFor(() => expect(mocks.create).toHaveBeenLastCalledWith(expect.objectContaining({
+            walk_in: true, customer_phone: '9911 2233', claim_unassigned: true,
+        })));
+
+        // Дараагийн маягт: санал зөвхөн тухайн утсанд хамаарна.
+        mocks.create.mockRejectedValueOnce(new DashboardApiError(unassigned, 409, { error: unassigned, claimable: { name: 'Бат' } }));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Уулзалт товлох' })[0]);
+        const again = within(screen.getByRole('dialog'));
+        fireEvent.click(again.getByRole('switch'));
+        fireEvent.change(again.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'elysium' } });
+        fireEvent.change(again.getByPlaceholderText('Б. Болд'), { target: { value: 'Бат' } });
+        fireEvent.change(again.getByPlaceholderText('9909 1122'), { target: { value: '9911 2233' } });
+        fireEvent.click(again.getByRole('button', { name: 'Бүртгэх' }));
+        await again.findByRole('button', { name: 'Хариуцаж аваад бүртгэх' });
+        fireEvent.change(again.getByPlaceholderText('9909 1122'), { target: { value: '9911 2234' } });
+        expect(again.queryByRole('button', { name: 'Хариуцаж аваад бүртгэх' })).not.toBeInTheDocument();
+        expect(again.getByRole('button', { name: 'Бүртгэх' })).toBeInTheDocument();
     });
 
     describe('«Сэжим (хаанаас ирсэн)»', () => {

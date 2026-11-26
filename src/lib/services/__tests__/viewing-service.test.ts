@@ -26,6 +26,7 @@ function fakeDb(responses: Record<string, Result[]>, rpcResponse: Result = { dat
             in: (...args: unknown[]) => { query.filters.push(args); return chain; },
             eq: (...args: unknown[]) => { query.filters.push(args); return chain; },
             is: (...args: unknown[]) => { query.filters.push(args); return chain; },
+            or: (...args: unknown[]) => { query.filters.push(['or', ...args]); return chain; },
             ilike: (...args: unknown[]) => { query.filters.push(args); return chain; },
             insert: (data: Record<string, unknown>) => { query.insert = data; return chain; },
             update: (data: Record<string, unknown>) => { query.updates = data; return chain; },
@@ -251,6 +252,89 @@ describe('shared viewing creation', () => {
         expect(await resolveViewingInput(fresh.db, 'shop', { project_id: projectId, anonymous: true, customer_phone: '99112233', scheduled_at: scheduledAt }, scope))
             .toMatchObject({ ok: true, data: { lead: null, projectId } });
         expect(fresh.queries.filter(query => query.table === 'leads')).toHaveLength(2);
+    });
+
+    describe('walk-in for an unassigned lead: «Хариуцаж аваад бүртгэх» (owner decision 2026-11-26)', () => {
+        const scope = { projectIds: [projectId], managerName: 'Канон' };
+        const pool = { id: 'pool', customer_phone: '99112233', customer_name: 'Бат', sales_manager_name: null, status: 'contacted' };
+        const walkIn = { project_id: projectId, customer_phone: '99112233', walk_in: true, notes: 'Facebook' };
+        const roster = () => ({
+            sales_managers: [ok([{ name: 'Канон' }]), ok({ name: 'Канон' })],
+            sales_manager_projects: [ok([{ manager_name: 'Канон' }]), ok({ project_id: projectId })],
+        });
+
+        it('offers the claim on a walk-in and never claims in the preview or without the confirmation', async () => {
+            const preview = fakeDb({ leads: [ok([]), ok([pool])], projects: [ok({ id: projectId })] });
+            expect(await resolveViewingInput(preview.db, 'shop', walkIn, scope)).toEqual({ ok: false, status: 409, claimable: { name: 'Бат' },
+                error: 'Энэ утастай лид хариуцагчгүй байна. «Хариуцагчгүй» жагсаалтаас хариуцаж аваад уулзалтаа бүртгэнэ үү.' });
+            const plain = fakeDb({ leads: [ok([]), ok([pool])], projects: [ok({ id: projectId })] }, ok({ id: 'viewing' }));
+            expect(await createViewing(plain.db, 'shop', walkIn, { ...actor, scope })).toMatchObject({ ok: false, status: 409, claimable: { name: 'Бат' } });
+            expect(plain.queries.some(query => query.insert || query.updates)).toBe(false);
+            expect(plain.rpcCalls).toEqual([]);
+            // Товлох (ирээдүйн) уулзалтад санал болгохгүй; баталгаажуулсан ч авахгүй.
+            const future = fakeDb({ leads: [ok([]), ok([pool])], projects: [ok({ id: projectId })] });
+            const scheduled = await createViewing(future.db, 'shop', { ...walkIn, walk_in: false, scheduled_at: scheduledAt }, { ...actor, scope }, { claimUnassigned: true });
+            expect(scheduled).toMatchObject({ ok: false, status: 409 });
+            expect(scheduled).not.toHaveProperty('claimable');
+            expect(future.queries.some(query => query.updates)).toBe(false);
+        });
+
+        it('claims the lead without a follow-up time and records the meeting on it', async () => {
+            const viewing = { id: 'viewing', status: 'completed', scheduled_at: scheduledAt };
+            const { db, queries, rpcCalls } = fakeDb({
+                leads: [ok([]), ok([pool]), ok({ id: 'pool', project_id: projectId, sales_manager_name: null }), ok({ id: 'pool' })],
+                projects: [ok({ id: projectId })], ...roster(),
+            }, ok(viewing));
+            expect(await createViewing(db, 'shop', walkIn, { ...actor, scope }, { claimUnassigned: true }))
+                .toMatchObject({ ok: true, data: { viewing, lead_id: 'pool' } });
+            const claim = queries.find(query => query.table === 'leads' && query.updates)!;
+            expect(claim.updates).toMatchObject({ sales_manager_name: 'Канон' });
+            expect(claim.updates).not.toHaveProperty('next_followup_at');
+            // Уралдсан claim, хаагдсан лид, өөр төслийг нэг UPDATE-ийн нөхцөлөөр хаана.
+            expect(claim.filters).toEqual(expect.arrayContaining([['id', 'pool'], ['shop_id', 'shop'], ['project_id', projectId], ['deleted_at', null],
+                ['or', 'sales_manager_name.is.null,sales_manager_name.eq.""'], ['project_id', [projectId]]]));
+            expect(queries.some(query => query.insert)).toBe(false);
+            expect(rpcCalls).toMatchObject([{ name: 'create_scoped_sales_viewing', params: {
+                p_lead_id: 'pool', p_manager_name: 'Канон', p_project_ids: [projectId], p_input: { walk_in: true, project_id: projectId, agent_notes: 'Facebook' },
+            } }]);
+            expect(logLeadActivity).toHaveBeenCalledWith(db, expect.objectContaining({
+                leadId: 'pool', type: 'manager', meta: { action: 'claim', to: 'Канон', via: 'walk_in' },
+            }));
+        });
+
+        it('writes no meeting when a colleague claimed first, and says so when the meeting fails after the claim', async () => {
+            const raced = fakeDb({
+                leads: [ok([]), ok([pool]), ok({ id: 'pool', project_id: projectId, sales_manager_name: null }), ok(null)],
+                projects: [ok({ id: projectId })], ...roster(),
+            }, ok({ id: 'viewing' }));
+            expect(await createViewing(raced.db, 'shop', walkIn, { ...actor, scope }, { claimUnassigned: true })).toMatchObject({ ok: false, status: 409,
+                error: 'Лидийг өөр хүн авсан, хаасан эсвэл олдсонгүй. Жагсаалтаа шинэчилнэ үү.' });
+            expect(raced.rpcCalls).toEqual([]);
+            const failed = fakeDb({
+                leads: [ok([]), ok([pool]), ok({ id: 'pool', project_id: projectId, sales_manager_name: null }), ok({ id: 'pool' })],
+                projects: [ok({ id: projectId })], ...roster(),
+            }, { data: null, error: { code: '57014', message: 'timeout' } });
+            expect(await createViewing(failed.db, 'shop', walkIn, { ...actor, scope }, { claimUnassigned: true })).toEqual({ ok: false, status: 503,
+                partialSuccess: true, leadId: 'pool', error: 'Лидийг хариуцаж авсан боловч уулзалт хадгалагдсангүй. Дахин бүртгэнэ үү.' });
+        });
+
+        it('leaves several unassigned leads and other verdicts to the queue or the admin', async () => {
+            const many = fakeDb({ leads: [ok([]), ok([pool, { ...pool, id: 'pool-2' }])], projects: [ok({ id: projectId })] });
+            const result = await createViewing(many.db, 'shop', walkIn, { ...actor, scope }, { claimUnassigned: true });
+            expect(result).toMatchObject({ ok: false, status: 409, error: expect.stringContaining('хариуцагчгүй байна') });
+            expect(result).not.toHaveProperty('claimable');
+            const closed = fakeDb({ leads: [ok([]), ok([{ ...pool, status: 'closed_lost' }])], projects: [ok({ id: projectId })] });
+            expect(await createViewing(closed.db, 'shop', walkIn, { ...actor, scope }, { claimUnassigned: true })).toEqual({ ok: false, status: 409,
+                error: 'Энэ утастай хаагдсан лид хариуцагчгүй байна. Админд хандаж менежер оноолгоно уу.' });
+            const colleague = fakeDb({
+                leads: [ok([]), ok([{ ...pool, sales_manager_name: 'Сараа.Бат' }])], projects: [ok({ id: projectId })],
+                sales_managers: [ok([{ name: 'Сараа.Бат' }])], sales_manager_projects: [ok([{ manager_name: 'Сараа.Бат' }])],
+            });
+            const theirs = await createViewing(colleague.db, 'shop', walkIn, { ...actor, scope }, { claimUnassigned: true });
+            expect(theirs).toMatchObject({ ok: false, status: 409, error: expect.stringContaining('Б. Сараа-ийн лид') });
+            expect(theirs).not.toHaveProperty('claimable');
+            for (const db of [many, closed, colleague]) expect(db.queries.some(query => query.insert || query.updates)).toBe(false);
+        });
     });
 
     it('points each phone match to a step the manager can take', async () => {

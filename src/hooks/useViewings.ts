@@ -71,6 +71,8 @@ export interface CreateViewingInput {
     referral_source_id?: string | null;
     advance_payment_term?: string | null;
     remainder_payment_term?: string | null;
+    /** «Хариуцаж аваад бүртгэх»: ирсэн уулзалтын утас хариуцагчгүй лидтэй таарахад менежер өөрөө батална. */
+    claim_unassigned?: boolean;
 }
 
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {

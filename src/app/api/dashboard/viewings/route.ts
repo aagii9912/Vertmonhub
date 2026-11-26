@@ -68,9 +68,12 @@ export const POST = withRoute({ module: 'viewings', access: 'write', error: 'У�
     const scope = await resolveSalesProjectScope(db, authShop.id);
     const uid = await getUserId();
     const identity = uid ? await resolveManagerIdentity(db, authShop.id, uid) : null;
-    const result = await createViewing(db, authShop.id, await request.json().catch(() => null), {
+    const body: unknown = await request.json().catch(() => null);
+    // «Хариуцаж аваад бүртгэх»: ирсэн уулзалтын утас хариуцагчгүй лидтэй таарахад менежер өөрөө батална.
+    const claimUnassigned = !!body && typeof body === 'object' && (body as { claim_unassigned?: unknown }).claim_unassigned === true;
+    const result = await createViewing(db, authShop.id, body, {
         scope, userId: uid, managerName: identity?.isManager ? identity.managerName : null,
-    });
-    if (!result.ok) return NextResponse.json({ error: result.error, partialSuccess: result.partialSuccess, leadId: result.leadId }, { status: result.status });
+    }, { claimUnassigned });
+    if (!result.ok) return NextResponse.json({ error: result.error, partialSuccess: result.partialSuccess, leadId: result.leadId, claimable: result.claimable }, { status: result.status });
     return NextResponse.json({ ...result.data, warning: result.warning }, { status: 201 });
 });

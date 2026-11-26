@@ -6,11 +6,12 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logLeadActivity } from '@/lib/leads/activities';
-import { ACTIVE_STATUSES, ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS, normalizeLeadName } from '@/lib/leads/labels';
+import { ACTIVE_STATUSES, ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
+import { claimUnassignedLead } from '@/lib/leads/claim';
 import { z } from 'zod';
 import { ubDayRange } from '@/lib/utils/date';
 import { normalizePhone } from '@/lib/utils/phone';
-import { applyLeadScope, assertProjectManager, canAccessProject, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
+import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { ViewingInterestsSchema, type ViewingInterest, type ViewingInterestInput, viewingSelectionText } from '@/lib/viewings/interests';
 import { prepareViewingInterests } from '@/lib/viewings/prepare';
@@ -45,7 +46,20 @@ export interface ViewingPatch {
     deleted_at?: string;
 }
 
-export type ServiceResult<T> = { ok: true; data: T; warning?: string } | { ok: false; error: string; status: number; partialSuccess?: boolean; leadId?: string };
+/**
+ * `claimable`: ирсэн уулзалтын утас төслийн ганц идэвхтэй хариуцагчгүй лидтэй таарсан — менежер
+ * «Хариуцаж аваад бүртгэх»-ээр (`claimUnassigned`) баталгаажуулбал лидийг авч уулзалтыг хадгална.
+ */
+export type ServiceResult<T> = { ok: true; data: T; warning?: string }
+    | { ok: false; error: string; status: number; partialSuccess?: boolean; leadId?: string; claimable?: { name: string } };
+
+export interface CreateViewingOptions {
+    /**
+     * Ирсэн (болсон) уулзалт бүртгэхдээ утсаар таарсан хариуцагчгүй лидийг өөртөө авахыг менежер өөрөө
+     * баталсан (эзэмшигч 2026-11-26). Зөвхөн UI-ийн товчноос; AI болон preview хэзээ ч өгөхгүй.
+     */
+    claimUnassigned?: boolean;
+}
 
 export const CreateViewingSchema = z.object({
     lead_id: z.guid().nullish(),
@@ -107,7 +121,9 @@ export async function loadProjectManagerNames(db: SupabaseClient, shopId: string
     return new Set((managers.data ?? []).map(row => row.name as string).filter(name => !!name && registered.has(name)));
 }
 
-export type PhoneLeadVerdict = { kind: 'none' } | { kind: 'own'; lead: ProjectPhoneLead } | { kind: 'blocked'; error: string };
+export type PhoneLeadVerdict = { kind: 'none' } | { kind: 'own'; lead: ProjectPhoneLead }
+    /** `claimLead`: `claim` мессежтэй зогссон бөгөөд идэвхтэй хариуцагчгүй лид яг нэг — хариуцаж авч болох лид. */
+    | { kind: 'blocked'; error: string; claimLead?: ProjectPhoneLead };
 
 /**
  * Төслийн хэмжээнд олдсон ижил утастай лидийг ангилна: давхар лид үүсгэхгүй, уулзалт буруу нэр дээр
@@ -131,13 +147,17 @@ export function classifyPhoneLeads(matches: readonly ProjectPhoneLead[], options
     if (active.length > 1) return { kind: 'blocked', error: `Энэ утастай лид олон менежерт бүртгэлтэй (${active.map(formalManagerName).join(', ')}). Админаар давхар лидийг нэгтгүүлнэ үү.` };
     if (owners.length) return { kind: 'blocked', error: `Энэ утастай лид бүртгэлгүй эсвэл идэвхгүй менежер (${owners.map(formalManagerName).join(', ')})-ийн нэр дээр байна. Админаар лидийг зөв менежерт шилжүүлнэ үү.` };
     const unassigned = matches.filter(row => !ownerOf(row));
-    if (unassigned.some(row => (ACTIVE_STATUSES as string[]).includes(row.status ?? ''))) return { kind: 'blocked', error: options.claim };
+    const claimable = unassigned.filter(row => (ACTIVE_STATUSES as string[]).includes(row.status ?? ''));
+    if (claimable.length) return { kind: 'blocked', error: options.claim, ...(claimable.length === 1 ? { claimLead: claimable[0] } : {}) };
     if (unassigned.length) return { kind: 'blocked', error: 'Энэ утастай хаагдсан лид хариуцагчгүй байна. Админд хандаж менежер оноолгоно уу.' };
     return { kind: 'none' };
 }
 
-/** Баталгаажуулах мэдээллийг зөвхөн уншина; preview хэзээ ч лид/уулзалт үүсгэхгүй. */
-export async function resolveViewingInput(db: SupabaseClient, shopId: string, input: unknown, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+/**
+ * Баталгаажуулах мэдээллийг зөвхөн уншина; preview хэзээ ч лид/уулзалт үүсгэхгүй.
+ * `claimUnassigned`-тай үед ч энд юу ч бичихгүй: авах лидийг `claimLead`-ээр буцаана, `createViewing` авна.
+ */
+export async function resolveViewingInput(db: SupabaseClient, shopId: string, input: unknown, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE, options: CreateViewingOptions = {}) {
     const parsed = CreateViewingSchema.safeParse(input);
     if (!parsed.success) return { ok: false as const, error: 'Уулзалтын мэдээлэл, огноо/цагийг шалгана уу', status: 400 };
     // Шинэ харилцагчийн нэрийг нэг дүрмээр цэвэрлэнэ (шошго/«-» → null); нэргүй бол нэрийг үл хэрэгсэнэ.
@@ -155,6 +175,7 @@ export async function resolveViewingInput(db: SupabaseClient, shopId: string, in
     const restricted = scope.projectIds !== null;
     let phone: string | null = null;
     let nameMissing = false;
+    let claimLead: ProjectPhoneLead | null = null;
     const base = () => {
         let query = applyLeadScope(db.from('leads').select('id, status, customer_name, customer_phone, project_id, sales_manager_name').eq('shop_id', shopId).is('deleted_at', null), scope);
         if (!p.lead_id && p.project_id) query = query.eq('project_id', p.project_id);
@@ -217,11 +238,19 @@ export async function resolveViewingInput(db: SupabaseClient, shopId: string, in
             colleagueNext: held ? 'Өдрийн тайлангаас тухайн менежерийн нэр дээр уулзалт бүртгэнэ үү.' : 'Уулзалтыг тухайн менежер эсвэл админ товлоно уу.',
             claim: 'Энэ утастай лид хариуцагчгүй байна. «Хариуцагчгүй» жагсаалтаас хариуцаж аваад уулзалтаа бүртгэнэ үү.',
         });
-        if (verdict.kind === 'blocked') return { ok: false as const, error: verdict.error, status: 409 };
+        if (verdict.kind === 'blocked') {
+            // Ирсэн уулзалт: менежер баталсан бол лидийг хариуцаж аваад бүртгэнэ (холбогдох цаг шаардахгүй —
+            // уулзалт өөрөө эхний холбоо). Батлаагүй бол 409 + `claimable`, UI товч санал болгоно.
+            const offer = p.walk_in ? verdict.claimLead : undefined;
+            if (!offer || !options.claimUnassigned) {
+                return { ok: false as const, error: verdict.error, status: 409, ...(offer ? { claimable: { name: leadDisplayName(offer) } } : {}) };
+            }
+            claimLead = offer;
+        }
         // Өөрийн лид хамрахын хайлтад олдоогүй (уралдаан) — давхар үүсгэхгүй.
         if (verdict.kind === 'own') return { ok: false as const, error: 'Олон лид таарлаа. Лидээ сонгоод уулзалт товлоно уу.', status: 409 };
     }
-    if (nameMissing) return { ok: false as const, error: PHONE_LEAD_NOT_FOUND, status: 400 };
+    if (nameMissing && !claimLead) return { ok: false as const, error: PHONE_LEAD_NOT_FOUND, status: 400 };
     if (property && property.project_id !== projectId) return { ok: false as const, error: 'Лидийн төслийн байрыг сонгоно уу', status: 400 };
     // «Сэжим (хаанаас ирсэн)»: шинэ харилцагчийн уулзалтад заавал (төсөлд идэвхтэй сонголт байгаа үед). Нэрийг (AI) id болгоно.
     const referral = await resolveReferralSource(db, shopId, { id: p.referral_source_id, name: p.referral_source }, { newMeetingType: p.meeting_type });
@@ -230,7 +259,7 @@ export async function resolveViewingInput(db: SupabaseClient, shopId: string, in
     const referralSource: ReferralSource | null = referral.source;
     try {
         const interests = p.interests === undefined ? undefined : await prepareViewingInterests(db, shopId, projectId, p.interests, scope);
-        return { ok: true as const, data: { input: resolvedInput, lead, property, projectId, interests, referral: referralSource } };
+        return { ok: true as const, data: { input: resolvedInput, lead, property, projectId, interests, referral: referralSource, claimLead } };
     } catch (error) {
         if (error instanceof PricingSelectionError) return { ok: false as const, error: error.message, status: error.status };
         throw error;
@@ -238,18 +267,34 @@ export async function resolveViewingInput(db: SupabaseClient, shopId: string, in
 }
 
 /** UI ба AI-ийн уулзалт үүсгэх нэгдсэн урсгал. Хэсэгчилсэн хадгалалтыг ил тод буцаана. */
-export async function createViewing(db: SupabaseClient, shopId: string, input: unknown, actor: Actor): Promise<ServiceResult<{ viewing: { id: string; scheduled_at: string; status: string }; lead_id: string | null }>> {
+export async function createViewing(db: SupabaseClient, shopId: string, input: unknown, actor: Actor, options: CreateViewingOptions = {}): Promise<ServiceResult<{ viewing: { id: string; scheduled_at: string; status: string }; lead_id: string | null }>> {
     const scope = actor.scope || UNRESTRICTED_SALES_SCOPE;
     const managerName = scope.projectIds === null ? actor.managerName : scope.managerName;
     if (scope.projectIds !== null) {
         if (!actor.userId) return { ok: false, error: 'Нэвтрэх шаардлагатай', status: 401 };
         if (!managerName || !scope.projectIds.length) return { ok: false, error: 'Уулзалт үүсгэх эрхгүй', status: 403 };
     }
-    const resolved = await resolveViewingInput(db, shopId, input, scope);
+    const resolved = await resolveViewingInput(db, shopId, input, scope, options);
     if (!resolved.ok) return resolved;
-    const { input: p, property, projectId, interests } = resolved.data;
+    const { input: p, property, projectId, interests, claimLead } = resolved.data;
     let lead = resolved.data.lead;
     let createdLead = false;
+    // Хариуцагчгүй лидийг менежер өөрөө баталж авна (бүх шалгалт давсны дараа); уралдсан claim → 409, уулзалт үүсэхгүй.
+    let claimedLead = false;
+    if (claimLead && managerName) {
+        try {
+            const claim = await claimUnassignedLead(db, {
+                shopId, leadId: claimLead.id, userId: actor.userId, managerName, scope,
+                activity: { content: `${managerName} ирсэн уулзалт бүртгэхдээ лидийг хариуцаж авав`, meta: { via: 'walk_in' } },
+            });
+            if (!claim.ok) return { ok: false, error: claim.error, status: claim.status };
+        } catch (error) {
+            if (error instanceof ProjectScopeError) return { ok: false, error: error.message, status: error.status };
+            return { ok: false, error: 'Лид хариуцаж авахад алдаа гарлаа', status: 503 };
+        }
+        lead = { id: claimLead.id, status: claimLead.status ?? 'new', customer_name: claimLead.customer_name, project_id: projectId ?? null, sales_manager_name: managerName };
+        claimedLead = true;
+    }
     if (managerName && !lead) {
         try { await assertProjectManager(db, shopId, projectId, managerName); }
         catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Менежерийн төсөл шалгахад алдаа гарлаа', status: 400 }; }
@@ -282,8 +327,9 @@ export async function createViewing(db: SupabaseClient, shopId: string, input: u
         if (error || !viewing) {
             const status = error?.code === 'P0002' ? 404
                 : ['22023', '22P02', '22007', '22008'].includes(error?.code || '') ? 400 : 503;
-            return { ok: false, status, partialSuccess: createdLead, leadId: createdLead ? lead.id : undefined,
+            return { ok: false, status, partialSuccess: createdLead || claimedLead, leadId: createdLead || claimedLead ? lead.id : undefined,
                 error: createdLead ? 'Лид үүссэн боловч уулзалт хадгалагдсангүй. Лидээ нээгээд уулзалтаа товлоно уу.'
+                    : claimedLead ? 'Лидийг хариуцаж авсан боловч уулзалт хадгалагдсангүй. Дахин бүртгэнэ үү.'
                     : status === 404 ? 'Лид эсвэл байр олдсонгүй' : 'Уулзалт хадгалагдсангүй. Дахин оролдоно уу.' };
         }
         return { ok: true, data: { viewing, lead_id: lead.id } };

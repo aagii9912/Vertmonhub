@@ -43,7 +43,8 @@ export function dashboardFetch(input: string, init: DashboardFetchInit = {}): Pr
 
 /** API-ийн алдаатай хариу — дуудагч HTTP статусыг (ж: 404 «олдсонгүй») ялгаж харуулж болно. */
 export class DashboardApiError extends Error {
-    constructor(message: string, readonly status: number) {
+    /** `detail`: серверийн JSON хариу бүтнээр (ж: `claimable`) — мессежээс гадна дараагийн алхам санал болгоход. */
+    constructor(message: string, readonly status: number, readonly detail: Record<string, unknown> | null = null) {
         super(message);
     }
 }
@@ -52,8 +53,9 @@ export class DashboardApiError extends Error {
 export async function dashboardJson<T>(input: string, init: DashboardFetchInit = {}): Promise<T> {
     const res = await dashboardFetch(input, init);
     if (!res.ok) {
-        const detail = await res.json().catch(() => null as { error?: string } | null);
-        throw new DashboardApiError(detail?.error || `Хүсэлт амжилтгүй (${res.status})`, res.status);
+        const parsed: unknown = await res.json().catch(() => null);
+        const detail = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+        throw new DashboardApiError(typeof detail?.error === 'string' && detail.error ? detail.error : `Хүсэлт амжилтгүй (${res.status})`, res.status, detail);
     }
     return (await res.json()) as T;
 }

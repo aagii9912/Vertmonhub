@@ -12,6 +12,7 @@ import { formatTime, formatShortDate, ubDateStr } from '@/lib/utils/date';
 import { formatMNT } from '@/lib/utils/currency';
 import { useViewings, useCreateViewing, useUpdateViewing, usePropertySearch, useViewingOptions, type ViewingRow, type ViewingRange, type PropertyOption } from '@/hooks/useViewings';
 import { includeDraftInterest, interestInput, viewingSelectionText, type ViewingInterestInput } from '@/lib/viewings/interests';
+import { claimableLeadName } from '@/lib/viewings/claimable';
 import { ViewingInterestPicker } from './ViewingInterestPicker';
 import { useLeadDetail, useLeadProjects, useManagers, useUpdateLead } from '@/hooks/useLeads';
 import { MEETING_TYPES, MEETING_TYPE_META, VIEWING_STATUS_META, viewingStatusLabel, viewingStatusTone, dayHeading, type MeetingType } from '@/lib/viewings/labels';
@@ -230,6 +231,11 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
     // «Хэлэлцэж буй гэрээ»: лидийн төлөвийг «Хэлэлцэж байна» болгоно — «Яригдаж буй гэрээ» тайланд шууд орно.
     const [negotiating, setNegotiating] = useState(false);
     const updateLead = useUpdateLead();
+    // Ирсэн уулзалтын утас хариуцагчгүй лидтэй таарсан (сервер 409 `claimable`): «Хариуцаж аваад бүртгэх»-ийг
+    // санал болгоно. Утас, төсөл солигдвол санал хүчингүй — түлхүүрээр тулгана.
+    const [claimOffer, setClaimOffer] = useState<{ key: string; name: string } | null>(null);
+    const claimKey = `${projectId}|${phone.replace(/\D/g, '')}`;
+    const claimName = walkIn && !leadId && claimOffer?.key === claimKey ? claimOffer.name : null;
     // «Сэжим (хаанаас ирсэн)»: жагсаалтгүй төсөлд товлохыг хаахгүй. Ачаалж байгаа / уншиж чадаагүй үед шинэ
     // харилцагчийн уулзалтыг илгээхгүй (сервер жагсаалттай төсөлд шаардана) — алдааг энд харуулж дахин оролдуулна.
     const referralQuery = useReferralSources({ inlineError: true });
@@ -249,7 +255,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
     const setType = setTypeOverride;
     const needsReferral = referralRequired(type, referralOptions.length);
 
-    const submit = async () => {
+    const submit = async (claim = false) => {
         if (!leadId && !projects.some(p => p.id === projectId)) { toast.error('Төсөл сонгоно уу'); return; }
         if (!leadId && !anonymous && !normalizeLeadName(name)) { toast.error(LEAD_NAME_OR_ANONYMOUS); return; }
         if (!leadId && anonymous && phone.replace(/\D/g, '').length < 8) { toast.error(ANONYMOUS_MEETING_PHONE); return; }
@@ -276,6 +282,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                 ...(referralOptions.some(item => item.id === referralId) ? { referral_source_id: referralId } : {}),
                 ...(advanceTerm ? { advance_payment_term: advanceTerm } : {}),
                 ...(remainderTerm ? { remainder_payment_term: remainderTerm } : {}),
+                ...(claim ? { claim_unassigned: true } : {}),
             });
             // Уулзалт хадгалагдсаны дараа лидийг тэмдэглэнэ; тэмдэглэж чадаагүй бол уулзалтыг дахин бүртгүүлэхгүй.
             let markFailed = false;
@@ -288,7 +295,10 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
             else toast.success(walkIn ? 'Ирсэн уулзалт бүртгэгдлээ' : 'Уулзалт товлогдлоо');
             onClose();
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй');
+            // Хариуцагчгүй лид: алдаа биш, дараагийн алхам — маягтыг хэвээр үлдээж товч санал болгоно.
+            const offered = walkIn && !leadId ? claimableLeadName(e) : null;
+            setClaimOffer(offered ? { key: claimKey, name: offered } : null);
+            if (!offered) toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй');
             // Жагсаалт хуучирсан байж болно (админ дөнгөж нэмсэн / архивласан): маягтыг хаалгүй шинэчилнэ.
             void referralQuery.refetch();
         }
@@ -422,11 +432,16 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
 
                 <Field label="Тэмдэглэл"><textarea aria-label="Тэмдэглэл" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Хаанаас мэдсэн (Facebook, ойрхон амьдардаг, танил…), юу сонирхсон…" className={cn(inputCls, 'h-auto resize-none py-2')} /></Field>
             </div>
-            <footer className="flex shrink-0 items-center gap-2 border-t border-border p-4">
-                <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring sm:h-[34px]">Болих</button>
-                <button type="button" disabled={create.isPending} onClick={() => void submit()} className="ml-auto inline-flex h-11 items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover disabled:opacity-60 focus-ring sm:h-[34px]">
-                    {create.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{walkIn ? 'Бүртгэх' : 'Товлох'}
-                </button>
+            <footer className="shrink-0 border-t border-border p-4">
+                {claimName && <p role="alert" className="mb-3 rounded-md bg-status-info-soft px-3 py-2 text-[12.5px] text-status-info">
+                    Энэ утастай лид (<span className="font-medium">{claimName}</span>) хариуцагчгүй байна. Хариуцаж аваад уулзалтаа бүртгэх үү? Холбогдох цаг товлох шаардлагагүй.
+                </p>}
+                <div className="flex items-center gap-2">
+                    <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring sm:h-[34px]">Болих</button>
+                    <button type="button" disabled={create.isPending} onClick={() => void submit(!!claimName)} className="ml-auto inline-flex h-11 items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover disabled:opacity-60 focus-ring sm:h-[34px]">
+                        {create.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{claimName ? 'Хариуцаж аваад бүртгэх' : walkIn ? 'Бүртгэх' : 'Товлох'}
+                    </button>
+                </div>
             </footer>
         </div>
     );

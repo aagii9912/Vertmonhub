@@ -4,10 +4,9 @@ import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
-import { ACTIVE_STATUSES } from '@/lib/leads/labels';
-import { logLeadActivity } from '@/lib/leads/activities';
+import { claimUnassignedLead } from '@/lib/leads/claim';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
-import { applyProjectScope, assertProjectManager, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 const ClaimSchema = z.object({ next_followup_at: z.string().datetime({ offset: true }) });
 
@@ -32,30 +31,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: 'Лид хариуцаж авахын тулд идэвхтэй борлуулалтын менежерийн бүртгэлтэй байна' }, { status: 403 });
         }
         const scope = await resolveSalesProjectScope(db, shop.id);
-        const { data: lead, error: readError } = await applyProjectScope(db.from('leads').select('id, project_id, sales_manager_name')
-            .eq('id', id).eq('shop_id', shop.id).is('deleted_at', null), scope).maybeSingle();
-        if (readError) throw readError;
-        // Хамт олны лидийг нууна (404); өөрийнх эсвэл хаагдсан бол доорх UPDATE 409 буцаана.
-        const owner = String(lead?.sales_manager_name ?? '').trim();
-        if (!lead || (scope.projectIds !== null && owner && owner !== scope.managerName)) {
-            return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
-        }
-        await assertProjectManager(db, shop.id, lead.project_id, identity.managerName);
-        const { data, error } = await applyProjectScope(db.from('leads').update({
-            sales_manager_name: identity.managerName,
-            next_followup_at: input.data.next_followup_at,
-            updated_at: new Date().toISOString(),
-        }).eq('id', id).eq('shop_id', shop.id).eq('project_id', lead.project_id).is('deleted_at', null)
-            .in('status', ACTIVE_STATUSES).or('sales_manager_name.is.null,sales_manager_name.eq.""'), scope)
-            .select('id').maybeSingle();
-        if (error) return NextResponse.json({ error: 'Лид хариуцаж авахад алдаа гарлаа' }, { status: 500 });
-        if (!data) return NextResponse.json({ error: 'Лидийг өөр хүн авсан, хаасан эсвэл олдсонгүй. Жагсаалтаа шинэчилнэ үү.' }, { status: 409 });
-        const activity = await logLeadActivity(db, {
-            shopId: shop.id, leadId: id, type: 'manager', createdBy: uid,
-            createdByName: identity.managerName, content: `${identity.managerName} лидийг хариуцаж авч, холбогдох цагаа товлов`,
-            meta: { action: 'claim', to: identity.managerName, next_followup_at: input.data.next_followup_at },
+        const result = await claimUnassignedLead(db, {
+            shopId: shop.id, leadId: id, userId: uid, managerName: identity.managerName, scope,
+            nextFollowupAt: input.data.next_followup_at,
+            activity: {
+                content: `${identity.managerName} лидийг хариуцаж авч, холбогдох цагаа товлов`,
+                meta: { next_followup_at: input.data.next_followup_at },
+            },
         });
-        return NextResponse.json({ success: true, ...(!activity ? { warning: 'Хариуцагч ба цаг хадгалагдсан. Харин үйл ажиллагааны түүхийг хадгалж чадсангүй.' } : {}) });
+        if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+        return NextResponse.json({ success: true, ...(!result.activityLogged ? { warning: 'Хариуцагч ба цаг хадгалагдсан. Харин үйл ажиллагааны түүхийг хадгалж чадсангүй.' } : {}) });
     } catch (error) {
         if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         return safeErrorResponse(error, 'Лид хариуцаж авахад алдаа гарлаа');
