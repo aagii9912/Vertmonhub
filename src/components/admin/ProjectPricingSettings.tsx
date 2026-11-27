@@ -2,7 +2,7 @@
 
 import { useId, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileSpreadsheet, ListPlus, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, FileSpreadsheet, ListPlus, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { dashboardJson, dashboardMutate, DashboardApiError } from '@/lib/api/dashboardFetch';
 import { Button } from '@/components/ui/Button';
@@ -17,6 +17,7 @@ import { PricingImportPanel } from './PricingImportPanel';
 type Overview = { lists: PriceListOverview[] };
 type RuleForm = { [K in keyof PricingRule]: string };
 const advanceValid = (value: number) => Number.isFinite(value) && value >= 0 && value <= 100 && Math.abs(value * 100 - Math.round(value * 100)) < 1e-6;
+const ALL_ROWS = '*';
 const emptyRule = (): RuleForm => ({ block: '', model: '', floor_min: '', floor_max: '', payment_condition: '', price_per_sqm: '', advance_percent: '' });
 const ruleForm = (rule: PricingRule): RuleForm => Object.fromEntries(Object.entries(rule).map(([key, value]) => [key, value === null ? '' : String(value)])) as RuleForm;
 const fields: Array<{ key: keyof RuleForm; label: string; numeric?: boolean }> = [
@@ -102,11 +103,27 @@ function PricingEditor({ shopId, list, others, onSaved }: { shopId: string; list
     const [confirmed, setConfirmed] = useState(initial.inventory_area_confirmed);
     const [rows, setRows] = useState<RuleForm[]>(initial.rules.map(ruleForm));
     const [importing, setImporting] = useState(false);
-    const blockRows = useMemo(() => {
-        const counts = new Map<string, number>();
-        for (const row of rows) if (row.block.trim()) counts.set(pricingKey(row.block), (counts.get(pricingKey(row.block)) ?? 0) + 1);
-        return counts;
+    // The list by block: a list of a project like Mandala Garden covers many blocks, so the rows are edited one block at a time.
+    const blocks = useMemo(() => {
+        const found = new Map<string, { key: string; name: string; rows: number; models: Set<string>; missing: number }>();
+        for (const row of rows) {
+            const name = row.block.trim();
+            if (!name) continue;
+            const block = found.get(pricingKey(name)) ?? { key: pricingKey(name), name, rows: 0, models: new Set<string>(), missing: 0 };
+            block.rows++;
+            if (row.model.trim()) block.models.add(pricingKey(row.model));
+            if (row.advance_percent.trim() === '') block.missing++;
+            found.set(block.key, block);
+        }
+        return [...found.values()].sort((a, b) => a.name.localeCompare(b.name, 'mn', { numeric: true }));
     }, [rows]);
+    const blockRows = useMemo(() => new Map(blocks.map(block => [block.key, block.rows])), [blocks]);
+    const several = blocks.length > 1;
+    /** A block key, ALL_ROWS, or null = only the block cards (the start for a list of several blocks). */
+    const [chosenView, setChosenView] = useState<string | null>(null);
+    const view = !several ? ALL_ROWS : chosenView === ALL_ROWS || blocks.some(block => block.key === chosenView) ? chosenView : null;
+    const viewBlock = blocks.find(block => block.key === view) ?? null;
+    const [newBlock, setNewBlock] = useState('');
     // Rows of one payment condition share an advance, so it is entered once per condition (238 imported rows otherwise).
     const conditionGroups = useMemo(() => {
         const groups = new Map<string, { label: string; rows: number; missing: number; values: Set<string> }>();
@@ -125,6 +142,14 @@ function PricingEditor({ shopId, list, others, onSaved }: { shopId: string; list
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [conflict, setConflict] = useState(false);
+
+    function addBlock() {
+        const name = newBlock.trim();
+        if (!name || rows.length >= 500) return;
+        // An existing block is opened; a new one starts with its first row.
+        if (!blocks.some(block => block.key === pricingKey(name))) { setRows(previous => [...previous, { ...emptyRule(), block: name }]); setReviewed(false); }
+        setChosenView(pricingKey(name)); setNewBlock('');
+    }
 
     function changeRow(index: number, key: keyof RuleForm, value: string) {
         setReviewed(false);
@@ -203,19 +228,46 @@ function PricingEditor({ shopId, list, others, onSaved }: { shopId: string; list
             <label htmlFor={`${id}-until`} className="space-y-1 text-sm">Дуусах огноо<Input id={`${id}-until`} type="date" value={until} onChange={event => { setUntil(event.target.value); setReviewed(false); }} /></label>
         </div>
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmed} onChange={event => { setConfirmed(event.target.checked); setReviewed(false); }} className="mt-1" /><span>Одоогийн нөөцийн талбайгаар тооцохыг баталсан. Шинэчилсэн талбай байхгүй эсвэл 0 бол борлуулах, дараа нь гэрээлсэн талбайг ашиглана.</span></label>
-        <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px] border-collapse text-sm">
-                <thead><tr>{fields.map(field => <th key={field.key} className="border-b border-border px-1 pb-2 text-left font-medium">{field.label}</th>)}<th className="border-b border-border"><span className="sr-only">Устгах</span></th></tr></thead>
-                <tbody>{rows.map((row, index) => <tr key={index}>
-                    {fields.map(field => <td key={field.key} className="px-1 py-2"><Input aria-label={`${index + 1}-р мөр ${field.label}`} value={row[field.key]} onChange={event => changeRow(index, field.key, event.target.value)} inputMode={field.numeric ? 'decimal' : 'text'} className={field.numeric ? 'num min-w-20' : 'min-w-20'} /></td>)}
-                    <td><Button type="button" variant="ghost" aria-label={`${index + 1}-р үнийн мөр устгах`} disabled={saving} onClick={() => { setRows(previous => previous.filter((_, position) => position !== index)); setReviewed(false); }}><Trash2 className="size-4" /></Button></td>
-                </tr>)}</tbody>
-            </table>
-        </div>
+        {several && <div className="space-y-2">
+            <h3 className="text-sm font-medium">Блокууд</h3>
+            <div role="group" aria-label="Блок сонгох" className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] items-start gap-2">
+                {blocks.map(block => <button key={block.key} type="button" aria-pressed={view === block.key} aria-label={`${block.name} блокийн мөрүүд`}
+                    onClick={() => setChosenView(block.key)}
+                    className={`rounded-xl border bg-surface p-3 text-left transition-colors hover:border-border-strong ${view === block.key ? 'border-brand' : 'border-border'}`}>
+                    <span className="flex items-center justify-between gap-2 text-sm font-semibold">{block.name}<ChevronRight aria-hidden className={`size-4 ${view === block.key ? 'text-brand-strong' : 'text-muted-foreground'}`} /></span>
+                    <span className="mt-1.5 block text-xs text-muted-foreground"><span className="num">{block.rows}</span> мөр · <span className="num">{block.models.size}</span> загвар</span>
+                    {block.missing > 0 && <Badge variant="pending" className="mt-1.5">Урьдчилгаа дутуу · {block.missing}</Badge>}
+                </button>)}
+                <button type="button" aria-pressed={view === ALL_ROWS} onClick={() => setChosenView(ALL_ROWS)}
+                    className={`rounded-xl border border-dashed p-3 text-left text-sm transition-colors hover:border-border-strong ${view === ALL_ROWS ? 'border-brand' : 'border-border'}`}>
+                    <span className="font-semibold">Бүх мөр</span>
+                    <span className="mt-1.5 block text-xs text-muted-foreground"><span className="num">{rows.length}</span> мөр нэг хүснэгтээр</span>
+                </button>
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+                <label htmlFor={`${id}-new-block`} className="space-y-1 text-sm">Шинэ блок
+                    <Input id={`${id}-new-block`} value={newBlock} maxLength={50} placeholder="Жишээ: 203" className="w-40"
+                        onChange={event => setNewBlock(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addBlock(); } }} /></label>
+                <Button type="button" variant="secondary" disabled={saving || !newBlock.trim() || rows.length >= 500} onClick={addBlock}><Plus className="size-4" />Блок нэмэх</Button>
+            </div>
+        </div>}
+        {view === null ? <p className="text-sm text-muted-foreground">Блокоо сонгож үнийн мөрүүдийг засна. Доорх хугацаа, урьдчилгаа, идэвхжүүлэлт жагсаалтын бүх блокт хамаарна.</p>
+            : <div className="space-y-2">
+                {viewBlock && <h3 className="text-sm font-medium">{viewBlock.name} блок <span className="font-normal text-muted-foreground">· <span className="num">{viewBlock.rows}</span> мөр</span></h3>}
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[800px] border-collapse text-sm">
+                        <thead><tr>{fields.filter(field => !viewBlock || field.key !== 'block').map(field => <th key={field.key} className="border-b border-border px-1 pb-2 text-left font-medium">{field.label}</th>)}<th className="border-b border-border"><span className="sr-only">Устгах</span></th></tr></thead>
+                        <tbody>{rows.map((row, index) => viewBlock && pricingKey(row.block) !== viewBlock.key ? null : <tr key={index}>
+                            {fields.filter(field => !viewBlock || field.key !== 'block').map(field => <td key={field.key} className="px-1 py-2"><Input aria-label={`${index + 1}-р мөр ${field.label}`} value={row[field.key]} onChange={event => changeRow(index, field.key, event.target.value)} inputMode={field.numeric ? 'decimal' : 'text'} className={field.numeric ? 'num min-w-20' : 'min-w-20'} /></td>)}
+                            <td><Button type="button" variant="ghost" aria-label={`${index + 1}-р үнийн мөр устгах`} disabled={saving} onClick={() => { setRows(previous => previous.filter((_, position) => position !== index)); setReviewed(false); }}><Trash2 className="size-4" /></Button></td>
+                        </tr>)}</tbody>
+                    </table>
+                </div>
+            </div>}
         {!rows.length && <p className="text-sm text-muted-foreground">Баталсан үнийн мөр нэмнэ үү.</p>}
         <p className="text-xs text-muted-foreground">Хоосон үнийн нөхцөлийг мөр болгон нэмэхгүй. «10–30%» зэрэг нөхцөлийн эхний урьдчилгааг шошгоос таахгүй; баталсан эхний хувийг тусад нь оруулна.</p>
         <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" disabled={saving || rows.length >= 500} onClick={() => { setRows(previous => [...previous, emptyRule()]); setReviewed(false); }}><Plus className="size-4" />Үнийн мөр нэмэх</Button>
+            <Button type="button" variant="secondary" disabled={saving || rows.length >= 500} onClick={() => { setRows(previous => [...previous, { ...emptyRule(), block: viewBlock?.name ?? '' }]); if (view === null) setChosenView(ALL_ROWS); setReviewed(false); }}><Plus className="size-4" />Үнийн мөр нэмэх</Button>
             {!importing && <Button type="button" variant="secondary" disabled={saving || conflict} onClick={() => setImporting(true)}><FileSpreadsheet className="size-4" />Excel-ээс оруулах</Button>}
         </div>
         {importing && <PricingImportPanel shopId={shopId} currentBlocks={blockRows} onCancel={() => setImporting(false)} onApply={({ rules, files }) => {

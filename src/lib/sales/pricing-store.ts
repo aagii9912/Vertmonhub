@@ -11,7 +11,10 @@ import {
     calculateListPricing, inventoryArea, inventoryFloor, priceListConflict, pricingKey,
     type PriceListOverview, type PricingConfig, type PricingRetireInput, type PricingSaveInput, type PricingSelection, type PricingResult,
 } from './pricing';
-import { diffPricingRules, pricingValidity, summarizePriceLists, withArchiveTimes, type PricingSheet, type PricingVersionSummary } from './pricing-history';
+import {
+    buildPricingPhases, diffPricingRules, pricingValidity, summarizePriceLists, withArchiveTimes,
+    type PricingBlockRow, type PricingSheet, type PricingSheetVersion, type PricingVersionSummary,
+} from './pricing-history';
 
 export class PricingSelectionError extends ProjectScopeError {
     constructor(message: string, status = 400) { super(status, message); }
@@ -134,33 +137,54 @@ async function loadActivatedVersion(db: SupabaseClient, shopId: string, id: stri
     return configRow(data);
 }
 
-/**
- * Read only. Shows one list: the requested one, else the first list with an active price. Without a version
- * its active version is shown; each version is compared with the one it replaced in the same list.
- */
-export async function loadPricingSheet(db: SupabaseClient, shopId: string, options: { list?: string | null; version?: number | null; asOf?: string } = {}): Promise<PricingSheet> {
-    const asOf = options.asOf ?? ubDateStr();
-    const history = await loadPricingHistory(db, shopId);
-    const lists = summarizePriceLists(history, asOf);
-    const list = options.list ? lists.find(item => item.key === options.list) : lists.find(item => item.active_version !== null) ?? lists[0];
-    if (!list) {
-        if (options.list || options.version) throw new PricingSelectionError(options.list ? 'Үнийн жагсаалт олдсонгүй' : 'Үнийн хувилбар олдсонгүй', 404);
-        return { as_of: asOf, lists, history, selected: null };
-    }
-    const versions = history.filter(row => row.list_key === list.key).sort((a, b) => b.version - a.version);
-    const index = options.version ? versions.findIndex(row => row.version === options.version) : versions.findIndex(row => row.status === 'active');
-    if (options.version && index < 0) throw new PricingSelectionError('Үнийн хувилбар олдсонгүй', 404);
-    if (index < 0) return { as_of: asOf, lists, history, selected: null };
+/** One activated version with its rules compared with the version it replaced in the same list. */
+async function loadSheetVersion(db: SupabaseClient, shopId: string, versions: readonly PricingVersionSummary[], index: number, asOf: string): Promise<PricingSheetVersion> {
     const summary = versions[index], earlier = versions[index + 1] ?? null;
     const [config, previous] = await Promise.all([
         loadActivatedVersion(db, shopId, summary.id),
         earlier ? loadActivatedVersion(db, shopId, earlier.id) : Promise.resolve(null),
     ]);
-    const diff = diffPricingRules(config.rules, previous?.rules ?? null);
-    return { as_of: asOf, lists, history, selected: {
+    return {
         ...summary, source: config.source, valid_from: config.valid_from, valid_until: config.valid_until,
-        validity: pricingValidity(config, asOf), previous_version: earlier?.version ?? null, ...diff,
-    } };
+        validity: pricingValidity(config, asOf), previous_version: earlier?.version ?? null, ...diffPricingRules(config.rules, previous?.rules ?? null),
+    };
+}
+
+/** Block × kind counts of the register (`property_block_summary`: one row per phase, block and category). */
+async function loadBlockRows(db: SupabaseClient, shopId: string): Promise<PricingBlockRow[]> {
+    try {
+        return await fetchAllRows<PricingBlockRow>((from, to) => db.from('property_block_summary')
+            .select('phase,block,category,total_units,available_units').eq('shop_id', shopId)
+            .order('phase').order('block').order('category').range(from, to));
+    } catch { throw new PricingSelectionError('Блокийн мэдээлэл уншиж чадсангүй. Дахин оролдоно уу', 503); }
+}
+
+/**
+ * Read only. Without a version: every list's active version and the project's blocks (the block view).
+ * With a version: that archived or active version of the list (`list`, else the first list with an active
+ * price), compared with the one it replaced in the same list.
+ */
+export async function loadPricingSheet(db: SupabaseClient, shopId: string, options: { list?: string | null; version?: number | null; asOf?: string } = {}): Promise<PricingSheet> {
+    const asOf = options.asOf ?? ubDateStr();
+    const history = await loadPricingHistory(db, shopId);
+    const lists = summarizePriceLists(history, asOf);
+    const versionsOf = (key: string) => history.filter(row => row.list_key === key).sort((a, b) => b.version - a.version);
+    const list = options.list ? lists.find(item => item.key === options.list) : lists.find(item => item.active_version !== null) ?? lists[0];
+    if (!list && (options.list || options.version)) throw new PricingSelectionError(options.list ? 'Үнийн жагсаалт олдсонгүй' : 'Үнийн хувилбар олдсонгүй', 404);
+    if (options.version && list) {
+        const versions = versionsOf(list.key);
+        const index = versions.findIndex(row => row.version === options.version);
+        if (index < 0) throw new PricingSelectionError('Үнийн хувилбар олдсонгүй', 404);
+        return { as_of: asOf, lists, history, selected: await loadSheetVersion(db, shopId, versions, index, asOf), active: [], phases: [] };
+    }
+    const [active, blocks] = await Promise.all([
+        Promise.all(lists.filter(item => item.active_version !== null).map(item => {
+            const versions = versionsOf(item.key);
+            return loadSheetVersion(db, shopId, versions, versions.findIndex(row => row.status === 'active'), asOf);
+        })),
+        loadBlockRows(db, shopId),
+    ]);
+    return { as_of: asOf, lists, history, selected: active.find(version => version.list_key === list?.key) ?? null, active, phases: buildPricingPhases(blocks, active) };
 }
 
 function saveError(error: { code?: string } | null, fallback: string): PricingSelectionError {

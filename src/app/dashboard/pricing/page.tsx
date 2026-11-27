@@ -1,29 +1,26 @@
 'use client';
 
-import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, ArrowLeft, BadgePercent, PencilLine } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModuleAccess } from '@/hooks/useModuleAccess';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
-import type { PricingSheet, PricingValidity } from '@/lib/sales/pricing-history';
+import { dashboardJson } from '@/lib/api/dashboardFetch';
+import { pricingKey, type PriceListOverview } from '@/lib/sales/pricing';
+import type { PricingSheet } from '@/lib/sales/pricing-history';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Alert } from '@/components/ui/Alert';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { DateText } from '@/components/ui/DateText';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs';
+import { PricingBlocksView } from '@/components/pricing/PricingBlocksView';
 import { PricingVersionView, pricingDay } from '@/components/pricing/PricingVersionView';
 import { ProjectPricingSettings } from '@/components/admin/ProjectPricingSettings';
 
 type Tab = 'current' | 'archive' | 'edit';
-const PRICE_LIST_STATE: Record<PricingValidity, { label: string; variant: 'success' | 'pending' | 'danger' }> = {
-    valid: { label: 'Хүчинтэй', variant: 'success' },
-    upcoming: { label: 'Эхлээгүй', variant: 'pending' },
-    expired: { label: 'Хугацаа дууссан', variant: 'danger' },
-};
 
 /** One list's sheet: its active version, or `version` from its archive. No list = the project's first list with an active price. */
 function usePricingSheet(list: string | null, version: number | null, enabled = true) {
@@ -47,45 +44,41 @@ export default function PricingPage() {
     // Tied to the project it was opened in: switching projects returns to the archive list and the first price list.
     const [opened, setOpened] = useState<{ shopId: string; list: string; version: number } | null>(null);
     const archived = opened && opened.shopId === shop?.id ? opened : null;
-    const [chosen, setChosen] = useState<{ shopId: string; list: string } | null>(null);
-    const list = chosen && chosen.shopId === shop?.id ? chosen.list : null;
-    const current = usePricingSheet(list, null);
+    const current = usePricingSheet(null, null);
     const detail = usePricingSheet(archived?.list ?? null, archived?.version ?? null, archived !== null);
     const history = current.data?.history ?? [];
     const archive = history.filter(row => row.status === 'archived');
     const lists = current.data?.lists ?? [];
-    // A project with one price list looks as before: no list chooser, no list column.
+    // A project with one price list never names it: no list column, no list name beside a price.
     const several = lists.length > 1;
-    const shown = current.data?.selected?.list_key ?? list ?? lists[0]?.key ?? null;
-    const shownList = lists.find(item => item.key === shown) ?? null;
+    const phases = current.data?.phases ?? [];
+    // Administrators also see which blocks have a saved draft (the editor's own data, shared by query key).
+    const editor = useQuery({
+        queryKey: ['project-pricing', shop?.id], enabled: isSuperAdmin && !!shop?.id,
+        queryFn: () => dashboardJson<{ lists?: PriceListOverview[] }>('/api/admin/pricing', { shopId: shop!.id }),
+        staleTime: Infinity, refetchOnWindowFocus: false, meta: { inlineError: true },
+    });
+    const draftBlocks = useMemo(() => new Map((editor.data?.lists ?? [])
+        .flatMap(item => item.latest?.status === 'draft' ? item.latest.rules.map(rule => [pricingKey(rule.block), rule.block.trim()] as const) : [])), [editor.data]);
 
     return <div className="mx-auto max-w-6xl space-y-6">
         <PageHeader
             title="Үнэ, төлбөрийн нөхцөл"
-            subtitle="Төслийн баталсан хүчинтэй үнэ, урьдчилгааны нөхцөл. Өөр хугацаатай үнэ тусдаа жагсаалтаар харагдана; үнэ өөрчлөгдөхөд өмнөх хувилбар архивт хэвээр хадгалагдана."
+            subtitle="Блок бүрийн баталсан хүчинтэй үнэ, урьдчилгааны нөхцөл. Үнэ өөрчлөгдөхөд өмнөх хувилбар архивт хэвээр хадгалагдана."
         />
         <Tabs value={tab} onValueChange={value => setTab(value as Tab)}>
             <TabsList>
-                <TabsTrigger value="current"><BadgePercent />Хүчинтэй үнэ</TabsTrigger>
+                <TabsTrigger value="current"><BadgePercent />Блокоор</TabsTrigger>
                 <TabsTrigger value="archive"><Archive />Архив{current.data ? ` (${archive.length})` : ''}</TabsTrigger>
                 {isSuperAdmin && <TabsTrigger value="edit"><PencilLine />Засах</TabsTrigger>}
             </TabsList>
 
             <TabsContent value="current" className="mt-4">
-                {!current.data ? <LoadState query={current} /> : <div className="space-y-4">
-                    {several && <div role="group" aria-label="Үнийн жагсаалт" className="flex flex-wrap gap-2">
-                        {lists.map(item => <Button key={item.key} type="button" size="sm" variant={item.key === shown ? 'primary' : 'secondary'}
-                            aria-pressed={item.key === shown} onClick={() => shop && setChosen({ shopId: shop.id, list: item.key })}>
-                            {item.name}
-                            <Badge variant={item.validity ? PRICE_LIST_STATE[item.validity].variant : 'neutral'} className="ml-1.5">{item.validity ? PRICE_LIST_STATE[item.validity].label : 'Идэвхгүй'}</Badge>
-                        </Button>)}
-                    </div>}
-                    {current.data.selected ? <PricingVersionView version={current.data.selected} showList={several} />
-                        : shownList ? <div className="rounded-xl border border-border bg-surface"><EmptyState icon={<BadgePercent />} title={`«${shownList.name}» жагсаалтад идэвхтэй үнэ алга`}
-                            description="Энэ жагсаалтын үнийг идэвхгүй болгосон. Өмнөх хувилбарууд «Архив» табт байна." /></div>
+                {!current.data ? <LoadState query={current} />
+                    : phases.some(phase => phase.blocks.length) || (isSuperAdmin && draftBlocks.size > 0) ? <PricingBlocksView key={shop?.id} phases={phases} active={current.data.active}
+                        draftBlocks={isSuperAdmin ? draftBlocks : undefined} several={several} canEdit={isSuperAdmin} />
                         : <div className="rounded-xl border border-border bg-surface"><EmptyState icon={<BadgePercent />} title="Баталсан үнэ байхгүй"
                             description={isSuperAdmin ? '«Засах» табаас үнийн мөрүүдийг оруулж, хянаад идэвхжүүлнэ.' : 'Удирдлага үнийг баталж идэвхжүүлсний дараа энд харагдана.'} /></div>}
-                </div>}
             </TabsContent>
 
             <TabsContent value="archive" className="mt-4">

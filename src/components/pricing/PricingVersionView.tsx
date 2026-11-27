@@ -9,7 +9,7 @@ import { formatMNT } from '@/lib/utils/currency';
 import { pricingKey } from '@/lib/sales/pricing';
 import { pivotPricingRows, type PricingRuleDiff, type PricingSheetVersion, type PricingValidity } from '@/lib/sales/pricing-history';
 
-const VALIDITY: Record<PricingValidity, { label: string; variant: 'success' | 'pending' | 'danger' }> = {
+export const PRICING_VALIDITY: Record<PricingValidity, { label: string; variant: 'success' | 'pending' | 'danger' }> = {
     valid: { label: 'Хүчинтэй', variant: 'success' },
     upcoming: { label: 'Эхлээгүй', variant: 'pending' },
     expired: { label: 'Хугацаа дууссан', variant: 'danger' },
@@ -22,7 +22,7 @@ const percent = (value: number | null) => value === null ? '—' : `${value}%`;
 
 function PricingStatusBadge({ version }: { version: Pick<PricingSheetVersion, 'status' | 'validity'> }) {
     if (version.status === 'archived') return <Badge variant="neutral" size="md">Архивласан</Badge>;
-    const state = VALIDITY[version.validity];
+    const state = PRICING_VALIDITY[version.validity];
     return <Badge variant={state.variant} size="md">{state.label}</Badge>;
 }
 
@@ -43,12 +43,17 @@ function PriceCell({ row, perCellAdvance }: { row: PricingRuleDiff | undefined; 
     </td>;
 }
 
-/** One activated version: its terms, rules and the difference from the version it replaced. */
-export function PricingVersionView({ version, showList = false }: { version: PricingSheetVersion; showList?: boolean }) {
+/**
+ * One activated version: its terms, rules and the difference from the version it replaced.
+ * `only` narrows it to one block (the block view): that block's rows, counts and removed rows, without the block column.
+ */
+export function PricingVersionView({ version, showList = false, block: only = null }: { version: PricingSheetVersion; showList?: boolean; block?: string | null }) {
     const compared = version.previous_version !== null;
-    const changed = version.rows.filter(row => row.change === 'changed').length;
-    const added = version.rows.filter(row => row.change === 'added').length;
-    const table = useMemo(() => pivotPricingRows(version.rows), [version.rows]);
+    const rows = useMemo(() => only === null ? version.rows : version.rows.filter(row => pricingKey(row.rule.block) === pricingKey(only)), [version.rows, only]);
+    const removed = useMemo(() => only === null ? version.removed : version.removed.filter(rule => pricingKey(rule.block) === pricingKey(only)), [version.removed, only]);
+    const changed = rows.filter(row => row.change === 'changed').length;
+    const added = rows.filter(row => row.change === 'added').length;
+    const table = useMemo(() => pivotPricingRows(rows), [rows]);
     const [block, setBlock] = useState<string | null>(null);
     const groups = block === null ? table.groups : table.groups.filter(group => pricingKey(group.block) === pricingKey(block));
     return <div className="space-y-4">
@@ -63,7 +68,7 @@ export function PricingVersionView({ version, showList = false }: { version: Pri
                 <Meta label="Идэвхжүүлсэн"><DateText value={version.activated_at} format="datetime" />{version.activated_by ? ` · ${version.activated_by}` : ''}</Meta>
                 {version.status === 'archived'
                     ? <Meta label="Архивт шилжсэн"><DateText value={version.archived_at} format="datetime" /></Meta>
-                    : <Meta label="Үнийн мөр"><span className="num">{version.rows.length}</span></Meta>}
+                    : <Meta label="Үнийн мөр"><span className="num">{rows.length}</span></Meta>}
             </dl>
             {version.status === 'active' && version.validity !== 'valid' && <Alert variant="warning" className="mt-4">
                 {version.validity === 'expired'
@@ -72,12 +77,12 @@ export function PricingVersionView({ version, showList = false }: { version: Pri
             </Alert>}
             <p className="mt-4 text-sm text-muted-foreground">
                 {compared
-                    ? `Хувилбар ${version.previous_version}-тэй харьцуулав: ${changed} мөр өөрчлөгдсөн · ${added} шинэ · ${version.removed.length} хасагдсан.`
+                    ? `Хувилбар ${version.previous_version}-тэй харьцуулав: ${changed} мөр өөрчлөгдсөн · ${added} шинэ · ${removed.length} хасагдсан.`
                     : 'Анхны баталсан хувилбар — харьцуулах өмнөх үнэ байхгүй.'}
             </p>
         </div>
 
-        {table.blocks.length > 1 && <div role="group" aria-label="Блокоор шүүх" className="flex flex-wrap gap-2">
+        {only === null && table.blocks.length > 1 && <div role="group" aria-label="Блокоор шүүх" className="flex flex-wrap gap-2">
             {[null, ...table.blocks].map(item => <Button key={item ?? 'all'} type="button" size="sm" variant={block === item ? 'primary' : 'secondary'}
                 aria-pressed={block === item} onClick={() => setBlock(item)}>{item ?? 'Бүх блок'}</Button>)}
         </div>}
@@ -86,7 +91,7 @@ export function PricingVersionView({ version, showList = false }: { version: Pri
             <table className="w-full min-w-[640px] border-collapse text-sm">
                 <caption className="sr-only">Хувилбар {version.version}-ийн м² үнэ, төлбөрийн нөхцөлөөр</caption>
                 <thead><tr className="text-left text-xs text-muted-foreground">
-                    <th scope="col" className="border-b border-border px-4 py-2.5 font-medium">Блок</th>
+                    {only === null && <th scope="col" className="border-b border-border px-4 py-2.5 font-medium">Блок</th>}
                     <th scope="col" className="border-b border-border px-4 py-2.5 font-medium">Загвар</th>
                     <th scope="col" className="border-b border-border px-4 py-2.5 font-medium">Давхар</th>
                     {table.conditions.map(condition => <th key={condition.key} scope="col" className="border-b border-border px-4 py-2.5 text-right font-medium">
@@ -95,7 +100,7 @@ export function PricingVersionView({ version, showList = false }: { version: Pri
                     </th>)}
                 </tr></thead>
                 <tbody>{groups.map(group => <tr key={`${group.block}|${group.model}|${group.floor_min}|${group.floor_max}`} className="border-b border-border last:border-b-0">
-                    <td className="px-4 py-2.5">{group.block}</td>
+                    {only === null && <td className="px-4 py-2.5">{group.block}</td>}
                     <td className="px-4 py-2.5">{group.model}</td>
                     <td className="num px-4 py-2.5">{floors(group)}</td>
                     {table.conditions.map(condition => <PriceCell key={condition.key} row={group.cells[condition.key]} perCellAdvance={condition.advance_percent === 'mixed'} />)}
@@ -104,10 +109,10 @@ export function PricingVersionView({ version, showList = false }: { version: Pri
         </div>
         <p className="text-xs text-muted-foreground">Нүд бүр м² үнэ. Хоосон нүд — тухайн байранд энэ нөхцөл байхгүй.{compared ? ' «Шинэ» — өмнөх хувилбарт байгаагүй; зураастай нь өмнөх үнэ.' : ''}</p>
 
-        {version.removed.length > 0 && <div className="rounded-xl border border-border bg-surface p-5">
+        {removed.length > 0 && <div className="rounded-xl border border-border bg-surface p-5">
             <h3 className="text-sm font-semibold">Хасагдсан мөр</h3>
             <p className="mt-1 text-xs text-muted-foreground">Хувилбар {version.previous_version}-д байсан, энэ хувилбарт байхгүй үнэ. Давхарын зааг өөрчлөгдсөн мөр ч энд гарна.</p>
-            <ul className="mt-3 space-y-1 text-sm">{version.removed.map((rule, index) => <li key={index} className="text-muted-foreground">
+            <ul className="mt-3 space-y-1 text-sm">{removed.map((rule, index) => <li key={index} className="text-muted-foreground">
                 {rule.block} · {rule.model} · <span className="num">{floors(rule)}</span> давхар · {rule.payment_condition}: <span className="num">{formatMNT(rule.price_per_sqm)}</span>/м², урьдчилгаа <span className="num">{percent(rule.advance_percent)}</span>
             </li>)}</ul>
         </div>}

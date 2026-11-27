@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { PricingSheet, PricingSheetVersion, PricingVersionSummary } from '@/lib/sales/pricing-history';
+import type { PricingPhase, PricingSheet, PricingSheetVersion, PricingVersionSummary } from '@/lib/sales/pricing-history';
 
 const api = vi.hoisted(() => ({ dashboardJson: vi.fn(), role: 'sales_manager' }));
 vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardJson: api.dashboardJson }));
@@ -24,7 +24,16 @@ const detail = (base: PricingVersionSummary, price: number): PricingSheetVersion
 });
 const history = [summary(2, 'active', null), summary(1, 'archived', '2026-10-20T02:00:00Z')];
 const mainList = { key: 'main', name: 'Үндсэн үнэ', active_version: 2, valid_from: '2026-10-01', valid_until: '2026-12-31', validity: 'valid' as const, archived: 1 };
-const sheet = (selected: PricingSheetVersion | null): PricingSheet => ({ as_of: '2026-10-22', lists: selected ? [mainList] : [], history: selected ? history : [], selected });
+const price = { list_key: 'main', list_name: 'Үндсэн үнэ', version: 2, validity: 'valid' as const, valid_from: '2026-10-01', valid_until: '2026-12-31' };
+const phases: PricingPhase[] = [{ name: 'Elysium Residence', blocks: [
+    { block: 'Б1', kinds: [{ category: 'residential', units: 110, available: 40, price }, { category: 'parking', units: 193, available: 100, price: null }] },
+    { block: 'Б2', kinds: [{ category: 'residential', units: 132, available: 60, price: null }] },
+] }];
+/** Default request: the block map with every list's active version; an archive request: that version only. */
+const sheet = (selected: PricingSheetVersion | null, archived = false): PricingSheet => ({
+    as_of: '2026-10-22', lists: selected ? [mainList] : [], history: selected ? history : [], selected,
+    active: selected && !archived ? [selected] : [], phases: selected && !archived ? phases : [],
+});
 
 const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PricingPage /></QueryClientProvider>);
 
@@ -32,14 +41,39 @@ beforeEach(() => {
     api.dashboardJson.mockReset();
     api.role = 'sales_manager';
     api.dashboardJson.mockImplementation(async (url: string) => url.endsWith('version=1')
-        ? sheet(detail(history[1], 4_000_000)) : sheet(detail(history[0], 4_200_000)));
+        ? sheet(detail(history[1], 4_000_000), true) : sheet(detail(history[0], 4_200_000)));
 });
 
-it('shows the valid price first and opens an archived version from the archive tab', async () => {
+it('shows the project by block with each kind price state, opens a block price and an archived version', async () => {
     renderPage();
-    expect(await screen.findByText('4,200,000₮')).toBeInTheDocument();
+    const block = await screen.findByRole('button', { name: 'Б1 блок' });
     expect(api.dashboardJson).toHaveBeenCalledWith('/api/dashboard/pricing');
     expect(screen.queryByRole('tab', { name: /Засах/ })).not.toBeInTheDocument();
+    // The map: phase, blocks, each kind with its count and whether it has a price. No price table yet.
+    expect(screen.getByRole('heading', { name: /Elysium Residence/ })).toHaveTextContent('2 блок');
+    expect(block).toHaveTextContent('Орон сууц · 110Хүчинтэй');
+    expect(block).toHaveTextContent('Зогсоол · 193Үнэ ороогүй');
+    expect(screen.getByRole('button', { name: 'Б2 блок' })).toHaveTextContent('Орон сууц · 132Үнэ ороогүй');
+    expect(screen.queryByText('4,200,000₮')).not.toBeInTheDocument();
+
+    fireEvent.click(block);
+    expect(await screen.findByText('4,200,000₮')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Б1 блок/ })).toHaveTextContent('Elysium Residence');
+    expect(screen.getByRole('region', { name: 'Б1 блок-ийн үнэ' })).toHaveTextContent('110 орон сууц · 40 чөлөөтэй');
+    // One price list: the list is never named. One block: no block column.
+    expect(screen.getByText('Хувилбар 2')).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Блок' })).not.toBeInTheDocument();
+    // Parking has no price in the system yet: said plainly, not shown as 0.
+    fireEvent.click(within(screen.getByRole('group', { name: 'Төрөл' })).getByRole('button', { name: /Зогсоол/ }));
+    expect(screen.getByText('Зогсоол-ын үнэ энд хараахан ороогүй')).toBeInTheDocument();
+    expect(screen.queryByText('4,200,000₮')).not.toBeInTheDocument();
+    // The other block of the phase is one click away; it has no approved price.
+    fireEvent.click(within(screen.getByRole('group', { name: /блок солих/ })).getByRole('button', { name: 'Б2' }));
+    expect(screen.getByText('Б2 блок-ийн орон сууцны баталсан үнэ алга')).toBeInTheDocument();
+    expect(screen.getByText('Удирдлага үнийг баталж идэвхжүүлсний дараа энд харагдана.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Бүх блок' }));
+    expect(await screen.findByRole('button', { name: 'Б1 блок' })).toBeInTheDocument();
+
     const archive = screen.getByRole('tab', { name: 'Архив (1)' });
     fireEvent.mouseDown(archive); fireEvent.click(archive);
     fireEvent.click(await screen.findByRole('button', { name: 'Хувилбар 1-ийг харах' }));
@@ -60,24 +94,32 @@ it('explains an empty price list and gives the editor tab only to super admins',
     expect(await screen.findByText('Үнийн засварлагч')).toBeInTheDocument();
 });
 
-it('with several price lists shows a list chooser and each list own price and archive', async () => {
+it('with several price lists names the list beside a block price, and shows an administrator the drafted blocks', async () => {
+    api.role = 'super_admin';
     const forest: PricingVersionSummary = { ...summary(1, 'active', null), id: 'f1', list_key: 'forest', list_name: 'Forest Garden тусгай үнэ', valid_until: '2026-10-15' };
-    const lists = [mainList, { key: 'forest', name: 'Forest Garden тусгай үнэ', active_version: 1, valid_from: '2026-10-01', valid_until: '2026-10-15', validity: 'expired' as const, archived: 0 }];
-    api.dashboardJson.mockImplementation(async (url: string): Promise<PricingSheet> => ({
-        as_of: '2026-10-22', lists, history: [...history, forest],
-        selected: url.includes('list=forest') ? { ...detail(forest, 5_000_000), validity: 'expired' } : detail(history[0], 4_200_000),
-    }));
+    const forestVersion: PricingSheetVersion = { ...detail(forest, 5_000_000), validity: 'expired', rows: [{ rule: { ...rule, block: '503', price_per_sqm: 5_000_000 }, change: null, previous: null }] };
+    const forestPrice = { list_key: 'forest', list_name: 'Forest Garden тусгай үнэ', version: 1, validity: 'expired' as const, valid_from: '2026-10-01', valid_until: '2026-10-15' };
+    const draftRule = { ...rule, block: '504' };
+    api.dashboardJson.mockImplementation(async (url: string) => url === '/api/admin/pricing'
+        ? { lists: [{ key: 'main', name: 'Үндсэн үнэ', latest: { status: 'draft', rules: [draftRule, { ...rule, block: 'Б2' }] }, active: null }] }
+        : { as_of: '2026-10-22', lists: [mainList, { ...mainList, key: 'forest', name: 'Forest Garden тусгай үнэ', active_version: 1, validity: 'expired' as const, archived: 0 }],
+            history: [...history, forest], selected: detail(history[0], 4_200_000), active: [detail(history[0], 4_200_000), forestVersion],
+            phases: [...phases, { name: null, blocks: [{ block: '503', kinds: [{ category: 'residential', units: 0, available: 0, price: forestPrice }] }] }] } satisfies PricingSheet);
     renderPage();
-    expect(await screen.findByText('4,200,000₮')).toBeInTheDocument();
-    expect(screen.getByText('Үндсэн үнэ · Хувилбар 2')).toBeInTheDocument();
-    const chooser = screen.getByRole('group', { name: 'Үнийн жагсаалт' });
-    expect(chooser).toHaveTextContent('Үндсэн үнэХүчинтэй');
-    expect(chooser).toHaveTextContent('Forest Garden тусгай үнэХугацаа дууссан');
-    fireEvent.click(screen.getByRole('button', { name: /Forest Garden тусгай үнэ/ }));
+    // Priced but not in the register yet, and a block that only has a draft: both are on the administrator's map.
+    const unregistered = await screen.findByRole('region', { name: 'Тоот бүртгэгдээгүй блок' });
+    expect(within(unregistered).getByRole('button', { name: '503-р блок' })).toHaveTextContent('Хугацаа дууссан');
+    expect(await within(unregistered).findByRole('button', { name: '504-р блок' })).toHaveTextContent('Ноорог');
+    expect(screen.getByRole('button', { name: 'Б2 блок' })).toHaveTextContent('Орон сууц · 132Ноорог');
+
+    fireEvent.click(within(unregistered).getByRole('button', { name: '503-р блок' }));
     expect(await screen.findByText('Forest Garden тусгай үнэ · Хувилбар 1')).toBeInTheDocument();
-    expect(api.dashboardJson).toHaveBeenCalledWith('/api/dashboard/pricing?list=forest');
     expect(screen.getByText('5,000,000₮')).toBeInTheDocument();
+    expect(screen.getByText('Тоотын бүртгэлд хараахан ороогүй')).toBeInTheDocument();
     expect(screen.getByText(/энэ жагсаалтын байранд уулзалтын үнийн санал тооцогдохгүй/)).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('group', { name: /блок солих/ })).getByRole('button', { name: '504' }));
+    expect(screen.getByText('Ноорог хадгалагдсан байна. «Засах» табаас хянаад идэвхжүүлнэ.')).toBeInTheDocument();
+
     const archive = screen.getByRole('tab', { name: 'Архив (1)' });
     fireEvent.mouseDown(archive); fireEvent.click(archive);
     expect(await screen.findByRole('columnheader', { name: 'Жагсаалт' })).toBeInTheDocument();

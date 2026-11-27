@@ -35,6 +35,68 @@ export interface PricingSheetVersion extends PricingVersionSummary {
     removed: PricingRule[];
 }
 
+/** Unit kinds of the register (`property_units.category`); anything else is shown as it is stored. */
+export type PricingBlockCategory = 'residential' | 'parking' | 'industry' | 'commercial';
+const CATEGORY_ORDER: readonly string[] = ['residential', 'parking', 'industry', 'commercial'];
+
+export interface PricingBlockKind {
+    category: string; units: number; available: number;
+    /** The active version that prices this kind in this block (apartments only, per m²); null = no price entered. */
+    price: { list_key: string; list_name: string; version: number; validity: PricingValidity; valid_from: string | null; valid_until: string | null } | null;
+}
+export interface PricingBlock { block: string; kinds: PricingBlockKind[] }
+/** `name` null = blocks that have a price but no unit in the register yet (Forest Garden 503 before its units are imported). */
+export interface PricingPhase { name: string | null; blocks: PricingBlock[] }
+export interface PricingBlockRow { phase: string | null; block: string | null; category: string | null; total_units: number | string | null; available_units: number | string | null }
+
+/**
+ * The price page's map of the project: phase → block → unit kind with its count and price state. Staff look
+ * a price up by block («201-р блокийн орон сууц»), and a project like Mandala Garden has dozens of blocks
+ * with parking and storage beside the apartments, so the page is organised by the register, not by price list.
+ * Phases with more apartments come first; in a phase apartment blocks come before garage and storage blocks.
+ */
+export function buildPricingPhases(rows: readonly PricingBlockRow[], active: readonly Pick<PricingSheetVersion, 'list_key' | 'list_name' | 'version' | 'validity' | 'valid_from' | 'valid_until' | 'rows'>[]): PricingPhase[] {
+    const priced = new Map<string, PricingBlockKind['price']>();
+    const pricedNames = new Map<string, string>();
+    for (const version of active) for (const { rule } of version.rows) {
+        const key = pricingKey(rule.block);
+        // A block priced by two lists (one after the other in time): the one valid today wins the badge.
+        if (!priced.has(key) || (version.validity === 'valid' && priced.get(key)!.validity !== 'valid')) {
+            priced.set(key, { list_key: version.list_key, list_name: version.list_name, version: version.version, validity: version.validity, valid_from: version.valid_from, valid_until: version.valid_until });
+        }
+        if (!pricedNames.has(key)) pricedNames.set(key, rule.block);
+    }
+    const phases = new Map<string, Map<string, PricingBlock>>();
+    const seen = new Set<string>();
+    for (const row of rows) {
+        const block = row.block?.trim();
+        if (!block) continue;
+        const phase = row.phase?.trim() || '';
+        const blocks = phases.get(phase) ?? new Map<string, PricingBlock>();
+        const entry = blocks.get(pricingKey(block)) ?? { block, kinds: [] };
+        const category = row.category?.trim() || 'other';
+        const kind = entry.kinds.find(item => item.category === category) ?? { category, units: 0, available: 0, price: null };
+        if (!entry.kinds.includes(kind)) entry.kinds.push(kind);
+        kind.units += Number(row.total_units) || 0;
+        kind.available += Number(row.available_units) || 0;
+        if (category === 'residential') { kind.price = priced.get(pricingKey(block)) ?? null; seen.add(pricingKey(block)); }
+        blocks.set(pricingKey(block), entry);
+        phases.set(phase, blocks);
+    }
+    const natural = (a: string, b: string) => a.localeCompare(b, 'mn', { numeric: true });
+    const kindRank = (kind: PricingBlockKind) => { const index = CATEGORY_ORDER.indexOf(kind.category); return index < 0 ? CATEGORY_ORDER.length : index; };
+    const apartments = (block: PricingBlock) => block.kinds.find(kind => kind.category === 'residential')?.units ?? 0;
+    const result: PricingPhase[] = [...phases].map(([name, blocks]) => ({
+        name: name || 'Ээлж тодорхойгүй',
+        blocks: [...blocks.values()].map(block => ({ ...block, kinds: [...block.kinds].sort((a, b) => kindRank(a) - kindRank(b)) }))
+            .sort((a, b) => Number(apartments(b) > 0) - Number(apartments(a) > 0) || natural(a.block, b.block)),
+    })).sort((a, b) => b.blocks.reduce((sum, block) => sum + apartments(block), 0) - a.blocks.reduce((sum, block) => sum + apartments(block), 0) || natural(a.name, b.name));
+    const unregistered = [...priced].filter(([key]) => !seen.has(key))
+        .map(([key, price]): PricingBlock => ({ block: pricedNames.get(key)!, kinds: [{ category: 'residential', units: 0, available: 0, price }] }))
+        .sort((a, b) => natural(a.block, b.block));
+    return unregistered.length ? [...result, { name: null, blocks: unregistered }] : result;
+}
+
 export interface PricingSheet {
     as_of: string;
     /** Lists with at least one activated version: the default list, then lists with an active price, then by name. */
@@ -43,6 +105,10 @@ export interface PricingSheet {
     history: PricingVersionSummary[];
     /** The shown list's active version (or the requested one); null when that list has no active price. */
     selected: PricingSheetVersion | null;
+    /** Every list's active version with its comparison: the block view takes each block's prices from here. Empty for an archive request. */
+    active: PricingSheetVersion[];
+    /** Phase → block → unit kind (see `buildPricingPhases`). Empty for an archive request. */
+    phases: PricingPhase[];
 }
 
 /** Same window as `calculatePricing`: outside it no quote is calculated. */

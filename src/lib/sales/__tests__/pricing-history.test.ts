@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { diffPricingRules, pricingValidity, sortPricingRules, summarizePriceLists, withArchiveTimes } from '../pricing-history';
+import { buildPricingPhases, diffPricingRules, pricingValidity, sortPricingRules, summarizePriceLists, withArchiveTimes } from '../pricing-history';
 import { assertPricingProjectAccess, loadPricingSheet } from '../pricing-store';
 import type { PricingRule } from '../pricing';
 
@@ -76,6 +76,35 @@ describe('pricing archive rules', () => {
             { key: 'old', name: 'Хуучин урамшуулал', active_version: null, valid_from: null, valid_until: null, validity: null, archived: 1 },
         ]);
     });
+
+    it('maps the project by phase, block and kind: apartment blocks first, a price badge per block, priced blocks without units last', () => {
+        const row = (phase: string | null, block: string, category: string, total_units: number, available_units = 0) => ({ phase, block, category, total_units, available_units });
+        const version = (list_key: string, validity: 'valid' | 'expired', blocks: string[]) => ({
+            list_key, list_name: list_key === 'main' ? 'Үндсэн үнэ' : 'Forest Garden тусгай үнэ', version: 1, validity, valid_from: '2026-11-01', valid_until: '2027-02-28',
+            rows: blocks.map(block => ({ rule: rule({ block }), change: null, previous: null })),
+        });
+        const phases = buildPricingPhases([
+            row('Zoo Garden', 'Г1485', 'parking', 375, 300), row('Zoo Garden', '1480', 'industry', 63), row('Zoo Garden', '1480', 'parking', 13),
+            row('Zoo Plus', 'Г1474', 'parking', 104), row('Zoo Plus', '202', 'residential', 120, 16), row('Zoo Plus', '201', 'parking', 96),
+            // PostgREST returns counts as numbers or strings; both add up.
+            row('Zoo Plus', '201', 'residential', '118' as unknown as number, '85' as unknown as number), row('Zoo Plus', '201', 'commercial', 42), row('Zoo Plus', '201', 'industry', 20),
+            row('Water Garden', '301', 'residential', 111), row(null, '999', 'residential', 1), row('Zoo Plus', '', 'residential', 5),
+        ], [version('main', 'valid', ['201', '202']), version('forest', 'expired', ['503']), version('forest', 'valid', ['201'])]);
+        // Phases by apartments (Zoo Plus 238, Water Garden 111, no-phase 1, Zoo Garden 0), then the priced block that has no unit yet.
+        expect(phases.map(phase => [phase.name, phase.blocks.map(block => block.block).join(' ')])).toEqual([
+            ['Zoo Plus', '201 202 Г1474'], ['Water Garden', '301'], ['Ээлж тодорхойгүй', '999'], ['Zoo Garden', '1480 Г1485'], [null, '503'],
+        ]);
+        const [b201, b202] = phases[0].blocks;
+        expect(b201.kinds.map(kind => [kind.category, kind.units, kind.available, kind.price?.list_key ?? null])).toEqual([
+            ['residential', 118, 85, 'main'], ['parking', 96, 0, null], ['industry', 20, 0, null], ['commercial', 42, 0, null],
+        ]);
+        expect(b202.kinds[0].price).toMatchObject({ list_key: 'main', validity: 'valid', valid_until: '2027-02-28' });
+        expect(phases[1].blocks[0].kinds[0].price).toBeNull();
+        expect(phases[4].blocks[0].kinds).toEqual([{ category: 'residential', units: 0, available: 0, price: expect.objectContaining({ list_key: 'forest', validity: 'expired' }) }]);
+        // Only apartments carry a price; a priced block's parking is not marked priced.
+        expect(phases.flatMap(phase => phase.blocks.flatMap(block => block.kinds)).filter(kind => kind.category !== 'residential' && kind.price)).toEqual([]);
+        expect(buildPricingPhases([], [])).toEqual([]);
+    });
 });
 
 type Row = { id: string; shop_id: string; list_key?: string; list_name?: string; version: number; status: string; created_at: string; created_by: string; archived_at?: string | null; config: Record<string, unknown> };
@@ -85,6 +114,7 @@ const ROWS: Row[] = [
     { id: 'c1', shop_id: 'shop', version: 1, status: 'archived', created_at: '2026-10-01T02:00:00Z', created_by: 'admin', config: config([rule()], '2026-10-01', '2026-10-31') },
 ];
 
+const BLOCKS = [{ phase: 'Elysium Residence', block: 'Б1', category: 'residential', total_units: 110, available_units: 40 }, { phase: 'Elysium Residence', block: 'Б1', category: 'parking', total_units: 193, available_units: 100 }];
 function database(rows = ROWS) {
     const calls: Array<{ table: string; select: string; filters: unknown[][] }> = [];
     const db = { from(table: string) {
@@ -96,7 +126,8 @@ function database(rows = ROWS) {
             eq: (column: string, value: unknown) => { call.filters.push(['eq', column, value]); return chain; },
             in: (column: string, value: unknown[]) => { call.filters.push(['in', column, value]); return table === 'user_profiles' ? Promise.resolve({ data: [{ id: 'admin', full_name: 'Болд' }], error: null }) : chain; },
             order: () => chain, limit: () => chain,
-            range: async () => ({ data: filtered().map(({ config: value, ...row }) => ({ ...row, source: value.source, valid_from: value.valid_from, valid_until: value.valid_until })), error: null }),
+            range: async () => table === 'property_block_summary' ? { data: BLOCKS, error: null }
+                : ({ data: filtered().map(({ config: value, ...row }) => ({ ...row, source: value.source, valid_from: value.valid_from, valid_until: value.valid_until })), error: null }),
             maybeSingle: async () => ({ data: table === 'projects' ? null : filtered()[0] ?? null, error: null }),
         };
         return chain;
@@ -142,6 +173,13 @@ describe('loadPricingSheet', () => {
             [3, 'active', null, 'Болд'], [1, 'archived', '2026-10-20T02:00:00Z', 'Болд'],
         ]);
         expect(sheet.selected).toMatchObject({ version: 3, validity: 'valid', previous_version: 1, removed: [] });
+        // The block view: every list's active version, and the register's blocks with their price state.
+        expect(sheet.active.map(version => `${version.list_key}:${version.version}`)).toEqual(['main:3']);
+        expect(sheet.phases).toEqual([{ name: 'Elysium Residence', blocks: [{ block: 'Б1', kinds: [
+            { category: 'residential', units: 110, available: 40, price: { list_key: 'main', list_name: 'Үндсэн үнэ', version: 3, validity: 'valid', valid_from: '2026-10-01', valid_until: '2026-12-31' } },
+            { category: 'parking', units: 193, available: 100, price: null },
+        ] }] }]);
+        expect(calls.find(call => call.table === 'property_block_summary')?.filters).toContainEqual(['eq', 'shop_id', 'shop']);
         expect(sheet.selected?.rows[0]).toMatchObject({ change: 'changed', previous: { price_per_sqm: 4_000_000 } });
         expect(JSON.stringify(sheet)).not.toContain('"admin"');
     });
