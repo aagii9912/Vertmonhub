@@ -85,3 +85,15 @@ it('an archived version with a step shows the rule and its base prices, not toda
     expect(screen.getByRole('note', { name: 'Гэрээ бүрд нэмэгдэх үнэ' })).toHaveTextContent('Архивласан хувилбарт суурь үнэ харагдана.');
     expect(screen.queryByText(/суурь 4/)).not.toBeInTheDocument();
 });
+
+it('a project that names a model with its area shows the register area of the row floors after the model', () => {
+    const modelAreas = [{ block: 'Б1', model: 'E3', area_sqm: 80.91, floors: [2, 3, 4] }, { block: 'Б1', model: 'E3', area_sqm: 85.19, floors: [12] }, { block: 'Б2', model: 'E7', area_sqm: 51 , floors: [2] }];
+    const { unmount } = render(<PricingVersionView version={version()} modelAreas={modelAreas} />);
+    const [, e3, e7] = screen.getAllByRole('row');
+    // Floors 2–9: the area of floor 12 and another block's plan stay out.
+    expect(within(e3).getAllByRole('cell')[1]).toHaveTextContent(/^E3 · 80\.91 м²$/);
+    expect(within(e7).getAllByRole('cell')[1]).toHaveTextContent(/^E7$/);
+    unmount();
+    render(<PricingVersionView version={version()} />);
+    expect(within(screen.getAllByRole('row')[1]).getAllByRole('cell')[1]).toHaveTextContent(/^E3$/);
+});

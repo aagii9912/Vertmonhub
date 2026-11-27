@@ -341,7 +341,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
 
                 {options.isLoading && projectScope && <p className="text-xs text-muted-foreground">Байрны сонголт ачаалж байна…</p>}
                 {options.error && <p role="alert" className="text-xs text-status-danger">Байрны сонголт уншиж чадсангүй. <button type="button" onClick={() => void options.refetch()} className="underline">Дахин оролдох</button></p>}
-                {units.length > 0 && <ViewingInterestPicker key={projectScope} units={units} conditions={options.data?.conditions} pricingReason={options.data?.reason}
+                {units.length > 0 && <ViewingInterestPicker key={projectScope} units={units} conditions={options.data?.conditions} pricingReason={options.data?.reason} modelWithArea={options.data?.model_with_area}
                     value={interests} onChange={setInterests} onDraftChange={setDraftInterest} />}
                 {!units.length && !options.isLoading && !options.error && <Field label="Байр">
                     {property ? (
@@ -492,7 +492,7 @@ function EditSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
             {!!v.interests?.length && <div className="space-y-2 rounded-lg border border-border bg-surface-2 p-3 text-xs"><p className="font-medium">Хадгалсан сонголт, үнийн санал</p>{v.interests.map((item, index) => <div key={index}>
                 <p>{viewingSelectionText([item])}</p>{item.quote ? <p className="num">Нийт {formatMNT(item.quote.total_amount)} · Урьдчилгаа {item.quote.advance_amount == null ? '—' : formatMNT(item.quote.advance_amount)} · {item.quote.source} · v{item.quote.version}</p> : <p className="text-muted-foreground">{item.quote_unavailable_reason || 'Үнийн санал алга'}</p>}
             </div>)}</div>}
-            {units.length > 0 && <ViewingInterestPicker units={units} conditions={options.data?.conditions} pricingReason={options.data?.reason} value={interests} onChange={setInterests} onDraftChange={setDraftInterest} />}
+            {units.length > 0 && <ViewingInterestPicker units={units} conditions={options.data?.conditions} pricingReason={options.data?.reason} modelWithArea={options.data?.model_with_area} value={interests} onChange={setInterests} onDraftChange={setDraftInterest} />}
             {property && <div className="flex items-center gap-2 rounded border border-border p-2 text-xs"><span className="flex-1">{property.name}</span><button type="button" aria-label="Байрны холбоосыг хасах" onClick={() => setProperty(null)}><X className="size-4" /></button></div>}
             {!property && !units.length && !options.isLoading && !options.error && <Field label="Байр"><input className={inputCls} value={propertyQuery} onChange={e => setPropertyQuery(e.target.value)} placeholder="Байрны нэр, дүүрэг…" />
                 {properties.error && <p role="alert" className="text-xs text-status-danger">Байр хайж чадсангүй.</p>}

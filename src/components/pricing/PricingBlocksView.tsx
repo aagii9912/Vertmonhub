@@ -9,6 +9,7 @@ import { unitCategoryLabel } from '@/lib/inventory/labels';
 import { pricingKey } from '@/lib/sales/pricing';
 import type { PricingBlock, PricingBlockKind, PricingPhase, PricingSheetVersion } from '@/lib/sales/pricing-history';
 import type { UnitPriceSheet } from '@/lib/sales/unit-pricing';
+import type { ModelAreaRow } from '@/lib/sales/model-area';
 import { PRICING_VALIDITY, PricingVersionView } from './PricingVersionView';
 import { UnitPriceView } from './UnitPriceView';
 
@@ -36,11 +37,13 @@ const LEGEND: KindState[] = [PRICING_VALIDITY.valid, PRICING_VALIDITY.upcoming, 
  * price belongs to is shown with the price, not asked first. The map of blocks comes first (what is priced, what
  * is not); a block opens on its own with the other blocks of its phase one click away.
  */
-export function PricingBlocksView({ phases: registered, active, unitPrices = [], draftBlocks, several, canEdit }: {
+export function PricingBlocksView({ phases: registered, active, unitPrices = [], modelAreas, draftBlocks, several, canEdit }: {
     phases: readonly PricingPhase[];
     active: readonly PricingSheetVersion[];
     /** Active per-unit price lists: parking, storage and service space are priced per unit. */
     unitPrices?: readonly UnitPriceSheet[];
+    /** Register areas per block and model, for a project that names a model with its area. */
+    modelAreas?: readonly ModelAreaRow[];
     /** Blocks with a saved, not yet activated draft (`pricingKey` → the name as typed) — passed for administrators only. */
     draftBlocks?: ReadonlyMap<string, string>;
     /** The project has more than one price list: the price then names its list. */
@@ -126,7 +129,7 @@ export function PricingBlocksView({ phases: registered, active, unitPrices = [],
                     </Button>;
                 })}
             </div>}
-            {version ? <PricingVersionView version={version} block={block.block} showList={several} />
+            {version ? <PricingVersionView version={version} block={block.block} showList={several} modelAreas={modelAreas} />
                 : unitSheet ? <UnitPriceView key={`${unitSheet.id}:${block.block}`} sheet={unitSheet} block={block.block} showList />
                 : <div className="rounded-xl border border-border bg-surface"><EmptyState icon={<BadgePercent />}
                     title={kind.category === 'residential' ? `${pricingBlockLabel(block.block)}ийн орон сууцны баталсан үнэ алга` : `${KIND_OF[kind.category] ?? `«${unitCategoryLabel(kind.category)}» төрлийн`} үнэ энд хараахан ороогүй`}

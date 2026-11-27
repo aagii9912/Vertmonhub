@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ProjectScopeError, applyProjectScope, canAccessProject, type SalesProjectScope } from './project-scope';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { loadModelAreas } from './model-area-load';
 import { ubDateStr } from '@/lib/utils/date';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { loadViewingOptions } from '@/lib/viewings/options';
@@ -208,6 +209,11 @@ async function loadBlockRows(db: SupabaseClient, shopId: string): Promise<Pricin
     } catch { throw new PricingSelectionError('Блокийн мэдээлэл уншиж чадсангүй. Дахин оролдоно уу', 503); }
 }
 
+async function loadSheetModelAreas(db: SupabaseClient, shopId: string) {
+    try { return await loadModelAreas(db, shopId); }
+    catch { throw new PricingSelectionError('Загварын талбайг уншиж чадсангүй. Дахин оролдоно уу', 503); }
+}
+
 /**
  * Read only. Without a version: every list's active version and the project's blocks (the block view).
  * With a version: that archived or active version of the list (`list`, else the first list with an active
@@ -224,18 +230,20 @@ export async function loadPricingSheet(db: SupabaseClient, shopId: string, optio
         const versions = versionsOf(list.key);
         const index = versions.findIndex(row => row.version === options.version);
         if (index < 0) throw new PricingSelectionError('Үнийн хувилбар олдсонгүй', 404);
-        return { as_of: asOf, lists, history, selected: await loadSheetVersion(db, shopId, versions, index, asOf), active: [], phases: [], unit_prices: [] };
+        const [selected, modelAreas] = await Promise.all([loadSheetVersion(db, shopId, versions, index, asOf), loadSheetModelAreas(db, shopId)]);
+        return { as_of: asOf, lists, history, selected, active: [], phases: [], unit_prices: [], model_areas: modelAreas };
     }
-    const [active, blocks, unitPrices] = await Promise.all([
+    const [active, blocks, unitPrices, modelAreas] = await Promise.all([
         Promise.all(lists.filter(item => item.active_version !== null).map(item => {
             const versions = versionsOf(item.key);
             return loadSheetVersion(db, shopId, versions, versions.findIndex(row => row.status === 'active'), asOf);
         })),
         loadBlockRows(db, shopId),
         loadUnitPriceSheets(db, shopId, asOf),
+        loadSheetModelAreas(db, shopId),
     ]);
     return { as_of: asOf, lists, history, selected: active.find(version => version.list_key === list?.key) ?? null, active,
-        phases: buildPricingPhases(blocks, active, unitPrices), unit_prices: unitPrices };
+        phases: buildPricingPhases(blocks, active, unitPrices), unit_prices: unitPrices, model_areas: modelAreas };
 }
 
 function saveError(error: { code?: string } | null, fallback: string): PricingSelectionError {

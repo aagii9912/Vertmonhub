@@ -76,7 +76,7 @@ export default function PricingPage() {
 
             <TabsContent value="current" className="mt-4">
                 {!current.data ? <LoadState query={current} />
-                    : phases.some(phase => phase.blocks.length) || (isSuperAdmin && draftBlocks.size > 0) ? <PricingBlocksView key={shop?.id} phases={phases} active={current.data.active} unitPrices={current.data.unit_prices}
+                    : phases.some(phase => phase.blocks.length) || (isSuperAdmin && draftBlocks.size > 0) ? <PricingBlocksView key={shop?.id} phases={phases} active={current.data.active} unitPrices={current.data.unit_prices} modelAreas={current.data.model_areas}
                         draftBlocks={isSuperAdmin ? draftBlocks : undefined} several={several} canEdit={isSuperAdmin} />
                         : <div className="rounded-xl border border-border bg-surface"><EmptyState icon={<BadgePercent />} title="Баталсан үнэ байхгүй"
                             description={isSuperAdmin ? '«Засах» табаас үнийн мөрүүдийг оруулж, хянаад идэвхжүүлнэ.' : 'Удирдлага үнийг баталж идэвхжүүлсний дараа энд харагдана.'} /></div>}
@@ -86,7 +86,7 @@ export default function PricingPage() {
                 {!current.data ? <LoadState query={current} />
                     : archived !== null ? <div className="space-y-4">
                         <Button variant="secondary" onClick={() => setOpened(null)}><ArrowLeft />Архивын жагсаалт</Button>
-                        {detail.data?.selected ? <PricingVersionView version={detail.data.selected} showList={several} /> : <LoadState query={detail} />}
+                        {detail.data?.selected ? <PricingVersionView version={detail.data.selected} showList={several} modelAreas={detail.data.model_areas} /> : <LoadState query={detail} />}
                     </div>
                     : archive.length === 0 ? <div className="rounded-xl border border-border bg-surface"><EmptyState icon={<Archive />} title="Архив хоосон"
                         description="Шинэ үнэ идэвхжих эсвэл үнийг идэвхгүй болгоход одоогийн хувилбар энд автоматаар шилжинэ." /></div>

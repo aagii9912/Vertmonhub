@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { DateText } from '@/components/ui/DateText';
 import { formatMNT } from '@/lib/utils/currency';
 import { pricingKey, pricingStepKey } from '@/lib/sales/pricing';
+import { areasOfModel, modelAreaText, type ModelAreaRow } from '@/lib/sales/model-area';
 import { pivotPricingRows, type PricingRuleDiff, type PricingSheetVersion, type PricingValidity } from '@/lib/sales/pricing-history';
 
 export const PRICING_VALIDITY: Record<PricingValidity, { label: string; variant: 'success' | 'pending' | 'danger' }> = {
@@ -20,6 +21,8 @@ export const pricingDay = (value: string | null) => value ? value.replaceAll('-'
 const floors = (rule: { floor_min: number; floor_max: number }) => rule.floor_min === rule.floor_max ? String(rule.floor_min) : `${rule.floor_min}–${rule.floor_max}`;
 const percent = (value: number | null) => value === null ? '—' : `${value}%`;
 
+const NO_AREAS: readonly ModelAreaRow[] = [];
+
 function PricingStatusBadge({ version }: { version: Pick<PricingSheetVersion, 'status' | 'validity'> }) {
     if (version.status === 'archived') return <Badge variant="neutral" size="md">Архивласан</Badge>;
     const state = PRICING_VALIDITY[version.validity];
@@ -28,6 +31,10 @@ function PricingStatusBadge({ version }: { version: Pick<PricingSheetVersion, 's
 
 function Meta({ label, children }: { label: string; children: ReactNode }) {
     return <div className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-0.5 text-sm text-foreground">{children}</dd></div>;
+}
+
+function ModelArea({ text }: { text: string | null }) {
+    return text ? <span className="num whitespace-nowrap text-muted-foreground"> · {text}</span> : null;
 }
 
 /** `raise` = the step price added by counted contracts (0 when the list has no step or the model has no contract yet). */
@@ -48,8 +55,11 @@ function PriceCell({ row, perCellAdvance, raise }: { row: PricingRuleDiff | unde
 /**
  * One activated version: its terms, rules and the difference from the version it replaced.
  * `only` narrows it to one block (the block view): that block's rows, counts and removed rows, without the block column.
+ * `modelAreas` (a project that names a model with its area) adds the register area of the row's floors after the model.
  */
-export function PricingVersionView({ version, showList = false, block: only = null }: { version: PricingSheetVersion; showList?: boolean; block?: string | null }) {
+export function PricingVersionView({ version, showList = false, block: only = null, modelAreas = NO_AREAS }: {
+    version: PricingSheetVersion; showList?: boolean; block?: string | null; modelAreas?: readonly ModelAreaRow[];
+}) {
     const compared = version.previous_version !== null;
     const rows = useMemo(() => only === null ? version.rows : version.rows.filter(row => pricingKey(row.rule.block) === pricingKey(only)), [version.rows, only]);
     const removed = useMemo(() => only === null ? version.removed : version.removed.filter(rule => pricingKey(rule.block) === pricingKey(only)), [version.removed, only]);
@@ -115,7 +125,7 @@ export function PricingVersionView({ version, showList = false, block: only = nu
                 </tr></thead>
                 <tbody>{groups.map(group => <tr key={`${group.block}|${group.model}|${group.floor_min}|${group.floor_max}`} className="border-b border-border last:border-b-0">
                     {only === null && <td className="px-4 py-2.5">{group.block}</td>}
-                    <td className="px-4 py-2.5">{group.model}</td>
+                    <td className="px-4 py-2.5">{group.model}<ModelArea text={modelAreaText(areasOfModel(modelAreas, group.block, group.model, group.floor_min, group.floor_max))} /></td>
                     <td className="num px-4 py-2.5">{floors(group)}</td>
                     {table.conditions.map(condition => <PriceCell key={condition.key} row={group.cells[condition.key]} perCellAdvance={condition.advance_percent === 'mixed'}
                         raise={raised.get(pricingStepKey(group.block, group.model)) ?? 0} />)}

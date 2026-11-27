@@ -20,6 +20,8 @@ type Project = {
     district: string | null;
     description: string | null;
     status: ProjectStatus;
+    /** Absent until migration 20261127150000 is applied. */
+    model_with_area?: boolean;
     shops: { name: string } | null;
     counts?: { leads: number; units: number; contracts: number } | null;
     members?: number;
@@ -27,7 +29,7 @@ type Project = {
 };
 type Unassigned = { shop_id: string; leads: number; units: number; contracts: number };
 type Staff = { id: string; email: string; full_name: string | null; role: string };
-type Form = { name: string; location: string; district: string; description: string; status: ProjectStatus };
+type Form = { name: string; location: string; district: string; description: string; status: ProjectStatus; modelWithArea: boolean };
 type Overview = { shops: Array<{ id: string; name: string }>; projects: Project[]; unassigned: Unassigned[]; diagnosticsError: string | null; staff: Staff[]; actorId: string | null };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -38,7 +40,7 @@ const STATUS: Record<ProjectStatus, string> = {
 };
 /** Удирдлага, маркетинг бүх төслийг харна; борлуулалтын менежерийг төсөл бүрт тусад нь нэмнэ. */
 const DEFAULT_ACCESS_ROLES = new Set(['super_admin', 'admin', 'marketing']);
-const emptyForm = (): Form => ({ name: '', location: '', district: '', description: '', status: 'active' });
+const emptyForm = (): Form => ({ name: '', location: '', district: '', description: '', status: 'active', modelWithArea: false });
 const NO_SHOPS: Overview['shops'] = [];
 const NO_PROJECTS: Project[] = [];
 const NO_UNASSIGNED: Unassigned[] = [];
@@ -99,6 +101,7 @@ export default function AdminProjectsPage() {
         setForm({
             name: project.name, location: project.location || '',
             district: project.district || '', description: project.description || '', status: project.status,
+            modelWithArea: project.model_with_area === true,
         });
         setFormError(null);
         setDialogOpen(true);
@@ -110,8 +113,10 @@ export default function AdminProjectsPage() {
         setFormError(null);
         try {
             const payload = editingId
-                ? { name: form.name, location: form.location || null, district: form.district || null, description: form.description || null, status: form.status }
-                : { ...form, member_ids: memberIds };
+                ? { name: form.name, location: form.location || null, district: form.district || null, description: form.description || null, status: form.status,
+                    // Sent only when changed, so the form keeps saving before the column exists.
+                    ...(form.modelWithArea !== (projects.find(project => project.id === editingId)?.model_with_area === true) ? { model_with_area: form.modelWithArea } : {}) }
+                : { name: form.name, location: form.location, district: form.district, description: form.description, status: form.status, member_ids: memberIds };
             const response = await fetch(editingId ? `/api/admin/projects/${editingId}` : '/api/admin/projects', {
                 method: editingId ? 'PATCH' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -125,6 +130,10 @@ export default function AdminProjectsPage() {
             void queryClient.invalidateQueries({ queryKey: ['admin-sales-targets'] });
             // Шинэ төсөл (shop) төсөл солих цэсэнд шууд гарна.
             void refreshShops();
+            // «Загвар + м²» changes the meeting picker and the price page.
+            void queryClient.invalidateQueries({ queryKey: ['viewing-options'] });
+            void queryClient.invalidateQueries({ queryKey: ['pricing-sheet'] });
+            void queryClient.invalidateQueries({ queryKey: ['project-pricing'] });
             await queryClient.invalidateQueries({ queryKey: ['admin-projects'] });
         } catch (error) {
             setFormError(error instanceof Error ? error.message : 'Төсөл хадгалагдсангүй');
@@ -222,6 +231,11 @@ export default function AdminProjectsPage() {
                             <label htmlFor="project-description" className="mb-1 block text-sm font-medium">Тайлбар</label>
                             <textarea id="project-description" value={form.description} maxLength={2000} onChange={(event) => setForm({ ...form, description: event.target.value })} className="min-h-24 w-full rounded-lg border border-border bg-surface p-3 text-sm" />
                         </div>
+                        {editingId && <label className="flex items-start gap-2 text-sm">
+                            <input type="checkbox" className="mt-1" checked={form.modelWithArea} onChange={event => setForm({ ...form, modelWithArea: event.target.checked })} />
+                            <span><span className="font-medium">Загварыг талбайтай (м²) нь хамт харуулах</span>
+                                <span className="block text-xs text-muted-foreground">Уулзалт бүртгэх «Сонирхсон байр» болон «Үнэ, нөхцөл» хуудсанд загварын ард бүртгэлийн талбай дагалдана (жишээ нь «A · 96.53 м²»). Үнэ, хадгалсан мэдээлэл өөрчлөгдөхгүй.</span></span>
+                        </label>}
                         {!editingId && <fieldset>
                             <legend className="mb-1 block text-sm font-medium">Хандах ажилтнууд</legend>
                             <p className="mb-2 text-xs text-muted-foreground">Та автоматаар нэмэгдэнэ. Борлуулалтын менежерийг дараа нь «Хэрэглэгчид» эсвэл «Борлуулалтын төлөвлөгөө» хэсгээс нэмж болно.</p>

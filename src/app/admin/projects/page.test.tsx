@@ -72,4 +72,29 @@ describe('admin project management', () => {
         expect(await screen.findByText('Шинэ хотхон')).toBeInTheDocument();
         expect(refreshShops).toHaveBeenCalled();
     });
+    it('switches «загвар + м²» on for one project from its edit dialog and sends nothing when it is unchanged', async () => {
+        const project = { id: 'mandala', shop_id: shopId, name: 'Mandala Garden', location: null, district: null, description: null, status: 'active', model_with_area: false, shops: { name: 'Mandala Garden' } };
+        vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+            if (input === '/api/admin/shops') return { ok: true, json: async () => ({ shops: [{ id: shopId, name: 'Mandala Garden' }] }) };
+            if (input === '/api/admin/users') return { ok: true, json: async () => ({ actor_id: 'admin-1', users: [] }) };
+            if (input === '/api/admin/projects/mandala' && init?.method === 'PATCH') {
+                savedBodies.push(JSON.parse(String(init.body)));
+                return { ok: true, json: async () => ({ project }) };
+            }
+            if (input === '/api/admin/projects') return { ok: true, json: async () => ({ projects: [project] }) };
+            throw new Error(`Unexpected request: ${input}`);
+        }));
+        renderPage();
+        fireEvent.click(await screen.findByRole('button', { name: 'Mandala Garden төслийг засах' }));
+        const toggle = screen.getByRole('checkbox', { name: /Загварыг талбайтай \(м²\) нь хамт харуулах/ });
+        expect(toggle).not.toBeChecked();
+        fireEvent.click(screen.getByRole('button', { name: 'Хадгалах' }));
+        await waitFor(() => expect(savedBodies).toHaveLength(1));
+        expect(savedBodies[0]).not.toHaveProperty('model_with_area');
+        fireEvent.click(await screen.findByRole('button', { name: 'Mandala Garden төслийг засах' }));
+        fireEvent.click(screen.getByRole('checkbox', { name: /Загварыг талбайтай/ }));
+        fireEvent.click(screen.getByRole('button', { name: 'Хадгалах' }));
+        await waitFor(() => expect(savedBodies).toHaveLength(2));
+        expect(savedBodies[1]).toMatchObject({ name: 'Mandala Garden', model_with_area: true });
+    });
 });

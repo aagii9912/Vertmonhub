@@ -3,13 +3,14 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { elysiumViewingConditions } from '@/lib/sales/viewing-conditions';
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), shop: vi.fn(), scope: vi.fn(), project: vi.fn(), options: vi.fn(), conditions: vi.fn(), sole: vi.fn() }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), shop: vi.fn(), scope: vi.fn(), project: vi.fn(), options: vi.fn(), conditions: vi.fn(), sole: vi.fn(), modelArea: vi.fn() }));
 vi.mock('@/lib/auth/require-permission', () => ({ requireModule: mocks.read, requireModuleWrite: mocks.read, requireModuleDelete: mocks.read, requireAnyModule: mocks.read }));
 vi.mock('@/lib/auth/supabase-auth', () => ({ getUserShop: mocks.shop, getUserId: async () => 'actor' }));
 vi.mock('@/lib/sales/project-scope', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/sales/project-scope')>(), resolveSalesProjectScope: mocks.scope }));
 vi.mock('@/lib/projects/shop-project', () => ({ soleShopProjectId: mocks.sole }));
 vi.mock('@/lib/viewings/options', () => ({ loadViewingOptions: mocks.options }));
 vi.mock('@/lib/sales/pricing-store', () => ({ loadViewingPricingConditions: mocks.conditions }));
+vi.mock('@/lib/sales/model-area-load', () => ({ projectShowsModelArea: mocks.modelArea }));
 const query = { select: () => query, eq: () => query, maybeSingle: mocks.project };
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: () => query }) }));
 import { GET } from '@/app/api/dashboard/viewings/options/route';
@@ -23,13 +24,14 @@ beforeEach(() => {
     mocks.read.mockResolvedValue(null); mocks.shop.mockResolvedValue({ id: 'shop' }); mocks.scope.mockResolvedValue(scope);
     mocks.project.mockResolvedValue({ data: { id: projectId }, error: null }); mocks.options.mockResolvedValue(units);
     mocks.conditions.mockResolvedValue({ conditions: elysiumViewingConditions('Elysium Residence', units), reason: 'Үнэ батлагдаагүй' });
+    mocks.modelArea.mockResolvedValue(false);
 });
 
 it('returns payment choices with no approved price using verified project inventory', async () => {
     const response = await GET(request());
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ project_id: projectId, units,
-        conditions: elysiumViewingConditions('Elysium Residence', units), reason: 'Үнэ батлагдаагүй' });
+        conditions: elysiumViewingConditions('Elysium Residence', units), reason: 'Үнэ батлагдаагүй', model_with_area: false });
     expect(mocks.options).toHaveBeenCalledWith(expect.anything(), 'shop', scope, projectId);
     expect(mocks.conditions).toHaveBeenCalledWith(expect.anything(), 'shop', scope, undefined, { projectId, units });
 });
@@ -51,4 +53,11 @@ it('rejects inaccessible and foreign projects before returning conditions', asyn
     mocks.project.mockResolvedValue({ data: null, error: null });
     expect((await GET(request())).status).toBe(404);
     expect(mocks.conditions).not.toHaveBeenCalled();
+});
+
+it('tells the picker when the project names a model with its area', async () => {
+    mocks.modelArea.mockResolvedValue(true);
+    const body = await (await GET(request())).json();
+    expect(body.model_with_area).toBe(true);
+    expect(mocks.modelArea).toHaveBeenCalledWith(expect.anything(), 'shop', projectId);
 });

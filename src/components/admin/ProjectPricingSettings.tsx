@@ -4,6 +4,7 @@ import { useId, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, FileSpreadsheet, ListPlus, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { areasOfModel, modelAreaText, type ModelAreaRow } from '@/lib/sales/model-area';
 import { dashboardJson, dashboardMutate, DashboardApiError } from '@/lib/api/dashboardFetch';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -14,9 +15,11 @@ import {
 } from '@/lib/sales/pricing';
 import { PricingImportPanel } from './PricingImportPanel';
 
-type Overview = { lists: PriceListOverview[] };
+/** `model_areas`: register areas per block and model, sent only for a project that names a model with its area. */
+type Overview = { lists: PriceListOverview[]; model_areas?: ModelAreaRow[] };
 /** `gid` groups the rules of one price-sheet row (a model on a floor range); it never leaves the editor. */
 type RuleForm = { [K in keyof PricingRule]: string } & { gid: string };
+const NO_AREAS: readonly ModelAreaRow[] = [];
 let groupCounter = 0;
 const newGroup = () => `g${++groupCounter}`;
 const advanceValid = (value: number) => Number.isFinite(value) && value >= 0 && value <= 100 && Math.abs(value * 100 - Math.round(value * 100)) < 1e-6;
@@ -100,12 +103,12 @@ function PriceLists({ shopId, overview, version, onSaved }: { shopId: string; ov
             <Button type="button" variant="ghost" onClick={() => { setNaming(false); setNewName(''); setNameError(null); }}>Болих</Button>
             {nameError && <p role="alert" className="w-full text-sm text-status-danger">{nameError}</p>}
         </div>}
-        <PricingEditor key={`${shopId}:${current.key}:${version}`} shopId={shopId} list={current}
+        <PricingEditor key={`${shopId}:${current.key}:${version}`} shopId={shopId} list={current} modelAreas={overview.model_areas ?? NO_AREAS}
             others={lists.filter(list => list.key !== current.key)} onSaved={onSaved} />
     </div>;
 }
 
-function PricingEditor({ shopId, list, others, onSaved }: { shopId: string; list: PriceListOverview; others: readonly PriceListOverview[]; onSaved: () => Promise<unknown> }) {
+function PricingEditor({ shopId, list, others, modelAreas, onSaved }: { shopId: string; list: PriceListOverview; others: readonly PriceListOverview[]; modelAreas: readonly ModelAreaRow[]; onSaved: () => Promise<unknown> }) {
     const initial = list.latest ?? EMPTY_PRICING_DRAFT;
     const id = useId();
     const [name, setName] = useState(list.name);
@@ -357,8 +360,13 @@ function PricingEditor({ shopId, list, others, onSaved }: { shopId: string; list
                         <tbody>{sheet.groups.map(group => {
                             const head = rows[group.first], number = group.first + 1;
                             const name = `${head.model.trim() || 'шинэ мөр'}${head.floor_min.trim() ? `, ${head.floor_min.trim()}–${head.floor_max.trim() || '?'} давхар` : ''}`;
+                            // A project that names a model with its area: the register area of this row's floors, as a hint beside the model.
+                            const floorMin = Number(head.floor_min), floorMax = Number(head.floor_max || head.floor_min);
+                            const ranged = head.floor_min.trim() !== '' && Number.isInteger(floorMin) && Number.isInteger(floorMax);
+                            const areaText = modelAreas.length && head.model.trim() ? modelAreaText(areasOfModel(modelAreas, viewBlock.name, head.model, ranged ? floorMin : null, ranged ? floorMax : null)) : null;
                             return <tr key={group.gid} className="border-b border-border last:border-b-0">
-                                <td className="px-1 py-1.5"><Input aria-label={`${number}-р мөр Загвар`} value={head.model} onChange={event => changeGroup(group.gid, 'model', event.target.value)} className="w-20" /></td>
+                                <td className="px-1 py-1.5"><Input aria-label={`${number}-р мөр Загвар`} value={head.model} onChange={event => changeGroup(group.gid, 'model', event.target.value)} className="w-20" />
+                                    {areaText && <span className="num mt-0.5 block whitespace-nowrap text-xs text-muted-foreground">{areaText}</span>}</td>
                                 <td className="py-1.5 pl-1"><Input aria-label={`${number}-р мөр Давхар эхлэх`} value={head.floor_min} inputMode="numeric" onChange={event => changeGroup(group.gid, 'floor_min', event.target.value)} className="num w-16" /></td>
                                 <td className="py-1.5 pl-1 pr-2"><Input aria-label={`${number}-р мөр Давхар дуусах`} value={head.floor_max} inputMode="numeric" onChange={event => changeGroup(group.gid, 'floor_max', event.target.value)} className="num w-16" /></td>
                                 {sheet.conditions.map(condition => {

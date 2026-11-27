@@ -13,8 +13,10 @@ const control = 'h-10 w-full rounded-md border border-control bg-background px-2
 const unique = <T,>(values: T[]) => [...new Set(values)];
 
 /** Multiple interests are independent alternatives; the customer need not commit to an exact unit. */
-export function ViewingInterestPicker({ units, conditions = [], pricingReason, value, onChange, onDraftChange }: {
+export function ViewingInterestPicker({ units, conditions = [], pricingReason, modelWithArea = false, value, onChange, onDraftChange }: {
     units: ViewingUnitOption[]; conditions?: ViewingCondition[]; pricingReason?: string | null;
+    /** The project names a plan with its area («A · 96.53 м²»): one select picks both, the separate «Талбай» select is not shown. */
+    modelWithArea?: boolean;
     value: ViewingInterestInput[]; onChange: (value: ViewingInterestInput[]) => void;
     onDraftChange?: (value: ViewingInterestInput | null) => void;
 }) {
@@ -24,6 +26,9 @@ export function ViewingInterestPicker({ units, conditions = [], pricingReason, v
     const [floor, setFloor] = useState('');
     const [unitId, setUnitId] = useState('');
     const [term, setTerm] = useState('');
+    // Model + area pairs of the chosen block, for projects that name a plan with its area.
+    const plans = modelWithArea ? [...new Map(units.filter(unit => unit.block === block).map(unit => [`${unit.model}|${unit.area_sqm}`, unit])).values()]
+        .sort((a, b) => a.model.localeCompare(b.model, 'mn', { numeric: true }) || a.area_sqm - b.area_sqm) : [];
     const matched = units.filter(unit => unit.block === block && (!model || unit.model === model) && (!area || unit.area_sqm === Number(area)));
     const onFloor = matched.filter(unit => !floor || unit.floor === Number(floor));
     const terms = unique(conditions.filter(condition => pricingKey(condition.block) === pricingKey(block) && pricingKey(condition.model) === pricingKey(model)
@@ -49,13 +54,16 @@ export function ViewingInterestPicker({ units, conditions = [], pricingReason, v
             <label className="space-y-1 text-xs">Блок<select aria-label="Блок" className={control} value={block} onChange={e => { setBlock(e.target.value); setModel(''); setArea(''); setFloor(''); setUnitId(''); setTerm(''); }}>
                 <option value="">Сонгох</option>{unique(units.map(unit => unit.block)).sort().map(v => <option key={v}>{v}</option>)}
             </select></label>
-            <label className="space-y-1 text-xs">Загвар<select aria-label="Загвар" className={control} disabled={!block} value={model} onChange={e => { setModel(e.target.value); setArea(''); setFloor(''); setUnitId(''); setTerm(''); }}>
+            {modelWithArea ? <label className="space-y-1 text-xs">Загвар, талбай<select aria-label="Загвар, талбай" className={control} disabled={!block} value={model && area ? `${model}|${area}` : ''}
+                onChange={e => { const plan = plans.find(unit => `${unit.model}|${unit.area_sqm}` === e.target.value); setModel(plan?.model ?? ''); setArea(plan ? String(plan.area_sqm) : ''); setFloor(''); setUnitId(''); setTerm(''); }}>
+                <option value="">Сонгох</option>{plans.map(unit => <option key={`${unit.model}|${unit.area_sqm}`} value={`${unit.model}|${unit.area_sqm}`}>{unit.model} · {unit.area_sqm} м²</option>)}
+            </select></label> : <label className="space-y-1 text-xs">Загвар<select aria-label="Загвар" className={control} disabled={!block} value={model} onChange={e => { setModel(e.target.value); setArea(''); setFloor(''); setUnitId(''); setTerm(''); }}>
                 <option value="">Сонгох</option>{unique(units.filter(unit => unit.block === block).map(unit => unit.model)).sort().map(v => <option key={v}>{v}</option>)}
-            </select></label>
-            <label className="space-y-1 text-xs">Талбай<select aria-label="Талбай" className={control} disabled={!model} value={area} onChange={e => { setArea(e.target.value); setFloor(''); setUnitId(''); setTerm(''); }}>
+            </select></label>}
+            {!modelWithArea && <label className="space-y-1 text-xs">Талбай<select aria-label="Талбай" className={control} disabled={!model} value={area} onChange={e => { setArea(e.target.value); setFloor(''); setUnitId(''); setTerm(''); }}>
                 <option value="">Сонгох</option>{unique(units.filter(unit => unit.block === block && unit.model === model).map(unit => unit.area_sqm)).sort((a, b) => a - b).map(v => <option key={v} value={v}>{v} м²</option>)}
-            </select></label>
-            <label className="space-y-1 text-xs">Давхар<select aria-label="Давхар" className={control} disabled={!area} value={floor} onChange={e => { setFloor(e.target.value); setUnitId(''); setTerm(''); }}>
+            </select></label>}
+            <label className={`space-y-1 text-xs${modelWithArea ? ' col-span-2' : ''}`}>Давхар<select aria-label="Давхар" className={control} disabled={!area} value={floor} onChange={e => { setFloor(e.target.value); setUnitId(''); setTerm(''); }}>
                 <option value="">Тодорхойгүй</option>{unique(matched.flatMap(unit => unit.floor == null ? [] : [unit.floor])).sort((a, b) => a - b).map(v => <option key={v} value={v}>{v}-р давхар</option>)}
             </select></label>
         </div>

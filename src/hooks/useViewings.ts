@@ -151,7 +151,7 @@ export function usePropertySearch(q: string, enabled = true, projectId?: string 
 
 export function useViewingOptions(projectId?: string | null) {
     const { shop, user } = useAuth();
-    return useQuery<{ units: ViewingUnitOption[]; conditions: ViewingCondition[]; reason: string | null }>({
+    return useQuery<{ units: ViewingUnitOption[]; conditions: ViewingCondition[]; reason: string | null; model_with_area?: boolean }>({
         queryKey: ['viewing-options', shop?.id, user?.id, user?.role, projectId],
         queryFn: () => dashboardJson(`/api/dashboard/viewings/options${projectId ? `?project=${encodeURIComponent(projectId)}` : ''}`),
         enabled: !!shop?.id && projectId !== null,

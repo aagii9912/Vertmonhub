@@ -4,10 +4,14 @@ import { withRoute } from '@/lib/api/route';
 import { supabaseAdmin } from '@/lib/supabase';
 import { PricingRetireSchema, PricingSaveSchema } from '@/lib/sales/pricing';
 import { loadPricingOverview, retirePriceList, savePricingConfig } from '@/lib/sales/pricing-store';
+import { loadModelAreas } from '@/lib/sales/model-area-load';
 
 export const GET = withRoute({ module: 'settings', error: 'Үнийн тохиргоо уншиж чадсангүй' }, async ({ shop }) => {
     if (!await getAdminUser()) return NextResponse.json({ error: 'Удирдлагын эрх шаардлагатай' }, { status: 403 });
-    return NextResponse.json(await loadPricingOverview(supabaseAdmin(), shop.id), { headers: { 'Cache-Control': 'private, no-store' } });
+    const db = supabaseAdmin();
+    // `model_areas`: register areas per block and model, for a project that names a model with its area (else empty).
+    const [overview, model_areas] = await Promise.all([loadPricingOverview(db, shop.id), loadModelAreas(db, shop.id)]);
+    return NextResponse.json({ ...overview, model_areas }, { headers: { 'Cache-Control': 'private, no-store' } });
 });
 
 export const PUT = withRoute({ module: 'settings', access: 'write', error: 'Үнийн тохиргоо хадгалагдсангүй' }, async ({ request, shop }) => {

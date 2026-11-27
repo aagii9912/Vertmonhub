@@ -1,4 +1,5 @@
 import { MAIN_PRICE_LIST, pricingKey, type PricingRule } from './pricing';
+import type { ModelAreaRow } from './model-area';
 import type { UnitPriceSheet } from './unit-pricing';
 
 /** Only activated versions (active/archived) are listed; drafts never reach the price sheet. Versions are numbered per list. */
@@ -136,6 +137,8 @@ export interface PricingSheet {
     phases: PricingPhase[];
     /** Active per-unit price lists (parking, storage, service space). Empty for an archive request. */
     unit_prices: UnitPriceSheet[];
+    /** Register areas per block and model, only for a project that names a model with its area (`projects.model_with_area`); else empty. */
+    model_areas: ModelAreaRow[];
 }
 
 /** Same window as `calculatePricing`: outside it no quote is calculated. */

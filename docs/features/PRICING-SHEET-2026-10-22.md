@@ -51,6 +51,15 @@ Owner decision 2026-11-27: these kinds are priced per unit, as Mandala Garden's 
 - «Блокоор»: a block's parking / storage / service kind shows the list that prices its units and, opened, the units with a price per condition (`UnitPriceView`: filter by model, search by code). Amounts are per unit, not per m².
 - Not covered yet: the leasing interest tables of the «PT» sheets, type-based price sheets without unit codes (Zoo Garden, Water Garden), and choosing a parking space in a meeting quote.
 
+## Model + area (2026-11-27)
+
+Owner request for Mandala Garden only: there a plan is always named with its area («A 96.53 м²») — the same letter is another plan in the next block and its area changes by floor. `projects.model_with_area` (migration `20261127150000`, default false; Admin → Төслүүд → edit → «Загварыг талбайтай (м²) нь хамт харуулах», super_admin, audited as `project.update`) is a display switch per project:
+
+- Meeting interest picker (`ViewingInterestPicker`, `GET /api/dashboard/viewings/options` → `model_with_area`): one select «Загвар, талбай» lists the block's model + area pairs («A · 96.57 м²») and sets both; the separate «Талбай» select is not shown. The saved interest is unchanged (block, model, `area_sqm`).
+- Price page and editor (`PricingSheet.model_areas`, `/api/admin/pricing` → `model_areas`): a price row shows the register area of its floors after the model (`areasOfModel`, `modelAreaText`: one area, up to three, else the range); the editor's block sheet shows it under the model input.
+
+Rules live in `lib/sales/model-area.ts` (pure) and `model-area-load.ts` (`projectShowsModelArea`, `loadModelAreas`). It changes no price and no stored value; a project with the switch off (Elysium) reads no units for it and looks as before, and a database without the column behaves as off.
+
 ## Price lists (2026-11-27)
 
 Owner decision 2026-11-27: one project can have several price lists, because Mandala Garden's approved price (201–202, valid 2026-11-01 – 2027-02-28) and the Forest Garden special price (503, valid to 2026-12-31) have different validity windows. Migration `20261127120000_project_price_lists.sql` (apply before deploying this code).

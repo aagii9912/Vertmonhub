@@ -11,6 +11,8 @@ const updateSchema = z.object({
     district: z.string().trim().max(120).nullable().optional(),
     description: z.string().trim().max(2000).nullable().optional(),
     status: z.enum(['active', 'planned', 'on_hold', 'completed']).optional(),
+    /** Display switch: a model is shown together with its register area (migration 20261127150000). */
+    model_with_area: z.boolean().optional(),
 }).refine((value) => Object.keys(value).length > 0);
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -37,8 +39,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         const { data: project, error } = await db.from('projects')
             .update(parsed.data).eq('id', id).select('*, shops(name)').single();
-        if (error) return safeErrorResponse(error, 'Төсөл шинэчлэхэд алдаа гарлаа');
-        await logAdminAudit({ actorId: admin.id, action: 'project.update', targetId: id, meta: { shop_id: existing.shop_id } });
+        if (error) {
+            if (parsed.data.model_with_area !== undefined && (error.code === '42703' || error.code === 'PGRST204')) {
+                return NextResponse.json({ error: '«Загварыг м²-тай харуулах» тохиргоо хараахан суулгагдаагүй байна (migration 20261127150000)' }, { status: 503 });
+            }
+            return safeErrorResponse(error, 'Төсөл шинэчлэхэд алдаа гарлаа');
+        }
+        await logAdminAudit({ actorId: admin.id, action: 'project.update', targetId: id, meta: { shop_id: existing.shop_id, ...(parsed.data.model_with_area === undefined ? {} : { model_with_area: parsed.data.model_with_area }) } });
         return NextResponse.json({ project });
     } catch (error) {
         return safeErrorResponse(error, 'Төсөл шинэчлэхэд алдаа гарлаа');

@@ -6,6 +6,7 @@ import { canAccessProject, resolveSalesProjectScope } from '@/lib/sales/project-
 import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { loadViewingOptions } from '@/lib/viewings/options';
 import { loadViewingPricingConditions } from '@/lib/sales/pricing-store';
+import { projectShowsModelArea } from '@/lib/sales/model-area-load';
 
 /** Minimal meeting picker; the unit register's buyer-enriched endpoint is not reused. */
 export const GET = withRoute({ module: 'viewings', error: 'Байрны сонголтыг уншиж чадсангүй' }, async ({ request, shop }) => {
@@ -19,5 +20,7 @@ export const GET = withRoute({ module: 'viewings', error: 'Байрны сонг
     if (!project.data) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
     const units = await loadViewingOptions(db, shop.id, scope, projectId);
     const pricing = await loadViewingPricingConditions(db, shop.id, scope, undefined, { projectId, units });
-    return NextResponse.json({ project_id: projectId, units, ...pricing });
+    // Display switch of the project (Mandala Garden: a plan is named with its area).
+    const model_with_area = await projectShowsModelArea(db, shop.id, projectId);
+    return NextResponse.json({ project_id: projectId, units, ...pricing, model_with_area });
 });
