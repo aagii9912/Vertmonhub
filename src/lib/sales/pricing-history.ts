@@ -1,12 +1,21 @@
-import { pricingKey, type PricingRule } from './pricing';
+import { MAIN_PRICE_LIST, pricingKey, type PricingRule } from './pricing';
 
-/** Only activated versions (active/archived) are listed; drafts never reach the price sheet. */
+/** Only activated versions (active/archived) are listed; drafts never reach the price sheet. Versions are numbered per list. */
 export interface PricingVersionSummary {
-    id: string; version: number; status: 'active' | 'archived';
+    id: string; list_key: string; list_name: string; version: number; status: 'active' | 'archived';
     source: string; valid_from: string | null; valid_until: string | null;
     activated_at: string; activated_by: string | null;
-    /** The next activation's time; null while the version is still active. */
+    /** When it was replaced or withdrawn; null while the version is still active. */
     archived_at: string | null;
+}
+
+/** One price list of the project as the sheet shows it: its name and the state of its active version. */
+export interface PriceListSummary {
+    key: string; name: string;
+    active_version: number | null; valid_from: string | null; valid_until: string | null;
+    /** null = no active version (withdrawn; only the archive remains). */
+    validity: PricingValidity | null;
+    archived: number;
 }
 
 export type PricingValidity = 'valid' | 'upcoming' | 'expired';
@@ -28,7 +37,11 @@ export interface PricingSheetVersion extends PricingVersionSummary {
 
 export interface PricingSheet {
     as_of: string;
+    /** Lists with at least one activated version: the default list first, then by name. */
+    lists: PriceListSummary[];
+    /** Activated versions of every list, newest activation first. */
     history: PricingVersionSummary[];
+    /** The shown list's active version (or the requested one); null when that list has no active price. */
     selected: PricingSheetVersion | null;
 }
 
@@ -62,9 +75,33 @@ export function diffPricingRules(rules: readonly PricingRule[], previous: readon
     return { rows, removed: sortPricingRules((previous ?? []).filter(rule => !current.has(ruleKey(rule)))) };
 }
 
-/** History rows sorted newest first: an archived version was replaced by the next newer activation. */
-export function withArchiveTimes<T extends { status: string; created_at: string }>(rows: readonly T[]): Array<T & { archived_at: string | null }> {
-    return rows.map((row, index) => ({ ...row, archived_at: row.status === 'archived' && index > 0 ? rows[index - 1].created_at : null }));
+/**
+ * Archive time of each activated version. Rows archived since price lists store it; an earlier row was
+ * replaced by the next newer activation of the same list.
+ */
+export function withArchiveTimes<T extends { list_key: string; version: number; status: string; created_at: string; archived_at?: string | null }>(rows: readonly T[]): Array<T & { archived_at: string | null }> {
+    return rows.map(row => {
+        if (row.status !== 'archived') return { ...row, archived_at: null };
+        if (row.archived_at) return { ...row, archived_at: row.archived_at };
+        const next = rows.filter(other => other.list_key === row.list_key && other.version > row.version)
+            .sort((a, b) => a.version - b.version)[0];
+        return { ...row, archived_at: next?.created_at ?? null };
+    });
+}
+
+/** The project's lists from its activated versions: named by the newest activation, default list first. */
+export function summarizePriceLists(history: readonly PricingVersionSummary[], asOf: string): PriceListSummary[] {
+    const lists = new Map<string, PriceListSummary & { named: number }>();
+    for (const row of history) {
+        const list = lists.get(row.list_key) ?? { key: row.list_key, name: row.list_name, named: 0,
+            active_version: null, valid_from: null, valid_until: null, validity: null, archived: 0 };
+        if (row.version > list.named) { list.name = row.list_name; list.named = row.version; }
+        if (row.status === 'active') Object.assign(list, { active_version: row.version, valid_from: row.valid_from, valid_until: row.valid_until, validity: pricingValidity(row, asOf) });
+        else list.archived++;
+        lists.set(row.list_key, list);
+    }
+    return [...lists.values()].map(({ named: _named, ...list }) => list)
+        .sort((a, b) => Number(b.key === MAIN_PRICE_LIST.key) - Number(a.key === MAIN_PRICE_LIST.key) || a.name.localeCompare(b.name, 'mn', { numeric: true }));
 }
 
 export interface PricingSheetGroup { block: string; model: string; floor_min: number; floor_max: number; cells: Record<string, PricingRuleDiff> }

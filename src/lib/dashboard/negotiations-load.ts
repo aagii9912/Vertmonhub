@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
-import { loadActivePricing } from '@/lib/sales/pricing-store';
+import { loadActivePriceLists } from '@/lib/sales/pricing-store';
 import { applyLeadScope, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { ubDateStr } from '@/lib/utils/date';
 import { fetchAllRows } from '@/lib/utils/pagination';
@@ -12,7 +12,7 @@ const chunks = <T,>(values: readonly T[]): T[][] => Array.from({ length: Math.ce
 
 /**
  * «Ярилцаж буй гэрээ»-ний эх өгөгдөл (W13): хүрээний (`applyLeadScope`) хэлэлцээрийн лид, тэдгээрийн амьд
- * гэрээ, болсон уулзалт (сонирхол), байрны өрөө, өнөөдрийн идэвхтэй үнийн тохиргоо, уулзалтын сэжим.
+ * гэрээ, болсон уулзалт (сонирхол), байрны өрөө, өнөөдрийн идэвхтэй үнийн жагсаалтууд, уулзалтын сэжим.
  * Уншилтын алдааг хоосон тайлан болгож нуухгүй; үнийн тохиргооны алдаа `PricingSelectionError` (503).
  */
 export async function loadNegotiations(db: SupabaseClient, options: { shopId: string; scope: SalesProjectScope; today?: string }): Promise<NegotiationsReport> {
@@ -32,7 +32,7 @@ export async function loadNegotiations(db: SupabaseClient, options: { shopId: st
             .select('id, lead_id, scheduled_at, status, sales_manager_name, interests').eq('shop_id', shopId).is('deleted_at', null)
             .eq('status', HELD_MEETING_STATUS).in('lead_id', ids)
             .order('scheduled_at', { ascending: false }).order('id').range(from, to)))).then(rows => rows.flat()),
-        leadIds.length ? loadActivePricing(db, shopId) : Promise.resolve(null),
+        leadIds.length ? loadActivePriceLists(db, shopId) : Promise.resolve(null),
     ]);
 
     // Өрөө: сонгосон байр эсвэл блок + загвар (блокийн бичлэгийг `pricingKey`-ээр тааруулна) — сонирхолтой уулзалт байвал л.

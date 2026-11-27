@@ -34,7 +34,18 @@ export const PricingDraftSchema = z.object({
     rules: z.array(PricingRuleSchema).max(500),
 }).strict().refine(value => !value.valid_from || !value.valid_until || value.valid_from <= value.valid_until, 'Хүчинтэй хугацаа буруу байна');
 export type PricingDraft = z.infer<typeof PricingDraftSchema>;
-export type PricingConfig = PricingDraft & { id: string; shop_id: string; version: number; status: 'draft' | 'active' | 'archived' };
+/**
+ * A project has one or more price lists (owner decision 2026-11-27), each with its own versions, validity
+ * window and archive. «Үндсэн үнэ» (`main`) is the default; versions are numbered per list.
+ */
+export const MAIN_PRICE_LIST = { key: 'main', name: 'Үндсэн үнэ' } as const;
+export const MAX_PRICE_LISTS = 20;
+export const PriceListKeySchema = z.string().regex(/^[a-z0-9-]{1,40}$/, 'Үнийн жагсаалт буруу байна');
+export const PriceListNameSchema = z.string().trim().min(1, 'Үнийн жагсаалтын нэрээ оруулна уу').max(80, 'Үнийн жагсаалтын нэр 80 тэмдэгтээс урт байна');
+export type PricingConfig = PricingDraft & {
+    id: string; shop_id: string; version: number; status: 'draft' | 'active' | 'archived';
+    list_key: string; list_name: string;
+};
 export const EMPTY_PRICING_DRAFT: PricingDraft = { source: '', valid_from: null, valid_until: null, inventory_area_confirmed: false, rules: [] };
 
 export function pricingKey(value: string): string {
@@ -67,15 +78,48 @@ export function pricingActivationError(draft: PricingDraft): string | null {
         return `Нөхцөл бүрийн эхний урьдчилгааны хувийг батална уу: ${missing.length} мөр хоосон (${conditions.slice(0, 6).join(', ')}${conditions.length > 6 ? ' …' : ''})`;
     }
     for (let a = 0; a < draft.rules.length; a++) for (let b = a + 1; b < draft.rules.length; b++) {
-        const left = draft.rules[a], right = draft.rules[b];
-        if (pricingKey(left.block) === pricingKey(right.block) && pricingKey(left.model) === pricingKey(right.model)
-            && pricingKey(left.payment_condition) === pricingKey(right.payment_condition)
-            && left.floor_min <= right.floor_max && right.floor_min <= left.floor_max) return 'Ижил блок, загвар, нөхцөлийн давхарын зааг давхардсан байна';
+        if (rulesOverlap(draft.rules[a], draft.rules[b])) return 'Ижил блок, загвар, нөхцөлийн давхарын зааг давхардсан байна';
+    }
+    return null;
+}
+
+/** Two rules price the same unit and condition: same block, model and condition with overlapping floors. */
+function rulesOverlap(left: PricingRule, right: PricingRule): boolean {
+    return pricingKey(left.block) === pricingKey(right.block) && pricingKey(left.model) === pricingKey(right.model)
+        && pricingKey(left.payment_condition) === pricingKey(right.payment_condition)
+        && left.floor_min <= right.floor_max && right.floor_min <= left.floor_max;
+}
+
+/**
+ * Activation check across lists: another list's active price may not cover the same unit and condition on
+ * the same days — a quote never chooses between two prices. Lists of different blocks, or of the same block
+ * in separate periods (a special price, then the regular one), do not conflict. The RPC enforces the same rule.
+ */
+export function priceListConflict(draft: PricingDraft, others: readonly PricingConfig[]): string | null {
+    if (!draft.valid_from || !draft.valid_until) return null;
+    for (const other of others) {
+        if (other.status !== 'active' || !other.valid_from || !other.valid_until) continue;
+        if (draft.valid_from > other.valid_until || other.valid_from > draft.valid_until) continue;
+        const byUnit = new Map<string, PricingRule[]>();
+        for (const rule of other.rules) {
+            const key = `${pricingKey(rule.block)}|${pricingKey(rule.model)}|${pricingKey(rule.payment_condition)}`;
+            byUnit.set(key, [...byUnit.get(key) ?? [], rule]);
+        }
+        for (const rule of draft.rules) {
+            const key = `${pricingKey(rule.block)}|${pricingKey(rule.model)}|${pricingKey(rule.payment_condition)}`;
+            if (byUnit.get(key)?.some(match => rulesOverlap(rule, match))) {
+                return `«${other.list_name}» жагсаалтын идэвхтэй үнэтэй давхцаж байна: ${rule.block} · ${rule.model} · ${rule.floor_min}–${rule.floor_max} давхар · ${rule.payment_condition} (${other.valid_from} – ${other.valid_until}). Блок эсвэл хүчинтэй хугацааг ялгана уу`;
+            }
+        }
     }
     return null;
 }
 
 export const PricingSaveSchema = z.object({
+    /** Omitted = the default list, so a client from before price lists keeps saving «Үндсэн үнэ». */
+    list_key: PriceListKeySchema.default(MAIN_PRICE_LIST.key),
+    list_name: PriceListNameSchema.default(MAIN_PRICE_LIST.name),
+    /** The latest version of this list (0 for a new list). */
     expected_version: z.number().int().min(0),
     status: z.enum(['draft', 'active']),
     config: PricingDraftSchema,
@@ -83,7 +127,11 @@ export const PricingSaveSchema = z.object({
     const error = value.status === 'active' ? pricingActivationError(value.config) : null;
     if (error) context.addIssue({ code: 'custom', message: error, path: ['config'] });
 });
-export type PricingSaveInput = z.infer<typeof PricingSaveSchema>;
+export type PricingSaveInput = z.input<typeof PricingSaveSchema>;
+/** Editor state of one list: its latest version (any status) and its active version. */
+export interface PriceListOverview { key: string; name: string; latest: PricingConfig | null; active: PricingConfig | null }
+export const PricingRetireSchema = z.object({ list_key: PriceListKeySchema, expected_version: z.number().int().min(1) }).strict();
+export type PricingRetireInput = z.infer<typeof PricingRetireSchema>;
 
 export interface PricingQuote {
     config_id: string; version: number; source: string; as_of: string;
@@ -119,4 +167,24 @@ export function calculatePricing(config: PricingConfig | null, selection: Pricin
         advance_amount: advance, balance_amount: advance === null ? null : total - advance,
         advance_reason: advance === null ? 'Эхний урьдчилгааны хувь батлагдаагүй' : null,
     } };
+}
+
+/**
+ * Quote from the project's active price lists. Exactly one list may price the selection on `asOf`; lists that
+ * are out of their window, or do not cover the unit, give no price. With no price, the reason comes from a
+ * list that covers the block (its window or missing row) rather than from an unrelated list.
+ */
+export function calculateListPricing(configs: readonly PricingConfig[], selection: PricingSelection, asOf: string): PricingResult {
+    const active = configs.filter(config => config.status === 'active');
+    if (!active.length) return calculatePricing(null, selection, asOf);
+    if (active.length === 1) return calculatePricing(active[0], selection, asOf);
+    const results = active.map(config => ({ config, result: calculatePricing(config, selection, asOf) }));
+    const priced = results.filter(item => item.result.available);
+    if (priced.length === 1) return priced[0].result;
+    if (priced.length > 1) return unavailable('Үнийн дүрэм давхардсан байна');
+    const block = pricingKey(selection.block);
+    const covering = results.filter(item => item.config.rules.some(rule => pricingKey(rule.block) === block));
+    if (!covering.length) return unavailable('Энэ байр, давхар, нөхцөлийн баталсан үнэ байхгүй');
+    const inWindow = covering.find(item => !!item.config.valid_from && !!item.config.valid_until && asOf >= item.config.valid_from && asOf <= item.config.valid_until);
+    return (inWindow ?? covering[0]).result;
 }

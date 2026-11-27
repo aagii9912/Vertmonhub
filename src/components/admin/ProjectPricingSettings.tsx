@@ -2,15 +2,19 @@
 
 import { useId, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileSpreadsheet, Plus, Trash2 } from 'lucide-react';
+import { FileSpreadsheet, ListPlus, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { dashboardJson, dashboardMutate, DashboardApiError } from '@/lib/api/dashboardFetch';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { EMPTY_PRICING_DRAFT, PricingSaveSchema, pricingKey, type PricingConfig, type PricingRule } from '@/lib/sales/pricing';
+import { Badge } from '@/components/ui/Badge';
+import {
+    EMPTY_PRICING_DRAFT, MAX_PRICE_LISTS, PriceListNameSchema, PricingSaveSchema, priceListConflict, pricingKey,
+    type PriceListOverview, type PricingConfig, type PricingRule,
+} from '@/lib/sales/pricing';
 import { PricingImportPanel } from './PricingImportPanel';
 
-type Overview = { latest: PricingConfig | null; active: PricingConfig | null };
+type Overview = { lists: PriceListOverview[] };
 type RuleForm = { [K in keyof PricingRule]: string };
 const advanceValid = (value: number) => Number.isFinite(value) && value >= 0 && value <= 100 && Math.abs(value * 100 - Math.round(value * 100)) < 1e-6;
 const emptyRule = (): RuleForm => ({ block: '', model: '', floor_min: '', floor_max: '', payment_condition: '', price_per_sqm: '', advance_percent: '' });
@@ -31,10 +35,10 @@ export function ProjectPricingSettings({ shopId, projectName, onSaved }: { shopI
     });
     return <section className="rounded-xl border border-border bg-surface p-5">
         <h2 className="text-base font-semibold">Үнийн нөхцөл{projectName ? ` · ${projectName}` : ''}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Баталсан эх сурвалжийн үнийг оруулна. Ноорог уулзалтын тооцоонд ашиглагдахгүй.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Баталсан эх сурвалжийн үнийг оруулна. Ноорог уулзалтын тооцоонд ашиглагдахгүй. Өөр хүчинтэй хугацаатай үнийг (тусгай үнэ) тусдаа жагсаалтаар оруулна.</p>
         {query.isPending ? <p className="mt-4 text-sm">Ачаалж байна…</p>
             : query.error && !query.data ? <p role="alert" className="mt-4 text-sm text-status-danger">{query.error.message} <button type="button" className="underline" onClick={() => void query.refetch()}>Дахин ачаалах</button></p>
-                : query.data && <PricingEditor key={`${shopId}:${query.dataUpdatedAt}`} shopId={shopId} overview={query.data} onSaved={async () => {
+                : query.data && <PriceLists shopId={shopId} overview={query.data} version={query.dataUpdatedAt} onSaved={async () => {
                     onSaved?.();
                     const result = await query.refetch();
                     if (result.error) throw result.error;
@@ -42,9 +46,56 @@ export function ProjectPricingSettings({ shopId, projectName, onSaved }: { shopI
     </section>;
 }
 
-function PricingEditor({ shopId, overview, onSaved }: { shopId: string; overview: Overview; onSaved: () => Promise<unknown> }) {
-    const initial = overview.latest ?? EMPTY_PRICING_DRAFT;
+/** List chooser: every list keeps its own versions, validity window and archive; a new list exists once it is saved. */
+function PriceLists({ shopId, overview, version, onSaved }: { shopId: string; overview: Overview; version: number; onSaved: () => Promise<unknown> }) {
     const id = useId();
+    const [added, setAdded] = useState<PriceListOverview[]>([]);
+    const [selected, setSelected] = useState<string | null>(null);
+    const [naming, setNaming] = useState(false);
+    const [newName, setNewName] = useState('');
+    const [nameError, setNameError] = useState<string | null>(null);
+    // A list added here stays local until its first save puts it on the server.
+    const lists = useMemo(() => [...overview.lists, ...added.filter(item => !overview.lists.some(list => list.key === item.key))], [overview.lists, added]);
+    const current = lists.find(list => list.key === selected) ?? lists[0];
+
+    function addList() {
+        const parsed = PriceListNameSchema.safeParse(newName);
+        if (!parsed.success) { setNameError(parsed.error.issues[0]?.message ?? 'Нэр буруу байна'); return; }
+        if (lists.some(list => list.name.trim().toLowerCase() === parsed.data.toLowerCase())) { setNameError('Ийм нэртэй үнийн жагсаалт байна'); return; }
+        const key = crypto.randomUUID();
+        setAdded(previous => [...previous, { key, name: parsed.data, latest: null, active: null }]);
+        setSelected(key); setNaming(false); setNewName(''); setNameError(null);
+    }
+
+    if (!current) return null;
+    return <div className="mt-4 space-y-4">
+        <div role="group" aria-label="Үнийн жагсаалт" className="flex flex-wrap items-center gap-2">
+            {lists.map(list => <Button key={list.key} type="button" size="sm" variant={list.key === current.key ? 'primary' : 'secondary'}
+                aria-pressed={list.key === current.key} onClick={() => setSelected(list.key)}>
+                {list.name}
+                <Badge variant={list.active ? 'success' : 'neutral'} className="ml-1.5">{list.active ? 'Идэвхтэй' : list.latest ? 'Идэвхгүй' : 'Шинэ'}</Badge>
+            </Button>)}
+            {!naming && lists.length < MAX_PRICE_LISTS && <Button type="button" size="sm" variant="ghost" onClick={() => setNaming(true)}><ListPlus className="size-4" />Үнийн жагсаалт нэмэх</Button>}
+        </div>
+        {naming && <div className="flex flex-wrap items-end gap-2">
+            <label htmlFor={`${id}-new-list`} className="space-y-1 text-sm">Шинэ жагсаалтын нэр
+                <Input id={`${id}-new-list`} value={newName} maxLength={80} placeholder="Жишээ: Forest Garden тусгай үнэ" className="min-w-72"
+                    aria-invalid={!!nameError} onChange={event => { setNewName(event.target.value); setNameError(null); }}
+                    onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addList(); } }} /></label>
+            <Button type="button" variant="secondary" onClick={addList}>Нэмэх</Button>
+            <Button type="button" variant="ghost" onClick={() => { setNaming(false); setNewName(''); setNameError(null); }}>Болих</Button>
+            {nameError && <p role="alert" className="w-full text-sm text-status-danger">{nameError}</p>}
+        </div>}
+        <PricingEditor key={`${shopId}:${current.key}:${version}`} shopId={shopId} list={current}
+            others={lists.filter(list => list.key !== current.key)} onSaved={onSaved} />
+    </div>;
+}
+
+function PricingEditor({ shopId, list, others, onSaved }: { shopId: string; list: PriceListOverview; others: readonly PriceListOverview[]; onSaved: () => Promise<unknown> }) {
+    const initial = list.latest ?? EMPTY_PRICING_DRAFT;
+    const id = useId();
+    const [name, setName] = useState(list.name);
+    const [retiring, setRetiring] = useState(false);
     const [source, setSource] = useState(initial.source);
     const [from, setFrom] = useState(initial.valid_from ?? '');
     const [until, setUntil] = useState(initial.valid_until ?? '');
@@ -87,7 +138,7 @@ function PricingEditor({ shopId, overview, onSaved }: { shopId: string; overview
     }
 
     function payload(status: 'draft' | 'active') {
-        return PricingSaveSchema.safeParse({ expected_version: overview.latest?.version ?? 0, status, config: {
+        return PricingSaveSchema.safeParse({ list_key: list.key, list_name: name, expected_version: list.latest?.version ?? 0, status, config: {
             source, valid_from: from || null, valid_until: until || null, inventory_area_confirmed: confirmed,
             rules: rows.map(row => ({ ...row,
                 floor_min: row.floor_min === '' ? null : Number(row.floor_min), floor_max: row.floor_max === '' ? null : Number(row.floor_max),
@@ -99,8 +150,24 @@ function PricingEditor({ shopId, overview, onSaved }: { shopId: string; overview
 
     function review() {
         const parsed = payload('active');
-        setError(parsed.success ? null : parsed.error.issues[0]?.message ?? 'Үнийн тохиргоо буруу байна');
-        setReviewed(parsed.success);
+        // Another list's active price for the same unit, condition and days: the server refuses it too.
+        const conflict = parsed.success ? priceListConflict(parsed.data.config, others.flatMap(other => other.active ? [other.active] : [])) : null;
+        setError(parsed.success ? conflict : parsed.error.issues[0]?.message ?? 'Үнийн тохиргоо буруу байна');
+        setReviewed(parsed.success && !conflict);
+    }
+
+    async function retire() {
+        if (saving || conflict || !list.latest || !list.active) return;
+        setSaving(true); setError(null);
+        try {
+            await dashboardMutate('/api/admin/pricing', 'DELETE', { list_key: list.key, expected_version: list.latest.version }, { shopId });
+            toast.success(`«${list.name}» жагсаалтын үнэ идэвхгүй боллоо`);
+            await onSaved();
+        } catch (cause) {
+            if (cause instanceof DashboardApiError && cause.status === 409) setConflict(true);
+            setError(cause instanceof Error ? cause.message : 'Үнийг идэвхгүй болгож чадсангүй');
+        }
+        finally { setSaving(false); setRetiring(false); }
     }
 
     async function save(status: 'draft' | 'active') {
@@ -119,8 +186,17 @@ function PricingEditor({ shopId, overview, onSaved }: { shopId: string; overview
         finally { setSaving(false); }
     }
 
-    return <div className="mt-4 space-y-4">
-        <p className="text-sm text-muted-foreground">{overview.active ? `Идэвхтэй хувилбар ${overview.active.version}: ${overview.active.source} (${overview.active.valid_from} – ${overview.active.valid_until})` : 'Идэвхтэй үнэ байхгүй.'} {overview.latest ? `Засаж буй хувилбар: ${overview.latest.version}` : ''}</p>
+    return <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">{list.active ? `Идэвхтэй хувилбар ${list.active.version}: ${list.active.source} (${list.active.valid_from} – ${list.active.valid_until})` : 'Идэвхтэй үнэ байхгүй.'} {list.latest ? `Засаж буй хувилбар: ${list.latest.version}` : ''}</p>
+        {list.active && <div className="flex flex-wrap items-center gap-2 text-sm">
+            {!retiring ? <Button type="button" variant="secondary" disabled={saving || conflict} onClick={() => setRetiring(true)}>Идэвхтэй үнийг идэвхгүй болгох</Button>
+                : <>
+                    <span role="status">«{list.name}» жагсаалтын хувилбар {list.active.version} архивт шилжинэ. Энэ жагсаалтын байранд уулзалтын үнийн санал тооцогдохоо болино.</span>
+                    <Button type="button" variant="danger" disabled={saving} onClick={() => void retire()}>Тийм, идэвхгүй болгох</Button>
+                    <Button type="button" variant="ghost" disabled={saving} onClick={() => setRetiring(false)}>Болих</Button>
+                </>}
+        </div>}
+        <label htmlFor={`${id}-name`} className="block max-w-md space-y-1 text-sm">Жагсаалтын нэр<Input id={`${id}-name`} value={name} maxLength={80} onChange={event => { setName(event.target.value); setReviewed(false); }} /></label>
         <div className="grid grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(140px,1fr)] gap-3">
             <label htmlFor={`${id}-source`} className="space-y-1 text-sm">Эх сурвалж<Input id={`${id}-source`} value={source} maxLength={500} placeholder="Баталсан үнийн хуудас, огноо" onChange={event => { setSource(event.target.value); setReviewed(false); }} /></label>
             <label htmlFor={`${id}-from`} className="space-y-1 text-sm">Эхлэх огноо<Input id={`${id}-from`} type="date" value={from} onChange={event => { setFrom(event.target.value); setReviewed(false); }} /></label>
@@ -184,7 +260,7 @@ function PricingEditor({ shopId, overview, onSaved }: { shopId: string; overview
                 finally { setSaving(false); }
             }}>Серверийн шинэ утгыг авах · миний засварыг цэвэрлэх</button>}
         </div>}
-        {reviewed && <p role="status" className="rounded-lg border border-status-success/30 bg-status-success-soft p-3 text-sm">{source}: {from}–{until}, {rows.length} мөр. Давхарын зааг, үнэ, эхний урьдчилгааг шалгалаа. Идэвхжүүлэхэд өмнөх идэвхтэй хувилбарыг орлоно; хуучин уулзалтын санал хэвээр үлдэнэ.</p>}
+        {reviewed && <p role="status" className="rounded-lg border border-status-success/30 bg-status-success-soft p-3 text-sm">{source}: {from}–{until}, {rows.length} мөр. Давхарын зааг, үнэ, эхний урьдчилгааг шалгалаа. Идэвхжүүлэхэд «{name.trim()}» жагсаалтын өмнөх идэвхтэй хувилбарыг орлоно; бусад жагсаалт, хуучин уулзалтын санал хэвээр үлдэнэ.</p>}
         <div className="flex flex-wrap gap-2">
             <Button type="button" variant="secondary" disabled={saving || conflict} onClick={() => void save('draft')}>Ноорог хадгалах</Button>
             <Button type="button" variant="secondary" disabled={saving || conflict} onClick={review}>Идэвхжүүлэхийн өмнө хянах</Button>

@@ -44,7 +44,7 @@ function PriceCell({ row, perCellAdvance }: { row: PricingRuleDiff | undefined; 
 }
 
 /** One activated version: its terms, rules and the difference from the version it replaced. */
-export function PricingVersionView({ version }: { version: PricingSheetVersion }) {
+export function PricingVersionView({ version, showList = false }: { version: PricingSheetVersion; showList?: boolean }) {
     const compared = version.previous_version !== null;
     const changed = version.rows.filter(row => row.change === 'changed').length;
     const added = version.rows.filter(row => row.change === 'added').length;
@@ -54,7 +54,7 @@ export function PricingVersionView({ version }: { version: PricingSheetVersion }
     return <div className="space-y-4">
         <div className="rounded-xl border border-border bg-surface p-5">
             <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base font-semibold">Хувилбар {version.version}</h2>
+                <h2 className="text-base font-semibold">{showList ? `${version.list_name} · ` : ''}Хувилбар {version.version}</h2>
                 <PricingStatusBadge version={version} />
             </div>
             <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -67,7 +67,7 @@ export function PricingVersionView({ version }: { version: PricingSheetVersion }
             </dl>
             {version.status === 'active' && version.validity !== 'valid' && <Alert variant="warning" className="mt-4">
                 {version.validity === 'expired'
-                    ? 'Хүчинтэй хугацаа дууссан тул уулзалтын үнийн санал тооцогдохгүй. Шинэ үнэ батлагдтал энэ үнийг харилцагчид санал болгохгүй.'
+                    ? `Хүчинтэй хугацаа дууссан тул ${showList ? 'энэ жагсаалтын байранд ' : ''}уулзалтын үнийн санал тооцогдохгүй. Шинэ үнэ батлагдтал энэ үнийг харилцагчид санал болгохгүй.`
                     : `Энэ үнэ ${pricingDay(version.valid_from)}-нээс хүчинтэй болно. Тэр хүртэл уулзалтын үнийн санал тооцогдохгүй.`}
             </Alert>}
             <p className="mt-4 text-sm text-muted-foreground">

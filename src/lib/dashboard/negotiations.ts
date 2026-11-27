@@ -9,7 +9,7 @@
  *    тохиргоогүй, хугацаа дууссан, дүрэм олдоогүй бол null («—»). Урьдчилгааг нөхцлийн нэрээс таахгүй.
  *  • «Урьдчилгаа нөхцөл» тодорхойлогдоогүй (W13) тул үргэлж null. Захиалагчийн нэр, утас гаргахгүй.
  */
-import { calculatePricing, PricingSelectionSchema, type PricingConfig } from '@/lib/sales/pricing';
+import { calculateListPricing, PricingSelectionSchema, type PricingConfig } from '@/lib/sales/pricing';
 import { ubDateStr } from '@/lib/utils/date';
 import { knownSum } from './weekly-sales';
 import { modelRooms, roomsOf } from './meeting-details';
@@ -49,7 +49,8 @@ export interface NegotiationsReport {
     rows: NegotiationRow[];
     totals: { count: number; area: NegotiationSum; total: NegotiationSum; advance: NegotiationSum };
     /** Мөрийн үнийг тооцсон тохиргоо; мөргүй эсвэл идэвхтэй тохиргоогүй бол null. */
-    pricing: { version: number; source: string } | null;
+    /** `label` names what priced the rows: «v2», or every active list when the project has several. */
+    pricing: { version: number; source: string; label: string } | null;
     notes: string[];
 }
 
@@ -60,7 +61,8 @@ export interface NegotiationsInput {
     liveContractLeadIds: ReadonlySet<string>;
     viewings: ReadonlyArray<{ id: string; lead_id: string | null; scheduled_at: string; status: string | null; sales_manager_name: string | null; interests: unknown }>;
     units: ReadonlyArray<{ id: string; block: string | null; model: string | null; rooms: number | string | null }>;
-    pricing: PricingConfig | null;
+    /** The project's active price lists; null when the loader did not read them (no leads). */
+    pricing: readonly PricingConfig[] | null;
     referrals: { available: boolean; byViewing: ReadonlyMap<string, string | null> };
 }
 
@@ -142,7 +144,7 @@ export function buildNegotiations(input: NegotiationsInput): NegotiationsReport 
             block: interest.block, model: interest.model, area_sqm: interest.area_sqm, floor: interest.floor,
             unit_id: interest.unit_id, payment_condition: interest.payment_condition,
         });
-        const priced = selection.success ? calculatePricing(input.pricing, selection.data, input.today) : null;
+        const priced = selection.success ? calculateListPricing(input.pricing ?? [], selection.data, input.today) : null;
         const quote = priced?.available ? priced.quote : null;
         const unpriced = quote ? null : priced && !priced.available ? priced.reason : 'Сонирхлын мэдээлэл дутуу';
         if (unpriced) reasons.set(unpriced, (reasons.get(unpriced) ?? 0) + 1);
@@ -164,10 +166,14 @@ export function buildNegotiations(input: NegotiationsInput): NegotiationsReport 
     }).sort((a, b) => (b.viewedAt ?? '').localeCompare(a.viewedAt ?? '') || a.leadId.localeCompare(b.leadId));
 
     // Үнийн тэмдэглэл мөртэй үед л: хоосон жагсаалтад үнийн тохиргоог уншдаггүй (loader) тул «алга» гэж хэлэхгүй.
-    const pricing = rows.length ? input.pricing : null;
-    if (rows.length && !input.pricing) notes.push('Баталсан (идэвхтэй) үнийн тохиргоо алга — мкв үнэ, нийт үнэ, урьдчилгаа «—».');
+    const lists = rows.length ? (input.pricing ?? []).filter(config => config.status === 'active') : [];
+    const pricing = lists.length ? {
+        version: lists[0].version, source: lists[0].source,
+        label: lists.length === 1 ? `v${lists[0].version}` : lists.map(config => `«${config.list_name}» v${config.version}`).join(' · '),
+    } : null;
+    if (rows.length && !pricing) notes.push('Баталсан (идэвхтэй) үнийн тохиргоо алга — мкв үнэ, нийт үнэ, урьдчилгаа «—».');
     if (pricing) {
-        notes.push(`Үнийг өнөөдрийн (${input.today}) баталсан үнийн тохиргоогоор (v${pricing.version}) тооцов.`);
+        notes.push(`Үнийг өнөөдрийн (${input.today}) баталсан үнийн тохиргоогоор (${pricing.label}) тооцов.`);
         for (const [reason, count] of reasons) notes.push(`Үнэ тооцоогүй (${count}): ${reason}.`);
     }
     if (withoutInterest) notes.push(`${withoutInterest} лидийн болсон уулзалтад сонирхсон байр бүртгэгдээгүй.`);
@@ -183,7 +189,7 @@ export function buildNegotiations(input: NegotiationsInput): NegotiationsReport 
             total: negotiationSum(rows.map(row => row.total)),
             advance: negotiationSum(rows.map(row => row.advance)),
         },
-        pricing: pricing ? { version: pricing.version, source: pricing.source } : null,
+        pricing,
         notes,
     };
 }
