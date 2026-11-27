@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { DateText } from '@/components/ui/DateText';
 import { formatMNT } from '@/lib/utils/currency';
-import { pricingKey } from '@/lib/sales/pricing';
+import { pricingKey, pricingStepKey } from '@/lib/sales/pricing';
 import { pivotPricingRows, type PricingRuleDiff, type PricingSheetVersion, type PricingValidity } from '@/lib/sales/pricing-history';
 
 export const PRICING_VALIDITY: Record<PricingValidity, { label: string; variant: 'success' | 'pending' | 'danger' }> = {
@@ -30,13 +30,15 @@ function Meta({ label, children }: { label: string; children: ReactNode }) {
     return <div className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-0.5 text-sm text-foreground">{children}</dd></div>;
 }
 
-function PriceCell({ row, perCellAdvance }: { row: PricingRuleDiff | undefined; perCellAdvance: boolean }) {
+/** `raise` = the step price added by counted contracts (0 when the list has no step or the model has no contract yet). */
+function PriceCell({ row, perCellAdvance, raise }: { row: PricingRuleDiff | undefined; perCellAdvance: boolean; raise: number }) {
     if (!row) return <td className="px-4 py-2.5 text-right text-muted-foreground">—</td>;
     const { rule, previous } = row;
     const priceMoved = row.change === 'changed' && previous && previous.price_per_sqm !== rule.price_per_sqm;
     const advanceMoved = row.change === 'changed' && previous && previous.advance_percent !== rule.advance_percent;
     return <td className={`num px-4 py-2.5 text-right${row.change === 'changed' ? ' bg-status-pending-soft' : ''}`}>
-        {formatMNT(rule.price_per_sqm)}
+        {formatMNT(rule.price_per_sqm + raise)}
+        {raise > 0 && <span className="block text-xs text-muted-foreground">суурь {formatMNT(rule.price_per_sqm)}</span>}
         {row.change === 'added' && <Badge variant="info" className="ml-1.5">Шинэ</Badge>}
         {(perCellAdvance || advanceMoved) && <span className="block text-xs text-muted-foreground">урьдчилгаа {percent(rule.advance_percent)}{advanceMoved && <> · өмнө <s>{percent(previous!.advance_percent)}</s></>}</span>}
         {priceMoved && <span className="block text-xs text-muted-foreground">өмнө <s>{formatMNT(previous!.price_per_sqm)}</s></span>}
@@ -54,6 +56,10 @@ export function PricingVersionView({ version, showList = false, block: only = nu
     const changed = rows.filter(row => row.change === 'changed').length;
     const added = rows.filter(row => row.change === 'added').length;
     const table = useMemo(() => pivotPricingRows(rows), [rows]);
+    // Step price: contracts counted per model raise that model's price in every condition; only the active version has counts.
+    const step = version.step ?? null;
+    const counted = useMemo(() => (step?.counts ?? []).filter(item => only === null || pricingKey(item.block) === pricingKey(only)), [step, only]);
+    const raised = useMemo(() => new Map(counted.map(item => [pricingStepKey(item.block, item.model), item.contracts * (step?.amount_per_sqm ?? 0)])), [counted, step]);
     const [block, setBlock] = useState<string | null>(null);
     const groups = block === null ? table.groups : table.groups.filter(group => pricingKey(group.block) === pricingKey(block));
     return <div className="space-y-4">
@@ -75,6 +81,14 @@ export function PricingVersionView({ version, showList = false, block: only = nu
                     ? `Хүчинтэй хугацаа дууссан тул ${showList ? 'энэ жагсаалтын байранд ' : ''}уулзалтын үнийн санал тооцогдохгүй. Шинэ үнэ батлагдтал энэ үнийг харилцагчид санал болгохгүй.`
                     : `Энэ үнэ ${pricingDay(version.valid_from)}-нээс хүчинтэй болно. Тэр хүртэл уулзалтын үнийн санал тооцогдохгүй.`}
             </Alert>}
+            {step && <div className="mt-4 rounded-lg border border-gold/40 bg-surface-2 p-3 text-sm" role="note" aria-label="Гэрээ бүрд нэмэгдэх үнэ">
+                <p className="font-medium">Гэрээ бүрд м² үнэ <span className="num">{formatMNT(step.amount_per_sqm)}</span>-өөр нэмэгдэнэ</p>
+                <p className="mt-1 text-muted-foreground">Загвар бүр өөрийн тоолууртай: тухайн загвараас <span className="num">{pricingDay(step.counts_from)}</span>-с хойш хийгдсэн гэрээ бүр тэр загварын бүх давхар, бүх нөхцөлийн м² үнийг өсгөнө.
+                    {version.status !== 'active' ? ' Архивласан хувилбарт суурь үнэ харагдана.'
+                        : counted.length ? ` Одоо: ${counted.map(item => `${only === null ? `${item.block} · ` : ''}${item.model} загвар — ${item.contracts} гэрээ (+${formatMNT(item.contracts * step.amount_per_sqm)})`).join('; ')}.`
+                            : ' Одоогоор тоологдсон гэрээ алга — доорх нь суурь үнэ.'}</p>
+                {version.status === 'active' && step.undated > 0 && <p className="mt-1 text-status-pending"><span className="num">{step.undated}</span> гэрээ огноогүй тул тоологдоогүй. Гэрээний огноог оруулбал үнэд тусна.</p>}
+            </div>}
             <p className="mt-4 text-sm text-muted-foreground">
                 {compared
                     ? `Хувилбар ${version.previous_version}-тэй харьцуулав: ${changed} мөр өөрчлөгдсөн · ${added} шинэ · ${removed.length} хасагдсан.`
@@ -103,11 +117,12 @@ export function PricingVersionView({ version, showList = false, block: only = nu
                     {only === null && <td className="px-4 py-2.5">{group.block}</td>}
                     <td className="px-4 py-2.5">{group.model}</td>
                     <td className="num px-4 py-2.5">{floors(group)}</td>
-                    {table.conditions.map(condition => <PriceCell key={condition.key} row={group.cells[condition.key]} perCellAdvance={condition.advance_percent === 'mixed'} />)}
+                    {table.conditions.map(condition => <PriceCell key={condition.key} row={group.cells[condition.key]} perCellAdvance={condition.advance_percent === 'mixed'}
+                        raise={raised.get(pricingStepKey(group.block, group.model)) ?? 0} />)}
                 </tr>)}</tbody>
             </table>
         </div>
-        <p className="text-xs text-muted-foreground">Нүд бүр м² үнэ. Хоосон нүд — тухайн байранд энэ нөхцөл байхгүй.{compared ? ' «Шинэ» — өмнөх хувилбарт байгаагүй; зураастай нь өмнөх үнэ.' : ''}</p>
+        <p className="text-xs text-muted-foreground">Нүд бүр м² үнэ{raised.size ? ' (гэрээний тоогоор нэмэгдсэн; доор нь суурь үнэ)' : ''}. Хоосон нүд — тухайн байранд энэ нөхцөл байхгүй.{compared ? ' «Шинэ» — өмнөх хувилбарт байгаагүй; зураастай нь өмнөх үнэ.' : ''}</p>
 
         {removed.length > 0 && <div className="rounded-xl border border-border bg-surface p-5">
             <h3 className="text-sm font-semibold">Хасагдсан мөр</h3>

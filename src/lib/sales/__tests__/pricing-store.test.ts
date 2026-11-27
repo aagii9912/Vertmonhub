@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { loadPricingOverview, quoteViewingSelection, retirePriceList, savePricingConfig } from '../pricing-store';
+import { loadPricingOverview, loadPricingSteps, quoteViewingSelection, retirePriceList, savePricingConfig, stepCounts } from '../pricing-store';
 import { EMPTY_PRICING_DRAFT, type PricingSelection } from '../pricing';
 
 const unit = { id: '00000000-0000-0000-0000-000000000001', project_id: 'project', block: 'Б1', model: 'E6', floor: '02', sale_area: 51.72, updated_sale_area: 0, contracted_area: null };
@@ -89,4 +89,44 @@ it('lists every price list for the editor with its latest and active version, th
     expect(lists.map(list => [list.key, list.name, list.latest?.version ?? null, list.active?.version ?? null])).toEqual([
         ['main', 'Үндсэн үнэ', null, null], ['forest', 'Forest Garden тусгай үнэ', 2, 1],
     ]);
+});
+it('counts live dated contracts of the list blocks per model for a step price, and quotes with the raised price', async () => {
+    const stepped = { ...row('main', 'Үндсэн үнэ', 3, 'active', 'Б1'), config: { ...row('main', '', 3, 'active', 'Б1').config, step: { amount_per_sqm: 100_000, counts_from: '2026-10-05' } } };
+    const plain = row('forest', 'Forest Garden тусгай үнэ', 1, 'active', '503');
+    const tables: Record<string, unknown[]> = {
+        project_pricing_configs: [stepped, plain],
+        property_units: [unit, { ...unit, id: 'u2', code: 'Б1-0301', model: 'E6' }, { ...unit, id: 'u3', code: 'Б1-0401', model: 'E3' }, { ...unit, id: 'u4', code: 'Б2-0201', block: 'Б2', model: 'E6' }].map((item, index) => ({ code: `Б1-020${index}`, ...item })),
+        property_contracts: [
+            { product_type: 'residential', unit_label: 'Б1-0200, 2 өрөө', contract_date: '2026-10-06' },   // E6 ✓
+            { product_type: 'residential', unit_label: 'Б1-0301', contract_date: '2026-10-05T00:00:00Z' }, // E6 ✓ (the first counted day)
+            { product_type: 'residential', unit_label: 'Б1-0401', contract_date: '2026-10-07' },           // E3: another counter
+            { product_type: 'residential', unit_label: 'Б1-0200', contract_date: '2026-10-04' },           // before counting starts
+            { product_type: 'residential', unit_label: 'Б1-0301', contract_date: null },                   // undated: not counted
+            { product_type: 'residential', unit_label: 'Б2-0201', contract_date: '2026-10-08' },           // a block the list does not price
+            { product_type: 'residential', unit_label: 'Б9-0000', contract_date: '2026-10-08' },           // no such unit
+        ],
+    };
+    const calls: string[][] = [];
+    const db = { from(table: string) {
+        const filters: string[] = []; calls.push(filters);
+        const chain = { select: () => chain, order: () => chain, limit: () => chain, is: () => chain,
+            or: (expression: string) => { filters.push(`${table}.or:${expression}`); return chain; },
+            eq: (column: string, value: unknown) => { filters.push(`${table}.${column}=${String(value)}`); return chain; },
+            range: async () => ({ data: tables[table] ?? [], error: null }),
+            then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: tables[table] ?? [], error: null }).then(resolve),
+        }; return chain;
+    } } as unknown as SupabaseClient;
+    const configs = [stepped, plain].map(item => ({ ...item.config, id: item.id, shop_id: 'shop', version: item.version, status: 'active' as const, list_key: item.list_key, list_name: item.list_name }));
+    const steps = await loadPricingSteps(db, 'shop', configs);
+    expect([...steps.keys()]).toEqual(['main-3']);
+    expect([...steps.get('main-3')!.counts]).toEqual([['B1|E6', 2], ['B1|E3', 1]]);
+    expect(steps.get('main-3')!.undated).toBe(1);
+    expect(calls.flat()).toEqual(expect.arrayContaining(['property_contracts.shop_id=shop', 'property_contracts.product_type=residential', 'property_contracts.or:contract_status.is.null,contract_status.neq.cancelled', 'property_units.category=residential']));
+    expect(stepCounts(steps).get('main-3')?.get('B1|E6')).toBe(2);
+    // No list with a step: nothing is read.
+    const idle = { from: () => { throw new Error('must not read'); } } as unknown as SupabaseClient;
+    expect((await loadPricingSteps(idle, 'shop', [configs[1]])).size).toBe(0);
+
+    const quote = await quoteViewingSelection(db, 'shop', { ...selection, payment_condition: '50%' }, { projectIds: null, managerName: null }, '2026-10-08');
+    expect(quote).toMatchObject({ available: true, quote: { price_per_sqm: 4_200_000, base_price_per_sqm: 4_000_000, step_contracts: 2, total_amount: 217_224_000 } });
 });

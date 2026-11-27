@@ -9,7 +9,7 @@
  *    тохиргоогүй, хугацаа дууссан, дүрэм олдоогүй бол null («—»). Урьдчилгааг нөхцлийн нэрээс таахгүй.
  *  • «Урьдчилгаа нөхцөл» тодорхойлогдоогүй (W13) тул үргэлж null. Захиалагчийн нэр, утас гаргахгүй.
  */
-import { calculateListPricing, PricingSelectionSchema, type PricingConfig } from '@/lib/sales/pricing';
+import { calculateListPricing, PricingSelectionSchema, type PricingConfig, type PricingStepCounts } from '@/lib/sales/pricing';
 import { ubDateStr } from '@/lib/utils/date';
 import { knownSum } from './weekly-sales';
 import { modelRooms, roomsOf } from './meeting-details';
@@ -63,6 +63,8 @@ export interface NegotiationsInput {
     units: ReadonlyArray<{ id: string; block: string | null; model: string | null; rooms: number | string | null }>;
     /** The project's active price lists; null when the loader did not read them (no leads). */
     pricing: readonly PricingConfig[] | null;
+    /** Counted contracts of lists with a step price, by config id (today's count, like the prices). */
+    steps?: ReadonlyMap<string, PricingStepCounts>;
     referrals: { available: boolean; byViewing: ReadonlyMap<string, string | null> };
 }
 
@@ -144,7 +146,7 @@ export function buildNegotiations(input: NegotiationsInput): NegotiationsReport 
             block: interest.block, model: interest.model, area_sqm: interest.area_sqm, floor: interest.floor,
             unit_id: interest.unit_id, payment_condition: interest.payment_condition,
         });
-        const priced = selection.success ? calculateListPricing(input.pricing ?? [], selection.data, input.today) : null;
+        const priced = selection.success ? calculateListPricing(input.pricing ?? [], selection.data, input.today, input.steps) : null;
         const quote = priced?.available ? priced.quote : null;
         const unpriced = quote ? null : priced && !priced.available ? priced.reason : 'Сонирхлын мэдээлэл дутуу';
         if (unpriced) reasons.set(unpriced, (reasons.get(unpriced) ?? 0) + 1);

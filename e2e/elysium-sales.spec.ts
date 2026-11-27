@@ -302,7 +302,7 @@ test('pricing dialog begins empty and requires review before activating versione
     await dialog.getByLabel('Эх сурвалж', { exact: true }).fill('Баталсан үнэ 2026-10-08');
     await dialog.getByLabel('Эхлэх огноо', { exact: true }).fill('2026-10-01');
     await dialog.getByLabel('Дуусах огноо', { exact: true }).fill('2026-12-31');
-    await dialog.getByRole('checkbox').check();
+    await dialog.getByRole('checkbox', { name: /Одоогийн нөөцийн талбайгаар/ }).check();
     await dialog.getByRole('button', { name: 'Үнийн мөр нэмэх', exact: true }).click();
     for (const [label, value] of [['Блок', 'Б1'], ['Загвар', 'E3'], ['Давхар эхлэх', '2'], ['Давхар дуусах', '8'],
         ['Нөхцөл', '50%'], ['м² үнэ (₮)', '4000000'], ['Эхний урьдчилгаа (%)', '50']]) {
@@ -329,7 +329,7 @@ test('pricing dialog begins empty and requires review before activating versione
     await dialog.getByLabel('Эх сурвалж', { exact: true }).fill('Тусгай үнийн санал 2026-11');
     await dialog.getByLabel('Эхлэх огноо', { exact: true }).fill('2026-11-01');
     await dialog.getByLabel('Дуусах огноо', { exact: true }).fill('2026-11-30');
-    await dialog.getByRole('checkbox').check();
+    await dialog.getByRole('checkbox', { name: /Одоогийн нөөцийн талбайгаар/ }).check();
     await dialog.getByRole('button', { name: 'Үнийн мөр нэмэх', exact: true }).click();
     for (const [label, value] of [['Блок', 'Б1'], ['Загвар', 'E3'], ['Давхар эхлэх', '8'], ['Давхар дуусах', '12'],
         ['Нөхцөл', '50%'], ['м² үнэ (₮)', '3900000'], ['Эхний урьдчилгаа (%)', '50']]) {

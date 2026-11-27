@@ -27,7 +27,7 @@ it('preserves a reviewed draft on save failure and requires another review after
     fireEvent.change(screen.getByLabelText('Эх сурвалж'), { target: { value: 'Баталсан 10.08 үнэ' } });
     fireEvent.change(screen.getByLabelText('Эхлэх огноо'), { target: { value: '2026-10-01' } });
     fireEvent.change(screen.getByLabelText('Дуусах огноо'), { target: { value: '2026-10-31' } });
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Одоогийн нөөцийн талбайгаар/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Үнийн мөр нэмэх' }));
     for (const [label, value] of [['Блок','Б1'], ['Загвар','E3'], ['Давхар эхлэх','2'], ['Давхар дуусах','9'], ['Нөхцөл','50%'], ['м² үнэ (₮)','4000000'], ['Эхний урьдчилгаа (%)','50']]) {
         fireEvent.change(screen.getByLabelText(`1-р мөр ${label}`), { target: { value } });
@@ -130,7 +130,7 @@ it('adds a separate price list with its own name and saves it under its own key 
     fireEvent.change(screen.getByLabelText('Эх сурвалж'), { target: { value: 'PQ-FG-503-001' } });
     fireEvent.change(screen.getByLabelText('Эхлэх огноо'), { target: { value: '2026-11-27' } });
     fireEvent.change(screen.getByLabelText('Дуусах огноо'), { target: { value: '2026-12-31' } });
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Одоогийн нөөцийн талбайгаар/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Үнийн мөр нэмэх' }));
     for (const [label, value] of [['Блок','201'], ['Загвар','A'], ['Давхар эхлэх','9'], ['Давхар дуусах','12'], ['Нөхцөл','50%'], ['м² үнэ (₮)','4800000'], ['Эхний урьдчилгаа (%)','50']]) {
         fireEvent.change(screen.getByLabelText(`1-р мөр ${label}`), { target: { value } });
@@ -220,4 +220,38 @@ it('edits a list of several blocks one block at a time as a price sheet: cards, 
         '201/A 30% 4000000 30', '201/B 30% 4000000 30', '202/A 30% 4000000 null', '202/B 30% 4100000 30', '203/C 50% 4500000 null',
     ]);
     expect(body.config.rules.every((item: object) => !('gid' in item))).toBe(true);
+});
+it('saves a step price only when it is switched on, and keeps a saved one', async () => {
+    const rule = { block: '503', model: 'A', floor_min: 2, floor_max: 9, payment_condition: '50%', price_per_sqm: 4_800_000, advance_percent: 50 };
+    const latest = { id: 'c1', shop_id: 'shop', list_key: 'main', list_name: 'Үндсэн үнэ', version: 1, status: 'draft', source: 'PQ-FG-503-001', valid_from: '2026-11-27', valid_until: '2026-12-31', inventory_area_confirmed: true, rules: [rule] };
+    fetchMock.mockImplementation(async (_url: string, init?: { method?: string }) => ({ ok: true, json: async () => init?.method === 'PUT' ? { config: {} } : overview(latest) }));
+    const puts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT').map(([, init]) => JSON.parse(init.body));
+    mount();
+    const toggle = await screen.findByRole('checkbox', { name: /гэрээ хийгдэх бүрд нэмэгдэнэ/ });
+    expect(toggle).not.toBeChecked();
+    expect(screen.queryByLabelText('Гэрээ бүрд нэмэх дүн (₮/м²)')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ноорог хадгалах' }));
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    expect(puts()[0].config).not.toHaveProperty('step');
+
+    // Switched on without an amount: said before anything is sent.
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText('Гэрээ тоолж эхлэх огноо'), { target: { value: '2026-11-27' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Идэвхжүүлэхийн өмнө хянах' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Гэрээ бүрд нэмэх дүнг оруулна уу');
+    fireEvent.change(screen.getByLabelText('Гэрээ бүрд нэмэх дүн (₮/м²)'), { target: { value: '100000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Идэвхжүүлэхийн өмнө хянах' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Баталсан үнийг идэвхжүүлэх' }));
+    await waitFor(() => expect(puts()).toHaveLength(2));
+    expect(puts()[1]).toMatchObject({ status: 'active', config: { step: { amount_per_sqm: 100_000, counts_from: '2026-11-27' } } });
+});
+it('opens a list that already has a step price with its amount and start day', async () => {
+    const latest = { id: 'c1', shop_id: 'shop', list_key: 'main', list_name: 'Үндсэн үнэ', version: 1, status: 'draft', source: 'x', valid_from: '2026-11-27', valid_until: '2026-12-31', inventory_area_confirmed: true, rules: [],
+        step: { amount_per_sqm: 100_000, counts_from: '2026-11-27' } };
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => overview(latest) }));
+    mount();
+    expect(await screen.findByRole('checkbox', { name: /гэрээ хийгдэх бүрд нэмэгдэнэ/ })).toBeChecked();
+    expect(screen.getByLabelText('Гэрээ бүрд нэмэх дүн (₮/м²)')).toHaveValue('100000');
+    expect(screen.getByLabelText('Гэрээ тоолж эхлэх огноо')).toHaveValue('2026-11-27');
 });

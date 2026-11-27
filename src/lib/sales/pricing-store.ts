@@ -8,9 +8,11 @@ import type { ViewingUnitOption } from '@/lib/viewings/interests';
 import { elysiumViewingConditions } from './viewing-conditions';
 import {
     MAIN_PRICE_LIST, MAX_PRICE_LISTS, PricingDraftSchema, PricingRetireSchema, PricingSaveSchema, PricingSelectionSchema,
-    calculateListPricing, inventoryArea, inventoryFloor, priceListConflict, pricingKey,
-    type PriceListOverview, type PricingConfig, type PricingRetireInput, type PricingSaveInput, type PricingSelection, type PricingResult,
+    calculateListPricing, inventoryArea, inventoryFloor, priceListConflict, pricingKey, pricingStepKey,
+    type PriceListOverview, type PricingConfig, type PricingRetireInput, type PricingSaveInput, type PricingSelection, type PricingResult, type PricingStepCounts,
 } from './pricing';
+import { NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
+import { contractUnitKey } from '@/lib/inventory/report-inventory';
 import {
     buildPricingPhases, diffPricingRules, pricingValidity, summarizePriceLists, withArchiveTimes,
     type PricingBlockRow, type PricingSheet, type PricingSheetVersion, type PricingVersionSummary,
@@ -32,6 +34,47 @@ function configRow(row: Record<string, unknown>): PricingConfig {
 }
 
 const CONFIG_COLUMNS = 'id,shop_id,list_key,list_name,version,status,config';
+
+export interface PricingStepState { counts: Map<string, number>; undated: number }
+
+/**
+ * Contracts counted for every list that has a step price, by config id. A contract counts when it is live
+ * (not deleted, not cancelled), belongs to an apartment of a block the list prices (contract ↔ unit by
+ * `${product_type}|${code}`, the register's rule) and is dated on or after `counts_from`. An undated contract
+ * is not counted — its place in the order is unknown — and is reported instead.
+ */
+export async function loadPricingSteps(db: SupabaseClient, shopId: string, configs: readonly PricingConfig[]): Promise<Map<string, PricingStepState>> {
+    const stepped = configs.filter(config => config.step);
+    const result = new Map<string, PricingStepState>(stepped.map(config => [config.id, { counts: new Map(), undated: 0 }]));
+    if (!stepped.length) return result;
+    type Unit = { code: string | null; block: string | null; model: string | null };
+    type Contract = { product_type: string | null; unit_label: string | null; contract_date: string | null };
+    let units: Unit[], contracts: Contract[];
+    try {
+        [units, contracts] = await Promise.all([
+            fetchAllRows<Unit>((from, to) => db.from('property_units').select('code,block,model')
+                .eq('shop_id', shopId).eq('category', 'residential').order('id').range(from, to)),
+            fetchAllRows<Contract>((from, to) => db.from('property_contracts').select('product_type,unit_label,contract_date')
+                .eq('shop_id', shopId).eq('product_type', 'residential').is('deleted_at', null).or(NOT_CANCELLED_CONTRACT).order('id').range(from, to)),
+        ]);
+    } catch { throw new PricingSelectionError('Гэрээний тоог уншиж чадсангүй. Дахин оролдоно уу', 503); }
+    const byCode = new Map<string, Unit>(units.flatMap(unit => unit.code && unit.block && unit.model ? [[`residential|${unit.code.trim()}`, unit] as const] : []));
+    for (const config of stepped) {
+        const blocks = new Set(config.rules.map(rule => pricingKey(rule.block)));
+        const state = result.get(config.id)!;
+        for (const contract of contracts) {
+            const unit = byCode.get(contractUnitKey(contract.product_type, contract.unit_label) ?? '');
+            if (!unit || !blocks.has(pricingKey(unit.block!))) continue;
+            if (!contract.contract_date) { state.undated++; continue; }
+            if (contract.contract_date.slice(0, 10) < config.step!.counts_from) continue;
+            const key = pricingStepKey(unit.block!, unit.model!);
+            state.counts.set(key, (state.counts.get(key) ?? 0) + 1);
+        }
+    }
+    return result;
+}
+/** The counts in the shape `calculateListPricing` takes. */
+export const stepCounts = (steps: ReadonlyMap<string, PricingStepState>): Map<string, PricingStepCounts> => new Map([...steps].map(([id, state]) => [id, state.counts]));
 
 /** The active version of every price list of the project (none, one, or one per list). */
 export async function loadActivePriceLists(db: SupabaseClient, shopId: string): Promise<PricingConfig[]> {
@@ -144,9 +187,14 @@ async function loadSheetVersion(db: SupabaseClient, shopId: string, versions: re
         loadActivatedVersion(db, shopId, summary.id),
         earlier ? loadActivatedVersion(db, shopId, earlier.id) : Promise.resolve(null),
     ]);
+    // Contracts are counted for the active version only: an archived version shows its rule, not today's count.
+    const state = config.step && config.status === 'active' ? (await loadPricingSteps(db, shopId, [config])).get(config.id) : undefined;
+    const names = new Map(config.rules.map(rule => [pricingStepKey(rule.block, rule.model), { block: rule.block, model: rule.model }]));
     return {
         ...summary, source: config.source, valid_from: config.valid_from, valid_until: config.valid_until,
         validity: pricingValidity(config, asOf), previous_version: earlier?.version ?? null, ...diffPricingRules(config.rules, previous?.rules ?? null),
+        step: config.step ? { ...config.step, undated: state?.undated ?? 0,
+            counts: [...state?.counts ?? []].flatMap(([key, contracts]) => names.has(key) ? [{ ...names.get(key)!, contracts }] : []) } : null,
     };
 }
 
@@ -208,7 +256,9 @@ export async function savePricingConfig(db: SupabaseClient, shopId: string, acto
     }
     const { data, error } = await db.rpc('save_project_price_list', {
         p_shop_id: shopId, p_actor: actorId, p_list_key: parsed.data.list_key, p_list_name: parsed.data.list_name,
-        p_expected_version: parsed.data.expected_version, p_status: parsed.data.status, p_config: parsed.data.config,
+        p_expected_version: parsed.data.expected_version, p_status: parsed.data.status,
+        // A list without a step is stored exactly as before price steps existed.
+        p_config: parsed.data.config.step ? parsed.data.config : (({ step: _step, ...config }) => config)(parsed.data.config),
     });
     if (error || !data) throw saveError(error, 'Үнийн тохиргоо хадгалагдсангүй');
     return configRow(data as Record<string, unknown>);
@@ -256,5 +306,5 @@ export async function quoteViewingSelection(
         floor: parsed.data.floor ?? (parsed.data.unit_id ? inventoryFloor(valid[0].floor) : null) };
     const lists = await loadActivePriceLists(db, shopId);
     if (normalized.floor === null && lists.length) return { available: false, reason: 'Үнэ бодохын өмнө давхар эсвэл тоотоо сонгоно уу', quote: null };
-    return calculateListPricing(lists, normalized, asOf);
+    return calculateListPricing(lists, normalized, asOf, stepCounts(await loadPricingSteps(db, shopId, lists)));
 }

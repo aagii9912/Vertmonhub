@@ -28,11 +28,22 @@ export interface PricingRuleDiff {
     previous: Pick<PricingRule, 'price_per_sqm' | 'advance_percent'> | null;
 }
 
+/** A list's step price as the sheet shows it: the rule and, for the active version, the contracts counted per model. */
+export interface PricingSheetStep {
+    amount_per_sqm: number; counts_from: string;
+    /** Models with at least one counted contract. Empty for an archived version (the count is today's, not history). */
+    counts: Array<{ block: string; model: string; contracts: number }>;
+    /** Live contracts of the list's apartments without a contract date: not counted, because their order is unknown. */
+    undated: number;
+}
+
 export interface PricingSheetVersion extends PricingVersionSummary {
     validity: PricingValidity;
     previous_version: number | null;
     rows: PricingRuleDiff[];
     removed: PricingRule[];
+    /** null / absent = prices do not move with contracts. `rows` always hold the list's base prices. */
+    step?: PricingSheetStep | null;
 }
 
 /** Unit kinds of the register (`property_units.category`); anything else is shown as it is stored. */

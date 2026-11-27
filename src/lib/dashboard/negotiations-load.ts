@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
-import { loadActivePriceLists } from '@/lib/sales/pricing-store';
+import { loadActivePriceLists, loadPricingSteps, stepCounts } from '@/lib/sales/pricing-store';
 import { applyLeadScope, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { ubDateStr } from '@/lib/utils/date';
 import { fetchAllRows } from '@/lib/utils/pagination';
@@ -46,5 +46,6 @@ export async function loadNegotiations(db: SupabaseClient, options: { shopId: st
     // Сэжим: гэрээгүй лидийн болсон уулзалтуудаас «Сэжим» сонгосон сүүлийнх (`latestReferralByLead`).
     const viewingIds = viewings.filter(viewing => viewing.lead_id && !liveContractLeadIds.has(viewing.lead_id)).map(viewing => viewing.id);
     const referrals = leadIds.length ? await loadViewingReferrals(db, shopId, viewingIds) : { available: true, byViewing: new Map<string, string | null>() };
-    return buildNegotiations({ today, leads, viewings, units, pricing, liveContractLeadIds, referrals });
+    const steps = pricing?.some(config => config.step) ? stepCounts(await loadPricingSteps(db, shopId, pricing)) : undefined;
+    return buildNegotiations({ today, leads, viewings, units, pricing, steps, liveContractLeadIds, referrals });
 }

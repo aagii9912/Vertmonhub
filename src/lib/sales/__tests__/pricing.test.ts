@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateListPricing, calculatePricing, inventoryArea, inventoryFloor, priceListConflict, PricingSaveSchema, PricingSelectionSchema, type PricingConfig, type PricingSelection } from '../pricing';
+import { calculateListPricing, calculatePricing, inventoryArea, inventoryFloor, priceListConflict, PricingSaveSchema, PricingSelectionSchema, pricingStepKey, type PricingConfig, type PricingSelection } from '../pricing';
 
 const selection: PricingSelection = { block: 'Б1', model: 'E3', area_sqm: 80.32, floor: 5, payment_condition: '50%' };
 const config: PricingConfig = {
@@ -96,5 +96,47 @@ describe('several price lists in one project', () => {
         expect(PricingSaveSchema.parse(base)).toMatchObject({ list_key: 'main', list_name: 'Үндсэн үнэ' });
         expect(PricingSaveSchema.parse({ ...base, list_key: 'forest-garden', list_name: '  Forest Garden  ' })).toMatchObject({ list_key: 'forest-garden', list_name: 'Forest Garden' });
         for (const bad of [{ list_key: 'Forest' }, { list_key: '' }, { list_name: '   ' }, { list_name: 'x'.repeat(81) }]) expect(PricingSaveSchema.safeParse({ ...base, ...bad }).success).toBe(false);
+    });
+});
+
+describe('step price: every contract of a model raises that model m² price', () => {
+    const stepped: PricingConfig = { ...config, step: { amount_per_sqm: 100_000, counts_from: '2026-10-01' },
+        rules: [...config.rules, { block: 'B1', model: 'E6', floor_min: 2, floor_max: 9, payment_condition: '50%', price_per_sqm: 5_000_000, advance_percent: 50 }] };
+    const counts = new Map([[pricingStepKey('Б1', 'Е3'), 3]]);
+
+    it('adds the step per counted contract of the same block and model, in the total and the advance, and keeps the base price', () => {
+        expect(calculatePricing(stepped, selection, '2026-10-08', counts)).toMatchObject({ available: true, quote: {
+            price_per_sqm: 4_300_001, base_price_per_sqm: 4_000_001, step_contracts: 3, total_amount: 345_376_080, advance_amount: 172_688_040,
+        } });
+        // Another model of the block has its own counter: no contract yet, so its base price.
+        expect(calculatePricing(stepped, { ...selection, model: 'E6' }, '2026-10-08', counts)).toMatchObject({ available: true, quote: { price_per_sqm: 5_000_000, step_contracts: 0 } });
+        expect(calculatePricing(stepped, selection, '2026-10-08', new Map())).toMatchObject({ available: true, quote: { price_per_sqm: 4_000_001, step_contracts: 0 } });
+    });
+    it('gives no price when the contracts were not counted, never the base price', () => {
+        expect(calculatePricing(stepped, selection, '2026-10-08')).toEqual({ available: false, reason: 'Гэрээний тоог уншиж чадаагүй тул шатлан нэмэгдэх үнийг тооцсонгүй', quote: null });
+        expect(calculateListPricing([stepped], selection, '2026-10-08', new Map()).available).toBe(false);
+    });
+    it('a list without a step ignores counts and its quote carries no step fields', () => {
+        const plain = calculatePricing(config, selection, '2026-10-08', counts);
+        expect(plain).toMatchObject({ available: true, quote: { price_per_sqm: 4_000_001 } });
+        expect(plain.quote).not.toHaveProperty('step_contracts');
+    });
+    it('each list uses its own counts', () => {
+        const other: PricingConfig = { ...config, id: 'other', list_key: 'other', list_name: 'Өөр', rules: [{ ...config.rules[0], block: '503' }], step: { amount_per_sqm: 50_000, counts_from: '2026-10-01' } };
+        const steps = new Map([['config', counts], ['other', new Map([[pricingStepKey('503', 'E3'), 2]])]]);
+        expect(calculateListPricing([stepped, other], { ...selection, block: '503' }, '2026-10-08', steps)).toMatchObject({ available: true, quote: { config_id: 'other', price_per_sqm: 4_100_001, step_contracts: 2 } });
+        expect(calculateListPricing([stepped, other], selection, '2026-10-08', steps)).toMatchObject({ available: true, quote: { config_id: 'config', price_per_sqm: 4_300_001 } });
+    });
+    it('validates the step: whole positive tugrik and a real date, with messages the admin can act on', () => {
+        const base = { expected_version: 0, status: 'draft' as const, config: { source: '', valid_from: null, valid_until: null, inventory_area_confirmed: false, rules: [] } };
+        expect(PricingSaveSchema.safeParse({ ...base, config: { ...base.config, step: { amount_per_sqm: 100_000, counts_from: '2026-11-27' } } }).success).toBe(true);
+        expect(PricingSaveSchema.safeParse({ ...base, config: { ...base.config, step: null } }).success).toBe(true);
+        const error = (step: unknown) => PricingSaveSchema.safeParse({ ...base, config: { ...base.config, step } }).error?.issues[0]?.message;
+        expect(error({ amount_per_sqm: null, counts_from: '2026-11-27' })).toBe('Гэрээ бүрд нэмэх дүнг оруулна уу');
+        expect(error({ amount_per_sqm: 0, counts_from: '2026-11-27' })).toBe('Гэрээ бүрд нэмэх дүн 0-ээс их байна');
+        expect(error({ amount_per_sqm: 100_000.5, counts_from: '2026-11-27' })).toBe('Гэрээ бүрд нэмэх дүн бүхэл төгрөг байна');
+        expect(error({ amount_per_sqm: 100_000, counts_from: '' })).toBeTruthy();
+        expect(error({ amount_per_sqm: 100_000, counts_from: '2026-02-30' })).toBe('Огноо буруу байна');
+        expect(error({ amount_per_sqm: 100_000, counts_from: '2026-11-27', per: 'block' })).toBeTruthy();
     });
 });

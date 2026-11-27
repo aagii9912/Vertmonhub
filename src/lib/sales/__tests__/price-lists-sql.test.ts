@@ -23,6 +23,8 @@ async function setup() {
     await db.query('SELECT save_project_pricing($1,$2,0,$3,$4::jsonb)', [shop, actor, 'active', JSON.stringify(config([rule('201')], '2026-10-01', '2026-10-31'))]);
     const sql = readFileSync('supabase/migrations/20261127120000_project_price_lists.sql', 'utf8');
     await db.exec(sql); await db.exec(sql);
+    const step = readFileSync('supabase/migrations/20261127130000_price_list_step.sql', 'utf8');
+    await db.exec(step); await db.exec(step);
     return db;
 }
 const save = (db: PGlite, list: string, name: string, version: number, status: string, value: object, target = shop) =>
@@ -115,5 +117,26 @@ it('keeps the table and the new functions server-only', async () => {
         const stranger = '20000000-0000-4000-8000-000000000009';
         await expect(db.query('SELECT save_project_price_list($1,$2,$3,$4,0,$5,$6::jsonb)', [shop, stranger, 'x', 'X', 'draft', JSON.stringify(config([]))])).rejects.toMatchObject({ code: '42501' });
         await expect(db.query('SELECT retire_project_price_list($1,$2,$3,$4)', [shop, stranger, 'main', 1])).rejects.toMatchObject({ code: '42501' });
+    } finally { await db.close(); }
+}, 30_000);
+
+it('stores a step price with the list and refuses a malformed one, writing nothing', async () => {
+    const db = await setup();
+    try {
+        const stepped = { ...config([rule('503')], '2026-11-27', '2026-12-31'), step: { amount_per_sqm: 100_000, counts_from: '2026-11-27' } };
+        expect((await save(db, 'forest-garden', 'Forest Garden тусгай үнэ', 0, 'active', stepped)).rows[0].result.version).toBe(1);
+        expect((await db.query<{ step: object }>("SELECT config->'step' step FROM project_pricing_configs WHERE list_key='forest-garden'")).rows[0].step).toEqual(stepped.step);
+        // A list without a step, or with an explicit null, is stored as before.
+        await save(db, 'main', 'Үндсэн үнэ', 1, 'draft', config([rule('201')]));
+        await save(db, 'main', 'Үндсэн үнэ', 2, 'draft', { ...config([rule('201')]), step: null });
+        const before = await rows(db);
+        for (const step of [{ amount_per_sqm: 0, counts_from: '2026-11-27' }, { amount_per_sqm: 100_000.5, counts_from: '2026-11-27' }, { amount_per_sqm: '100000', counts_from: '2026-11-27' },
+            { amount_per_sqm: 100_000 }, { amount_per_sqm: 100_000, counts_from: '27.11.2026' }, { amount_per_sqm: 100_000, counts_from: '2026-11-27', per: 'block' }, 'yes', [100_000]]) {
+            await expect(save(db, 'forest-garden', 'Forest Garden тусгай үнэ', 1, 'draft', { ...stepped, step })).rejects.toMatchObject({ code: '22023' });
+        }
+        await expect(save(db, 'forest-garden', 'Forest Garden тусгай үнэ', 1, 'draft', { ...stepped, extra: 1 })).rejects.toMatchObject({ code: '22023' });
+        expect(await rows(db)).toEqual(before);
+        // The single-list entry point still works after the redefinition.
+        await db.query('SELECT save_project_pricing($1,$2,3,$3,$4::jsonb)', [shop, actor, 'draft', JSON.stringify(config([rule('201')]))]);
     } finally { await db.close(); }
 }, 30_000);

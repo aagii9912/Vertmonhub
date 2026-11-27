@@ -61,3 +61,27 @@ it('pivots conditions into columns, marks missing ones and filters by block', ()
     expect(screen.getAllByRole('row')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Б2' })).toHaveAttribute('aria-pressed', 'true');
 });
+
+it('shows a step price: the rule, the contracts counted per model and the raised price above its base', () => {
+    render(<PricingVersionView version={version({ rows: [
+        { rule: { ...rule, block: '503', model: 'A' }, change: null, previous: null },
+        { rule: { ...rule, block: '503', model: 'B', price_per_sqm: 4_300_000 }, change: null, previous: null },
+    ], removed: [], previous_version: null, step: { amount_per_sqm: 100_000, counts_from: '2026-11-27', undated: 1, counts: [{ block: '503', model: 'A', contracts: 2 }] } })} block="503" />);
+    const note = screen.getByRole('note', { name: 'Гэрээ бүрд нэмэгдэх үнэ' });
+    expect(note).toHaveTextContent('Гэрээ бүрд м² үнэ 100,000₮-өөр нэмэгдэнэ');
+    expect(note).toHaveTextContent('2026.11.27-с хойш');
+    expect(note).toHaveTextContent('A загвар — 2 гэрээ (+200,000₮)');
+    expect(note).toHaveTextContent('1 гэрээ огноогүй тул тоологдоогүй');
+    const [, a, b] = screen.getAllByRole('row');
+    // A: 4,200,000 + 2 × 100,000, with the base under it; B has no contract yet and shows its base price only.
+    expect(within(a).getByText('4,400,000₮')).toBeInTheDocument();
+    expect(within(a).getByText('суурь 4,200,000₮')).toBeInTheDocument();
+    expect(within(b).getByText('4,300,000₮')).toBeInTheDocument();
+    expect(within(b).queryByText(/суурь/)).not.toBeInTheDocument();
+});
+
+it('an archived version with a step shows the rule and its base prices, not today count', () => {
+    render(<PricingVersionView version={version({ status: 'archived', archived_at: '2026-12-01T02:00:00Z', step: { amount_per_sqm: 100_000, counts_from: '2026-11-27', undated: 0, counts: [] } })} />);
+    expect(screen.getByRole('note', { name: 'Гэрээ бүрд нэмэгдэх үнэ' })).toHaveTextContent('Архивласан хувилбарт суурь үнэ харагдана.');
+    expect(screen.queryByText(/суурь 4/)).not.toBeInTheDocument();
+});

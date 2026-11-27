@@ -114,6 +114,10 @@ function PricingEditor({ shopId, list, others, onSaved }: { shopId: string; list
     const [from, setFrom] = useState(initial.valid_from ?? '');
     const [until, setUntil] = useState(initial.valid_until ?? '');
     const [confirmed, setConfirmed] = useState(initial.inventory_area_confirmed);
+    // Step price: off unless the list has one. The amount and the day counting starts are both the admin's.
+    const [stepOn, setStepOn] = useState(!!initial.step);
+    const [stepAmount, setStepAmount] = useState(initial.step ? String(initial.step.amount_per_sqm) : '');
+    const [stepFrom, setStepFrom] = useState(initial.step?.counts_from ?? '');
     const [rows, setRows] = useState<RuleForm[]>(() => ruleForms(initial.rules));
     const [importing, setImporting] = useState(false);
     // The list by block: a list of a project like Mandala Garden covers many blocks, so the rows are edited one block at a time.
@@ -232,6 +236,7 @@ function PricingEditor({ shopId, list, others, onSaved }: { shopId: string; list
     function payload(status: 'draft' | 'active') {
         return PricingSaveSchema.safeParse({ list_key: list.key, list_name: name, expected_version: list.latest?.version ?? 0, status, config: {
             source, valid_from: from || null, valid_until: until || null, inventory_area_confirmed: confirmed,
+            ...(stepOn ? { step: { amount_per_sqm: stepAmount.trim() === '' ? null : Number(stepAmount), counts_from: stepFrom } } : {}),
             // A sheet row's placeholder is not a rule once the row has a price.
             rules: rows.filter(row => !isPlaceholder(row) || !rows.some(other => other.gid === row.gid && !isPlaceholder(other))).map(({ gid: _gid, ...row }) => ({ ...row,
                 floor_min: row.floor_min === '' ? null : Number(row.floor_min), floor_max: row.floor_max === '' ? null : Number(row.floor_max),
@@ -296,6 +301,18 @@ function PricingEditor({ shopId, list, others, onSaved }: { shopId: string; list
             <label htmlFor={`${id}-until`} className="space-y-1 text-sm">Дуусах огноо<Input id={`${id}-until`} type="date" value={until} onChange={event => { setUntil(event.target.value); setReviewed(false); }} /></label>
         </div>
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmed} onChange={event => { setConfirmed(event.target.checked); setReviewed(false); }} className="mt-1" /><span>Одоогийн нөөцийн талбайгаар тооцохыг баталсан. Шинэчилсэн талбай байхгүй эсвэл 0 бол борлуулах, дараа нь гэрээлсэн талбайг ашиглана.</span></label>
+        <fieldset className="space-y-2 rounded-xl border border-border p-3">
+            <legend className="px-1 text-sm font-medium">Гэрээ бүрд нэмэгдэх үнэ</legend>
+            <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={stepOn} onChange={event => { setStepOn(event.target.checked); setReviewed(false); }} className="mt-1" />
+                <span>Энэ жагсаалтын үнэ гэрээ хийгдэх бүрд нэмэгдэнэ. Загвар бүр өөрийн тоолууртай: тухайн загвараас гэрээ хийгдэх бүрд тэр загварын бүх давхар, бүх нөхцөлийн м² үнэ өснө. Жагсаалтын хүчинтэй хугацаа дуусахад (ашиглалтад орсны дараа) зогсоно.</span></label>
+            {stepOn && <div className="flex flex-wrap items-end gap-3">
+                <label htmlFor={`${id}-step-amount`} className="flex flex-col gap-1 text-sm">Гэрээ бүрд нэмэх дүн (₮/м²)
+                    <Input id={`${id}-step-amount`} inputMode="numeric" className="num w-44" placeholder="100000" value={stepAmount} onChange={event => { setStepAmount(event.target.value); setReviewed(false); }} /></label>
+                <label htmlFor={`${id}-step-from`} className="flex flex-col gap-1 text-sm">Гэрээ тоолж эхлэх огноо
+                    <Input id={`${id}-step-from`} type="date" className="w-44" value={stepFrom} onChange={event => { setStepFrom(event.target.value); setReviewed(false); }} /></label>
+                <p className="w-full text-xs text-muted-foreground">Энэ өдрөөс хойших огноотой, цуцлагдаагүй гэрээг тоолно. Цуцлагдсан гэрээ тооноос хасагдаж, үнэ буцаж буурна. Огноогүй гэрээ тоологдохгүй.</p>
+            </div>}
+        </fieldset>
         {several && <div className="space-y-2">
             <h3 className="text-sm font-medium">Блокууд</h3>
             <div role="group" aria-label="Блок сонгох" className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] items-start gap-2">

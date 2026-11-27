@@ -27,11 +27,26 @@ export const PricingRuleSchema = z.object({
 }).strict().refine(rule => rule.floor_min <= rule.floor_max, 'Давхарын эхлэл төгсгөлөөс их байна');
 export type PricingRule = z.infer<typeof PricingRuleSchema>;
 
+/**
+ * Step price (owner decision 2026-11-27, Forest Garden): every contract of a model raises that model's m² price
+ * by `amount_per_sqm`, in every condition and on every floor. Contracts are counted per block and model from
+ * `counts_from`; it applies while the list is valid (pre-order sales) and ends with the list.
+ */
+export const PricingStepSchema = z.object({
+    amount_per_sqm: z.number({ error: 'Гэрээ бүрд нэмэх дүнг оруулна уу' }).int('Гэрээ бүрд нэмэх дүн бүхэл төгрөг байна').positive('Гэрээ бүрд нэмэх дүн 0-ээс их байна').max(100_000_000, 'Гэрээ бүрд нэмэх дүн хэт их байна'),
+    counts_from: z.string({ error: 'Гэрээ тоолж эхлэх огноог оруулна уу' }).pipe(day),
+}, { error: 'Гэрээ бүрд нэмэгдэх үнийн тохиргоо буруу байна' }).strict();
+export type PricingStep = z.infer<typeof PricingStepSchema>;
+/** Contracts counted for one list: `pricingStepKey(block, model)` → number of contracts. */
+export type PricingStepCounts = ReadonlyMap<string, number>;
+export const pricingStepKey = (block: string, model: string) => `${pricingKey(block)}|${pricingKey(model)}`;
+
 export const PricingDraftSchema = z.object({
     source: z.string().trim().max(500),
     valid_from: day.nullable(), valid_until: day.nullable(),
     inventory_area_confirmed: z.boolean(),
     rules: z.array(PricingRuleSchema).max(500),
+    step: PricingStepSchema.nullable().optional(),
 }).strict().refine(value => !value.valid_from || !value.valid_until || value.valid_from <= value.valid_until, 'Хүчинтэй хугацаа буруу байна');
 export type PricingDraft = z.infer<typeof PricingDraftSchema>;
 /**
@@ -51,6 +66,7 @@ export const EMPTY_PRICING_DRAFT: PricingDraft = { source: '', valid_from: null,
 export function pricingKey(value: string): string {
     return value.trim().toUpperCase().replace(/Б/g, 'B').replace(/Е/g, 'E');
 }
+
 
 export function inventoryArea(unit: { updated_sale_area?: unknown; sale_area?: unknown; contracted_area?: unknown }): number | null {
     for (const value of [unit.updated_sale_area, unit.sale_area, unit.contracted_area]) {
@@ -138,13 +154,18 @@ export interface PricingQuote {
     block: string; model: string; area_sqm: number; floor: number | null; unit_id: string | null;
     payment_condition: string; price_per_sqm: number; total_amount: number;
     advance_amount: number | null; balance_amount: number | null; advance_reason: string | null;
+    /** Step price only: the list's base m² price and the contracts that raised it to `price_per_sqm`. */
+    base_price_per_sqm?: number; step_contracts?: number;
 }
 export type PricingResult = { available: false; reason: string; quote: null } | { available: true; quote: PricingQuote };
 const unavailable = (reason: string): PricingResult => ({ available: false, reason, quote: null });
 const roundRatio = (amount: bigint, divisor: number) => Number((amount + BigInt(divisor / 2)) / BigInt(divisor));
 
-/** No rates/advances are inferred from a condition label. Preview never writes a quote contact. */
-export function calculatePricing(config: PricingConfig | null, selection: PricingSelection, asOf: string): PricingResult {
+/**
+ * No rates/advances are inferred from a condition label. Preview never writes a quote contact.
+ * A list with a step price needs `steps` (its counted contracts): without them the price is unknown, never the base price.
+ */
+export function calculatePricing(config: PricingConfig | null, selection: PricingSelection, asOf: string, steps?: PricingStepCounts): PricingResult {
     if (!config || config.status !== 'active') return unavailable('Баталсан үнийн тохиргоо байхгүй');
     if (!config.valid_from || !config.valid_until || asOf < config.valid_from || asOf > config.valid_until) return unavailable('Үнийн хүчинтэй хугацаанд багтахгүй байна');
     if (!config.inventory_area_confirmed) return unavailable('Тооцоонд ашиглах талбай батлагдаагүй');
@@ -156,16 +177,20 @@ export function calculatePricing(config: PricingConfig | null, selection: Pricin
     if (!rules.length) return unavailable('Энэ байр, давхар, нөхцөлийн баталсан үнэ байхгүй');
     if (rules.length !== 1) return unavailable(selection.floor === null ? 'Үнэ бодохын өмнө давхраа сонгоно уу' : 'Үнийн дүрэм давхардсан байна');
     const rule = rules[0];
-    const total = roundRatio(BigInt(Math.round(selection.area_sqm * 100)) * BigInt(rule.price_per_sqm), 100);
+    if (config.step && !steps) return unavailable('Гэрээний тоог уншиж чадаагүй тул шатлан нэмэгдэх үнийг тооцсонгүй');
+    const contracts = config.step ? steps!.get(pricingStepKey(rule.block, rule.model)) ?? 0 : 0;
+    const price = rule.price_per_sqm + contracts * (config.step?.amount_per_sqm ?? 0);
+    const total = roundRatio(BigInt(Math.round(selection.area_sqm * 100)) * BigInt(price), 100);
     if (!Number.isSafeInteger(total) || total <= 0 || total > 10_000_000_000_000) return unavailable('Үнийн нийт дүн зөвшөөрсөн хязгаараас гарсан');
     const advance = rule.advance_percent === null ? null : roundRatio(BigInt(total) * BigInt(Math.round(rule.advance_percent * 100)), 10_000);
     return { available: true, quote: {
         config_id: config.id, version: config.version, source: config.source, as_of: asOf,
         block: selection.block, model: selection.model, area_sqm: selection.area_sqm,
         floor: selection.floor, unit_id: selection.unit_id ?? null, payment_condition: rule.payment_condition,
-        price_per_sqm: rule.price_per_sqm, total_amount: total,
+        price_per_sqm: price, total_amount: total,
         advance_amount: advance, balance_amount: advance === null ? null : total - advance,
         advance_reason: advance === null ? 'Эхний урьдчилгааны хувь батлагдаагүй' : null,
+        ...(config.step ? { base_price_per_sqm: rule.price_per_sqm, step_contracts: contracts } : {}),
     } };
 }
 
@@ -174,11 +199,11 @@ export function calculatePricing(config: PricingConfig | null, selection: Pricin
  * are out of their window, or do not cover the unit, give no price. With no price, the reason comes from a
  * list that covers the block (its window or missing row) rather than from an unrelated list.
  */
-export function calculateListPricing(configs: readonly PricingConfig[], selection: PricingSelection, asOf: string): PricingResult {
+export function calculateListPricing(configs: readonly PricingConfig[], selection: PricingSelection, asOf: string, steps?: ReadonlyMap<string, PricingStepCounts>): PricingResult {
     const active = configs.filter(config => config.status === 'active');
     if (!active.length) return calculatePricing(null, selection, asOf);
-    if (active.length === 1) return calculatePricing(active[0], selection, asOf);
-    const results = active.map(config => ({ config, result: calculatePricing(config, selection, asOf) }));
+    if (active.length === 1) return calculatePricing(active[0], selection, asOf, steps?.get(active[0].id));
+    const results = active.map(config => ({ config, result: calculatePricing(config, selection, asOf, steps?.get(config.id)) }));
     const priced = results.filter(item => item.result.available);
     if (priced.length === 1) return priced[0].result;
     if (priced.length > 1) return unavailable('Үнийн дүрэм давхардсан байна');
