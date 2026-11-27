@@ -13,6 +13,7 @@ import {
 } from './pricing';
 import { NOT_CANCELLED_CONTRACT } from '@/lib/contracts/live';
 import { contractUnitKey } from '@/lib/inventory/report-inventory';
+import { loadUnitPriceSheets } from './unit-pricing-store';
 import {
     buildPricingPhases, diffPricingRules, pricingValidity, summarizePriceLists, withArchiveTimes,
     type PricingBlockRow, type PricingSheet, type PricingSheetVersion, type PricingVersionSummary,
@@ -223,16 +224,18 @@ export async function loadPricingSheet(db: SupabaseClient, shopId: string, optio
         const versions = versionsOf(list.key);
         const index = versions.findIndex(row => row.version === options.version);
         if (index < 0) throw new PricingSelectionError('Үнийн хувилбар олдсонгүй', 404);
-        return { as_of: asOf, lists, history, selected: await loadSheetVersion(db, shopId, versions, index, asOf), active: [], phases: [] };
+        return { as_of: asOf, lists, history, selected: await loadSheetVersion(db, shopId, versions, index, asOf), active: [], phases: [], unit_prices: [] };
     }
-    const [active, blocks] = await Promise.all([
+    const [active, blocks, unitPrices] = await Promise.all([
         Promise.all(lists.filter(item => item.active_version !== null).map(item => {
             const versions = versionsOf(item.key);
             return loadSheetVersion(db, shopId, versions, versions.findIndex(row => row.status === 'active'), asOf);
         })),
         loadBlockRows(db, shopId),
+        loadUnitPriceSheets(db, shopId, asOf),
     ]);
-    return { as_of: asOf, lists, history, selected: active.find(version => version.list_key === list?.key) ?? null, active, phases: buildPricingPhases(blocks, active) };
+    return { as_of: asOf, lists, history, selected: active.find(version => version.list_key === list?.key) ?? null, active,
+        phases: buildPricingPhases(blocks, active, unitPrices), unit_prices: unitPrices };
 }
 
 function saveError(error: { code?: string } | null, fallback: string): PricingSelectionError {

@@ -32,6 +32,25 @@ Owner request 2026-11-27: Mandala Garden has dozens of blocks, each with apartme
 - An administrator also sees «Ноорог» on blocks whose list has a saved draft (from the editor's `/api/admin/pricing`, never sent to other roles), including a drafted block that is not in the register (Forest Garden 503).
 - **«Засах»**: a list of several blocks opens on block cards (rows, models, «Урьдчилгаа дутуу»); a block opens as a price sheet — one row per model and floor range, one editable м² price column per payment condition — with «Нөхцөлийн багана нэмэх», «Үнийн мөр нэмэх» and «Блок нэмэх». An empty cell means the condition is not offered there; clearing a price removes that rule. «Бүх мөр» keeps the flat one-rule-per-row table, which is also what a list of one block shows. Saving always sends every block's rules.
 
+## Step price (2026-11-27)
+
+Owner decision 2026-11-27 (Forest Garden): every contract raises the m² price by 100,000₮, «план бүрээр» — read as per model: a model's contracts raise that model's price in every condition and on every floor; another model keeps its own count. It applies to pre-order apartments while the list is valid and ends with the list. Migration `20261127130000_price_list_step.sql` (lets `save_project_price_list` store the key; apply before a step is saved).
+
+- A list's config may carry `step = { amount_per_sqm, counts_from }` («Засах» → «Гэрээ бүрд нэмэгдэх үнэ»). A list without one is stored exactly as before.
+- `loadPricingSteps` counts, per block and model, the live contracts (not deleted, not cancelled, `product_type = residential`) of apartments in the blocks the list prices, joined to the register by `${product_type}|${code}` like the inventory overlay, dated on or after `counts_from`. A cancelled contract leaves the count, so the price comes back down. Undated contracts are not counted and are reported on the sheet.
+- `calculatePricing(config, selection, asOf, counts)`: price = rule price + contracts × step; the quote keeps `base_price_per_sqm` and `step_contracts`. A list with a step and no counts gives no price — never the base price. Quotes, AI previews and the «Ярилцаж буй гэрээ» report all pass the counts.
+- The sheet shows the rule, the contracts counted per model, the raised price with its base under it; an archived version shows the rule and its base prices only.
+
+## Per-unit prices: parking, storage, service space (2026-11-27)
+
+Owner decision 2026-11-27: these kinds are priced per unit, as Mandala Garden's approved «Зогсоолын үнийн санал» lists them — one price, or one per payment condition, for every space by its code. Migration `20261127140000_unit_price_lists.sql` (the page tolerates a missing table: no per-unit prices, and the editor says it is not installed).
+
+- `project_unit_price_lists`: versions per `list_key` with a `category` (`parking` / `industry` / `commercial`), one active version per list, written only by `save_project_unit_price_list` / `retire_project_unit_price_list` (super_admin, audited as `unit_pricing.*` without the price table). Config = source, window (`valid_until` may be null: «2026/10/08-с хүчинтэй»), note, conditions (label + first advance, never derived from the label) and rows (block, code, model, area, whole-tugrik price per condition; ≤ 3000).
+- Activation needs a source, a start day, at least one condition and row, a price on every row and unique codes; a unit never has two active prices of the same kind on the same days (`23P01`, `unitPriceConflict`).
+- «Засах» → «Тоот бүрийн үнэ»: add a list (name + kind), import the approved Excel file (`POST /api/admin/unit-pricing/import`: a «Код» column and either «Үнэ» or one column per condition; signature lines skipped), review the preview, save a draft, activate. The file's codes are checked against the register and each unit takes the register's block (the file's «Блок» of a garage space is the residential block it belongs to); unknown codes are listed. Prices change by importing the next file as a new version.
+- «Блокоор»: a block's parking / storage / service kind shows the list that prices its units and, opened, the units with a price per condition (`UnitPriceView`: filter by model, search by code). Amounts are per unit, not per m².
+- Not covered yet: the leasing interest tables of the «PT» sheets, type-based price sheets without unit codes (Zoo Garden, Water Garden), and choosing a parking space in a meeting quote.
+
 ## Price lists (2026-11-27)
 
 Owner decision 2026-11-27: one project can have several price lists, because Mandala Garden's approved price (201–202, valid 2026-11-01 – 2027-02-28) and the Forest Garden special price (503, valid to 2026-12-31) have different validity windows. Migration `20261127120000_project_price_lists.sql` (apply before deploying this code).

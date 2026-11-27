@@ -10,6 +10,7 @@ vi.mock('@/contexts/AuthContext', () => ({
     useAuth: () => ({ shop: { id: 'shop-1', name: 'Elysium Residence' }, user: { id: 'user-1', role: api.role, permissions: { modules: ['properties'], canWrite: true } } }),
 }));
 vi.mock('@/components/admin/ProjectPricingSettings', () => ({ ProjectPricingSettings: () => <p>Үнийн засварлагч</p> }));
+vi.mock('@/components/admin/UnitPriceSettings', () => ({ UnitPriceSettings: () => <p>Тоотын үнийн засварлагч</p> }));
 
 import PricingPage from './page';
 
@@ -32,7 +33,7 @@ const phases: PricingPhase[] = [{ name: 'Elysium Residence', blocks: [
 /** Default request: the block map with every list's active version; an archive request: that version only. */
 const sheet = (selected: PricingSheetVersion | null, archived = false): PricingSheet => ({
     as_of: '2026-10-22', lists: selected ? [mainList] : [], history: selected ? history : [], selected,
-    active: selected && !archived ? [selected] : [], phases: selected && !archived ? phases : [],
+    active: selected && !archived ? [selected] : [], phases: selected && !archived ? phases : [], unit_prices: [],
 });
 
 const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PricingPage /></QueryClientProvider>);
@@ -104,7 +105,7 @@ it('with several price lists names the list beside a block price, and shows an a
         ? { lists: [{ key: 'main', name: 'Үндсэн үнэ', latest: { status: 'draft', rules: [draftRule, { ...rule, block: 'Б2' }] }, active: null }] }
         : { as_of: '2026-10-22', lists: [mainList, { ...mainList, key: 'forest', name: 'Forest Garden тусгай үнэ', active_version: 1, validity: 'expired' as const, archived: 0 }],
             history: [...history, forest], selected: detail(history[0], 4_200_000), active: [detail(history[0], 4_200_000), forestVersion],
-            phases: [...phases, { name: null, blocks: [{ block: '503', kinds: [{ category: 'residential', units: 0, available: 0, price: forestPrice }] }] }] } satisfies PricingSheet);
+            phases: [...phases, { name: null, blocks: [{ block: '503', kinds: [{ category: 'residential', units: 0, available: 0, price: forestPrice }] }] }], unit_prices: [] } satisfies PricingSheet);
     renderPage();
     // Priced but not in the register yet, and a block that only has a draft: both are on the administrator's map.
     const unregistered = await screen.findByRole('region', { name: 'Тоот бүртгэгдээгүй блок' });

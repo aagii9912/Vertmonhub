@@ -29,6 +29,21 @@ const [from, to] = args.filter((arg) => /^\d{14}$/.test(arg));
 
 // Энэ хувилбаруудын оруулсны дараах шалгалт (объект бий эсэх). Бусад хувилбарт шалгалтгүй.
 const VERIFY = {
+    '20261127140000': `SELECT EXISTS (SELECT 1 FROM pg_class WHERE oid = to_regclass('public.project_unit_price_lists') AND relrowsecurity)
+        AND to_regclass('public.project_unit_price_one_active_per_list') IS NOT NULL
+        AND NOT has_table_privilege('authenticated', 'public.project_unit_price_lists', 'SELECT,INSERT,UPDATE,DELETE')
+        AND NOT has_table_privilege('anon', 'public.project_unit_price_lists', 'SELECT,INSERT,UPDATE,DELETE')
+        AND has_table_privilege('service_role', 'public.project_unit_price_lists', 'SELECT')
+        AND NOT has_table_privilege('service_role', 'public.project_unit_price_lists', 'INSERT,UPDATE,DELETE')
+        AND has_function_privilege('service_role', 'public.save_project_unit_price_list(uuid,uuid,text,text,text,integer,text,jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.save_project_unit_price_list(uuid,uuid,text,text,text,integer,text,jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.save_project_unit_price_list(uuid,uuid,text,text,text,integer,text,jsonb)', 'EXECUTE')
+        AND has_function_privilege('service_role', 'public.retire_project_unit_price_list(uuid,uuid,text,integer)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.retire_project_unit_price_list(uuid,uuid,text,integer)', 'EXECUTE') AS ok`,
+    '20261127130000': `SELECT has_function_privilege('service_role', 'public.save_project_price_list(uuid,uuid,text,text,integer,text,jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', 'public.save_project_price_list(uuid,uuid,text,text,integer,text,jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.save_project_price_list(uuid,uuid,text,text,integer,text,jsonb)', 'EXECUTE')
+        AND (SELECT prosrc LIKE '%amount_per_sqm%' FROM pg_proc WHERE oid = 'public.save_project_price_list(uuid,uuid,text,text,integer,text,jsonb)'::regprocedure) AS ok`,
     '20261127120000': `SELECT (SELECT count(*) = 3 FROM information_schema.columns WHERE table_schema = 'public'
             AND table_name = 'project_pricing_configs' AND column_name IN ('list_key', 'list_name', 'archived_at'))
         AND to_regclass('public.project_pricing_one_active_per_list') IS NOT NULL

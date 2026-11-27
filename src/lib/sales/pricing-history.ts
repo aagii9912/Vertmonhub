@@ -1,4 +1,5 @@
 import { MAIN_PRICE_LIST, pricingKey, type PricingRule } from './pricing';
+import type { UnitPriceSheet } from './unit-pricing';
 
 /** Only activated versions (active/archived) are listed; drafts never reach the price sheet. Versions are numbered per list. */
 export interface PricingVersionSummary {
@@ -52,7 +53,7 @@ const CATEGORY_ORDER: readonly string[] = ['residential', 'parking', 'industry',
 
 export interface PricingBlockKind {
     category: string; units: number; available: number;
-    /** The active version that prices this kind in this block (apartments only, per m²); null = no price entered. */
+    /** The active version that prices this kind in this block (apartments per m², other kinds per unit); null = no price entered. */
     price: { list_key: string; list_name: string; version: number; validity: PricingValidity; valid_from: string | null; valid_until: string | null } | null;
 }
 export interface PricingBlock { block: string; kinds: PricingBlockKind[] }
@@ -66,7 +67,19 @@ export interface PricingBlockRow { phase: string | null; block: string | null; c
  * with parking and storage beside the apartments, so the page is organised by the register, not by price list.
  * Phases with more apartments come first; in a phase apartment blocks come before garage and storage blocks.
  */
-export function buildPricingPhases(rows: readonly PricingBlockRow[], active: readonly Pick<PricingSheetVersion, 'list_key' | 'list_name' | 'version' | 'validity' | 'valid_from' | 'valid_until' | 'rows'>[]): PricingPhase[] {
+export function buildPricingPhases(
+    rows: readonly PricingBlockRow[],
+    active: readonly Pick<PricingSheetVersion, 'list_key' | 'list_name' | 'version' | 'validity' | 'valid_from' | 'valid_until' | 'rows'>[],
+    unitSheets: readonly Pick<UnitPriceSheet, 'list_key' | 'list_name' | 'version' | 'validity' | 'valid_from' | 'valid_until' | 'category' | 'rows'>[] = [],
+): PricingPhase[] {
+    // Per-unit prices (parking, storage, service space): `${category}|${block}` → the list that prices units of that block.
+    const unitPriced = new Map<string, PricingBlockKind['price']>();
+    for (const sheet of unitSheets) for (const row of sheet.rows) {
+        const key = `${sheet.category}|${pricingKey(row.block)}`;
+        if (!unitPriced.has(key) || (sheet.validity === 'valid' && unitPriced.get(key)!.validity !== 'valid')) {
+            unitPriced.set(key, { list_key: sheet.list_key, list_name: sheet.list_name, version: sheet.version, validity: sheet.validity, valid_from: sheet.valid_from, valid_until: sheet.valid_until });
+        }
+    }
     const priced = new Map<string, PricingBlockKind['price']>();
     const pricedNames = new Map<string, string>();
     for (const version of active) for (const { rule } of version.rows) {
@@ -91,6 +104,7 @@ export function buildPricingPhases(rows: readonly PricingBlockRow[], active: rea
         kind.units += Number(row.total_units) || 0;
         kind.available += Number(row.available_units) || 0;
         if (category === 'residential') { kind.price = priced.get(pricingKey(block)) ?? null; seen.add(pricingKey(block)); }
+        else kind.price = unitPriced.get(`${category}|${pricingKey(block)}`) ?? null;
         blocks.set(pricingKey(block), entry);
         phases.set(phase, blocks);
     }
@@ -120,6 +134,8 @@ export interface PricingSheet {
     active: PricingSheetVersion[];
     /** Phase → block → unit kind (see `buildPricingPhases`). Empty for an archive request. */
     phases: PricingPhase[];
+    /** Active per-unit price lists (parking, storage, service space). Empty for an archive request. */
+    unit_prices: UnitPriceSheet[];
 }
 
 /** Same window as `calculatePricing`: outside it no quote is calculated. */

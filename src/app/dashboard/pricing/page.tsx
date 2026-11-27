@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs';
 import { PricingBlocksView } from '@/components/pricing/PricingBlocksView';
 import { PricingVersionView, pricingDay } from '@/components/pricing/PricingVersionView';
 import { ProjectPricingSettings } from '@/components/admin/ProjectPricingSettings';
+import { UnitPriceSettings } from '@/components/admin/UnitPriceSettings';
 
 type Tab = 'current' | 'archive' | 'edit';
 
@@ -75,7 +76,7 @@ export default function PricingPage() {
 
             <TabsContent value="current" className="mt-4">
                 {!current.data ? <LoadState query={current} />
-                    : phases.some(phase => phase.blocks.length) || (isSuperAdmin && draftBlocks.size > 0) ? <PricingBlocksView key={shop?.id} phases={phases} active={current.data.active}
+                    : phases.some(phase => phase.blocks.length) || (isSuperAdmin && draftBlocks.size > 0) ? <PricingBlocksView key={shop?.id} phases={phases} active={current.data.active} unitPrices={current.data.unit_prices}
                         draftBlocks={isSuperAdmin ? draftBlocks : undefined} several={several} canEdit={isSuperAdmin} />
                         : <div className="rounded-xl border border-border bg-surface"><EmptyState icon={<BadgePercent />} title="Баталсан үнэ байхгүй"
                             description={isSuperAdmin ? '«Засах» табаас үнийн мөрүүдийг оруулж, хянаад идэвхжүүлнэ.' : 'Удирдлага үнийг баталж идэвхжүүлсний дараа энд харагдана.'} /></div>}
@@ -116,8 +117,12 @@ export default function PricingPage() {
             </TabsContent>
 
             {isSuperAdmin && shop && <TabsContent value="edit" className="mt-4">
-                <ProjectPricingSettings key={shop.id} shopId={shop.id} projectName={shop.name}
-                    onSaved={() => void queryClient.invalidateQueries({ queryKey: ['pricing-sheet'] })} />
+                <div className="space-y-6">
+                    <ProjectPricingSettings key={shop.id} shopId={shop.id} projectName={shop.name}
+                        onSaved={() => void queryClient.invalidateQueries({ queryKey: ['pricing-sheet'] })} />
+                    <UnitPriceSettings key={`units:${shop.id}`} shopId={shop.id}
+                        onSaved={() => void queryClient.invalidateQueries({ queryKey: ['pricing-sheet'] })} />
+                </div>
             </TabsContent>}
         </Tabs>
     </div>;

@@ -8,7 +8,9 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { unitCategoryLabel } from '@/lib/inventory/labels';
 import { pricingKey } from '@/lib/sales/pricing';
 import type { PricingBlock, PricingBlockKind, PricingPhase, PricingSheetVersion } from '@/lib/sales/pricing-history';
+import type { UnitPriceSheet } from '@/lib/sales/unit-pricing';
 import { PRICING_VALIDITY, PricingVersionView } from './PricingVersionView';
+import { UnitPriceView } from './UnitPriceView';
 
 /** «201-р блок», «Б1 блок», «Г1474 блок»: numbered blocks take the ordinal. */
 export const pricingBlockLabel = (block: string) => /^\d+$/.test(block.trim()) ? `${block.trim()}-р блок` : `${block.trim()} блок`;
@@ -34,9 +36,11 @@ const LEGEND: KindState[] = [PRICING_VALIDITY.valid, PRICING_VALIDITY.upcoming, 
  * price belongs to is shown with the price, not asked first. The map of blocks comes first (what is priced, what
  * is not); a block opens on its own with the other blocks of its phase one click away.
  */
-export function PricingBlocksView({ phases: registered, active, draftBlocks, several, canEdit }: {
+export function PricingBlocksView({ phases: registered, active, unitPrices = [], draftBlocks, several, canEdit }: {
     phases: readonly PricingPhase[];
     active: readonly PricingSheetVersion[];
+    /** Active per-unit price lists: parking, storage and service space are priced per unit. */
+    unitPrices?: readonly UnitPriceSheet[];
     /** Blocks with a saved, not yet activated draft (`pricingKey` → the name as typed) — passed for administrators only. */
     draftBlocks?: ReadonlyMap<string, string>;
     /** The project has more than one price list: the price then names its list. */
@@ -92,7 +96,9 @@ export function PricingBlocksView({ phases: registered, active, draftBlocks, sev
     </div>;
 
     const kind = block.kinds.find(item => item.category === category) ?? block.kinds[0];
-    const version = kind.price ? active.find(item => item.list_key === kind.price!.list_key && item.version === kind.price!.version) : undefined;
+    const apartments = kind.category === 'residential';
+    const version = kind.price && apartments ? active.find(item => item.list_key === kind.price!.list_key && item.version === kind.price!.version) : undefined;
+    const unitSheet = kind.price && !apartments ? unitPrices.find(item => item.category === kind.category && item.list_key === kind.price!.list_key) : undefined;
     return <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="secondary" onClick={() => open(null)}><ArrowLeft />Бүх блок</Button>
@@ -121,9 +127,10 @@ export function PricingBlocksView({ phases: registered, active, draftBlocks, sev
                 })}
             </div>}
             {version ? <PricingVersionView version={version} block={block.block} showList={several} />
+                : unitSheet ? <UnitPriceView key={`${unitSheet.id}:${block.block}`} sheet={unitSheet} block={block.block} showList />
                 : <div className="rounded-xl border border-border bg-surface"><EmptyState icon={<BadgePercent />}
                     title={kind.category === 'residential' ? `${pricingBlockLabel(block.block)}ийн орон сууцны баталсан үнэ алга` : `${KIND_OF[kind.category] ?? `«${unitCategoryLabel(kind.category)}» төрлийн`} үнэ энд хараахан ороогүй`}
-                    description={kind.category !== 'residential' ? 'Одоогоор энэ хуудсанд зөвхөн орон сууцны м² үнэ хадгалагдаж байна.'
+                    description={kind.category !== 'residential' ? (canEdit ? '«Засах» табын «Тоот бүрийн үнэ» хэсгээс үнийн файлыг оруулж, хянаад идэвхжүүлнэ.' : 'Удирдлага үнийг баталж идэвхжүүлсний дараа энд харагдана.')
                         : isDraft(block) ? 'Ноорог хадгалагдсан байна. «Засах» табаас хянаад идэвхжүүлнэ.'
                             : canEdit ? '«Засах» табаас энэ блокийн үнийг оруулж, хянаад идэвхжүүлнэ.' : 'Удирдлага үнийг баталж идэвхжүүлсний дараа энд харагдана.'} /></div>}
         </section>
