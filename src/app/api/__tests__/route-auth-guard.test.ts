@@ -22,6 +22,7 @@ const PUBLIC_ROUTES: Record<string, string> = {
     'meta/data-deletion': 'Meta signed_request HMAC',
     'leads': 'гадаад landing page-ийн лид intake (Turnstile + origin + rate limit)',
     'integrations/elysium/leads': 'сервер хоорондын intake: ELYSIUM_LEAD_SYNC_SECRET Bearer token (safeEqual)',
+    'integrations/orshin/inventory': 'сервер хоорондын уншилт (3D үзүүлэн): ORSHIN_INVENTORY_SECRET Bearer token (safeEqual); үнэ, хувийн мэдээлэлгүй',
     'feedback': 'нийтийн feedback widget',
 };
 
