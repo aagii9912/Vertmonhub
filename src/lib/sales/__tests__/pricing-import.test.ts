@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    BASE_PRICE_CONDITION, buildImportedRules, conditionLabel, parseBlock, parseFloorRange, parsePrice, parsePricingWorkbook, parseValidity,
+    BASE_PRICE_CONDITION, buildImportedRules, conditionLabel, mergeFloorRanges, parseBlock, parseFloorRange, parsePrice, parsePricingWorkbook, parseValidity,
     type PricingImportGrid,
 } from '../pricing-import';
 import { pivotPricingRows } from '../pricing-history';
@@ -42,6 +42,11 @@ describe('cell readers', () => {
         expect(parseBlock(['ELYSIUM Residence B1 блокийн'])).toBe('Б1');
         expect(parseBlock(['Б2 Блок үнийн санал'])).toBe('Б2');
         expect(parseBlock(['PQ-EL-B1Y-001'])).toBeNull();
+        // Mandala Garden numbers its blocks; a title naming two blocks leaves the block to the admin.
+        expect(parseBlock(['ФОРЕСТ ГАРДЕН төслийн 503-р блокийн байрны үнийн санал'])).toBe('503');
+        expect(parseBlock(['201-р блок орон сууцны үнийн санал'])).toBe('201');
+        expect(parseBlock(['ЗУУ ПЛАС төслийн 201, 202-р блокийн үнийн санал'])).toBeNull();
+        expect(parseBlock(['2026 оны 1-р улиралд ашиглалтад орох'])).toBeNull();
         expect(parseValidity(['2026/05/11-с 2026/08/31 хүртэл хүчинтэй'])).toEqual({ valid_from: '2026-05-11', valid_until: '2026-08-31' });
         expect(parseValidity(['2026/02/30-2026/03/01 хүртэл хүчинтэй'])).toEqual({ valid_from: null, valid_until: null });
         expect(parseValidity(['2026/09/30 хүртэл хүчинтэй'])).toEqual({ valid_from: null, valid_until: '2026-09-30' });
@@ -107,5 +112,52 @@ describe('buildImportedRules', () => {
         expect(twice.errors[0]).toMatch(/E1 · 30%: 2–2 ба 2–2 давхар давхардсан/);
         expect(buildImportedRules([{ sheet: b1, include: true, block: ' ', modelColumn: 0 }], conditions).errors).toEqual(['«PQ-EL-B1-002 »: блокийг оруулна уу']);
         expect(buildImportedRules([{ sheet: b1, include: false, block: '', modelColumn: 0 }], conditions)).toEqual({ rules: [], errors: [] });
+    });
+});
+
+describe('a per-floor price list (Forest Garden 503)', () => {
+    const header = [null, 'Давхар', 'Талбай', 'Өрөөний тоо', 'Загвар', 'Үнэлгээ', 'Зүг', '10-30%', 0.3, '50%'];
+    const priceRow = (row: number, floor: number, model: string, base: number) => ({ row, cells: [null, floor, 105.78, 4, model, 3, 'Зүүн', base + 200_000, base + 100_000, base] });
+    const grid = { name: 'Sheet1', hidden: false, rows: [
+        { row: 6, cells: [null, 'ФОРЕСТ ГАРДЕН төслийн 503-р блокийн байрны үнийн санал'] },
+        { row: 9, cells: [null, null, null, '2026/12/31 хүртэл хүчинтэй'] },
+        { row: 11, cells: header },
+        ...Array.from({ length: 12 }, (_, index) => priceRow(12 + index, index + 1, 'A', index < 1 ? 4_000_000 : index < 7 ? 4_800_000 : 4_900_000)),
+        ...Array.from({ length: 11 }, (_, index) => priceRow(24 + index, index + 2, 'C', 5_000_000)),
+        // Signature lines under the table are not price rows.
+        { row: 40, cells: [null, null, null, null, null, null, null, null, null, 'Монкон Констракшн ХХК Гүйцэтгэх захирал', null, null, null, 'Г. Батбаяр'] },
+        { row: 44, cells: [null, null, null, null, null, null, null, null, null, null, null, null, null, 'Архивын дугаар:', 'PQ-FG-503-001'] },
+    ] };
+
+    it('reads the numbered block, the end date and one row per floor without reporting the signature lines', () => {
+        const [sheet] = parsePricingWorkbook('503.xlsx', [grid]).sheets;
+        expect(sheet).toMatchObject({ block: '503', valid_from: null, valid_until: '2026-12-31' });
+        expect(sheet.conditions.map(condition => condition.label)).toEqual(['10-30%', '30%', '50%']);
+        expect(sheet.rows).toHaveLength(23);
+        expect(sheet.issues).toEqual([]);
+    });
+
+    it('joins equal consecutive floors, keeping every floor price, and only when the list is over the row limit', () => {
+        const rule = (model: string, floor: number, price: number, payment_condition = '50%') => ({ block: '503', model, floor_min: floor, floor_max: floor, payment_condition, price_per_sqm: price, advance_percent: 50 });
+        const rules = [rule('A', 1, 4_000_000), rule('A', 2, 4_800_000), rule('A', 3, 4_800_000), rule('A', 5, 4_800_000), rule('A', 4, 4_900_000),
+            rule('C', 2, 4_800_000), rule('C', 3, 4_800_000), rule('A', 2, 4_800_000, '30%'), rule('A', 3, 4_800_000, '30%')];
+        expect(mergeFloorRanges(rules).map(item => `${item.model} ${item.payment_condition} ${item.floor_min}-${item.floor_max} ${item.price_per_sqm}`)).toEqual([
+            'A 50% 1-1 4000000', 'A 50% 2-3 4800000', 'A 50% 5-5 4800000', 'A 50% 4-4 4900000', 'C 50% 2-3 4800000', 'A 30% 2-3 4800000',
+        ]);
+        // 23 rows × 3 conditions is far below the limit: stored as read, one rule per floor.
+        const [sheet] = parsePricingWorkbook('503.xlsx', [grid]).sheets;
+        const conditions = { '10-30%': { include: true, advance_percent: 10 }, '30%': { include: true, advance_percent: 30 }, '50%': { include: true, advance_percent: 50 } };
+        const small = buildImportedRules([{ sheet, include: true, block: '503', modelColumn: 0 }], conditions);
+        expect(small.rules).toHaveLength(69);
+        expect(small.merged).toBeUndefined();
+        // 180 floors × 3 conditions = 540 rows: joined to the price steps, and every floor still has its price.
+        const tall = { ...sheet, rows: Array.from({ length: 180 }, (_, index) => ({ row: index + 12, floor_min: index + 1, floor_max: index + 1, models: ['A'],
+            prices: { '10-30%': index < 90 ? 4_200_000 : 4_300_000, '30%': 4_100_000, '50%': 4_000_000 } })) };
+        const big = buildImportedRules([{ sheet: tall, include: true, block: '503', modelColumn: 0 }], conditions);
+        expect(big.errors).toEqual([]);
+        expect(big.merged).toBe(540);
+        expect(big.rules.map(item => `${item.payment_condition} ${item.floor_min}-${item.floor_max} ${item.price_per_sqm}`).sort()).toEqual([
+            '10-30% 1-90 4200000', '10-30% 91-180 4300000', '30% 1-180 4100000', '50% 1-180 4000000',
+        ]);
     });
 });

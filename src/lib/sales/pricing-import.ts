@@ -76,11 +76,19 @@ export function parseValidity(lines: readonly string[]): { valid_from: string | 
     return { valid_from: null, valid_until: null };
 }
 
-/** «B1-р блок», «B2 Блок», «Б1 блокийн» → «Б1» (Б/B match the inventory either way). */
+/**
+ * «B1-р блок», «B2 Блок», «Б1 блокийн» → «Б1» (Б/B match the inventory either way); a numbered block
+ * («503-р блокийн», «201-р блок», Mandala Garden) keeps its number. Several numbered blocks in one title
+ * («201, 202-р блокийн») name no single block: the admin types it.
+ */
 export function parseBlock(lines: readonly string[]): string | null {
     for (const line of lines) {
         const match = /(?:^|[^\p{L}\d])[BБ]\s*-?\s*(\d{1,2})(?:\s*-?\s*р)?\s*блок/iu.exec(line);
         if (match) return `Б${Number(match[1])}`;
+    }
+    for (const line of lines) {
+        const numbered = [...line.matchAll(/(?:^|[^\p{L}\d])(\d{3,4})(?=\s*-?\s*р?\s*блок|\s*[,/]\s*\d{3,4})/giu)].map(match => match[1]);
+        if (/\d{3,4}\s*-?\s*р?\s*блок/iu.test(line) && new Set(numbered).size === 1) return numbered[0];
     }
     return null;
 }
@@ -131,6 +139,8 @@ function parseSheet(grid: PricingImportGrid): ParsedPricingSheet | string {
         const models = modelIndexes.map(index => text(cells[index]));
         const values = priceColumns.map(column => ({ label: column.label, raw: cells[column.index], price: parsePrice(cells[column.index]) }));
         if (!models.some(Boolean) && values.every(value => value.price === null)) continue;
+        // Lines under the table (signatures, archive number): no floor, no model and no price at all.
+        if (!models.some(Boolean) && !text(cells[floorIndex]) && !values.some(value => typeof value.price === 'number')) continue;
         if (rows.length >= MAX_DATA_ROWS) { issues.push({ row, message: `${MAX_DATA_ROWS}-аас олон мөр — үлдсэнийг уншсангүй` }); break; }
         const floors = parseFloorRange(cells[floorIndex]);
         if (floors === 'basement') { basement.push(row); continue; }
@@ -175,11 +185,39 @@ export function parsePricingWorkbook(file: string, grids: readonly PricingImport
 export interface PricingImportSheetChoice { sheet: ParsedPricingSheet; include: boolean; block: string; modelColumn: number }
 export interface PricingImportConditionChoice { include: boolean; advance_percent: number | null }
 
-/** Rows × chosen conditions → rules; an empty price cell means the condition is not offered there. */
+const MAX_RULES = 500;
+
+/**
+ * Joins rules that differ only by floor and follow each other (floors 9, 10, 11, 12 at one price → 9–12).
+ * The price of every floor stays the same; only the number of rows shrinks.
+ */
+export function mergeFloorRanges(rules: readonly PricingRule[]): PricingRule[] {
+    const groups = new Map<string, PricingRule[]>();
+    for (const rule of rules) {
+        const key = [pricingKey(rule.block), pricingKey(rule.model), pricingKey(rule.payment_condition), rule.price_per_sqm, rule.advance_percent].join('|');
+        groups.set(key, [...groups.get(key) ?? [], rule]);
+    }
+    const merged: PricingRule[] = [];
+    for (const group of groups.values()) {
+        let open: PricingRule | null = null;
+        for (const rule of [...group].sort((a, b) => a.floor_min - b.floor_min)) {
+            if (open && rule.floor_min === open.floor_max + 1) open.floor_max = rule.floor_max;
+            else { open = { ...rule }; merged.push(open); }
+        }
+    }
+    return merged;
+}
+
+/**
+ * Rows × chosen conditions → rules; an empty price cell means the condition is not offered there.
+ * A per-floor price list above the 500-row limit (Forest Garden 503: 95 rows × 9 conditions) is stored with
+ * equal consecutive floors joined; `merged` then holds the number of rows before joining.
+ */
 export function buildImportedRules(
     sheets: readonly PricingImportSheetChoice[], conditions: Readonly<Record<string, PricingImportConditionChoice>>,
-): { rules: PricingRule[]; errors: string[] } {
-    const rules: PricingRule[] = [], errors: string[] = [];
+): { rules: PricingRule[]; errors: string[]; merged?: number } {
+    let rules: PricingRule[] = [];
+    const errors: string[] = [];
     for (const choice of sheets.filter(item => item.include)) {
         const block = choice.block.trim();
         if (!block) { errors.push(`«${choice.sheet.name}»: блокийг оруулна уу`); continue; }
@@ -204,6 +242,8 @@ export function buildImportedRules(
             errors.push(`${left.block} · ${left.model} · ${left.payment_condition}: ${left.floor_min}–${left.floor_max} ба ${right.floor_min}–${right.floor_max} давхар давхардсан`);
         }
     }
-    if (rules.length > 500) errors.push(`Нийт ${rules.length} үнийн мөр — нэг хувилбарт 500 хүртэл`);
-    return { rules, errors: [...new Set(errors)] };
+    const before = rules.length;
+    if (before > MAX_RULES && !errors.length) rules = mergeFloorRanges(rules);
+    if (rules.length > MAX_RULES) errors.push(`Нийт ${rules.length} үнийн мөр — нэг хувилбарт ${MAX_RULES} хүртэл`);
+    return { rules, errors: [...new Set(errors)], ...(rules.length < before ? { merged: before } : {}) };
 }

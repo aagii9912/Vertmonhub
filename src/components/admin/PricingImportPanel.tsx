@@ -71,7 +71,7 @@ export function PricingImportPanel({ shopId, currentBlocks, onApply, onCancel }:
             choices[label] = { include: form.include, advance_percent: valid ? advance : null };
         }
         const result = buildImportedRules(files.flatMap((file, f) => file.sheets.map((sheet, s) => ({ sheet, ...sheets[`${f}:${s}`] }))), choices);
-        return { rules: result.rules, errors: [...errors, ...result.errors] };
+        return { rules: result.rules, errors: [...errors, ...result.errors], merged: result.merged };
     }, [files, sheets, conditions]);
 
     const blocks = useMemo(() => {
@@ -167,6 +167,7 @@ export function PricingImportPanel({ shopId, currentBlocks, onApply, onCancel }:
             {blocks.length > 0 && <p className="text-sm">{blocks.map(block => block.replaced
                 ? `${block.label}: одоогийн ${block.replaced} мөрийг ${block.rows} мөрөөр солино`
                 : `${block.label}: ${block.rows} мөр нэмнэ`).join(' · ')}</p>}
+            {built.merged !== undefined && !built.errors.length && <p className="text-xs text-muted-foreground">{built.merged} үнийн мөр — нэг хувилбарт 500 хүртэл тул ижил үнэтэй дараалсан давхруудыг нэгтгэж {built.rules.length} мөр болголоо. Давхар бүрийн үнэ өөрчлөгдөөгүй.</p>}
             {missingAdvance.length > 0 && !built.errors.length && <p className="text-xs text-status-pending">Урьдчилгаа оруулаагүй: {missingAdvance.join(', ')}.</p>}
             <div className="flex flex-wrap gap-2">
                 <Button type="button" disabled={busy || built.errors.length > 0 || !built.rules.length}
