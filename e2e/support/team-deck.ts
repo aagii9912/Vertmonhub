@@ -66,7 +66,7 @@ export function teamDeckFixtures(meetingDate: string, shopId: string) {
         rows: [{ leadId: 'lead-n1', status: 'negotiating', manager: 'Номин.Менежер', block: 'Б2', rooms: 2, floor: 12, area: 57.87, condition: '10-30%',
             pricePerSqm: 5_400_000, total: 312_498_000, advance: 93_749_400, conditionNote: null, referral: 'Инстаграм', viewedAt: range.from, priceReason: null }],
         totals: { count: 1, area: { sum: 57.87, known: 57.87, partial: false }, total: { sum: 312_498_000, known: 312_498_000, partial: false }, advance: { sum: 93_749_400, known: 93_749_400, partial: false } },
-        pricing: { version: 2, source: 'Үнийн жагсаалт' }, notes: [],
+        pricing: { version: 2, source: 'Үнийн жагсаалт', label: 'v2' }, notes: [],
     };
     const brandingPath = (n: number) => `branding/${shopId}/00000000-0000-4000-8000-00000000030${n}.png`;
     const branding = {

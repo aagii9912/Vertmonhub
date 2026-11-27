@@ -84,7 +84,8 @@ export async function loadPricingOverview(db: SupabaseClient, shopId: string): P
     }));
     // The default list is always offered, also before its first version.
     if (!lists.has(MAIN_PRICE_LIST.key)) overview.push({ key: MAIN_PRICE_LIST.key, name: MAIN_PRICE_LIST.name, latest: null, active: null });
-    return { lists: overview.sort((a, b) => Number(b.key === MAIN_PRICE_LIST.key) - Number(a.key === MAIN_PRICE_LIST.key) || a.name.localeCompare(b.name, 'mn', { numeric: true })) };
+    return { lists: overview.sort((a, b) => Number(b.key === MAIN_PRICE_LIST.key) - Number(a.key === MAIN_PRICE_LIST.key)
+        || Number(!!b.active) - Number(!!a.active) || a.name.localeCompare(b.name, 'mn', { numeric: true })) };
 }
 
 /** Same rule as the meeting conditions: a restricted manager sees only a project they are registered for. */

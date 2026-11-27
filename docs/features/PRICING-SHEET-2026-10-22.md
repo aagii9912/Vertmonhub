@@ -22,12 +22,26 @@ A new sidebar item «Үнэ, нөхцөл» (`/dashboard/pricing`, Борлуу�
 
 The price sheet shows the rules in the price-list layout (`pivotPricingRows`): one row per block × model × floors, one column per condition (header shows the advance when it is the same for the whole column), with a block filter.
 
+## Price lists (2026-11-27)
+
+Owner decision 2026-11-27: one project can have several price lists, because Mandala Garden's approved price (201–202, valid 2026-11-01 – 2027-02-28) and the Forest Garden special price (503, valid to 2026-12-31) have different validity windows. Migration `20261127120000_project_price_lists.sql` (apply before deploying this code).
+
+- `project_pricing_configs` gains `list_key` (`^[a-z0-9-]{1,40}$`, default `main`), `list_name` (default «Үндсэн үнэ») and `archived_at`. Versions are numbered per list (`UNIQUE (shop_id, list_key, version)`), one active version per list. Existing rows are the default list; a project with one list looks and behaves as before (no list chooser).
+- `save_project_price_list(shop, actor, list_key, list_name, expected_version, status, config)` replaces `save_project_pricing` (kept as a wrapper for the default list). `expected_version` is the list's own latest version (0 for a new list). A list is known by the name of its latest version; two lists of a project never share a name (`23505`); at most 20 lists.
+- Activation refuses a price that another active list already gives: same block, model and condition, overlapping floors and overlapping validity windows (`23P01`; `priceListConflict` names the other list and the row before the RPC is called). Lists therefore differ by block, or by period for the same block (special price until a day, the regular price after it).
+- `retire_project_price_list` («Идэвхтэй үнийг идэвхгүй болгох», `DELETE /api/admin/pricing`, super_admin) archives a list's active version without a replacement, with an `admin_audit_log` entry `pricing.retired`.
+- Quotes: `calculateListPricing` prices a selection from the one active list that covers it inside that list's window. When the covering list is out of its window the answer is «Үнийн хүчинтэй хугацаанд багтахгүй байна» — never another list's price. Meeting conditions are the union of the rules of every list valid today.
+- `GET /api/dashboard/pricing?list=<key>&version=<n>`: `lists` (default list, then lists with an active price, then by name), `history` of every list, `selected` for the shown list. `GET /api/admin/pricing` returns `{ lists: [{ key, name, latest, active }] }`.
+- The «Ярилцаж буй гэрээ» report prices with every active list; its note names them («Үндсэн үнэ» v2 · «Forest Garden тусгай үнэ» v1).
+
+Not covered: parking price lists (per-unit prices, leasing interest tables) and a price that rises with each contract — both need their own rules.
+
 ## Archiving
 
 Archiving already happens in the database: `save_project_pricing` with `status = 'active'` sets the previous active row to `archived` and inserts the new version in one transaction with an `admin_audit_log` entry. Versions are immutable. The page only reads:
 
 - Only `active` / `archived` rows are listed; drafts never reach the sheet (`GET /api/dashboard/pricing` filters `status IN ('active','archived')`, also for `?version=`).
-- «Архивт шилжсэн» = `created_at` of the next activation (the activation that archived it). No extra column.
+- «Архивт шилжсэн» = the stored `archived_at` (rows archived since 2026-11-27), else `created_at` of the next activation of the same list.
 - Activator names come from `user_profiles.full_name`; account ids never leave the server.
 
 ## Access

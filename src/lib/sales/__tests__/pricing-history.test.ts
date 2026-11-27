@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { diffPricingRules, pricingValidity, sortPricingRules, withArchiveTimes } from '../pricing-history';
+import { diffPricingRules, pricingValidity, sortPricingRules, summarizePriceLists, withArchiveTimes } from '../pricing-history';
 import { assertPricingProjectAccess, loadPricingSheet } from '../pricing-store';
 import type { PricingRule } from '../pricing';
 
@@ -47,14 +47,38 @@ describe('pricing archive rules', () => {
 
     it('dates an archived version by the activation that replaced it', () => {
         expect(withArchiveTimes([
-            { status: 'active', created_at: '2026-10-20T02:00:00Z' },
-            { status: 'archived', created_at: '2026-10-08T02:00:00Z' },
-            { status: 'archived', created_at: '2026-10-01T02:00:00Z' },
+            { list_key: 'main', version: 3, status: 'active', created_at: '2026-10-20T02:00:00Z' },
+            { list_key: 'main', version: 2, status: 'archived', created_at: '2026-10-08T02:00:00Z' },
+            { list_key: 'main', version: 1, status: 'archived', created_at: '2026-10-01T02:00:00Z' },
         ]).map(row => row.archived_at)).toEqual([null, '2026-10-20T02:00:00Z', '2026-10-08T02:00:00Z']);
+    });
+
+    it('dates archives per list and keeps a stored archive time (a withdrawn price has no next activation)', () => {
+        expect(withArchiveTimes([
+            { list_key: 'forest', version: 2, status: 'archived', created_at: '2026-11-25T02:00:00Z', archived_at: '2026-11-27T05:00:00Z' },
+            { list_key: 'main', version: 2, status: 'active', created_at: '2026-11-20T02:00:00Z' },
+            { list_key: 'forest', version: 1, status: 'archived', created_at: '2026-11-10T02:00:00Z' },
+            { list_key: 'main', version: 1, status: 'archived', created_at: '2026-11-01T02:00:00Z' },
+        ]).map(row => row.archived_at)).toEqual(['2026-11-27T05:00:00Z', null, '2026-11-25T02:00:00Z', '2026-11-20T02:00:00Z']);
+    });
+
+    it('lists the project price lists from their activated versions: default first, named by the newest activation', () => {
+        const summary = (list_key: string, list_name: string, version: number, status: 'active' | 'archived', valid_until = '2026-12-31') => ({
+            id: `${list_key}${version}`, list_key, list_name, version, status, source: '', valid_from: '2026-11-01', valid_until,
+            activated_at: '2026-11-01T02:00:00Z', activated_by: null, archived_at: null,
+        });
+        expect(summarizePriceLists([
+            summary('forest', 'Forest Garden тусгай үнэ', 2, 'active', '2026-11-30'), summary('forest', 'Тусгай үнэ', 1, 'archived'),
+            summary('main', 'Үндсэн үнэ', 1, 'active', '2027-02-28'), summary('old', 'Хуучин урамшуулал', 1, 'archived'),
+        ], '2026-12-05')).toEqual([
+            { key: 'main', name: 'Үндсэн үнэ', active_version: 1, valid_from: '2026-11-01', valid_until: '2027-02-28', validity: 'valid', archived: 0 },
+            { key: 'forest', name: 'Forest Garden тусгай үнэ', active_version: 2, valid_from: '2026-11-01', valid_until: '2026-11-30', validity: 'expired', archived: 1 },
+            { key: 'old', name: 'Хуучин урамшуулал', active_version: null, valid_from: null, valid_until: null, validity: null, archived: 1 },
+        ]);
     });
 });
 
-type Row = { id: string; shop_id: string; version: number; status: string; created_at: string; created_by: string; config: Record<string, unknown> };
+type Row = { id: string; shop_id: string; list_key?: string; list_name?: string; version: number; status: string; created_at: string; created_by: string; archived_at?: string | null; config: Record<string, unknown> };
 const config = (rules: PricingRule[], valid_from = '2026-10-01', valid_until = '2026-12-31') => ({ source: 'Баталсан үнэ', valid_from, valid_until, inventory_area_confirmed: true, rules });
 const ROWS: Row[] = [
     { id: 'c3', shop_id: 'shop', version: 3, status: 'active', created_at: '2026-10-20T02:00:00Z', created_by: 'admin', config: config([rule({ price_per_sqm: 4_200_000 })]) },
@@ -81,6 +105,34 @@ function database(rows = ROWS) {
 }
 
 describe('loadPricingSheet', () => {
+    it('keeps each price list apart: its own active version, comparison and archive, with a withdrawn list still listed', async () => {
+        const special = (version: number, status: string, created_at: string, price: number, archived_at: string | null = null): Row => ({
+            id: `f${version}`, shop_id: 'shop', list_key: 'forest', list_name: 'Forest Garden тусгай үнэ', version, status, created_at, created_by: 'admin', archived_at,
+            config: config([rule({ block: '503', price_per_sqm: price })], '2026-11-01', '2026-11-30'),
+        });
+        const rows = [...ROWS.map(row => ({ ...row, list_key: 'main', list_name: 'Үндсэн үнэ' })),
+            special(2, 'active', '2026-11-10T02:00:00Z', 5_000_000), special(1, 'archived', '2026-11-01T02:00:00Z', 4_900_000, '2026-11-10T02:00:00Z')];
+        const main = await loadPricingSheet(database(rows).db, 'shop', { asOf: '2026-11-15' });
+        expect(main.lists.map(list => [list.key, list.active_version, list.validity, list.archived])).toEqual([['main', 3, 'valid', 1], ['forest', 2, 'valid', 1]]);
+        expect(main.selected).toMatchObject({ list_key: 'main', version: 3, previous_version: 1 });
+        expect(main.history.map(row => `${row.list_key}:${row.version}`)).toEqual(['main:3', 'main:1', 'forest:2', 'forest:1']);
+
+        const forest = await loadPricingSheet(database(rows).db, 'shop', { list: 'forest', asOf: '2026-12-01' });
+        expect(forest.selected).toMatchObject({ list_key: 'forest', list_name: 'Forest Garden тусгай үнэ', version: 2, validity: 'expired', previous_version: 1 });
+        expect(forest.selected?.rows[0]).toMatchObject({ change: 'changed', previous: { price_per_sqm: 4_900_000 } });
+        // Version numbers repeat across lists: version 1 of the special list is not the default list's version 1.
+        expect((await loadPricingSheet(database(rows).db, 'shop', { list: 'forest', version: 1 })).selected).toMatchObject({ id: 'f1', previous_version: null });
+        await expect(loadPricingSheet(database(rows).db, 'shop', { list: 'forest', version: 3 })).rejects.toMatchObject({ status: 404 });
+        await expect(loadPricingSheet(database(rows).db, 'shop', { list: 'missing' })).rejects.toMatchObject({ status: 404 });
+
+        // Withdrawn: no active version, the list stays for its archive and the default list is shown first.
+        const withdrawn = rows.map(row => row.id === 'f2' ? { ...row, status: 'archived', archived_at: '2026-11-20T02:00:00Z' } : row);
+        const after = await loadPricingSheet(database(withdrawn).db, 'shop', { list: 'forest', asOf: '2026-11-21' });
+        expect(after.selected).toBeNull();
+        expect(after.lists.find(list => list.key === 'forest')).toMatchObject({ active_version: null, validity: null, archived: 2 });
+        expect(after.history.find(row => row.id === 'f2')?.archived_at).toBe('2026-11-20T02:00:00Z');
+    });
+
     it('shows the active version compared with the one it archived, never drafts', async () => {
         const { db, calls } = database();
         const sheet = await loadPricingSheet(db, 'shop', { asOf: '2026-10-22' });

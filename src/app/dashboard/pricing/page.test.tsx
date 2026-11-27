@@ -15,7 +15,7 @@ import PricingPage from './page';
 
 const rule = { block: 'Б1', model: 'E3', floor_min: 2, floor_max: 9, payment_condition: '30%', price_per_sqm: 4_200_000, advance_percent: 30 };
 const summary = (version: number, status: 'active' | 'archived', archived_at: string | null): PricingVersionSummary => ({
-    id: `c${version}`, version, status, source: `Үнэ ${version}`, valid_from: '2026-10-01', valid_until: '2026-12-31',
+    id: `c${version}`, list_key: 'main', list_name: 'Үндсэн үнэ', version, status, source: `Үнэ ${version}`, valid_from: '2026-10-01', valid_until: '2026-12-31',
     activated_at: '2026-10-01T02:00:00Z', activated_by: 'Болд', archived_at,
 });
 const detail = (base: PricingVersionSummary, price: number): PricingSheetVersion => ({
@@ -23,7 +23,8 @@ const detail = (base: PricingVersionSummary, price: number): PricingSheetVersion
     rows: [{ rule: { ...rule, price_per_sqm: price }, change: base.version > 1 ? 'changed' : null, previous: base.version > 1 ? { price_per_sqm: 4_000_000, advance_percent: 30 } : null }],
 });
 const history = [summary(2, 'active', null), summary(1, 'archived', '2026-10-20T02:00:00Z')];
-const sheet = (selected: PricingSheetVersion | null): PricingSheet => ({ as_of: '2026-10-22', history: selected ? history : [], selected });
+const mainList = { key: 'main', name: 'Үндсэн үнэ', active_version: 2, valid_from: '2026-10-01', valid_until: '2026-12-31', validity: 'valid' as const, archived: 1 };
+const sheet = (selected: PricingSheetVersion | null): PricingSheet => ({ as_of: '2026-10-22', lists: selected ? [mainList] : [], history: selected ? history : [], selected });
 
 const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PricingPage /></QueryClientProvider>);
 
@@ -43,7 +44,7 @@ it('shows the valid price first and opens an archived version from the archive t
     fireEvent.mouseDown(archive); fireEvent.click(archive);
     fireEvent.click(await screen.findByRole('button', { name: 'Хувилбар 1-ийг харах' }));
     expect(await screen.findByText('Хувилбар 1')).toBeInTheDocument();
-    expect(api.dashboardJson).toHaveBeenCalledWith('/api/dashboard/pricing?version=1');
+    expect(api.dashboardJson).toHaveBeenCalledWith('/api/dashboard/pricing?list=main&version=1');
     expect(screen.getByText('4,000,000₮')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Архивын жагсаалт/ }));
     expect(await screen.findByRole('button', { name: 'Хувилбар 1-ийг харах' })).toBeInTheDocument();
@@ -57,4 +58,29 @@ it('explains an empty price list and gives the editor tab only to super admins',
     const edit = screen.getByRole('tab', { name: /Засах/ });
     fireEvent.mouseDown(edit); fireEvent.click(edit);
     expect(await screen.findByText('Үнийн засварлагч')).toBeInTheDocument();
+});
+
+it('with several price lists shows a list chooser and each list own price and archive', async () => {
+    const forest: PricingVersionSummary = { ...summary(1, 'active', null), id: 'f1', list_key: 'forest', list_name: 'Forest Garden тусгай үнэ', valid_until: '2026-10-15' };
+    const lists = [mainList, { key: 'forest', name: 'Forest Garden тусгай үнэ', active_version: 1, valid_from: '2026-10-01', valid_until: '2026-10-15', validity: 'expired' as const, archived: 0 }];
+    api.dashboardJson.mockImplementation(async (url: string): Promise<PricingSheet> => ({
+        as_of: '2026-10-22', lists, history: [...history, forest],
+        selected: url.includes('list=forest') ? { ...detail(forest, 5_000_000), validity: 'expired' } : detail(history[0], 4_200_000),
+    }));
+    renderPage();
+    expect(await screen.findByText('4,200,000₮')).toBeInTheDocument();
+    expect(screen.getByText('Үндсэн үнэ · Хувилбар 2')).toBeInTheDocument();
+    const chooser = screen.getByRole('group', { name: 'Үнийн жагсаалт' });
+    expect(chooser).toHaveTextContent('Үндсэн үнэХүчинтэй');
+    expect(chooser).toHaveTextContent('Forest Garden тусгай үнэХугацаа дууссан');
+    fireEvent.click(screen.getByRole('button', { name: /Forest Garden тусгай үнэ/ }));
+    expect(await screen.findByText('Forest Garden тусгай үнэ · Хувилбар 1')).toBeInTheDocument();
+    expect(api.dashboardJson).toHaveBeenCalledWith('/api/dashboard/pricing?list=forest');
+    expect(screen.getByText('5,000,000₮')).toBeInTheDocument();
+    expect(screen.getByText(/энэ жагсаалтын байранд уулзалтын үнийн санал тооцогдохгүй/)).toBeInTheDocument();
+    const archive = screen.getByRole('tab', { name: 'Архив (1)' });
+    fireEvent.mouseDown(archive); fireEvent.click(archive);
+    expect(await screen.findByRole('columnheader', { name: 'Жагсаалт' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '«Үндсэн үнэ» хувилбар 1-ийг харах' }));
+    expect(api.dashboardJson).toHaveBeenCalledWith('/api/dashboard/pricing?list=main&version=1');
 });

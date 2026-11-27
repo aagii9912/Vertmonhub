@@ -3,14 +3,14 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ProjectScopeError } from '@/lib/sales/project-scope';
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), shop: vi.fn(), admin: vi.fn(), overview: vi.fn(), save: vi.fn(), quote: vi.fn(), scope: vi.fn(), sheet: vi.fn(), access: vi.fn() }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), shop: vi.fn(), admin: vi.fn(), overview: vi.fn(), save: vi.fn(), retire: vi.fn(), quote: vi.fn(), scope: vi.fn(), sheet: vi.fn(), access: vi.fn() }));
 vi.mock('@/lib/auth/require-permission', () => ({ requireModule: mocks.read, requireModuleWrite: mocks.write, requireModuleDelete: mocks.write, requireAnyModule: mocks.read }));
 vi.mock('@/lib/auth/supabase-auth', () => ({ getUserShop: mocks.shop, getUserId: async () => 'actor' }));
 vi.mock('@/lib/admin/auth', () => ({ getAdminUser: mocks.admin }));
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({}) }));
 vi.mock('@/lib/sales/project-scope', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/sales/project-scope')>(), resolveSalesProjectScope: mocks.scope }));
-vi.mock('@/lib/sales/pricing-store', () => ({ loadPricingOverview: mocks.overview, savePricingConfig: mocks.save, quoteViewingSelection: mocks.quote, loadPricingSheet: mocks.sheet, assertPricingProjectAccess: mocks.access }));
-import { GET, PUT } from '@/app/api/admin/pricing/route';
+vi.mock('@/lib/sales/pricing-store', () => ({ loadPricingOverview: mocks.overview, savePricingConfig: mocks.save, retirePriceList: mocks.retire, quoteViewingSelection: mocks.quote, loadPricingSheet: mocks.sheet, assertPricingProjectAccess: mocks.access }));
+import { DELETE, GET, PUT } from '@/app/api/admin/pricing/route';
 import { POST } from '@/app/api/dashboard/viewings/quote/route';
 import { GET as SHEET } from '@/app/api/dashboard/pricing/route';
 import { EMPTY_PRICING_DRAFT } from '@/lib/sales/pricing';
@@ -22,8 +22,8 @@ beforeEach(() => {
     mocks.shop.mockResolvedValue({ id: 'shop' }); mocks.admin.mockResolvedValue({ id: 'actor', role: 'super_admin' });
     mocks.scope.mockResolvedValue({ projectIds: ['project'], managerName: 'Бат' });
     mocks.quote.mockResolvedValue({ available: false, reason: 'Үнийн тохиргоо байхгүй', quote: null });
-    mocks.overview.mockResolvedValue({ latest: null, active: null }); mocks.save.mockResolvedValue({ version: 1 });
-    mocks.sheet.mockResolvedValue({ as_of: '2026-10-22', history: [], selected: null }); mocks.access.mockResolvedValue(undefined);
+    mocks.overview.mockResolvedValue({ lists: [] }); mocks.save.mockResolvedValue({ version: 1 });
+    mocks.sheet.mockResolvedValue({ as_of: '2026-10-22', lists: [], history: [], selected: null }); mocks.access.mockResolvedValue(undefined);
 });
 it('requires dedicated modules and shop access before loading or writing pricing', async () => {
     mocks.read.mockResolvedValue(NextResponse.json({}, { status: 403 }));
@@ -41,7 +41,25 @@ it('requires super admin independently of settings permission and uses verified 
     mocks.admin.mockResolvedValue({ id: 'actor' });
     expect((await PUT(request('/api/admin/pricing', input, 'PUT'))).status).toBe(200);
     expect(mocks.write).toHaveBeenCalledWith('settings');
-    expect(mocks.save).toHaveBeenCalledWith({}, 'shop', 'actor', input);
+    expect(mocks.save).toHaveBeenCalledWith({}, 'shop', 'actor', { ...input, list_key: 'main', list_name: 'Үндсэн үнэ' });
+    const special = { ...input, list_key: 'forest-garden', list_name: ' Forest Garden тусгай үнэ ' };
+    expect((await PUT(request('/api/admin/pricing', special, 'PUT'))).status).toBe(200);
+    expect(mocks.save).toHaveBeenLastCalledWith({}, 'shop', 'actor', { ...special, list_name: 'Forest Garden тусгай үнэ' });
+    expect((await PUT(request('/api/admin/pricing', { ...input, list_key: 'Forest Garden' }, 'PUT'))).status).toBe(400);
+});
+it('withdrawing a list price needs super admin and settings write, and validates the list before the RPC', async () => {
+    const input = { list_key: 'forest-garden', expected_version: 2 };
+    mocks.retire.mockResolvedValue({ version: 2, status: 'archived' });
+    mocks.admin.mockResolvedValue(null);
+    expect((await DELETE(request('/api/admin/pricing', input, 'DELETE'))).status).toBe(403);
+    mocks.admin.mockResolvedValue({ id: 'actor' });
+    for (const bad of [{ list_key: 'forest-garden' }, { ...input, expected_version: 0 }, { ...input, list_key: 'a b' }, { ...input, extra: 1 }]) {
+        expect((await DELETE(request('/api/admin/pricing', bad, 'DELETE'))).status).toBe(400);
+    }
+    expect(mocks.retire).not.toHaveBeenCalled();
+    expect((await DELETE(request('/api/admin/pricing', input, 'DELETE'))).status).toBe(200);
+    expect(mocks.write).toHaveBeenCalledWith('settings');
+    expect(mocks.retire).toHaveBeenCalledWith({}, 'shop', 'actor', input);
 });
 it('quote preview is read only, scoped, and rejects client totals before calculation', async () => {
     expect((await POST(request('/api/dashboard/viewings/quote', { ...body, total_amount: 1 }))).status).toBe(400);
@@ -62,6 +80,7 @@ it('price sheet is a properties read, project-scoped, and validates the version 
     expect(mocks.read).toHaveBeenCalledWith('properties'); expect(mocks.sheet).not.toHaveBeenCalled();
     mocks.read.mockResolvedValue(null);
     for (const bad of ['0', '-1', '1.5', 'abc']) expect((await SHEET(new NextRequest(`http://localhost/api/dashboard/pricing?version=${bad}`))).status).toBe(400);
+    expect((await SHEET(new NextRequest('http://localhost/api/dashboard/pricing?list=Forest%20Garden'))).status).toBe(400);
     expect(mocks.sheet).not.toHaveBeenCalled();
     mocks.access.mockRejectedValueOnce(new ProjectScopeError(403, 'Энэ төслийн үнийг харах эрхгүй'));
     expect((await SHEET(new NextRequest('http://localhost/api/dashboard/pricing'))).status).toBe(403);
@@ -69,6 +88,6 @@ it('price sheet is a properties read, project-scoped, and validates the version 
     const response = await SHEET(new NextRequest('http://localhost/api/dashboard/pricing?version=2'));
     expect(response.status).toBe(200);
     expect(mocks.access).toHaveBeenLastCalledWith({}, 'shop', { projectIds: ['project'], managerName: 'Бат' });
-    expect(mocks.sheet).toHaveBeenCalledWith({}, 'shop', { version: 2 });
+    expect(mocks.sheet).toHaveBeenCalledWith({}, 'shop', { list: null, version: 2 });
     expect(mocks.write).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
 });

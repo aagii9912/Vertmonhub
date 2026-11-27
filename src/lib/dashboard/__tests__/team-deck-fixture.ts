@@ -138,7 +138,7 @@ export function negotiations(empty = false): NegotiationsReport {
         totals: empty
             ? { count: 0, area: { sum: 0, known: 0, partial: false }, total: { sum: 0, known: 0, partial: false }, advance: { sum: 0, known: 0, partial: false } }
             : { count: 2, area: { sum: 147.6, known: 147.6, partial: false }, total: { sum: null, known: 312_498_000, partial: true }, advance: { sum: null, known: 93_749_400, partial: true } },
-        pricing: empty ? null : { version: 3, source: 'Elysium үнийн жагсаалт' },
+        pricing: empty ? null : { version: 3, source: 'Elysium үнийн жагсаалт', label: 'v3' },
         notes: empty ? [] : ['Үнийг өнөөдрийн (2026-10-21) баталсан үнийн тохиргоогоор (v3) тооцов.'],
     };
 }

@@ -13,12 +13,12 @@ const rule = { block: 'Б1', model: 'E6', floor_min: 2, floor_max: 23, payment_c
 const draft: PricingDraft = { source: 'Тестийн баталсан үнэ', valid_from: '2026-10-01', valid_until: '2026-10-31', inventory_area_confirmed: true, rules: [rule] };
 const config = (patch: Partial<PricingDraft> = {}) => ({ id: 'config', shop_id: shopId, version: 1, status: 'active', config: { ...draft, ...patch } });
 
-function database({ projectName = 'Elysium Residence', pricing = null, missingProject = false, failingTable }: {
-    projectName?: string; pricing?: ReturnType<typeof config> | null; missingProject?: boolean; failingTable?: string;
+function database({ projectName = 'Elysium Residence', pricing = null, missingProject = false, failingTable, lists }: {
+    projectName?: string; pricing?: ReturnType<typeof config> | null; missingProject?: boolean; failingTable?: string; lists?: Record<string, unknown>[];
 } = {}) {
     const tables: Record<string, Record<string, unknown>[]> = {
         projects: missingProject ? [] : [{ id: projectId, shop_id: shopId, name: projectName }],
-        project_pricing_configs: pricing ? [pricing] : [], property_units: [inventory],
+        project_pricing_configs: lists ?? (pricing ? [pricing] : []), property_units: [inventory],
     };
     const calls: { table: string; filters: unknown[][] }[] = [];
     const db = { from(table: string) {
@@ -31,6 +31,8 @@ function database({ projectName = 'Elysium Residence', pricing = null, missingPr
             in: (field: string, value: unknown[]) => { filters.push([field, value, true]); return chain; },
             range: async () => result(),
             maybeSingle: async () => { const response = result(); return { ...response, data: response.data[0] ?? null }; },
+            // The active price lists are read as rows (one per list), not with maybeSingle.
+            then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve),
         }; return chain;
     } } as unknown as SupabaseClient;
     return { db, calls };
@@ -40,6 +42,13 @@ const choices = async (db: SupabaseClient, units: readonly ViewingUnitOption[] =
     loadViewingPricingConditions(db, shopId, scope, '2026-10-08', { projectId, units });
 
 describe('viewing conditions server loader', () => {
+    it('offers the conditions of every price list valid today and leaves out a list outside its own window', async () => {
+        const list = (list_key: string, block: string, valid_until: string) => ({ ...config({ valid_until, rules: [{ ...rule, block }] }), id: list_key, list_key, list_name: list_key });
+        const result = await choices(database({ lists: [list('main', 'Б1', '2026-10-31'), list('forest', '503', '2026-10-31'), list('ended', '504', '2026-10-05')] }).db);
+        expect(result.reason).toBeNull();
+        expect(result.conditions.map(condition => condition.block)).toEqual(['Б1', '503']);
+    });
+
     it('returns Elysium choices without an active monetary offer and checks the project belongs to the shop', async () => {
         const { db, calls } = database();
         expect(await choices(db)).toEqual({ conditions: ['10-30%', '30%'].map(payment_condition => ({

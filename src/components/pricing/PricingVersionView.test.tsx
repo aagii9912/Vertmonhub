@@ -5,7 +5,7 @@ import type { PricingSheetVersion } from '@/lib/sales/pricing-history';
 
 const rule = { block: 'Б1', model: 'E3', floor_min: 2, floor_max: 9, payment_condition: '30%', price_per_sqm: 4_200_000, advance_percent: 30 };
 const version = (overrides: Partial<PricingSheetVersion> = {}): PricingSheetVersion => ({
-    id: 'c3', version: 3, status: 'active', source: 'Баталсан 10.20 үнэ', valid_from: '2026-10-20', valid_until: '2026-12-31',
+    id: 'c3', list_key: 'main', list_name: 'Үндсэн үнэ', version: 3, status: 'active', source: 'Баталсан 10.20 үнэ', valid_from: '2026-10-20', valid_until: '2026-12-31',
     activated_at: '2026-10-20T02:00:00Z', activated_by: 'Болд', archived_at: null, validity: 'valid', previous_version: 1,
     rows: [
         { rule, change: 'changed', previous: { price_per_sqm: 4_000_000, advance_percent: 30 } },

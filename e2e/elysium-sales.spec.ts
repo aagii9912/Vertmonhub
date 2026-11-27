@@ -17,7 +17,7 @@ const units = [
     { id: '00000000-0000-4000-8000-000000000152', project_id: projectId, block: 'Б2', model: 'A', area_sqm: 57.23, floor: 2, unit_number: '202', code: 'Б2-202', status: 'available' },
 ];
 const activeConfig: PricingConfig = {
-    id: configId, shop_id: shopId, version: 1, status: 'active', source: 'Тестээр баталсан үнэ',
+    id: configId, shop_id: shopId, list_key: 'main', list_name: 'Үндсэн үнэ', version: 1, status: 'active', source: 'Тестээр баталсан үнэ',
     valid_from: '2026-01-01', valid_until: '2026-12-31', inventory_area_confirmed: true,
     rules: [
         { block: 'Б1', model: 'E3', floor_min: 2, floor_max: 8, payment_condition: '50%', price_per_sqm: 4_000_000, advance_percent: 50 },
@@ -117,11 +117,12 @@ async function setup(page: Page, approvedPricing = true) {
             if (request.method() === 'PUT') {
                 const body = request.postDataJSON() as PricingSaveInput;
                 state.pricingWrites.push(body);
-                state.latest = { ...body.config, id: configId, shop_id: shopId, version: (state.latest?.version ?? 0) + 1, status: body.status };
+                state.latest = { ...body.config, id: configId, shop_id: shopId, list_key: body.list_key ?? 'main', list_name: body.list_name ?? 'Үндсэн үнэ',
+                    version: (state.latest?.version ?? 0) + 1, status: body.status };
                 if (body.status === 'active') state.active = state.latest;
                 return reply({ config: state.latest });
             }
-            return reply({ latest: state.latest, active: state.active });
+            return reply({ lists: [{ key: 'main', name: 'Үндсэн үнэ', latest: state.latest, active: state.active }] });
         }
         state.unhandled.push(`${request.method()} ${path}`);
         return reply({ error: `Missing fixture ${path}` }, 501);

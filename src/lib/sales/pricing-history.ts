@@ -37,7 +37,7 @@ export interface PricingSheetVersion extends PricingVersionSummary {
 
 export interface PricingSheet {
     as_of: string;
-    /** Lists with at least one activated version: the default list first, then by name. */
+    /** Lists with at least one activated version: the default list, then lists with an active price, then by name. */
     lists: PriceListSummary[];
     /** Activated versions of every list, newest activation first. */
     history: PricingVersionSummary[];
@@ -89,7 +89,7 @@ export function withArchiveTimes<T extends { list_key: string; version: number; 
     });
 }
 
-/** The project's lists from its activated versions: named by the newest activation, default list first. */
+/** The project's lists from its activated versions, named by the newest activation: the default list, then lists with an active price, then by name. */
 export function summarizePriceLists(history: readonly PricingVersionSummary[], asOf: string): PriceListSummary[] {
     const lists = new Map<string, PriceListSummary & { named: number }>();
     for (const row of history) {
@@ -101,7 +101,8 @@ export function summarizePriceLists(history: readonly PricingVersionSummary[], a
         lists.set(row.list_key, list);
     }
     return [...lists.values()].map(({ named: _named, ...list }) => list)
-        .sort((a, b) => Number(b.key === MAIN_PRICE_LIST.key) - Number(a.key === MAIN_PRICE_LIST.key) || a.name.localeCompare(b.name, 'mn', { numeric: true }));
+        .sort((a, b) => Number(b.key === MAIN_PRICE_LIST.key) - Number(a.key === MAIN_PRICE_LIST.key)
+            || Number(b.active_version !== null) - Number(a.active_version !== null) || a.name.localeCompare(b.name, 'mn', { numeric: true }));
 }
 
 export interface PricingSheetGroup { block: string; model: string; floor_min: number; floor_max: number; cells: Record<string, PricingRuleDiff> }

@@ -4,7 +4,7 @@ import { buildNegotiations, latestInterestViewings, negotiationSum, type Negotia
 
 const U171 = '11111111-1111-4111-8111-111111111171';
 const pricing: PricingConfig = {
-    id: 'cfg', shop_id: 's', version: 2, status: 'active', source: 'Үнийн жагсаалт 2026-10',
+    id: 'cfg', shop_id: 's', list_key: 'main', list_name: 'Үндсэн үнэ', version: 2, status: 'active', source: 'Үнийн жагсаалт 2026-10',
     valid_from: '2026-10-01', valid_until: '2026-12-31', inventory_area_confirmed: true,
     rules: [
         { block: 'Б2', model: 'A', floor_min: 1, floor_max: 23, payment_condition: '10-30%', price_per_sqm: 7_600_000, advance_percent: 10 },
@@ -39,7 +39,7 @@ const input = (overrides: Partial<NegotiationsInput> = {}): NegotiationsInput =>
         { id: U171, block: 'Б2', model: 'A', rooms: 2 },
         { id: 'u-e3', block: 'Б1', model: 'E3', rooms: '3' },
     ],
-    pricing,
+    pricing: [pricing],
     referrals: { available: true, byViewing: new Map([['v-new', 'Facebook'], ['v-l2', null]]) },
     ...overrides,
 });
@@ -88,7 +88,7 @@ describe('buildNegotiations', () => {
             total: { sum: null, known: 976_509_000, partial: true },
             advance: { sum: null, known: 43_981_200, partial: true },
         });
-        expect(report.pricing).toEqual({ version: 2, source: 'Үнийн жагсаалт 2026-10' });
+        expect(report.pricing).toEqual({ version: 2, source: 'Үнийн жагсаалт 2026-10', label: 'v2' });
         expect(report.notes).toEqual([
             'Үнийг өнөөдрийн (2026-10-23) баталсан үнийн тохиргоогоор (v2) тооцов.',
             '1 лидийн болсон уулзалтад сонирхсон байр бүртгэгдээгүй.',

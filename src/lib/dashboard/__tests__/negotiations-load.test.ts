@@ -78,7 +78,7 @@ describe('loadNegotiations', () => {
             leadId: 'L1', manager: 'Khongoroo', block: 'Б2', rooms: 2, floor: 12, area: 57.87, condition: '10-30%',
             pricePerSqm: 7_600_000, total: 439_812_000, advance: 43_981_200, referral: 'Ойрхон амьдардаг', viewedAt: '2026-10-15',
         })]);
-        expect(report.pricing).toEqual({ version: 2, source: 'Үнийн жагсаалт' });
+        expect(report.pricing).toEqual({ version: 2, source: 'Үнийн жагсаалт', label: 'v2' });
         expect(report.notes).toContain('1 лид амьд гэрээтэй тул жагсаалтад ороогүй.');
         // Захиалагчийн нэр гаргахгүй.
         expect(JSON.stringify(report)).not.toContain('Нууц');

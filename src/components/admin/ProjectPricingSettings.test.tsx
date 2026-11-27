@@ -4,9 +4,10 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { ProjectPricingSettings } from './ProjectPricingSettings';
 
 const fetchMock = vi.fn();
+const overview = (latest: unknown, active: unknown = null) => ({ lists: [{ key: 'main', name: 'Үндсэн үнэ', latest, active }] });
 beforeEach(() => {
     fetchMock.mockReset();
-    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ latest: null, active: null }) });
+    fetchMock.mockResolvedValue({ ok: true, json: async () => overview(null) });
     vi.stubGlobal('fetch', fetchMock);
 });
 function mount() {
@@ -49,7 +50,7 @@ it('an Excel import replaces only the imported block rows and keeps the draft un
     const file = { file: 'Б1.xlsx', skipped: [], sheets: [{ name: 'Б1', title: 'Б1 блок', kind: 'residential', block: 'Б1', valid_from: null, valid_until: null,
         modelColumns: [{ header: 'Загвар', sample: ['E6'] }], conditions: [{ label: '30%', base: false }],
         rows: [{ row: 8, floor_min: 3, floor_max: 4, models: ['E6'], prices: { '30%': 6_800_000 } }], issues: [] }] };
-    fetchMock.mockImplementation(async (url: string) => ({ ok: true, json: async () => url === '/api/admin/pricing/import' ? file : { latest, active: null } }));
+    fetchMock.mockImplementation(async (url: string) => ({ ok: true, json: async () => url === '/api/admin/pricing/import' ? file : overview(latest) }));
     mount();
     await screen.findByDisplayValue('E3');
     fireEvent.click(screen.getByRole('button', { name: 'Excel-ээс оруулах' }));
@@ -69,7 +70,7 @@ it('fills the first advance once per payment condition so an imported draft can 
     const rule = (model: string, payment_condition: string) => ({ block: 'Б1', model, floor_min: 2, floor_max: 9, payment_condition, price_per_sqm: 4_000_000, advance_percent: null });
     const latest = { id: 'c1', shop_id: 'shop', version: 2, status: 'draft', source: 'Файл: Б1.xlsx', valid_from: '2026-10-22', valid_until: '2026-11-30', inventory_area_confirmed: true,
         rules: [rule('E3', '30%'), rule('E6', '30%'), rule('E3', '10-30%')] };
-    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ latest, active: null }) }));
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => overview(latest) }));
     mount();
     await screen.findByLabelText('1-р мөр Загвар');
     fireEvent.click(screen.getByRole('button', { name: 'Идэвхжүүлэхийн өмнө хянах' }));
@@ -98,4 +99,62 @@ it('fills the first advance once per payment condition so an imported draft can 
     const body = JSON.parse(init.body);
     expect(body.status).toBe('active');
     expect(body.config.rules.map((item: { advance_percent: number }) => item.advance_percent)).toEqual([30, 30, 10.5]);
+});
+it('adds a separate price list with its own name and saves it under its own key from version 0', async () => {
+    const rule = { block: '201', model: 'A', floor_min: 2, floor_max: 9, payment_condition: '50%', price_per_sqm: 4_000_000, advance_percent: 50 };
+    const main = { id: 'c2', shop_id: 'shop', list_key: 'main', list_name: 'Үндсэн үнэ', version: 2, status: 'active', source: 'Баталсан үнэ', valid_from: '2026-11-01', valid_until: '2027-02-28', inventory_area_confirmed: true, rules: [rule] };
+    fetchMock.mockImplementation(async (_url: string, init?: { method?: string }) => ({ ok: true, json: async () => init?.method === 'PUT' ? { config: {} } : overview(main, main) }));
+    mount();
+    await screen.findByText(/Идэвхтэй хувилбар 2: Баталсан үнэ/);
+    expect(screen.getByRole('button', { name: /Үндсэн үнэ/ })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Үнийн жагсаалт нэмэх' }));
+    fireEvent.change(screen.getByLabelText('Шинэ жагсаалтын нэр'), { target: { value: ' үндсэн үнэ ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Нэмэх' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Ийм нэртэй үнийн жагсаалт байна');
+    fireEvent.change(screen.getByLabelText('Шинэ жагсаалтын нэр'), { target: { value: 'Forest Garden тусгай үнэ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Нэмэх' }));
+    // The new list starts empty: nothing is copied from the default list.
+    expect(await screen.findByText('Идэвхтэй үнэ байхгүй.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Forest Garden тусгай үнэ/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Жагсаалтын нэр')).toHaveValue('Forest Garden тусгай үнэ');
+    expect(screen.queryByLabelText('1-р мөр Блок')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Идэвхтэй үнийг идэвхгүй болгох' })).not.toBeInTheDocument();
+
+    // The same unit and condition on the default list's days is refused at review, naming that list.
+    fireEvent.change(screen.getByLabelText('Эх сурвалж'), { target: { value: 'PQ-FG-503-001' } });
+    fireEvent.change(screen.getByLabelText('Эхлэх огноо'), { target: { value: '2026-11-27' } });
+    fireEvent.change(screen.getByLabelText('Дуусах огноо'), { target: { value: '2026-12-31' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Үнийн мөр нэмэх' }));
+    for (const [label, value] of [['Блок','201'], ['Загвар','A'], ['Давхар эхлэх','9'], ['Давхар дуусах','12'], ['Нөхцөл','50%'], ['м² үнэ (₮)','4800000'], ['Эхний урьдчилгаа (%)','50']]) {
+        fireEvent.change(screen.getByLabelText(`1-р мөр ${label}`), { target: { value } });
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Идэвхжүүлэхийн өмнө хянах' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('«Үндсэн үнэ» жагсаалтын идэвхтэй үнэтэй давхцаж байна');
+    expect(screen.getByRole('button', { name: 'Баталсан үнийг идэвхжүүлэх' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('1-р мөр Блок'), { target: { value: '503' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Идэвхжүүлэхийн өмнө хянах' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Баталсан үнийг идэвхжүүлэх' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(true));
+    const body = JSON.parse(fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')![1].body);
+    expect(body).toMatchObject({ list_name: 'Forest Garden тусгай үнэ', expected_version: 0, status: 'active' });
+    expect(body.list_key).toMatch(/^[a-z0-9-]{1,40}$/);
+    expect(body.list_key).not.toBe('main');
+    expect(body.config.rules).toEqual([{ ...rule, block: '503', floor_min: 9, floor_max: 12, price_per_sqm: 4_800_000 }]);
+});
+it('withdraws a list active price only after a second confirmation, with the list latest version', async () => {
+    const active = { id: 'c1', shop_id: 'shop', list_key: 'forest', list_name: 'Forest Garden тусгай үнэ', version: 1, status: 'active', source: 'PQ-FG-503-001', valid_from: '2026-11-01', valid_until: '2026-12-31', inventory_area_confirmed: true, rules: [] };
+    const draft = { ...active, id: 'c2', version: 2, status: 'draft' };
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ lists: [{ key: 'main', name: 'Үндсэн үнэ', latest: null, active: null }, { key: 'forest', name: 'Forest Garden тусгай үнэ', latest: draft, active }] }) }));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: /Forest Garden тусгай үнэ/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Идэвхтэй үнийг идэвхгүй болгох' }));
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+    expect(screen.getByRole('status')).toHaveTextContent('хувилбар 1 архивт шилжинэ');
+    fireEvent.click(screen.getByRole('button', { name: 'Тийм, идэвхгүй болгох' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(true));
+    const [url, init] = fetchMock.mock.calls.find(([, init]) => init?.method === 'DELETE')!;
+    expect(url).toBe('/api/admin/pricing');
+    expect(JSON.parse(init.body)).toEqual({ list_key: 'forest', expected_version: 2 });
 });
