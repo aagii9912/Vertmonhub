@@ -39,6 +39,8 @@ async function setup(page: Page, approvedPricing = true) {
         monthlyWrites: [] as Array<{ shopId: string; year: number; months: MonthlySalesPatch[] }>, months,
         monthlyConflict: false, pricingWrites: [] as PricingSaveInput[], latest: null as PricingConfig | null,
         active: null as PricingConfig | null,
+        // Lists added besides the default one, by key; `latest` / `active` above are the default list.
+        extraLists: new Map<string, { name: string; latest: PricingConfig; active: PricingConfig | null }>(),
     };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/api/**', async route => {
@@ -117,12 +119,16 @@ async function setup(page: Page, approvedPricing = true) {
             if (request.method() === 'PUT') {
                 const body = request.postDataJSON() as PricingSaveInput;
                 state.pricingWrites.push(body);
-                state.latest = { ...body.config, id: configId, shop_id: shopId, list_key: body.list_key ?? 'main', list_name: body.list_name ?? 'Үндсэн үнэ',
-                    version: (state.latest?.version ?? 0) + 1, status: body.status };
-                if (body.status === 'active') state.active = state.latest;
-                return reply({ config: state.latest });
+                const key = body.list_key ?? 'main', name = body.list_name ?? 'Үндсэн үнэ';
+                const previous = key === 'main' ? state.latest : state.extraLists.get(key)?.latest ?? null;
+                const saved: PricingConfig = { ...body.config, id: configId, shop_id: shopId, list_key: key, list_name: name,
+                    version: (previous?.version ?? 0) + 1, status: body.status };
+                if (key === 'main') { state.latest = saved; if (body.status === 'active') state.active = saved; }
+                else state.extraLists.set(key, { name, latest: saved, active: body.status === 'active' ? saved : state.extraLists.get(key)?.active ?? null });
+                return reply({ config: saved });
             }
-            return reply({ lists: [{ key: 'main', name: 'Үндсэн үнэ', latest: state.latest, active: state.active }] });
+            return reply({ lists: [{ key: 'main', name: 'Үндсэн үнэ', latest: state.latest, active: state.active },
+                ...[...state.extraLists].map(([key, list]) => ({ key, ...list }))] });
         }
         state.unhandled.push(`${request.method()} ${path}`);
         return reply({ error: `Missing fixture ${path}` }, 501);
@@ -312,5 +318,39 @@ test('pricing dialog begins empty and requires review before activating versione
     await activate.click();
     await expect(dialog).toContainText('Идэвхтэй хувилбар 2: Баталсан үнэ 2026-10-08');
     expect(state.pricingWrites[1]).toMatchObject({ expected_version: 1, status: 'active' });
+
+    // A price with another validity window is its own list: it starts empty and versions from 0.
+    await dialog.getByRole('button', { name: 'Үнийн жагсаалт нэмэх', exact: true }).click();
+    await dialog.getByLabel('Шинэ жагсаалтын нэр', { exact: true }).fill('Тусгай үнэ');
+    await dialog.getByRole('button', { name: 'Нэмэх', exact: true }).click();
+    await expect(dialog.getByLabel('Жагсаалтын нэр', { exact: true })).toHaveValue('Тусгай үнэ');
+    await expect(dialog).toContainText('Идэвхтэй үнэ байхгүй.');
+    await expect(dialog).toContainText('Баталсан үнийн мөр нэмнэ үү.');
+    await dialog.getByLabel('Эх сурвалж', { exact: true }).fill('Тусгай үнийн санал 2026-11');
+    await dialog.getByLabel('Эхлэх огноо', { exact: true }).fill('2026-11-01');
+    await dialog.getByLabel('Дуусах огноо', { exact: true }).fill('2026-11-30');
+    await dialog.getByRole('checkbox').check();
+    await dialog.getByRole('button', { name: 'Үнийн мөр нэмэх', exact: true }).click();
+    for (const [label, value] of [['Блок', 'Б1'], ['Загвар', 'E3'], ['Давхар эхлэх', '8'], ['Давхар дуусах', '12'],
+        ['Нөхцөл', '50%'], ['м² үнэ (₮)', '3900000'], ['Эхний урьдчилгаа (%)', '50']]) {
+        await dialog.getByLabel(`1-р мөр ${label}`, { exact: true }).fill(value);
+    }
+    // Floor 8 is already priced by the default list on the same days: review names that list and keeps activation off.
+    await dialog.getByRole('button', { name: 'Идэвхжүүлэхийн өмнө хянах', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toContainText('«Үндсэн үнэ» жагсаалтын идэвхтэй үнэтэй давхцаж байна');
+    await expect(activate).toBeDisabled();
+    await page.screenshot({ path: info.outputPath('pricing-list-conflict.png'), fullPage: true });
+    await dialog.getByLabel('1-р мөр Давхар эхлэх', { exact: true }).fill('9');
+    await dialog.getByRole('button', { name: 'Идэвхжүүлэхийн өмнө хянах', exact: true }).click();
+    await expect(activate).toBeEnabled();
+    await activate.click();
+    await expect(dialog).toContainText('Идэвхтэй хувилбар 1: Тусгай үнийн санал 2026-11');
+    expect(state.pricingWrites[2]).toMatchObject({ list_name: 'Тусгай үнэ', expected_version: 0, status: 'active' });
+    expect(state.pricingWrites[2].list_key).not.toBe('main');
+    // Both lists stay active side by side; the default list was not replaced.
+    await expect(dialog.getByRole('group', { name: 'Үнийн жагсаалт' })).toContainText('Үндсэн үнэИдэвхтэй');
+    await expect(dialog.getByRole('group', { name: 'Үнийн жагсаалт' })).toContainText('Тусгай үнэИдэвхтэй');
+    await page.screenshot({ path: info.outputPath('pricing-two-lists.png'), fullPage: true });
+    expect(state.active?.version).toBe(2);
     expect(state.errors).toEqual([]); expect(state.unhandled).toEqual([]);
 });
