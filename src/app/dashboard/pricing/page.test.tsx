@@ -59,17 +59,17 @@ it('shows the project by block with each kind price state, opens a block price a
     fireEvent.click(block);
     expect(await screen.findByText('4,200,000₮')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Б1 блок/ })).toHaveTextContent('Elysium Residence');
-    expect(screen.getByRole('region', { name: 'Б1 блок-ийн үнэ' })).toHaveTextContent('110 орон сууц · 40 чөлөөтэй');
+    expect(screen.getByRole('region', { name: 'Б1 блокийн үнэ' })).toHaveTextContent('110 орон сууц · 40 чөлөөтэй');
     // One price list: the list is never named. One block: no block column.
     expect(screen.getByText('Хувилбар 2')).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Блок' })).not.toBeInTheDocument();
     // Parking has no price in the system yet: said plainly, not shown as 0.
     fireEvent.click(within(screen.getByRole('group', { name: 'Төрөл' })).getByRole('button', { name: /Зогсоол/ }));
-    expect(screen.getByText('Зогсоол-ын үнэ энд хараахан ороогүй')).toBeInTheDocument();
+    expect(screen.getByText('Зогсоолын үнэ энд хараахан ороогүй')).toBeInTheDocument();
     expect(screen.queryByText('4,200,000₮')).not.toBeInTheDocument();
     // The other block of the phase is one click away; it has no approved price.
     fireEvent.click(within(screen.getByRole('group', { name: /блок солих/ })).getByRole('button', { name: 'Б2' }));
-    expect(screen.getByText('Б2 блок-ийн орон сууцны баталсан үнэ алга')).toBeInTheDocument();
+    expect(screen.getByText('Б2 блокийн орон сууцны баталсан үнэ алга')).toBeInTheDocument();
     expect(screen.getByText('Удирдлага үнийг баталж идэвхжүүлсний дараа энд харагдана.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Бүх блок' }));
     expect(await screen.findByRole('button', { name: 'Б1 блок' })).toBeInTheDocument();

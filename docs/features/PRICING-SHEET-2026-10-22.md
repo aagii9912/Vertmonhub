@@ -22,6 +22,16 @@ A new sidebar item «Үнэ, нөхцөл» (`/dashboard/pricing`, Борлуу�
 
 The price sheet shows the rules in the price-list layout (`pivotPricingRows`): one row per block × model × floors, one column per condition (header shows the advance when it is the same for the whole column), with a block filter.
 
+## By block (2026-11-27)
+
+Owner request 2026-11-27: Mandala Garden has dozens of blocks, each with apartments and often garages, storage and service space, and the page organised by price list was hard to read. Staff look a price up by block, so both the sheet and the editor are organised by the unit register.
+
+- **«Блокоор»** (first tab, `PricingBlocksView`): phase → block cards → unit kinds (`property_block_summary`: count per category) with a price state each — «Хүчинтэй» / «Эхлээгүй» / «Хугацаа дууссан» from the active version that prices the block, else «Үнэ ороогүй» (never «Үнэгүй», which reads as free of charge). A block opens on its own: kind buttons, the block's rows of the active version (`PricingVersionView` with `block`), and the other blocks of its phase one click away. The price list is named only when the project has several.
+- Only apartments carry a price (per m²). Parking, storage and service space show «Үнэ ороогүй» and say so when opened; they get prices when parking pricing is built.
+- `GET /api/dashboard/pricing` (no version) returns `active` (every list's active version with its comparison) and `phases` (`buildPricingPhases`: phases with more apartments first, apartment blocks before garage blocks, then priced blocks that have no unit in the register yet). An archive request (`version`) returns `selected` only.
+- An administrator also sees «Ноорог» on blocks whose list has a saved draft (from the editor's `/api/admin/pricing`, never sent to other roles), including a drafted block that is not in the register (Forest Garden 503).
+- **«Засах»**: a list of several blocks opens on block cards (rows, models, «Урьдчилгаа дутуу»); a block opens as a price sheet — one row per model and floor range, one editable м² price column per payment condition — with «Нөхцөлийн багана нэмэх», «Үнийн мөр нэмэх» and «Блок нэмэх». An empty cell means the condition is not offered there; clearing a price removes that rule. «Бүх мөр» keeps the flat one-rule-per-row table, which is also what a list of one block shows. Saving always sends every block's rules.
+
 ## Price lists (2026-11-27)
 
 Owner decision 2026-11-27: one project can have several price lists, because Mandala Garden's approved price (201–202, valid 2026-11-01 – 2027-02-28) and the Forest Garden special price (503, valid to 2026-12-31) have different validity windows. Migration `20261127120000_project_price_lists.sql` (apply before deploying this code).

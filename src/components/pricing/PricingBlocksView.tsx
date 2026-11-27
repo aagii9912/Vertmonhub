@@ -18,11 +18,14 @@ type KindState = { label: string; variant: 'success' | 'pending' | 'danger' | 'w
 function kindState(kind: PricingBlockKind, draft: boolean): KindState {
     if (kind.price) return PRICING_VALIDITY[kind.price.validity];
     // Only an administrator is told about a saved draft; for everyone else the block simply has no price yet.
-    if (draft && kind.category === 'residential') return { label: 'Ноорог', variant: 'warning' };
+    if (draft && kind.category === 'residential') return DRAFT;
     return { label: 'Үнэ ороогүй', variant: 'neutral' };
 }
 
 const UNREGISTERED = 'Тоот бүртгэгдээгүй блок';
+const DRAFT: KindState = { label: 'Ноорог', variant: 'warning' };
+/** «…-ын үнэ»: the kind in the genitive. */
+const KIND_OF: Record<string, string> = { residential: 'Орон сууцны', parking: 'Зогсоолын', industry: 'Агуулахын', commercial: 'Үйлчилгээний талбайн' };
 const LEGEND: KindState[] = [PRICING_VALIDITY.valid, PRICING_VALIDITY.upcoming, PRICING_VALIDITY.expired, { label: 'Үнэ ороогүй', variant: 'neutral' }];
 
 /**
@@ -60,7 +63,7 @@ export function PricingBlocksView({ phases: registered, active, draftBlocks, sev
         <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">Блокоо сонгож үнийг нь харна.</p>
             <ul aria-label="Үнийн төлөвийн тайлбар" className="flex flex-wrap gap-2">
-                {LEGEND.map(item => <li key={item.label}><Badge variant={item.variant}>{item.label}</Badge></li>)}
+                {[...LEGEND.slice(0, 3), ...(draftBlocks?.size ? [DRAFT] : []), LEGEND[3]].map(item => <li key={item.label}><Badge variant={item.variant}>{item.label}</Badge></li>)}
             </ul>
         </div>
         {phases.map(item => <section key={item.name ?? 'unregistered'} aria-label={item.name ?? UNREGISTERED}>
@@ -98,7 +101,7 @@ export function PricingBlocksView({ phases: registered, active, draftBlocks, sev
                     aria-pressed={item === block} onClick={() => open(item.block)}>{item.block}</Button>)}
             </div>}
         </div>
-        <section aria-label={`${pricingBlockLabel(block.block)}-ийн үнэ`} className="space-y-4">
+        <section aria-label={`${pricingBlockLabel(block.block)}ийн үнэ`} className="space-y-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="text-lg font-semibold">{pricingBlockLabel(block.block)}
                     {phase.name && <span className="ml-2 text-sm font-normal text-muted-foreground">{phase.name}</span>}</h2>
@@ -119,7 +122,7 @@ export function PricingBlocksView({ phases: registered, active, draftBlocks, sev
             </div>}
             {version ? <PricingVersionView version={version} block={block.block} showList={several} />
                 : <div className="rounded-xl border border-border bg-surface"><EmptyState icon={<BadgePercent />}
-                    title={kind.category === 'residential' ? `${pricingBlockLabel(block.block)}-ийн орон сууцны баталсан үнэ алга` : `${unitCategoryLabel(kind.category)}-ын үнэ энд хараахан ороогүй`}
+                    title={kind.category === 'residential' ? `${pricingBlockLabel(block.block)}ийн орон сууцны баталсан үнэ алга` : `${KIND_OF[kind.category] ?? `«${unitCategoryLabel(kind.category)}» төрлийн`} үнэ энд хараахан ороогүй`}
                     description={kind.category !== 'residential' ? 'Одоогоор энэ хуудсанд зөвхөн орон сууцны м² үнэ хадгалагдаж байна.'
                         : isDraft(block) ? 'Ноорог хадгалагдсан байна. «Засах» табаас хянаад идэвхжүүлнэ.'
                             : canEdit ? '«Засах» табаас энэ блокийн үнийг оруулж, хянаад идэвхжүүлнэ.' : 'Удирдлага үнийг баталж идэвхжүүлсний дараа энд харагдана.'} /></div>}

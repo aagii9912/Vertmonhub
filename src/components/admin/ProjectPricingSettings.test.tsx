@@ -164,7 +164,7 @@ it('withdraws a list active price only after a second confirmation, with the lis
     expect(url).toBe('/api/admin/pricing');
     expect(JSON.parse(init.body)).toEqual({ list_key: 'forest', expected_version: 2 });
 });
-it('edits a list of several blocks one block at a time: cards with row counts, missing advances, and a new block', async () => {
+it('edits a list of several blocks one block at a time as a price sheet: cards, price cells, a new row, condition and block', async () => {
     const rule = (block: string, model: string, advance_percent: number | null = 30) => ({ block, model, floor_min: 2, floor_max: 9, payment_condition: '30%', price_per_sqm: 4_000_000, advance_percent });
     const latest = { id: 'c1', shop_id: 'shop', list_key: 'main', list_name: 'Үндсэн үнэ', version: 1, status: 'draft', source: 'Үнийн санал', valid_from: '2026-11-01', valid_until: '2027-02-28', inventory_area_confirmed: true,
         rules: [rule('201', 'A'), rule('201', 'B'), rule('202', 'A', null)] };
@@ -183,24 +183,41 @@ it('edits a list of several blocks one block at a time: cards with row counts, m
     expect(screen.getByLabelText('3-р мөр Загвар')).toHaveValue('A');
     expect(screen.queryByLabelText('1-р мөр Загвар')).not.toBeInTheDocument();
     // A row added inside a block belongs to that block.
-    const fill = (row: number, model: string) => {
-        for (const [label, value] of [['Загвар', model], ['Давхар эхлэх', '2'], ['Давхар дуусах', '9'], ['Нөхцөл', '50%'], ['м² үнэ (₮)', '4100000']]) {
-            fireEvent.change(screen.getByLabelText(`${row}-р мөр ${label}`), { target: { value } });
-        }
+    // An opened block is a price sheet: one row per model and floor range, one price column per condition.
+    expect(screen.getByRole('columnheader', { name: /30%/ })).toHaveTextContent('урьдчилгаа дутуу');
+    expect(screen.queryByLabelText('3-р мөр Нөхцөл')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('A, 2–9 давхар · 30% м² үнэ (₮)')).toHaveValue('4000000');
+    const group = (row: number, model: string) => {
+        for (const [label, value] of [['Загвар', model], ['Давхар эхлэх', '2'], ['Давхар дуусах', '9']]) fireEvent.change(screen.getByLabelText(`${row}-р мөр ${label}`), { target: { value } });
     };
+    // A new sheet row belongs to the open block; its price cell takes the advance the list already uses for that condition.
     fireEvent.click(screen.getByRole('button', { name: 'Үнийн мөр нэмэх' }));
     expect(screen.getByLabelText('4-р мөр Загвар')).toHaveValue('');
-    expect(screen.getByRole('group', { name: 'Блок сонгох' })).toHaveTextContent('2022 мөр');
-    fill(4, 'B');
+    group(4, 'B');
+    fireEvent.change(screen.getByLabelText('B, 2–9 давхар · 30% м² үнэ (₮)'), { target: { value: '4100000' } });
+    expect(screen.getByLabelText('B, 2–9 давхар · 30% м² үнэ (₮)')).toHaveValue('4100000');
+    expect(screen.getByRole('group', { name: 'Блок сонгох' })).toHaveTextContent('2022 мөр · 2 загвар');
+    // Clearing a price removes that condition from the row; typing it again brings it back.
+    fireEvent.change(screen.getByLabelText('B, 2–9 давхар · 30% м² үнэ (₮)'), { target: { value: '' } });
+    expect(screen.getByLabelText('4-р мөр Загвар')).toHaveValue('B');
+    fireEvent.change(screen.getByLabelText('B, 2–9 давхар · 30% м² үнэ (₮)'), { target: { value: '4100000' } });
 
+    // A new block starts as an empty sheet: add the condition column, then the row and its price.
     fireEvent.change(screen.getByLabelText('Шинэ блок'), { target: { value: '203' } });
     fireEvent.click(screen.getByRole('button', { name: 'Блок нэмэх' }));
     expect(screen.getByRole('button', { name: '203 блокийн мөрүүд' })).toHaveAttribute('aria-pressed', 'true');
-    fill(5, 'C');
+    fireEvent.change(screen.getByLabelText('Шинэ нөхцөл'), { target: { value: '50%' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Нөхцөлийн багана нэмэх' }));
+    group(5, 'C');
+    fireEvent.change(screen.getByLabelText('C, 2–9 давхар · 50% м² үнэ (₮)'), { target: { value: '4500000' } });
 
     // Saving sends every block's rows, not only the one on screen.
     fireEvent.click(screen.getByRole('button', { name: 'Ноорог хадгалах' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(true));
     const body = JSON.parse(fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')![1].body);
-    expect(body.config.rules.map((item: { block: string; model: string }) => `${item.block}/${item.model}`)).toEqual(['201/A', '201/B', '202/A', '202/B', '203/C']);
+    expect(body.config.rules.map((item: { block: string; model: string; payment_condition: string; price_per_sqm: number; advance_percent: number | null }) =>
+        `${item.block}/${item.model} ${item.payment_condition} ${item.price_per_sqm} ${item.advance_percent}`)).toEqual([
+        '201/A 30% 4000000 30', '201/B 30% 4000000 30', '202/A 30% 4000000 null', '202/B 30% 4100000 30', '203/C 50% 4500000 null',
+    ]);
+    expect(body.config.rules.every((item: object) => !('gid' in item))).toBe(true);
 });
